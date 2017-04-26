@@ -737,12 +737,11 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                     
                     // allocate new chunk if necessary
                     if (!done) {
-                        newchunk = alloc_chunk(Vcb, flags);
+                        Status = alloc_chunk(Vcb, flags, &newchunk);
                         
-                        if (!newchunk) {
-                            ERR("could not allocate new chunk\n");
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("alloc_chunk returned %08x\n", Status);
                             ExReleaseResourceLite(&Vcb->chunk_lock);
-                            Status = STATUS_DISK_FULL;
                             goto end;
                         }
                         
@@ -1680,12 +1679,11 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             
             // allocate new chunk if necessary
             if (!done) {
-                newchunk = alloc_chunk(Vcb, Vcb->data_flags);
+                Status = alloc_chunk(Vcb, Vcb->data_flags, &newchunk);
                 
-                if (!newchunk) {
-                    ERR("could not allocate new chunk\n");
+                if (!NT_SUCCESS(Status)) {
+                    ERR("alloc_chunk returned %08x\n", Status);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
-                    Status = STATUS_DISK_FULL;
                     goto end;
                 }
                 

@@ -734,6 +734,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
 }
 
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     chunk *origchunk = NULL, *c;
     LIST_ENTRY* le;
     UINT64 flags, addr;
@@ -793,22 +794,29 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     }
     
     // allocate new chunk if necessary
-    if ((c = alloc_chunk(Vcb, flags))) {
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        
-        if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-            if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
-                ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                t->new_address = addr;
-                t->has_new_address = TRUE;
-                return STATUS_SUCCESS;
-            }
-        }
-        
-        ExReleaseResourceLite(&c->lock);
+
+    Status = alloc_chunk(Vcb, flags, &c);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("alloc_chunk returned %08x\n", Status);
+        ExReleaseResourceLite(&Vcb->chunk_lock);
+        return Status;
     }
-    
+
+    ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+    if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
+        if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
+            ExReleaseResourceLite(&c->lock);
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+            t->new_address = addr;
+            t->has_new_address = TRUE;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    ExReleaseResourceLite(&c->lock);
+
     ExReleaseResourceLite(&Vcb->chunk_lock);
     
     ERR("couldn't find any metadata chunks with %x bytes free\n", Vcb->superblock.node_size);

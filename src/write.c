@@ -373,7 +373,8 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
     return TRUE;
 }
 
-chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
+NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
+    NTSTATUS Status;
     UINT64 max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
     UINT64 total_size = 0, i, logaddr;
     UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes;
@@ -382,9 +383,8 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     CHUNK_ITEM_STRIPE* cis;
     chunk* c = NULL;
     space* s = NULL;
-    BOOL success = FALSE;
     LIST_ENTRY* le;
-    
+
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
     
     le = Vcb->devices.Flink;
@@ -458,14 +458,17 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * max_stripes, ALLOC_TAG);
     if (!stripes) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
     num_stripes = 0;
     
     if (type == BLOCK_FLAG_DUPLICATE) {
-        if (!find_new_dup_stripes(Vcb, stripes, max_stripe_size))
+        if (!find_new_dup_stripes(Vcb, stripes, max_stripe_size)) {
+            Status = STATUS_DISK_FULL;
             goto end;
+        }
         else
             num_stripes = max_stripes;
     } else {
@@ -484,12 +487,14 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     
     if (num_stripes < min_stripes) {
         WARN("found %u stripes, needed at least %u\n", num_stripes, min_stripes);
+        Status = STATUS_DISK_FULL;
         goto end;
     }
     
     c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
     if (!c) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
@@ -497,6 +502,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, cisize, ALLOC_TAG);
     if (!c->chunk_item) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
@@ -529,8 +535,10 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     if (stripe_size % stripe_length > 0)
         stripe_size -= stripe_size % stripe_length;
     
-    if (stripe_size == 0)
+    if (stripe_size == 0) {
+        Status = STATUS_INTERNAL_ERROR;
         goto end;
+    }
     
     c->chunk_item->size = stripe_size * factor;
     c->chunk_item->root_id = Vcb->extent_root->id;
@@ -545,6 +553,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     c->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * num_stripes, ALLOC_TAG);
     if (!c->devices) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -591,6 +600,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
     s = ExAllocatePoolWithTag(NonPagedPool, sizeof(space), ALLOC_TAG);
     if (!s) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
     
@@ -607,7 +617,7 @@ chunk* alloc_chunk(device_extension* Vcb, UINT64 flags) {
         space_list_subtract2(&stripes[i].device->space, NULL, cis[i].offset, stripe_size, NULL, NULL);
     }
     
-    success = TRUE;
+    Status = STATUS_SUCCESS;
     
     if (flags & BLOCK_FLAG_RAID5 || flags & BLOCK_FLAG_RAID6)
         Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_RAID56;
@@ -616,7 +626,7 @@ end:
     if (stripes)
         ExFreePool(stripes);
     
-    if (!success) {
+    if (!NT_SUCCESS(Status)) {
         if (c && c->chunk_item) ExFreePool(c->chunk_item);
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
@@ -643,11 +653,13 @@ end:
         c->created = TRUE;
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
         c->list_entry_balance.Flink = NULL;
+
+        *pc = c;
     }
     
     ExReleaseResourceLite(&Vcb->chunk_lock);
 
-    return success ? c : NULL;
+    return Status;
 }
 
 static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset, write_data_context* wtc) {
@@ -3214,21 +3226,26 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
         
         ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
-        
-        if ((c = alloc_chunk(fcb->Vcb, flags))) {
+
+        Status = alloc_chunk(fcb->Vcb, flags, &c);
+
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("alloc_chunk returned %08x\n", Status);
             ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-            
-            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-            
-            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0))
-                    goto cont;
-            }
-            
-            ExReleaseResourceLite(&c->lock);
-        } else
-            ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+            goto end;
+        }
         
+        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0))
+                goto cont;
+        }
+
+        ExReleaseResourceLite(&c->lock);
+
         WARN("couldn't find any data chunks with %llx bytes free\n", origlength);
         Status = STATUS_DISK_FULL;
         goto end;
@@ -3255,6 +3272,7 @@ end:
 
 static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
                               PIRP Irp, BOOL file_write, UINT32 irp_offset, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     chunk* c;
     UINT64 flags, orig_length = length, written = 0;
@@ -3322,9 +3340,16 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         
         ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
         
-        if ((c = alloc_chunk(Vcb, flags))) {
-            ExReleaseResourceLite(&Vcb->chunk_lock);
-            
+        Status = alloc_chunk(Vcb, flags, &c);
+
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("alloc_chunk returned %08x\n", Status);
+            return Status;
+        }
+
+        if (c) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
@@ -3342,8 +3367,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
                 }
             } else            
                 ExReleaseResourceLite(&c->lock);
-        } else
-            ExReleaseResourceLite(&Vcb->chunk_lock);
+        }
         
         if (!done) {
             FIXME("FIXME - not enough room to write whole extent part, try to write bits and pieces\n"); // FIXME

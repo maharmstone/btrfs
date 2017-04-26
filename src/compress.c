@@ -468,9 +468,16 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags))) {
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-        
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c);
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("alloc_chunk returned %08x\n", Status);
+        return Status;
+    }
+
+    if (c) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
@@ -483,8 +490,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         }
         
         ExReleaseResourceLite(&c->lock);
-    } else
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    }
     
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
 
@@ -853,9 +859,16 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
 
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    if ((c = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags))) {
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-        
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c);
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("alloc_chunk returned %08x\n", Status);
+        return Status;
+    }
+
+    if (c) {
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
@@ -868,9 +881,8 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         }
         
         ExReleaseResourceLite(&c->lock);
-    } else
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-    
+    }
+
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
 
     return STATUS_DISK_FULL;

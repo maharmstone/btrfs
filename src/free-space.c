@@ -768,6 +768,7 @@ NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
 }
 
 static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     LIST_ENTRY* le = fcb->Vcb->chunks.Flink;
     chunk* c;
     UINT64 flags;
@@ -799,21 +800,23 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
 
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    if ((c = alloc_chunk(fcb->Vcb, flags))) {
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-        
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        
-        if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length, FALSE, 0))
-                return STATUS_SUCCESS;
-        }
-        
-        ExReleaseResourceLite(&c->lock);
-    } else   
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    Status = alloc_chunk(fcb->Vcb, flags, &c);
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("alloc_chunk returned %08x\n", Status);
+        return Status;
+    }
+
+    ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+    if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+        if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length, FALSE, 0))
+            return STATUS_SUCCESS;
+    }
     
-    WARN("couldn't find any data chunks with %llx bytes free\n", length);
+    ExReleaseResourceLite(&c->lock);
 
     return STATUS_DISK_FULL;
 }
