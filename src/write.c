@@ -4044,6 +4044,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
     LIST_ENTRY *le, *le2;
     UINT64 written = 0, length = end_data - start;
     UINT64 last_cow_start;
+    ULONG priority = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority;
 #ifdef DEBUG_PARANOID
     UINT64 last_off;
 #endif
@@ -4098,7 +4099,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                                     
                     TRACE("doing non-COW write to %llx\n", writeaddr);
                     
-                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp, NULL, file_write, irp_offset + written, NormalPagePriority);
+                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp, NULL, file_write, irp_offset + written, priority);
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_complete returned %08x\n", Status);
                         return Status;
@@ -4121,7 +4122,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                     UINT64 write_len;
                     
                     Status = do_write_file_prealloc(fcb, ext, start + written, end_data, (UINT8*)data + written, &write_len,
-                                                    Irp, file_write, irp_offset + written, NormalPagePriority, rollback);
+                                                    Irp, file_write, irp_offset + written, priority, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("do_write_file_prealloc returned %08x\n", Status);
                         return Status;
