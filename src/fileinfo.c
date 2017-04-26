@@ -2064,8 +2064,16 @@ end:
 
     ExReleaseResourceLite(fcb->Header.Resource);
     
-    if (set_size)
-        CcSetFileSizes(FileObject, &ccfs);
+    if (set_size) {
+        try {
+            CcSetFileSizes(FileObject, &ccfs);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status))
+            ERR("CcSetFileSizes threw exception %08x\n", Status);
+    }
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
