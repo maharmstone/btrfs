@@ -2682,6 +2682,8 @@ static void balance_thread(void* context) {
         le = le->Flink;
     }
     
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+
     // If we're doing a full balance, try and allocate a new chunk now, before we mess things up
     if (okay_metadata_chunks == 0) {
         chunk* c;
@@ -2719,8 +2721,6 @@ static void balance_thread(void* context) {
         }
     }
 
-    ExReleaseResourceLite(&Vcb->chunk_lock);
-    
     Vcb->balance.chunks_left = Vcb->balance.total_chunks;
     
     // do data chunks before metadata
