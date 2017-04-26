@@ -2980,7 +2980,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
 //     int3;
     
     if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
-        data = map_user_buffer(Irp, NormalPagePriority);
+        data = map_user_buffer(Irp, fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
         
         if (Irp->MdlAddress && !data) {
             ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
