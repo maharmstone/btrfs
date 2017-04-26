@@ -1678,29 +1678,41 @@ end:
 
 static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 length, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    BOOL compress = write_fcb_compressed(fcb);
+    BOOL make_inline, compress;
     UINT64 start_data, end_data;
+    ULONG buf_head;
     UINT8* data;
-        
-    if (compress) {
+
+    make_inline = fcb->inode_item.st_size <= Vcb->options.max_inline || fcb_is_inline(fcb);
+
+    if (!make_inline)
+        compress = write_fcb_compressed(fcb);
+
+    if (make_inline) {
+        start_data = 0;
+        end_data = fcb->inode_item.st_size;
+        buf_head = offsetof(EXTENT_DATA, data[0]);
+    } else if (compress) {
         start_data = start & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
         end_data = min(sector_align(start + length, COMPRESSED_EXTENT_SIZE),
                        sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size));
+        buf_head = 0;
     } else {
         start_data = start & ~(UINT64)(Vcb->superblock.sector_size - 1);
         end_data = sector_align(start + length, Vcb->superblock.sector_size);
+        buf_head = 0;
     }
 
-    data = ExAllocatePoolWithTag(PagedPool, end_data - start_data, ALLOC_TAG);
+    data = ExAllocatePoolWithTag(PagedPool, buf_head + end_data - start_data, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    RtlZeroMemory(data, end_data - start_data);
+    RtlZeroMemory(data + buf_head, end_data - start_data);
     
     if (start > start_data || start + length < end_data) {
-        Status = read_file(fcb, data, start_data, end_data - start_data, NULL, Irp);
+        Status = read_file(fcb, data + buf_head, start_data, end_data - start_data, NULL, Irp);
         
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08x\n", Status);
@@ -1709,9 +1721,39 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
         }
     }
     
-    RtlZeroMemory(data + start - start_data, length);
+    RtlZeroMemory(data + buf_head + start - start_data, length);
     
-    if (compress) {
+    if (make_inline) {
+        ULONG edsize;
+        EXTENT_DATA* ed = (EXTENT_DATA*)data;
+
+        Status = excise_extents(Vcb, fcb, 0, sector_align(end_data, Vcb->superblock.sector_size), Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            ExFreePool(data);
+            return Status;
+        }
+
+        edsize = offsetof(EXTENT_DATA, data[0]) + end_data;
+
+        ed->generation = Vcb->superblock.generation;
+        ed->decoded_size = end_data;
+        ed->compression = BTRFS_COMPRESSION_NONE;
+        ed->encryption = BTRFS_ENCRYPTION_NONE;
+        ed->encoding = BTRFS_ENCODING_NONE;
+        ed->type = EXTENT_TYPE_INLINE;
+
+        Status = add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_extent_to_fcb returned %08x\n", Status);
+            ExFreePool(data);
+            return Status;
+        }
+
+        ExFreePool(data);
+
+        fcb->inode_item.st_blocks += end_data;
+    } else if (compress) {
         Status = write_compressed(fcb, start_data, end_data, data, Irp, rollback);
         
         ExFreePool(data);
