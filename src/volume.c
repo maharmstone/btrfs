@@ -30,17 +30,47 @@ extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 
 NTSTATUS STDCALL vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    volume_device_extension* vde = DeviceObject->DeviceExtension;
+
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
+    if (vde->removing)
+        return STATUS_DEVICE_NOT_READY;
+
     Irp->IoStatus.Information = FILE_OPENED;
+    InterlockedIncrement(&vde->open_count);
     
     return STATUS_SUCCESS;
 }
 
 NTSTATUS STDCALL vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+    volume_device_extension* vde = DeviceObject->DeviceExtension;
+
     TRACE("(%p, %p)\n", DeviceObject, Irp);
     
     Irp->IoStatus.Information = 0;
+
+    if (InterlockedDecrement(&vde->open_count) == 0 && vde->removing) {
+        NTSTATUS Status;
+        UNICODE_STRING mmdevpath;
+        PDEVICE_OBJECT mountmgr;
+        PFILE_OBJECT mountmgrfo;
+
+        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+        if (!NT_SUCCESS(Status))
+            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        else {
+            remove_drive_letter(mountmgr, &vde->name);
+
+            ObDereferenceObject(mountmgrfo);
+        }
+
+        if (vde->name.Buffer)
+            ExFreePool(vde->name.Buffer);
+
+        ExDeleteResourceLite(&vde->child_lock);
+    }
 
     return STATUS_SUCCESS;
 }
@@ -929,6 +959,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         vde->device = voldev;
         vde->mounted_device = NULL;
         vde->pdo = pdo;
+        vde->removing = FALSE;
+        vde->open_count = 0;
         
         ExInitializeResourceLite(&vde->child_lock);
         InitializeListHead(&vde->children);

@@ -257,14 +257,7 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
     
     if (vc->notification_entry)
         IoUnregisterPlugPlayNotificationEx(vc->notification_entry);
-    
-    ObDereferenceObject(vc->devobj);
-    ExFreePool(vc->pnp_name.Buffer);
-    RemoveEntryList(&vc->list_entry);
-    ExFreePool(vc);
-    
-    vde->children_loaded--;
-    
+
     if (vde->mounted_device) {
 //         device_extension* Vcb = vde->mounted_device->DeviceExtension;
 // 
@@ -354,29 +347,19 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
         }
     }
     
+    ObDereferenceObject(vc->devobj);
+    ExFreePool(vc->pnp_name.Buffer);
+    RemoveEntryList(&vc->list_entry);
+    ExFreePool(vc);
+
+    vde->children_loaded--;
+
     if (vde->children_loaded == 0) { // remove volume device
-        UNICODE_STRING mmdevpath;
-        PDEVICE_OBJECT mountmgr;
-        PFILE_OBJECT mountmgrfo;
-        
         ExReleaseResourceLite(&vde->child_lock);
         RemoveEntryList(&vde->list_entry);
         
-        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
-        if (!NT_SUCCESS(Status))
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        else {
-            remove_drive_letter(mountmgr, &vde->name);
-            
-            ObDereferenceObject(mountmgrfo);
-        }
-        
-        if (vde->name.Buffer)
-            ExFreePool(vde->name.Buffer);
-        
-        ExDeleteResourceLite(&vde->child_lock);
-        
+        vde->removing = TRUE;
+
         IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
         
         IoDetachDevice(vde->pdo);

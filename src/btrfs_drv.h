@@ -738,6 +738,8 @@ typedef struct _volume_device_extension {
     PDEVICE_OBJECT pdo;
     UNICODE_STRING bus_name;
     PDEVICE_OBJECT attached_device;
+    BOOL removing;
+    LONG open_count;
     
     UINT64 num_children;
     UINT64 children_loaded;
