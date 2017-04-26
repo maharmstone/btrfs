@@ -88,7 +88,7 @@ PDEVICE_OBJECT comdo = NULL;
 HANDLE log_handle = NULL;
 #endif
 
-static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject);
+static NTSTATUS STDCALL close_file(PFILE_OBJECT FileObject);
 
 typedef struct {
     KEVENT Event;
@@ -448,7 +448,7 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     // FIXME - unmount if called for volume
     // FIXME - call FsRtlNotifyUninitializeSync(&Vcb->NotifySync) if unmounting
     
-    Status = close_file(DeviceObject->DeviceExtension, IrpSp->FileObject);
+    Status = close_file(IrpSp->FileObject);
 
 end:
     Irp->IoStatus.Status = Status;
@@ -1533,26 +1533,23 @@ void free_fileref(device_extension* Vcb, file_ref* fr) {
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
 
-static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObject) {
+static NTSTATUS STDCALL close_file(PFILE_OBJECT FileObject) {
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref = NULL;
     LONG open_files;
+    device_extension* Vcb;
     
     TRACE("FileObject = %p\n", FileObject);
-    
-    open_files = InterlockedDecrement(&Vcb->open_files);
     
     fcb = FileObject->FsContext;
     if (!fcb) {
         TRACE("FCB was NULL, returning success\n");
-        
-        if (open_files == 0 && Vcb->removing)
-            uninit(Vcb, FALSE);
-        
         return STATUS_SUCCESS;
     }
     
+    open_files = InterlockedDecrement(&fcb->Vcb->open_files);
+
     ccb = FileObject->FsContext2;
     
     TRACE("close called for %S (fcb == %p)\n", file_desc(FileObject), fcb);
@@ -1569,10 +1566,10 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
         // FIXME - use refcounts for fileref
         fileref = ccb->fileref;
         
-        if (Vcb->running_sends > 0) {
+        if (fcb->Vcb->running_sends > 0) {
             BOOL send_cancelled = FALSE;
 
-            ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
+            ExAcquireResourceExclusiveLite(&fcb->Vcb->send_load_lock, TRUE);
 
             if (ccb->send) {
                 ccb->send->cancelling = TRUE;
@@ -1580,12 +1577,12 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
                 KeSetEvent(&ccb->send->cleared_event, 0, FALSE);
             }
 
-            ExReleaseResourceLite(&Vcb->send_load_lock);
+            ExReleaseResourceLite(&fcb->Vcb->send_load_lock);
 
             if (send_cancelled) {
                 while (ccb->send) {
-                    ExAcquireResourceExclusiveLite(&Vcb->send_load_lock, TRUE);
-                    ExReleaseResourceLite(&Vcb->send_load_lock);
+                    ExAcquireResourceExclusiveLite(&fcb->Vcb->send_load_lock, TRUE);
+                    ExReleaseResourceLite(&fcb->Vcb->send_load_lock);
                 }
             }
         }
@@ -1595,18 +1592,20 @@ static NTSTATUS STDCALL close_file(device_extension* Vcb, PFILE_OBJECT FileObjec
     
     CcUninitializeCacheMap(FileObject, NULL, NULL);
     
-    if (open_files == 0 && Vcb->removing) {
-        uninit(Vcb, FALSE);
+    if (open_files == 0 && fcb->Vcb->removing) {
+        uninit(fcb->Vcb, FALSE);
         return STATUS_SUCCESS;
     }
     
-    if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
+    if (!(fcb->Vcb->Vpb->Flags & VPB_MOUNTED))
         return STATUS_SUCCESS;
     
+    Vcb = fcb->Vcb;
+
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
     
     if (fileref)
-        free_fileref(Vcb, fileref);
+        free_fileref(fcb->Vcb, fileref);
     else
         free_fcb(fcb);
     
