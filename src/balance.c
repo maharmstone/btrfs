@@ -1607,6 +1607,52 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS reloc_csums(device_extension* Vcb, data_reloc* dr) {
+    NTSTATUS Status;
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    BOOL b;
+
+    searchkey.obj_id = EXTENT_CSUM_ID;
+    searchkey.obj_type = TYPE_EXTENT_CSUM;
+    searchkey.offset = dr->address;
+
+    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    do {
+        b = find_next_item(Vcb, &tp, &next_tp, FALSE, NULL);
+
+        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+            UINT64 run_end = tp.item->key.offset + (tp.item->size / sizeof(UINT32) * Vcb->superblock.sector_size);
+
+            if (run_end > dr->address && tp.item->key.offset < dr->address + dr->size) {
+                UINT64 start, end;
+                ULONG sectors;
+                UINT32* csum;
+
+                start = max(tp.item->key.offset, dr->address);
+                end = min(run_end, dr->address + dr->size);
+
+                sectors = (end - start) / Vcb->superblock.sector_size;
+                csum = (UINT32*)(tp.item->data + (((start - tp.item->key.offset) / Vcb->superblock.sector_size) * sizeof(UINT32)));
+
+                add_checksum_entry(Vcb, start - dr->address + dr->new_address, sectors, csum, NULL);
+                add_checksum_entry(Vcb, start, sectors, NULL, NULL);
+            } else if (tp.item->key.offset >= dr->address + dr->size)
+                return STATUS_SUCCESS;
+        }
+
+        if (b)
+            tp = next_tp;
+    } while (b);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     KEY searchkey;
     traverse_ptr tp;
@@ -1692,7 +1738,6 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
         BOOL done = FALSE;
         LIST_ENTRY* le2;
-        UINT32* csum;
         UINT64 off;
         
         if (newchunk) {
@@ -1764,22 +1809,12 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         
         dr->newchunk = newchunk;
         
-        csum = ExAllocatePoolWithTag(PagedPool, dr->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
-        if (!csum) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
+        Status = reloc_csums(Vcb, dr);
+        if (!NT_SUCCESS(Status)) {
+            ERR("reloc_csums returned %08x\n", Status);
             goto end;
         }
-        
-        Status = load_csum(Vcb, csum, dr->address, dr->size / Vcb->superblock.sector_size, NULL);
 
-        if (NT_SUCCESS(Status)) {
-            add_checksum_entry(Vcb, dr->new_address, dr->size / Vcb->superblock.sector_size, csum, NULL);
-            add_checksum_entry(Vcb, dr->address, dr->size / Vcb->superblock.sector_size, NULL, NULL);
-        }
-
-        ExFreePool(csum);
-        
         off = 0;
         
         while (off < dr->size) {
