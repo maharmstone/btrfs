@@ -4748,7 +4748,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     TRACE("length = %x\n", IrpSp->Parameters.Write.Length);
     
     if (!Irp->AssociatedIrp.SystemBuffer) {
-        buf = map_user_buffer(Irp, NormalPagePriority);
+        buf = map_user_buffer(Irp, fcb && fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
         
         if (Irp->MdlAddress && !buf) {
             ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
