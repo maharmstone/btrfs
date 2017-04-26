@@ -32,6 +32,7 @@ typedef struct {
 
 typedef struct {
     UINT8 type;
+    UINT64 hash;
     
     union {
         TREE_BLOCK_REF tbr;
@@ -275,6 +276,48 @@ static NTSTATUS add_metadata_reloc_parent(device_extension* Vcb, LIST_ENTRY* ite
     return STATUS_SUCCESS;
 }
 
+static void sort_metadata_reloc_refs(metadata_reloc* mr) {
+    LIST_ENTRY newlist, *le;
+
+    if (mr->refs.Flink == mr->refs.Blink) // 0 or 1 items
+        return;
+
+    // insertion sort
+
+    InitializeListHead(&newlist);
+
+    while (!IsListEmpty(&mr->refs)) {
+        metadata_reloc_ref* ref = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+        BOOL inserted = FALSE;
+
+        if (ref->type == TYPE_TREE_BLOCK_REF)
+            ref->hash = ref->tbr.offset;
+        else if (ref->type == TYPE_SHARED_BLOCK_REF)
+            ref->hash = ref->parent->new_address;
+
+        le = newlist.Flink;
+        while (le != &newlist) {
+            metadata_reloc_ref* ref2 = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
+
+            if (ref->type < ref2->type || (ref->type == ref2->type && ref->hash > ref2->hash)) {
+                InsertHeadList(le->Blink, &ref->list_entry);
+                inserted = TRUE;
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        if (!inserted)
+            InsertTailList(&newlist, &ref->list_entry);
+    }
+
+    newlist.Flink->Blink = &mr->refs;
+    newlist.Blink->Flink = &mr->refs;
+    mr->refs.Flink = newlist.Flink;
+    mr->refs.Blink = newlist.Blink;
+}
+
 static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_reloc* mr) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -289,6 +332,8 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
         inline_len += sizeof(EXTENT_ITEM2);
     
+    sort_metadata_reloc_refs(mr);
+
     le = mr->refs.Flink;
     while (le != &mr->refs) {
         metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
