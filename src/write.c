@@ -694,14 +694,26 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
         
         pfns = (PFN_NUMBER*)(master_mdl + 1);
     } else {
+        NTSTATUS Status = STATUS_SUCCESS;
+
         master_mdl = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
-        
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            return Status;
+        }
+
         wtc->mdl = master_mdl;
         
         pfns = (PFN_NUMBER*)(master_mdl + 1);
@@ -813,13 +825,25 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
         
         pfns = (PFN_NUMBER*)(master_mdl + 1);
     } else {
+        NTSTATUS Status = STATUS_SUCCESS;
+
         master_mdl = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            return Status;
+        }
         
         wtc->mdl = master_mdl;
         
@@ -944,7 +968,19 @@ static NTSTATUS async_read_phys(read_context* context, read_context_stripe* stri
             goto fail;
         }
         
-        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(Irp->MdlAddress);
+            goto fail;
+        }
     } else
         Irp->UserBuffer = Buffer;
 
@@ -1288,8 +1324,20 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
+
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            return Status;
+        }
         
         wtc->mdl = master_mdl;
     }
@@ -1811,8 +1859,20 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
+
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoReadAccess);
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            goto exit;
+        }
         
         wtc->mdl = master_mdl;
     }
@@ -2112,10 +2172,23 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
                 if (!stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                    goto prepare_failed;
                 }
                 
-                MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoReadAccess);
+                Status = STATUS_SUCCESS;
+
+                try {
+                    MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoReadAccess);
+                } except (EXCEPTION_EXECUTE_HANDLER) {
+                    Status = GetExceptionCode();
+                }
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                    IoFreeMdl(stripes[i].mdl);
+                    stripes[i].mdl = NULL;
+                    goto prepare_failed;
+                }
             }
         }
     }
@@ -4506,8 +4579,20 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             if (write_irp && Irp->MdlAddress && no_buf) {
                 BOOL locked = Irp->MdlAddress->MdlFlags & MDL_PAGES_LOCKED;
                 
-                if (!locked)
-                    MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoReadAccess);
+                if (!locked) {
+                    Status = STATUS_SUCCESS;
+
+                    try {
+                        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoReadAccess);
+                    } except (EXCEPTION_EXECUTE_HANDLER) {
+                        Status = GetExceptionCode();
+                    }
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                        goto end;
+                    }
+                }
                 
                 Status = do_write_file(fcb, start_data, end_data, data, Irp, TRUE, 0, rollback);
                 
@@ -4518,7 +4603,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             
             if (!NT_SUCCESS(Status)) {
                 ERR("do_write_file returned %08x\n", Status);
-                ExFreePool(data);
+                if (!no_buf) ExFreePool(data);
                 goto end;
             }
             

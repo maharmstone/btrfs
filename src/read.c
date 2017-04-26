@@ -1484,8 +1484,21 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
+
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            return Status;
+        }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
         for (i = 0; i < ci->num_stripes; i++) {
@@ -1600,8 +1613,21 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        
-        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            return Status;
+        }
+
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
         stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
@@ -1736,8 +1762,19 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
-            
-            MmProbeAndLockPages(context.stripes[i].mdl, KernelMode, IoWriteAccess);
+
+            Status = STATUS_SUCCESS;
+
+            try {
+                MmProbeAndLockPages(context.stripes[i].mdl, KernelMode, IoWriteAccess);
+            } except (EXCEPTION_EXECUTE_HANDLER) {
+                Status = GetExceptionCode();
+            }
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                goto exit;
+            }
         }
     } else if (type == BLOCK_FLAG_RAID5) {
         UINT64 startoff, endoff;
@@ -1768,7 +1805,20 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            goto exit;
+        }
+
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
         pos = 0;
@@ -2005,7 +2055,20 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             goto exit;
         }
         
-        MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(master_mdl, KernelMode, IoWriteAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(master_mdl);
+            goto exit;
+        }
+
         pfns = (PFN_NUMBER*)(master_mdl + 1);
         
         pos = 0;

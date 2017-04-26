@@ -1491,7 +1491,20 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
                     goto end;
                 }
                 
-                MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                Status = STATUS_SUCCESS;
+
+                try {
+                    MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                } except (EXCEPTION_EXECUTE_HANDLER) {
+                    Status = GetExceptionCode();
+                }
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
+                    context.stripes[i].Irp->MdlAddress = NULL;
+                    goto end;
+                }
             } else
                 context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
 
@@ -2581,7 +2594,19 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                     goto end;
                 }
                 
-                MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                Status = STATUS_SUCCESS;
+
+                try {
+                    MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                } except (EXCEPTION_EXECUTE_HANDLER) {
+                    Status = GetExceptionCode();
+                }
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
+                    goto end;
+                }
             } else
                 context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
             

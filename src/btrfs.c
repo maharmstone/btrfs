@@ -2270,8 +2270,20 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
-        
-        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(Irp->MdlAddress);
+            goto exit;
+        }
     } else
         Irp->UserBuffer = Buffer;
 

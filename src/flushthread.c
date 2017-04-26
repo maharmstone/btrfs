@@ -98,7 +98,19 @@ NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* da
             goto exit;
         }
         
-        MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoReadAccess);
+        Status = STATUS_SUCCESS;
+
+        try {
+            MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoReadAccess);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            IoFreeMdl(Irp->MdlAddress);
+            goto exit;
+        }
     } else {
         Irp->UserBuffer = data;
     }
