@@ -4550,7 +4550,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             end_data = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
             bufhead = 0;
         }
-            
+
+        if (fcb_is_inline(fcb))
+            end_data = max(end_data, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size));
+
         fcb->Header.ValidDataLength.QuadPart = newlength;
         TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
     
