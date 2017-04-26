@@ -338,7 +338,7 @@ static void log_file_checksum_error_shared(device_extension* Vcb, UINT64 treeadd
         return;
     }
     
-    Status = read_data(Vcb, treeaddr, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)tree, NULL, NULL, NULL, 0, FALSE);
+    Status = read_data(Vcb, treeaddr, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)tree, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned %08x\n", Status);
         goto end;
@@ -414,7 +414,7 @@ static void log_tree_checksum_error_shared(device_extension* Vcb, UINT64 offset,
         return;
     }
     
-    Status = read_data(Vcb, offset, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)tree, NULL, NULL, NULL, 0, FALSE);
+    Status = read_data(Vcb, offset, Vcb->superblock.node_size, NULL, TRUE, (UINT8*)tree, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned %08x\n", Status);
         goto end;

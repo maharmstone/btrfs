@@ -2343,7 +2343,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 }
 
                 Status = read_data(context->Vcb, addr, sector_align(length + skip_start, context->Vcb->superblock.sector_size),
-                                   csum, FALSE, buf, NULL, NULL, NULL, 0, FALSE);
+                                   csum, FALSE, buf, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08x\n", Status);
                     ExFreePool(buf);
@@ -2423,7 +2423,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 }
             }
 
-            Status = read_data(context->Vcb, ed2->address, ed2->size, csum, FALSE, compbuf, NULL, NULL, NULL, 0, FALSE);
+            Status = read_data(context->Vcb, ed2->address, ed2->size, csum, FALSE, compbuf, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08x\n", Status);
                 ExFreePool(compbuf);
