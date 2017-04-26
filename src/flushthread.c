@@ -1624,7 +1624,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
                 wtc[bit_num].parity1 = wtc[bit_num].parity2 = wtc[bit_num].scratch = NULL;
                 wtc[bit_num].mdl = wtc[bit_num].parity1_mdl = wtc[bit_num].parity2_mdl = NULL;
                 
-                Status = write_data(Vcb, tw->address, tw->data, tw->length, &wtc[bit_num], NULL, NULL, FALSE, 0);
+                Status = write_data(Vcb, tw->address, tw->data, tw->length, &wtc[bit_num], NULL, NULL, FALSE, 0, HighPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data returned %08x\n", Status);
                     
@@ -1690,7 +1690,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
         if (tw->overlap) {
             TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
             
-            Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL, FALSE, 0);
+            Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL, FALSE, 0, HighPagePriority);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_complete returned %08x\n", Status);
                 return Status;

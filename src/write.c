@@ -1020,7 +1020,7 @@ typedef struct {
 } log_stripe;
 
 static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
-                                    UINT32 irp_offset, write_data_context* wtc) {
+                                    UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity;
     UINT64 pos, parity_pos, *stripeoff = NULL;
@@ -1489,7 +1489,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     }
 
     for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
-        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[i].mdl, NormalPagePriority);
+        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[i].mdl, priority);
         
         if (i == 0)
             RtlCopyMemory(wtc->parity1, ss, parity_end - parity_start);
@@ -1537,7 +1537,7 @@ exit:
 }
 
 static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
-                                    UINT32 irp_offset, write_data_context* wtc) {
+                                    UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity1;
     UINT64 pos, parity_pos, *stripeoff = NULL;
@@ -2041,7 +2041,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
     }
 
     for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
-        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[c->chunk_item->num_stripes - 3 - i].mdl, NormalPagePriority);
+        UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[c->chunk_item->num_stripes - 3 - i].mdl, priority);
         
         if (i == 0) {
             RtlCopyMemory(wtc->parity1, ss, parity_end - parity_start);
@@ -2094,7 +2094,7 @@ exit:
 }
 
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
-                            chunk* c, BOOL file_write, UINT32 irp_offset) {
+                            chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
     NTSTATUS Status;
     UINT32 i;
     CHUNK_ITEM_STRIPE* cis;
@@ -2135,13 +2135,13 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             goto prepare_failed;
         }
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-        Status = prepare_raid5_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
+        Status = prepare_raid5_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08x\n", Status);
             goto prepare_failed;
         }
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-        Status = prepare_raid6_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
+        Status = prepare_raid6_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid6_write returned %08x\n", Status);
             goto prepare_failed;
@@ -2240,13 +2240,13 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             IrpSp->MajorFunction = IRP_MJ_WRITE;
             
             if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
-                stripe->Irp->AssociatedIrp.SystemBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, NormalPagePriority);
+                stripe->Irp->AssociatedIrp.SystemBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, priority);
 
                 stripe->Irp->Flags = IRP_BUFFERED_IO;
             } else if (stripe->device->devobj->Flags & DO_DIRECT_IO)
                 stripe->Irp->MdlAddress = stripe->mdl;
             else
-                stripe->Irp->UserBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, NormalPagePriority);
+                stripe->Irp->UserBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, priority);
             
 #ifdef DEBUG_PARANOID
             if (stripes[i].end < stripes[i].start) {
@@ -2343,7 +2343,7 @@ void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lock
     *locklen = (endoff - startoff) * datastripes;
 }
 
-NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset) {
+NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
     write_data_context wtc;
     NTSTATUS Status;
     UINT64 lockaddr, locklen;
@@ -2371,7 +2371,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
     
-    Status = write_data(Vcb, address, data, length, &wtc, Irp, c, file_write, irp_offset);
+    Status = write_data(Vcb, address, data, length, &wtc, Irp, c, file_write, irp_offset, priority);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         
@@ -3074,7 +3074,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ExReleaseResourceLite(&c->lock);
       
     if (data) {
-        Status = write_data_complete(Vcb, address, data, length, Irp, NULL, file_write, irp_offset);
+        Status = write_data_complete(Vcb, address, data, length, Irp, NULL, file_write, irp_offset, NormalPagePriority);
         if (!NT_SUCCESS(Status))
             ERR("write_data_complete returned %08x\n", Status);
     }
@@ -3685,7 +3685,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         newext->extent_data.type = EXTENT_TYPE_REGULAR;
         
         Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, Irp,
-                                     NULL, file_write, irp_offset + ext->offset - start_data);
+                                     NULL, file_write, irp_offset + ext->offset - start_data, NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
             return Status;
@@ -3753,7 +3753,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->num_bytes -= end_data - ext->offset;
         
         Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset,
-                                     Irp, NULL, file_write, irp_offset + ext->offset - start_data);
+                                     Irp, NULL, file_write, irp_offset + ext->offset - start_data, NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
             return Status;
@@ -3848,7 +3848,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += start_data - ext->offset;
         ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
         
-        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, Irp, NULL, file_write, irp_offset);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, Irp, NULL, file_write, irp_offset, NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
             return Status;
@@ -3956,7 +3956,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->num_bytes -= end_data - ext->offset;
         
         ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
-        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, Irp, NULL, file_write, irp_offset);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, Irp, NULL, file_write, irp_offset, NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
             return Status;
@@ -4098,7 +4098,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                                     
                     TRACE("doing non-COW write to %llx\n", writeaddr);
                     
-                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp, NULL, file_write, irp_offset + written);
+                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp, NULL, file_write, irp_offset + written, NormalPagePriority);
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_complete returned %08x\n", Status);
                         return Status;

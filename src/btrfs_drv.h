@@ -1084,8 +1084,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 chunk* alloc_chunk(device_extension* Vcb, UINT64 flags);
 NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
-                            chunk* c, BOOL file_write, UINT32 irp_offset);
-NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset);
+                            chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority);
+NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority);
 void free_write_data_stripes(write_data_context* wtc);
 NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
