@@ -4399,43 +4399,48 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     }
     
     if (!no_cache) {
-        if (!FileObject->PrivateCacheMap || changed_length) {
-            CC_FILE_SIZES ccfs;
-            
-            ccfs.AllocationSize = fcb->Header.AllocationSize;
-            ccfs.FileSize = fcb->Header.FileSize;
-            ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-            
-            if (!FileObject->PrivateCacheMap)
-                init_file_cache(FileObject, &ccfs);
-            
-            CcSetFileSizes(FileObject, &ccfs);
-        }
-        
-        if (IrpSp->MinorFunction & IRP_MN_MDL) {
-            CcPrepareMdlWrite(FileObject, &offset, *length, &Irp->MdlAddress, &Irp->IoStatus);
-
-            Status = Irp->IoStatus.Status;
-            goto end;
-        } else {
-            if (CcCopyWriteEx) {
-                TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, offset.QuadPart, *length, wait, buf, Irp->Tail.Overlay.Thread);
-                if (!CcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
-                    Status = STATUS_PENDING;
-                    goto end;
-                }
-                TRACE("CcCopyWriteEx finished\n");
-            } else {
-                TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
-                if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
-                    Status = STATUS_PENDING;
-                    goto end;
-                }
-                TRACE("CcCopyWrite finished\n");
-            }
-        }
-        
         Status = STATUS_SUCCESS;
+
+        try {
+            if (!FileObject->PrivateCacheMap || changed_length) {
+                CC_FILE_SIZES ccfs;
+
+                ccfs.AllocationSize = fcb->Header.AllocationSize;
+                ccfs.FileSize = fcb->Header.FileSize;
+                ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+
+                if (!FileObject->PrivateCacheMap)
+                    init_file_cache(FileObject, &ccfs);
+
+                CcSetFileSizes(FileObject, &ccfs);
+            }
+
+            if (IrpSp->MinorFunction & IRP_MN_MDL) {
+                CcPrepareMdlWrite(FileObject, &offset, *length, &Irp->MdlAddress, &Irp->IoStatus);
+
+                Status = Irp->IoStatus.Status;
+                goto end;
+            } else {
+                if (CcCopyWriteEx) {
+                    TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, offset.QuadPart, *length, wait, buf, Irp->Tail.Overlay.Thread);
+                    if (!CcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
+                        Status = STATUS_PENDING;
+                        goto end;
+                    }
+                    TRACE("CcCopyWriteEx finished\n");
+                } else {
+                    TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
+                    if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
+                        Status = STATUS_PENDING;
+                        goto end;
+                    }
+                    TRACE("CcCopyWrite finished\n");
+                }
+            }
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
         goto end;
     }
     
@@ -4676,7 +4681,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         ccfs.FileSize = fcb->Header.FileSize;
         ccfs.ValidDataLength = fcb->Header.ValidDataLength;
 
-        CcSetFileSizes(FileObject, &ccfs);
+        try {
+            CcSetFileSizes(FileObject, &ccfs);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+            goto end;
+        }
     }
     
     // FIXME - make sure this still called if STATUS_PENDING and async
