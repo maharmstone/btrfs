@@ -861,7 +861,7 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     
     TRACE("length = %u\n", IrpSp->Parameters.QuerySecurity.Length);
     
-    sd = map_user_buffer(Irp);
+    sd = map_user_buffer(Irp, NormalPagePriority);
 //     sd = Irp->AssociatedIrp.SystemBuffer;
     TRACE("sd = %p\n", sd);
     

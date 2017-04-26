@@ -4936,7 +4936,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 #endif
         case FSCTL_GET_INTEGRITY_INFORMATION:
-            Status = get_integrity_information(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp),
+            Status = get_integrity_information(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp, NormalPagePriority),
                                                IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
@@ -4950,7 +4950,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 
         case FSCTL_BTRFS_GET_FILE_IDS:
-            Status = get_file_ids(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = get_file_ids(IrpSp->FileObject, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
             
         case FSCTL_BTRFS_CREATE_SUBVOL:
@@ -4962,7 +4962,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
             
         case FSCTL_BTRFS_GET_INODE_INFO:
-            Status = get_inode_info(IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = get_inode_info(IrpSp->FileObject, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
             
         case FSCTL_BTRFS_SET_INODE_INFO:
@@ -4970,11 +4970,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
             
         case FSCTL_BTRFS_GET_DEVICES:
-            Status = get_devices(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = get_devices(DeviceObject->DeviceExtension, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
             
         case FSCTL_BTRFS_GET_USAGE:
-            Status = get_usage(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = get_usage(DeviceObject->DeviceExtension, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
             
         case FSCTL_BTRFS_START_BALANCE:
@@ -4982,7 +4982,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
             
         case FSCTL_BTRFS_QUERY_BALANCE:
-            Status = query_balance(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = query_balance(DeviceObject->DeviceExtension, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         case FSCTL_BTRFS_PAUSE_BALANCE:
@@ -5006,7 +5006,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
         
         case FSCTL_BTRFS_GET_UUID:
-            Status = query_uuid(DeviceObject->DeviceExtension, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = query_uuid(DeviceObject->DeviceExtension, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
         
         case FSCTL_BTRFS_START_SCRUB:
@@ -5014,7 +5014,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
         
         case FSCTL_BTRFS_QUERY_SCRUB:
-            Status = query_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = query_scrub(DeviceObject->DeviceExtension, Irp->RequestorMode, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
         
         case FSCTL_BTRFS_PAUSE_SCRUB:
@@ -5066,7 +5066,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 
         case FSCTL_BTRFS_READ_SEND_BUFFER:
-            Status = read_send_buffer(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength,
+            Status = read_send_buffer(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength,
                                       &Irp->IoStatus.Information, Irp->RequestorMode);
         break;
 

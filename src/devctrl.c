@@ -213,7 +213,7 @@ static NTSTATUS control_ioctl(PIRP Irp) {
     
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
         case IOCTL_BTRFS_QUERY_FILESYSTEMS:
-            Status = query_filesystems(map_user_buffer(Irp), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = query_filesystems(map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
             break;
 
         case IOCTL_BTRFS_PROBE_VOLUME:

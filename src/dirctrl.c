@@ -694,7 +694,7 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
     
     ccb->query_dir_offset = newoffset;
 
-    buf = map_user_buffer(Irp);
+    buf = map_user_buffer(Irp, NormalPagePriority);
     
     if (Irp->MdlAddress && !buf) {
         ERR("MmGetSystemAddressForMdlSafe returned NULL\n");

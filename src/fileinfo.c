@@ -3881,7 +3881,7 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
     
-    ffei = map_user_buffer(Irp);
+    ffei = map_user_buffer(Irp, NormalPagePriority);
     if (!ffei) {
         ERR("could not get output buffer\n");
         Status = STATUS_INVALID_PARAMETER;
@@ -4121,7 +4121,7 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
     
-    ffei = map_user_buffer(Irp);
+    ffei = map_user_buffer(Irp, NormalPagePriority);
     if (!ffei) {
         ERR("could not get output buffer\n");
         Status = STATUS_INVALID_PARAMETER;

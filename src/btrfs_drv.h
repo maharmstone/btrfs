@@ -803,11 +803,11 @@ typedef struct {
     LIST_ENTRY list_entry;
 } name_bit;
 
-static __inline void* map_user_buffer(PIRP Irp) {
+static __inline void* map_user_buffer(PIRP Irp, ULONG priority) {
     if (!Irp->MdlAddress) {
         return Irp->UserBuffer;
     } else {
-        return MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+        return MmGetSystemAddressForMdlSafe(Irp->MdlAddress, priority);
     }
 }
 

@@ -2979,7 +2979,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
 //     int3;
     
     if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
-        data = map_user_buffer(Irp);
+        data = map_user_buffer(Irp, NormalPagePriority);
         
         if (Irp->MdlAddress && !data) {
             ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
