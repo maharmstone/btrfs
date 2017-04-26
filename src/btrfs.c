@@ -2014,6 +2014,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         goto exit;
     }
     
+    // We have to use the pointer to Vcb stored in the fcb, as we can receive cleanup
+    // messages belonging to other devices.
+
     if (FileObject && FileObject->FsContext) {
         LONG oc;
         ccb* ccb;
@@ -2032,7 +2035,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         
         IoRemoveShareAccess(FileObject, &fcb->share_access);
         
-        FsRtlNotifyCleanup(Vcb->NotifySync, &Vcb->DirNotifyList, ccb);    
+        FsRtlNotifyCleanup(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, ccb);
         
         if (fileref) {
             oc = InterlockedDecrement(&fileref->open_count);
@@ -2044,12 +2047,12 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = TRUE;
         
-        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && fcb != Vcb->dummy_fcb)
+        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && fcb != fcb->Vcb->dummy_fcb)
             fileref->delete_on_close = FALSE;
         
-        if (Vcb->locked && Vcb->locked_fileobj == FileObject) {
+        if (fcb->Vcb->locked && fcb->Vcb->locked_fileobj == FileObject) {
             TRACE("unlocking volume\n");
-            do_unlock_volume(Vcb);
+            do_unlock_volume(fcb->Vcb);
             FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
         }
 
@@ -2060,7 +2063,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
         }
 
         if (fileref && oc == 0) {
-            if (!Vcb->removing) {
+            if (!fcb->Vcb->removing) {
                 LIST_ENTRY rollback;
         
                 InitializeListHead(&rollback);
@@ -2073,7 +2076,7 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
                     Status = delete_fileref(fileref, FileObject, Irp, &rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_fileref returned %08x\n", Status);
-                        do_rollback(Vcb, &rollback);
+                        do_rollback(fcb->Vcb, &rollback);
                         ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
                         ExReleaseResourceLite(fcb->Header.Resource);
                         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
