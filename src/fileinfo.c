@@ -123,6 +123,8 @@ static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, P
         
         if (defda == fbi->FileAttributes)
             fcb->atts_deleted = TRUE;
+        else if (fcb->inode == SUBVOL_ROOT_INODE && (defda | FILE_ATTRIBUTE_READONLY) == (fbi->FileAttributes | FILE_ATTRIBUTE_READONLY))
+            fcb->atts_deleted = TRUE;
         
         fcb->atts = fbi->FileAttributes;
         
