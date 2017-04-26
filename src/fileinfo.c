@@ -1929,11 +1929,22 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     fcb->Header.ValidDataLength.QuadPart = end;
 
     if (FileObject) {
+        NTSTATUS Status = STATUS_SUCCESS;
+
         ccfs.AllocationSize = fcb->Header.AllocationSize;
         ccfs.FileSize = fcb->Header.FileSize;
         ccfs.ValidDataLength = fcb->Header.ValidDataLength;
 
-        CcSetFileSizes(FileObject, &ccfs);
+        try {
+            CcSetFileSizes(FileObject, &ccfs);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("CcSetFileSizes threw exception %08x\n", Status);
+            return Status;
+        }
     }
     
     KeQuerySystemTime(&time);
