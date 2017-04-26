@@ -5223,8 +5223,19 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
     
 end:
     if (fcb->dirty) {
+        BOOL lock = FALSE;
+
         fcb->dirty = FALSE;
+
+        if (!ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->dirty_fcbs_lock)) {
+            ExAcquireResourceExclusiveLite(&fcb->Vcb->dirty_fcbs_lock, TRUE);
+            lock = TRUE;
+        }
+
         RemoveEntryList(&fcb->list_entry_dirty);
+
+        if (lock)
+            ExReleaseResourceLite(&fcb->Vcb->dirty_fcbs_lock);
     }
     
     return Status;
