@@ -1951,7 +1951,9 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, PagedPool, case_sensitive, Irp);
     
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
         UNICODE_STRING fpus2;
+        ACCESS_MASK granted_access;
         
         if (!is_file_name_valid(fpus, FALSE))
             return STATUS_OBJECT_NAME_INVALID;
@@ -1966,6 +1968,18 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         
         RtlCopyMemory(fpus2.Buffer, fpus->Buffer, fpus2.Length);
         
+        SeLockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+
+        if (!SeAccessCheck(parfileref->fcb->sd, &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                           TRUE, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
+                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                           &granted_access, &Status)) {
+            SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+            return Status;
+        }
+
+        SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+
         Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, rollback);
     
         if (!NT_SUCCESS(Status)) {
