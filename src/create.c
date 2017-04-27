@@ -2983,7 +2983,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
 
                 if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd,
                                 &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
-                                FALSE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                                TRUE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
                                 IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
                                 &granted_access, &Status)) {
                     SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
