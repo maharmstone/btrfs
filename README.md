@@ -28,6 +28,16 @@ you - drop me a line and we'll talk.
 See at the end of this document for copyright details of third-party code that's
 included here.
 
+Donations
+---------
+
+I've been developing this driver for fun, and in the hopes that someone out there
+will find it useful. But if you want to provide some pecuniary encouragement, it'd
+be very much appreciated:
+
+* [Paypal](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=3XQVCQ6YB55L2&lc=GB&item_name=WinBtrfs%20donation&currency_code=GBP&bn=PP%2dDonationsBF%3abtn_donate_LG%2egif%3aNonHosted)
+* Alipay (user account mark@harmstone.com)
+
 Features
 --------
 
