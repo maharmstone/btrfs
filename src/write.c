@@ -3471,7 +3471,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
     TRACE("(%p, %p, %x, %u)\n", fcb, fileref, end, prealloc);
 
     if (fcb->ads)
-        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, NULL, FALSE);
+        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, FALSE);
     else {
         extent* ext = NULL;
         LIST_ENTRY* le;

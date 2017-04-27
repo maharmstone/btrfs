@@ -1873,10 +1873,9 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, PFILE_OBJECT FileObject, BOOL advance_only) {
+NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    CC_FILE_SIZES ccfs;
     
     TRACE("setting new end to %llx bytes (currently %x)\n", end, fcb->adsdata.Length);
     
@@ -1928,25 +1927,6 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     fcb->Header.FileSize.QuadPart = end;
     fcb->Header.ValidDataLength.QuadPart = end;
 
-    if (FileObject) {
-        NTSTATUS Status = STATUS_SUCCESS;
-
-        ccfs.AllocationSize = fcb->Header.AllocationSize;
-        ccfs.FileSize = fcb->Header.FileSize;
-        ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-
-        try {
-            CcSetFileSizes(FileObject, &ccfs);
-        } except (EXCEPTION_EXECUTE_HANDLER) {
-            Status = GetExceptionCode();
-        }
-
-        if (!NT_SUCCESS(Status)) {
-            ERR("CcSetFileSizes threw exception %08x\n", Status);
-            return Status;
-        }
-    }
-    
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
     
@@ -1991,7 +1971,15 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     }
     
     if (fcb->ads) {
-        Status = stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, fileref, FileObject, advance_only);
+        Status = stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, fileref, advance_only);
+
+        if (NT_SUCCESS(Status)) {
+            ccfs.AllocationSize = fcb->Header.AllocationSize;
+            ccfs.FileSize = fcb->Header.FileSize;
+            ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+            set_size = TRUE;
+        }
+
         goto end;
     }
     
