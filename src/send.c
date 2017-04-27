@@ -3594,23 +3594,43 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
     if (data) {
         btrfs_send_subvol* bss = (btrfs_send_subvol*)data;
+        HANDLE parent;
 
-        if (datalen < offsetof(btrfs_send_subvol, num_clones))
-            return STATUS_INVALID_PARAMETER;
+#if defined(_WIN64)
+        if (IoIs32bitProcess(Irp)) {
+            btrfs_send_subvol32* bss32 = (btrfs_send_subvol32*)data;
 
-        if (bss->parent) {
-            HANDLE h;
+            if (datalen < offsetof(btrfs_send_subvol32, num_clones))
+                return STATUS_INVALID_PARAMETER;
+
+            parent = Handle32ToHandle(bss32->parent);
+
+            if (datalen >= offsetof(btrfs_send_subvol32, clones[0]))
+                num_clones = bss32->num_clones;
+
+            if (datalen < offsetof(btrfs_send_subvol32, clones[0]) + (num_clones * sizeof(UINT32)))
+                return STATUS_INVALID_PARAMETER;
+        } else {
+#endif
+            if (datalen < offsetof(btrfs_send_subvol, num_clones))
+                return STATUS_INVALID_PARAMETER;
+
+            parent = bss->parent;
+
+            if (datalen >= offsetof(btrfs_send_subvol, clones[0]))
+                num_clones = bss->num_clones;
+
+            if (datalen < offsetof(btrfs_send_subvol, clones[0]) + (num_clones * sizeof(HANDLE)))
+                return STATUS_INVALID_PARAMETER;
+#if defined(_WIN64)
+        }
+#endif
+
+        if (parent) {
             PFILE_OBJECT fileobj;
             struct _fcb* parfcb;
 
-#if defined(_WIN64)
-            if (IoIs32bitProcess(Irp))
-                h = (HANDLE)LongToHandle(*(PUINT32)&bss->parent);
-            else
-#endif
-                h = bss->parent;
-
-            Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
+            Status = ObReferenceObjectByHandle(parent, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("ObReferenceObjectByHandle returned %08x\n", Status);
                 return Status;
@@ -3638,60 +3658,55 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
                 return STATUS_INVALID_PARAMETER;
         }
 
-        if (datalen >= offsetof(btrfs_send_subvol, clones[0])) {
+        if (num_clones > 0) {
             ULONG i;
 
-            if (datalen < offsetof(btrfs_send_subvol, clones[0]) + (bss->num_clones * sizeof(HANDLE)))
-                return STATUS_INVALID_PARAMETER;
+            clones = ExAllocatePoolWithTag(PagedPool, sizeof(root*) * num_clones, ALLOC_TAG);
+            if (!clones) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
 
-            num_clones = bss->num_clones;
-
-            if (num_clones > 0) {
-                clones = ExAllocatePoolWithTag(PagedPool, sizeof(root*) * num_clones, ALLOC_TAG);
-                if (!clones) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                for (i = 0; i < num_clones; i++) {
-                    HANDLE h;
-                    PFILE_OBJECT fileobj;
-                    struct _fcb* clonefcb;
+            for (i = 0; i < num_clones; i++) {
+                HANDLE h;
+                PFILE_OBJECT fileobj;
+                struct _fcb* clonefcb;
 
 #if defined(_WIN64)
-                    if (IoIs32bitProcess(Irp))
-                        h = (HANDLE)LongToHandle(*(PUINT32)&bss->clones[i]);
-                    else
+                if (IoIs32bitProcess(Irp)) {
+                    btrfs_send_subvol32* bss32 = (btrfs_send_subvol32*)data;
+
+                    h = Handle32ToHandle(bss32->clones[i]);
+                } else
 #endif
-                        h = bss->clones[i];
+                    h = bss->clones[i];
 
-                    Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("ObReferenceObjectByHandle returned %08x\n", Status);
-                        return Status;
-                    }
+                Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+                    return Status;
+                }
 
-                    if (fileobj->DeviceObject != FileObject->DeviceObject) {
-                        ObDereferenceObject(fileobj);
-                        ExFreePool(clones);
-                        return STATUS_INVALID_PARAMETER;
-                    }
-
-                    clonefcb = fileobj->FsContext;
-
-                    if (!clonefcb || clonefcb == Vcb->root_fileref->fcb || clonefcb == Vcb->volume_fcb || clonefcb->inode != SUBVOL_ROOT_INODE) {
-                        ObDereferenceObject(fileobj);
-                        ExFreePool(clones);
-                        return STATUS_INVALID_PARAMETER;
-                    }
-
-                    clones[i] = clonefcb->subvol;
+                if (fileobj->DeviceObject != FileObject->DeviceObject) {
                     ObDereferenceObject(fileobj);
+                    ExFreePool(clones);
+                    return STATUS_INVALID_PARAMETER;
+                }
 
-                    if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_SUBVOL_READONLY)) {
-                        ExFreePool(clones);
-                        return STATUS_INVALID_PARAMETER;
-                    }
+                clonefcb = fileobj->FsContext;
+
+                if (!clonefcb || clonefcb == Vcb->root_fileref->fcb || clonefcb == Vcb->volume_fcb || clonefcb->inode != SUBVOL_ROOT_INODE) {
+                    ObDereferenceObject(fileobj);
+                    ExFreePool(clones);
+                    return STATUS_INVALID_PARAMETER;
+                }
+
+                clones[i] = clonefcb->subvol;
+                ObDereferenceObject(fileobj);
+
+                if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+                    ExFreePool(clones);
+                    return STATUS_INVALID_PARAMETER;
                 }
             }
         }

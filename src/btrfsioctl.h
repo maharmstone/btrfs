@@ -256,4 +256,10 @@ typedef struct {
     HANDLE clones[1];
 } btrfs_send_subvol;
 
+typedef struct {
+    void* POINTER_32 parent;
+    ULONG num_clones;
+    void* POINTER_32 clones[1];
+} btrfs_send_subvol32;
+
 #endif
