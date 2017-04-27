@@ -49,6 +49,14 @@ typedef struct {
     WCHAR name[1];
 } btrfs_create_snapshot;
 
+typedef struct {
+    void* POINTER_32 subvol;
+    BOOL readonly;
+    BOOL posix;
+    UINT32 namelen;
+    WCHAR name[1];
+} btrfs_create_snapshot32;
+
 #define BTRFS_COMPRESSION_ANY   0
 #define BTRFS_COMPRESSION_ZLIB  1
 #define BTRFS_COMPRESSION_LZO   2

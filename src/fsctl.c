@@ -513,6 +513,8 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     NTSTATUS Status;
     btrfs_create_snapshot* bcs = data;
     fcb* subvol_fcb;
+    HANDLE subvolh;
+    BOOL readonly, posix;
     ANSI_STRING utf8;
     UNICODE_STRING nameus;
     ULONG len;
@@ -520,13 +522,43 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ccb* ccb;
     file_ref *fileref, *fr2;
     
-    if (length < offsetof(btrfs_create_snapshot, name))
-        return STATUS_INVALID_PARAMETER;
-    
-    if (length < offsetof(btrfs_create_snapshot, name) + bcs->namelen)
-        return STATUS_INVALID_PARAMETER;
-    
-    if (!bcs->subvol)
+#if defined(_WIN64)
+    if (IoIs32bitProcess(Irp)) {
+        btrfs_create_snapshot32* bcs32 = data;
+
+        if (length < offsetof(btrfs_create_snapshot32, name))
+            return STATUS_INVALID_PARAMETER;
+
+        if (length < offsetof(btrfs_create_snapshot32, name) + bcs32->namelen)
+            return STATUS_INVALID_PARAMETER;
+
+        subvolh = Handle32ToHandle(bcs32->subvol);
+
+        nameus.Buffer = bcs32->name;
+        nameus.Length = nameus.MaximumLength = bcs32->namelen;
+
+        readonly = bcs32->readonly;
+        posix = bcs32->posix;
+    } else {
+#endif
+        if (length < offsetof(btrfs_create_snapshot, name))
+            return STATUS_INVALID_PARAMETER;
+
+        if (length < offsetof(btrfs_create_snapshot, name) + bcs->namelen)
+            return STATUS_INVALID_PARAMETER;
+
+        subvolh = bcs->subvol;
+
+        nameus.Buffer = bcs->name;
+        nameus.Length = nameus.MaximumLength = bcs->namelen;
+
+        readonly = bcs->readonly;
+        posix = bcs->posix;
+#if defined(_WIN64)
+    }
+#endif
+
+    if (!subvolh)
         return STATUS_INVALID_PARAMETER;
     
     if (!FileObject || !FileObject->FsContext)
@@ -553,15 +585,12 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
     
-    nameus.Buffer = bcs->name;
-    nameus.Length = nameus.MaximumLength = bcs->namelen;
-    
-    if (!is_file_name_valid(&nameus, bcs->posix))
+    if (!is_file_name_valid(&nameus, posix))
         return STATUS_OBJECT_NAME_INVALID;
     
     utf8.Buffer = NULL;
     
-    Status = RtlUnicodeToUTF8N(NULL, 0, &len, bcs->name, bcs->namelen);
+    Status = RtlUnicodeToUTF8N(NULL, 0, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
         return Status;
@@ -580,7 +609,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, bcs->name, bcs->namelen);
+    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
         goto end2;
@@ -589,7 +618,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, ccb->case_sensitive || bcs->posix, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, FALSE, NULL, NULL, PagedPool, ccb->case_sensitive || posix, Irp);
     
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
@@ -604,7 +633,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end3;
     }
     
-    Status = ObReferenceObjectByHandle(bcs->subvol, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&subvol_obj, NULL);
+    Status = ObReferenceObjectByHandle(subvolh, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&subvol_obj, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("ObReferenceObjectByHandle returned %08x\n", Status);
         goto end3;
@@ -667,7 +696,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         }
     }
     
-    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus, bcs->readonly, Irp);
+    Status = do_create_snapshot(Vcb, FileObject, subvol_fcb, &utf8, &nameus, readonly, Irp);
     
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
