@@ -133,7 +133,7 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
         fsi->NumberOfLinks = fcb->inode_item.st_nlink;
         fsi->Directory = FALSE;
     } else {
-        fsi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        fsi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
         fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
         fsi->NumberOfLinks = fcb->inode_item.st_nlink;
         fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
@@ -222,7 +222,7 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
         fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;
         fnoi->FileAttributes = fileref->parent->fcb->atts;
     } else {
-        fnoi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        fnoi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
         fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
         fnoi->FileAttributes = fcb->atts;
     }

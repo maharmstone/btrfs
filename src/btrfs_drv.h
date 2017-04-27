@@ -1434,6 +1434,15 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 #define S_ISVTX 0001000
 #endif
 
+static __inline UINT64 fcb_alloc_size(fcb* fcb) {
+    if (S_ISDIR(fcb->inode_item.st_mode))
+        return 0;
+    else if (fcb->atts & FILE_ATTRIBUTE_SPARSE_FILE)
+        return fcb->inode_item.st_blocks;
+    else
+        return sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+}
+
 typedef BOOLEAN (*tPsIsDiskCountersEnabled)();
 
 typedef VOID (*tPsUpdateDiskCounters)(PEPROCESS Process, ULONG64 BytesRead, ULONG64 BytesWritten,

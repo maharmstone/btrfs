@@ -2657,7 +2657,7 @@ static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_
         fnoi->AllocationSize.QuadPart = fnoi->EndOfFile.QuadPart = fcb->adsdata.Length;
         fnoi->FileAttributes = fileref->parent->fcb->atts;
     } else {
-        fnoi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        fnoi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
         fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
         fnoi->FileAttributes = fcb->atts;
     }
@@ -2680,7 +2680,7 @@ static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMAT
         fsi->NumberOfLinks = fileref->parent->fcb->inode_item.st_nlink;
         fsi->Directory = FALSE;
     } else {
-        fsi->AllocationSize.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        fsi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
         fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
         fsi->NumberOfLinks = fcb->inode_item.st_nlink;
         fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
@@ -2983,7 +2983,7 @@ static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION*
         entry->NextEntryOffset = 0;
         entry->StreamNameLength = suf.Length + sizeof(WCHAR);
         entry->StreamSize.QuadPart = fileref->fcb->inode_item.st_size;
-        entry->StreamAllocationSize.QuadPart = sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size);
+        entry->StreamAllocationSize.QuadPart = fcb_alloc_size(fileref->fcb);
 
         entry->StreamName[0] = ':';
         RtlCopyMemory(&entry->StreamName[1], suf.Buffer, suf.Length);
