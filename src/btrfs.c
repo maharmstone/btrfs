@@ -553,12 +553,15 @@ static BOOL lie_about_fs_type() {
     
     static WCHAR mpr[] = L"MPR.DLL";
     static WCHAR cmd[] = L"CMD.EXE";
-    UNICODE_STRING mprus, cmdus;
+    static WCHAR fsutil[] = L"FSUTIL.EXE";
+    UNICODE_STRING mprus, cmdus, fsutilus;
     
     mprus.Buffer = mpr;
     mprus.Length = mprus.MaximumLength = wcslen(mpr) * sizeof(WCHAR);
     cmdus.Buffer = cmd;
     cmdus.Length = cmdus.MaximumLength = wcslen(cmd) * sizeof(WCHAR);
+    fsutilus.Buffer = fsutil;
+    fsutilus.Length = fsutilus.MaximumLength = wcslen(fsutil) * sizeof(WCHAR);
     
     if (!PsGetCurrentProcess())
         return FALSE;
@@ -601,6 +604,15 @@ static BOOL lie_about_fs_type() {
             blacklist = FsRtlAreNamesEqual(&name, &cmdus, TRUE, NULL);
         }
         
+        if (!blacklist && entry->FullDllName.Length >= fsutilus.Length) {
+            UNICODE_STRING name;
+
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - fsutilus.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = fsutilus.Length;
+
+            blacklist = FsRtlAreNamesEqual(&name, &fsutilus, TRUE, NULL);
+        }
+
         if (blacklist) {
             void** frames;
             USHORT i, num_frames;
