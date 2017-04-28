@@ -4105,7 +4105,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         if (fcb->sd)
             ExFreePool(fcb->sd);
 
-        if (bsxa->valuelen > 0) {
+        if (bsxa->valuelen > 0 && RtlValidRelativeSecurityDescriptor(bsxa->data + bsxa->namelen, bsxa->valuelen, 0)) {
             fcb->sd = ExAllocatePoolWithTag(PagedPool, bsxa->valuelen, ALLOC_TAG);
             if (!fcb->sd) {
                 ERR("out of memory\n");
