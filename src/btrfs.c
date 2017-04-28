@@ -2197,6 +2197,9 @@ ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, 
             else if (type == BTRFS_TYPE_SYMLINK)
                 dosnum |= FILE_ATTRIBUTE_REPARSE_POINT;
             
+            if (type != BTRFS_TYPE_DIRECTORY)
+                dosnum &= ~FILE_ATTRIBUTE_DIRECTORY;
+
             if (inode == SUBVOL_ROOT_INODE) {
                 if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
                     dosnum |= FILE_ATTRIBUTE_READONLY;
