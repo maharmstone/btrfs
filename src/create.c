@@ -891,7 +891,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         }
                     }
                 } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == strlen(EA_NTACL) && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
+                    if (di->m > 0 && RtlValidRelativeSecurityDescriptor(&di->name[di->n], di->m, 0)) {
                         fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->sd) {
                             ERR("out of memory\n");
