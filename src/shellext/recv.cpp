@@ -771,9 +771,23 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         (xattrnamelen != strlen(EA_REPARSE) || memcmp(xattrname, EA_REPARSE, xattrnamelen))) {
         HANDLE h;
         std::wstring streamname;
+        ULONG att;
 
         if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
             return FALSE;
+
+        att = GetFileAttributesW((subvolpath + pathu).c_str());
+        if (att == INVALID_FILE_ATTRIBUTES) {
+            ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            return FALSE;
+        }
+
+        if (att & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                return FALSE;
+            }
+        }
 
         streamname = streamname.substr(strlen(XATTR_USER));
 
@@ -793,6 +807,13 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         }
 
         CloseHandle(h);
+
+        if (att & FILE_ATTRIBUTE_READONLY) {
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att)) {
+                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                return FALSE;
+            }
+        }
     } else {
         HANDLE h;
         IO_STATUS_BLOCK iosb;
