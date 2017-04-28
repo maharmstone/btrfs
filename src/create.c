@@ -2009,6 +2009,9 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         WARN("tried to create directory as stream\n");
         return STATUS_INVALID_PARAMETER;
     }
+
+    if (parfileref->fcb->atts & FILE_ATTRIBUTE_READONLY)
+        return STATUS_ACCESS_DENIED;
     
     if ((stream->Length == wcslen(DOSATTRIB) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, DOSATTRIB, stream->Length) == stream->Length) || 
         (stream->Length == wcslen(EA) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, EA, stream->Length) == stream->Length) ||
