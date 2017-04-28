@@ -4095,7 +4095,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
             if (ext->offset > start + written + length)
                 break;
             
-            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == EXTENT_TYPE_PREALLOC) && ext->unique) {
+            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == EXTENT_TYPE_PREALLOC) && ext->unique && ed->compression == BTRFS_COMPRESSION_NONE) {
                 if (max(last_cow_start, start + written) < ext->offset) {
                     UINT64 start_write = max(last_cow_start, start + written);
                     
