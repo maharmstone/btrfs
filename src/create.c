@@ -1922,6 +1922,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
 
 static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream,
                               PIRP Irp, ULONG options, POOL_TYPE pool_type, BOOL case_sensitive, LIST_ENTRY* rollback) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     file_ref *fileref, *newpar, *parfileref;
     fcb* fcb;
     static char xapref[] = "user.";
@@ -1936,6 +1937,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     KEY searchkey;
     traverse_ptr tp;
     dir_child* dc;
+    ACCESS_MASK granted_access;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -1951,7 +1953,6 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     Status = open_fileref(Vcb, &newpar, fpus, parfileref, FALSE, NULL, NULL, PagedPool, case_sensitive, Irp);
     
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-        PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
         UNICODE_STRING fpus2;
         ACCESS_MASK granted_access;
         
@@ -2012,6 +2013,17 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
 
     if (parfileref->fcb->atts & FILE_ATTRIBUTE_READONLY)
         return STATUS_ACCESS_DENIED;
+
+    SeLockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+
+    if (!SeAccessCheck(parfileref->fcb->sd, &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                       TRUE, FILE_WRITE_DATA, 0, NULL, IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                       &granted_access, &Status)) {
+        SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+        return Status;
+    }
+
+    SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
     
     if ((stream->Length == wcslen(DOSATTRIB) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, DOSATTRIB, stream->Length) == stream->Length) || 
         (stream->Length == wcslen(EA) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, EA, stream->Length) == stream->Length) ||
