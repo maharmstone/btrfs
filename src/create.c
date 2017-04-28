@@ -2936,6 +2936,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
     
     if (NT_SUCCESS(Status)) { // file already exists
         file_ref* sf;
+        BOOL readonly;
         
         ExReleaseResourceLite(&Vcb->fcb_lock);
         
@@ -3035,14 +3036,16 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             sf = sf->parent;
         }
 
-        if (fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+        readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) || (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY);
+
+        if (readonly) {
             ACCESS_MASK allowed = DELETE | READ_CONTROL | WRITE_OWNER | WRITE_DAC |
                                     SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
                                     FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES |
                                     FILE_WRITE_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
                                     FILE_TRAVERSE;
 
-            if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
+            if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
                 allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
             
             if (granted_access & ~allowed) {
@@ -3057,7 +3060,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
         
         if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
-            is_subvol_readonly(fileref->fcb->subvol, Irp) || fileref->fcb->atts & FILE_ATTRIBUTE_READONLY)) {
+            is_subvol_readonly(fileref->fcb->subvol, Irp) || readonly)) {
             Status = STATUS_CANNOT_DELETE;
         
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -3154,7 +3157,7 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
             LARGE_INTEGER time;
             BTRFS_TIME now;
             
-            if ((RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+            if ((RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) && readonly) {
                 WARN("cannot overwrite readonly file\n");
                 Status = STATUS_ACCESS_DENIED;
                 
