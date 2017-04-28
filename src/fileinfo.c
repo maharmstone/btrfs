@@ -2156,6 +2156,11 @@ static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PF
         goto end;
     }
     
+    if (fcb->inode_item.st_nlink >= 65535) {
+        Status = STATUS_TOO_MANY_LINKS;
+        goto end;
+    }
+
     fnus.Buffer = fn;
     fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
     
