@@ -1713,8 +1713,9 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     if (options & FILE_DIRECTORY_FILE) {
         defda |= FILE_ATTRIBUTE_DIRECTORY;
         IrpSp->Parameters.Create.FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
-    }
-    
+    } else
+        IrpSp->Parameters.Create.FileAttributes &= ~FILE_ATTRIBUTE_DIRECTORY;
+
     TRACE("defda = %x\n", defda);
     
     if (IrpSp->Parameters.Create.FileAttributes == FILE_ATTRIBUTE_NORMAL)
