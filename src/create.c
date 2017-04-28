@@ -882,6 +882,9 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                             else if (fcb->type == BTRFS_TYPE_SYMLINK)
                                 fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
 
+                            if (fcb->type != BTRFS_TYPE_DIRECTORY)
+                                fcb->atts &= ~FILE_ATTRIBUTE_DIRECTORY;
+
                             if (inode == SUBVOL_ROOT_INODE) {
                                 if (subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
                                     fcb->atts |= FILE_ATTRIBUTE_READONLY;
