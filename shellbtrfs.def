@@ -20,4 +20,5 @@ EXPORTS
     StartScrubW			PRIVATE
     StopScrubW			PRIVATE
     SendSubvolW			PRIVATE
+    RecvSubvolW			PRIVATE
 

@@ -1480,7 +1480,10 @@ BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 void BtrfsRecv::ShowRecvError(int resid, ...) {
     WCHAR s[1024], t[1024];
     va_list ap;
-    
+
+    if (!hwnd)
+        return;
+
     if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
         ShowError(hwnd, GetLastError());
         return;
@@ -1813,7 +1816,7 @@ DWORD BtrfsRecv::recv_thread() {
     CloseHandle(parent);
     CloseHandle(f);
 
-    if (b) {
+    if (b && hwnd) {
         WCHAR s[255];
 
         SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
@@ -1919,7 +1922,7 @@ static INT_PTR CALLBACK stub_RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         return FALSE;
 }
 
-void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
+void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path, BOOL quiet) {
     UINT32 cpuInfo[4];
 
     streamfile = file;
@@ -1934,8 +1937,12 @@ void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
     have_sse42 = cpuInfo[2] & (1 << 20);
 #endif
 
-    if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RECV_PROGRESS), hwnd, stub_RecvProgressDlgProc, (LPARAM)this) <= 0)
-        ShowError(hwnd, GetLastError());
+    if (quiet)
+        recv_thread();
+    else {
+        if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RECV_PROGRESS), hwnd, stub_RecvProgressDlgProc, (LPARAM)this) <= 0)
+            ShowError(hwnd, GetLastError());
+    }
 }
 
 void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -2014,11 +2021,85 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     if (GetOpenFileNameW(&ofn)) {
         recv = new BtrfsRecv;
 
-        recv->Open(hwnd, file, lpszCmdLine);
+        recv->Open(hwnd, file, lpszCmdLine, FALSE);
 
         delete recv;
     }
 
     free(tp);
     CloseHandle(token);
+}
+
+void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    LPWSTR* args;
+    int num_args;
+
+    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+
+    if (!args)
+        return;
+
+    if (num_args >= 2) {
+        BtrfsRecv* br;
+        HANDLE token;
+        TOKEN_PRIVILEGES* tp;
+        ULONG tplen;
+        LUID luid;
+
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            goto end;
+
+        tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
+        tp = (TOKEN_PRIVILEGES*)malloc(tplen);
+        if (!tp) {
+            CloseHandle(token);
+            goto end;
+        }
+
+        tp->PrivilegeCount = 3;
+
+        if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+            free(tp);
+            CloseHandle(token);
+            goto end;
+        }
+
+        tp->Privileges[0].Luid = luid;
+        tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!LookupPrivilegeValueW(NULL, L"SeSecurityPrivilege", &luid)) {
+            free(tp);
+            CloseHandle(token);
+            goto end;
+        }
+
+        tp->Privileges[1].Luid = luid;
+        tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!LookupPrivilegeValueW(NULL, L"SeRestorePrivilege", &luid)) {
+            free(tp);
+            CloseHandle(token);
+            goto end;
+        }
+
+        tp->Privileges[2].Luid = luid;
+        tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, FALSE, tp, tplen, NULL, NULL)) {
+            free(tp);
+            CloseHandle(token);
+            goto end;
+        }
+
+        free(tp);
+        CloseHandle(token);
+
+        br = new BtrfsRecv;
+        br->Open(NULL, args[0], args[1], TRUE);
+
+        delete br;
+    }
+
+end:
+    LocalFree(args);
 }

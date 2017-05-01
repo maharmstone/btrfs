@@ -38,6 +38,7 @@ public:
         cancelling = FALSE;
         stransid = 0;
         num_received = 0;
+        hwnd = NULL;
         cache.clear();
     }
 
@@ -45,7 +46,7 @@ public:
         cache.clear();
     }
     
-    void Open(HWND hwnd, WCHAR* file, WCHAR* path);
+    void Open(HWND hwnd, WCHAR* file, WCHAR* path, BOOL quiet);
     DWORD recv_thread();
     INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     
