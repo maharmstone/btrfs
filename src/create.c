@@ -2000,8 +2000,6 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         return Status;
     }
     
-    free_fileref(Vcb, parfileref);
-    
     parfileref = newpar;
     *pparfileref = parfileref;
     
