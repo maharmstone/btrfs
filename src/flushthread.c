@@ -3653,14 +3653,6 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
                 empty = FALSE;
                 
                 if (t->header.num_items == 0) {
-                    if (!t->updated_extents && t->has_address) {
-                        Status = update_tree_extents(Vcb, t, Irp, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("update_tree_extents returned %08x\n", Status);
-                            return Status;
-                        }
-                    }
-
                     if (t->parent) {
                         done_deletions = TRUE;
             
@@ -6718,15 +6710,15 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
             goto end;
         }
         
-        Status = do_splits(Vcb, Irp, rollback);
+        Status = allocate_tree_extents(Vcb, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_splits returned %08x\n", Status);
+            ERR("allocate_tree_extents returned %08x\n", Status);
             goto end;
         }
         
-        Status = allocate_tree_extents(Vcb, Irp, rollback);
+        Status = do_splits(Vcb, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_parents returned %08x\n", Status);
+            ERR("do_splits returned %08x\n", Status);
             goto end;
         }
         
