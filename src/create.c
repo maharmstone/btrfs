@@ -1709,7 +1709,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     
     IrpSp->Parameters.Create.FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
     
-    defda = 0;
+    defda = FILE_ATTRIBUTE_ARCHIVE;
     
     if (utf8[0] == '.')
         defda |= FILE_ATTRIBUTE_HIDDEN;
