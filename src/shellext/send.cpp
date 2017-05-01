@@ -575,3 +575,174 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 
     CloseHandle(token);
 }
+
+static void send_subvol(std::wstring subvol, std::wstring file, std::wstring parent, std::vector<std::wstring> clones) {
+    char* buf;
+    HANDLE dirh, stream;
+    ULONG bss_size, i;
+    btrfs_send_subvol* bss;
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    btrfs_send_header header;
+    btrfs_send_command end;
+    BOOL success = FALSE;
+
+    buf = (char*)malloc(SEND_BUFFER_LEN);
+
+    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (dirh == INVALID_HANDLE_VALUE)
+        goto end3;
+
+    stream = CreateFileW(file.c_str(), FILE_WRITE_DATA | DELETE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (stream == INVALID_HANDLE_VALUE) {
+        CloseHandle(dirh);
+        goto end3;
+    }
+
+    bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
+    bss = (btrfs_send_subvol*)malloc(bss_size);
+    memset(bss, 0, bss_size);
+
+    if (parent != L"") {
+        HANDLE parenth;
+
+        parenth = CreateFileW(parent.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (parenth == INVALID_HANDLE_VALUE)
+            goto end2;
+
+        bss->parent = parenth;
+    } else
+        bss->parent = NULL;
+
+    bss->num_clones = clones.size();
+
+    for (i = 0; i < bss->num_clones; i++) {
+        HANDLE h;
+
+        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (h == INVALID_HANDLE_VALUE) {
+            ULONG j;
+
+            for (j = 0; j < i; j++) {
+                CloseHandle(bss->clones[j]);
+            }
+
+            if (bss->parent) CloseHandle(bss->parent);
+            goto end2;
+        }
+
+        bss->clones[i] = h;
+    }
+
+    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, NULL, 0);
+
+    for (i = 0; i < bss->num_clones; i++) {
+        CloseHandle(bss->clones[i]);
+    }
+
+    if (bss->parent) CloseHandle(bss->parent);
+
+    if (!NT_SUCCESS(Status))
+        goto end2;
+
+    memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(BTRFS_SEND_MAGIC));
+    header.version = 1;
+
+    if (!WriteFile(stream, &header, sizeof(header), NULL, NULL))
+        goto end2;
+
+    do {
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, NULL, 0, buf, SEND_BUFFER_LEN);
+
+        if (NT_SUCCESS(Status))
+            WriteFile(stream, buf, iosb.Information, NULL, NULL);
+    } while (NT_SUCCESS(Status));
+
+    if (Status != STATUS_END_OF_FILE)
+        goto end2;
+
+    end.length = 0;
+    end.cmd = BTRFS_SEND_CMD_END;
+    end.csum = 0x9dc96c50;
+
+    if (!WriteFile(stream, &end, sizeof(end), NULL, NULL))
+        goto end2;
+
+    SetEndOfFile(stream);
+
+    success = TRUE;
+
+end2:
+    if (!success) {
+        FILE_DISPOSITION_INFO fdi;
+
+        fdi.DeleteFile = TRUE;
+
+        SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+    }
+
+    CloseHandle(dirh);
+    CloseHandle(stream);
+
+end3:
+    free(buf);
+}
+
+void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    LPWSTR* args;
+    int num_args;
+    std::wstring subvol = L"", parent = L"", file = L"";
+    std::vector<std::wstring> clones;
+
+    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+
+    if (!args)
+        return;
+
+    if (num_args >= 2) {
+        HANDLE token;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
+        int i;
+
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            goto end;
+
+        if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid))
+            goto end;
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+            goto end;
+
+        CloseHandle(token);
+
+        for (i = 0; i < num_args; i++) {
+            if (args[i][0] == '-') {
+                if (args[i][2] == 0 && i < num_args - 1) {
+                    if (args[i][1] == 'p') {
+                        parent = args[i+1];
+                        i++;
+                    } else if (args[i][1] == 'c') {
+                        clones.push_back(args[i+1]);
+                        i++;
+                    }
+                }
+            } else {
+                if (subvol == L"")
+                    subvol = args[i];
+                else if (file == L"")
+                    file = args[i];
+            }
+        }
+
+        if (subvol != L"" && file != L"")
+            send_subvol(subvol, file, parent, clones);
+    }
+
+end:
+    LocalFree(args);
+}

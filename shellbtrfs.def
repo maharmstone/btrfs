@@ -19,4 +19,5 @@ EXPORTS
     ReflinkCopyW		PRIVATE
     StartScrubW			PRIVATE
     StopScrubW			PRIVATE
+    SendSubvolW			PRIVATE
 
