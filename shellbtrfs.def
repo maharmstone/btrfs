@@ -16,4 +16,5 @@ EXPORTS
     SendSubvolW			PRIVATE
     CreateSubvolW		PRIVATE
     CreateSnapshotW		PRIVATE
+    ReflinkCopyW		PRIVATE
 

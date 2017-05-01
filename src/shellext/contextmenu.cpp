@@ -1363,3 +1363,411 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
             return E_INVALIDARG;
     }
 }
+
+static void reflink_copy2(std::wstring srcfn, std::wstring destdir, std::wstring destname) {
+    HANDLE source, dest;
+    BOOL ret = FALSE;
+    FILE_BASIC_INFO fbi;
+    FILETIME atime, mtime;
+    btrfs_inode_info bii;
+    btrfs_set_inode_info bsii;
+    ULONG bytesret;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    btrfs_set_xattr bsxa;
+
+    source = CreateFileW(srcfn.c_str(), GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+    if (source == INVALID_HANDLE_VALUE)
+        return;
+
+    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
+    if (!NT_SUCCESS(Status)) {
+        CloseHandle(source);
+        return;
+    }
+
+    // if subvol, do snapshot instead
+    if (bii.inode == SUBVOL_ROOT_INODE) {
+        ULONG bcslen;
+        btrfs_create_snapshot* bcs;
+        HANDLE dirh;
+
+        dirh = CreateFileW(destdir.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (dirh == INVALID_HANDLE_VALUE) {
+            CloseHandle(source);
+            return;
+        }
+
+        bcslen = offsetof(btrfs_create_snapshot, name[0]) + (destname.length() * sizeof(WCHAR));
+        bcs = (btrfs_create_snapshot*)malloc(bcslen);
+        bcs->subvol = source;
+        bcs->namelen = destname.length() * sizeof(WCHAR);
+        memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
+
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, NULL, 0);
+
+        free(bcs);
+
+        CloseHandle(source);
+        CloseHandle(dirh);
+
+        return;
+    }
+
+    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
+        CloseHandle(source);
+        return;
+    }
+
+    if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
+        HANDLE dirh;
+        ULONG bmnsize;
+        btrfs_mknod* bmn;
+
+        dirh = CreateFileW(destdir.c_str(), FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (dirh == INVALID_HANDLE_VALUE) {
+            CloseHandle(source);
+            return;
+        }
+
+        bmnsize = offsetof(btrfs_mknod, name[0]) + (destname.length() * sizeof(WCHAR));
+        bmn = (btrfs_mknod*)malloc(bmnsize);
+
+        bmn->inode = 0;
+        bmn->type = bii.type;
+        bmn->st_rdev = bii.st_rdev;
+        bmn->namelen = destname.length() * sizeof(WCHAR);
+        memcpy(bmn->name, destname.c_str(), bmn->namelen);
+
+        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
+        if (!NT_SUCCESS(Status)) {
+            CloseHandle(dirh);
+            CloseHandle(source);
+            free(bmn);
+            return;
+        }
+
+        CloseHandle(dirh);
+        free(bmn);
+
+        dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    } else if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        if (CreateDirectoryExW(srcfn.c_str(), (destdir + destname).c_str(), NULL))
+            dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            else
+                dest = INVALID_HANDLE_VALUE;
+    } else
+        dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+
+    if (dest == INVALID_HANDLE_VALUE) {
+        CloseHandle(source);
+        return;
+    }
+
+    memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+
+    bsii.flags_changed = TRUE;
+    bsii.flags = bii.flags;
+
+    if (bii.flags & BTRFS_INODE_COMPRESS) {
+        bsii.compression_type_changed = TRUE;
+        bsii.compression_type = bii.compression_type;
+    }
+
+    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            HANDLE h;
+            WIN32_FIND_DATAW fff;
+            std::wstring qs;
+
+            qs = srcfn;
+            qs += L"\\*";
+
+            h = FindFirstFileW(qs.c_str(), &fff);
+            if (h != INVALID_HANDLE_VALUE) {
+                do {
+                    std::wstring fn2;
+
+                    if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
+                        continue;
+
+                    fn2 = srcfn;
+                    fn2 += L"\\";
+                    fn2 += fff.cFileName;
+
+                    reflink_copy2(fn2, destdir + destname + L"\\", fff.cFileName);
+                } while (FindNextFileW(h, &fff));
+
+                FindClose(h);
+            }
+        }
+
+        // CreateDirectoryExW also copies streams, no need to do it here
+    } else {
+        HANDLE h;
+        WIN32_FIND_STREAM_DATA fsd;
+
+        if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            reparse_header rh;
+            ULONG rplen;
+            UINT8* rp;
+
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, &rh, sizeof(reparse_header), &bytesret, NULL)) {
+                if (GetLastError() != ERROR_MORE_DATA)
+                    goto end;
+            }
+
+            rplen = sizeof(reparse_header) + rh.ReparseDataLength;
+            rp = (UINT8*)malloc(rplen);
+
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, rp, rplen, &bytesret, NULL))
+                goto end;
+
+            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, NULL, 0, &bytesret, NULL))
+                goto end;
+
+            free(rp);
+        } else {
+            FILE_STANDARD_INFO fsi;
+            FILE_END_OF_FILE_INFO feofi;
+            FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
+            FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
+            DUPLICATE_EXTENTS_DATA ded;
+            UINT64 offset, alloc_size;
+            ULONG maxdup;
+
+            if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO)))
+                goto end;
+
+            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL))
+                goto end;
+
+            if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL))
+                    goto end;
+            }
+
+            fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
+            fsiib.Reserved = 0;
+            fsiib.Flags = fgiib.Flags;
+            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL))
+                goto end;
+
+            feofi.EndOfFile = fsi.EndOfFile;
+            if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO)))
+                goto end;
+
+            ded.FileHandle = source;
+            maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
+
+            alloc_size = sector_align(fsi.EndOfFile.QuadPart, fgiib.ClusterSizeInBytes);
+
+            offset = 0;
+            while (offset < alloc_size) {
+                ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
+                ded.ByteCount.QuadPart = maxdup < (alloc_size - offset) ? maxdup : (alloc_size - offset);
+                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL))
+                    goto end;
+
+                offset += ded.ByteCount.QuadPart;
+            }
+        }
+
+        h = FindFirstStreamW(srcfn.c_str(), FindStreamInfoStandard, &fsd, 0);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                std::wstring sn;
+
+                sn = fsd.cStreamName;
+
+                if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
+                    HANDLE stream;
+                    UINT8* data = NULL;
+
+                    if (fsd.StreamSize.QuadPart > 0) {
+                        std::wstring fn2;
+
+                        fn2 = srcfn;
+                        fn2 += sn;
+
+                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+
+                        if (stream == INVALID_HANDLE_VALUE)
+                            goto end;
+
+                        // We can get away with this because our streams are guaranteed to be below 64 KB -
+                        // don't do this on NTFS!
+                        data = (UINT8*)malloc(fsd.StreamSize.QuadPart);
+
+                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                            free(data);
+                            CloseHandle(stream);
+                            goto end;
+                        }
+
+                        CloseHandle(stream);
+                    }
+
+                    stream = CreateFileW((destdir + destname + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, NULL);
+
+                    if (stream == INVALID_HANDLE_VALUE) {
+                        if (data) free(data);
+                        goto end;
+                    }
+
+                    if (data) {
+                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                            free(data);
+                            CloseHandle(stream);
+                            goto end;
+                        }
+
+                        free(data);
+                    }
+
+                    CloseHandle(stream);
+                }
+            } while (FindNextStreamW(h, &fsd));
+
+            FindClose(h);
+        }
+    }
+
+    atime.dwLowDateTime = fbi.LastAccessTime.LowPart;
+    atime.dwHighDateTime = fbi.LastAccessTime.HighPart;
+    mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
+    mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
+    SetFileTime(dest, NULL, &atime, &mtime);
+
+    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, &bsxa, sizeof(btrfs_set_xattr));
+
+    if (Status == STATUS_BUFFER_OVERFLOW || (NT_SUCCESS(Status) && bsxa.valuelen > 0)) {
+        ULONG xalen = 0;
+        btrfs_set_xattr *xa = NULL, *xa2;
+
+        do {
+            xalen += 1024;
+
+            if (xa) free(xa);
+            xa = (btrfs_set_xattr*)malloc(xalen);
+
+            Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, xa, xalen);
+        } while (Status == STATUS_BUFFER_OVERFLOW);
+
+        if (!NT_SUCCESS(Status)) {
+            free(xa);
+            goto end;
+        }
+
+        xa2 = xa;
+        while (xa2->valuelen > 0) {
+            Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
+                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, NULL, 0);
+            if (!NT_SUCCESS(Status)) {
+                free(xa);
+                goto end;
+            }
+            xa2 = (btrfs_set_xattr*)&xa2->data[xa2->namelen + xa2->valuelen];
+        }
+
+        free(xa);
+    } else if (!NT_SUCCESS(Status))
+        goto end;
+
+    ret = TRUE;
+
+end:
+    if (!ret) {
+        FILE_DISPOSITION_INFO fdi;
+
+        fdi.DeleteFile = TRUE;
+        SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+    }
+
+    CloseHandle(dest);
+    CloseHandle(source);
+}
+
+void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    LPWSTR* args;
+    int num_args;
+
+    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+
+    if (!args)
+        return;
+
+    if (num_args >= 2) {
+        HANDLE destdirh;
+        BOOL dest_is_dir = FALSE;
+        std::wstring dest = args[num_args - 1], destdir, destname;
+        WCHAR volpath2[MAX_PATH];
+        int i;
+
+        destdirh = CreateFileW(dest.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        if (destdirh != INVALID_HANDLE_VALUE) {
+            BY_HANDLE_FILE_INFORMATION bhfi;
+
+            if (GetFileInformationByHandle(destdirh, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                dest_is_dir = TRUE;
+
+                destdir = dest;
+                if (destdir.substr(destdir.length() - 1, 1) != L"\\")
+                    destdir += L"\\";
+            }
+            CloseHandle(destdirh);
+        }
+
+        if (!dest_is_dir) {
+            size_t found = dest.rfind(L"\\");
+
+            if (found == std::wstring::npos) {
+                destdir = L"";
+                destname = dest;
+            } else {
+                destdir = dest.substr(0, found);
+                destname = dest.substr(found + 1);
+            }
+        }
+
+        if (!GetVolumePathNameW(dest.c_str(), volpath2, sizeof(volpath2) / sizeof(WCHAR)))
+            goto end;
+
+        for (i = 0; i < num_args - 1; i++) {
+            WIN32_FIND_DATAW ffd;
+            HANDLE h;
+
+            h = FindFirstFileW(args[i], &ffd);
+            if (h != INVALID_HANDLE_VALUE) {
+                WCHAR volpath1[MAX_PATH];
+                std::wstring path = args[i];
+                size_t found = path.rfind(L"\\");
+
+                if (found == std::wstring::npos)
+                    path = L"";
+                else
+                    path = path.substr(0, found);
+
+                path += L"\\";
+
+                if (get_volume_path_parent(path.c_str(), volpath1, sizeof(volpath1) / sizeof(WCHAR))) {
+                    if (!wcscmp(volpath1, volpath2)) {
+                        do {
+                            reflink_copy2(path + ffd.cFileName, destdir, dest_is_dir ? ffd.cFileName : destname);
+                        } while (FindNextFileW(h, &ffd));
+                    }
+                }
+
+                FindClose(h);
+            }
+        }
+    }
+
+end:
+    LocalFree(args);
+}
