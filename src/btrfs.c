@@ -1361,7 +1361,11 @@ void mark_fileref_dirty(file_ref* fileref) {
     fileref->fcb->Vcb->need_write = TRUE;
 }
 
+#ifdef DEBUG_FCB_REFCOUNTS
+void _free_fcb(fcb* fcb, const char* func) {
+#else
 void free_fcb(fcb* fcb) {
+#endif
     LONG rc;
 
 // #ifdef DEBUG    

@@ -927,7 +927,9 @@ device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
 BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
 ULONG STDCALL get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
 BOOL STDCALL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
+#ifndef DEBUG_FCB_REFCOUNTS
 void free_fcb(fcb* fcb);
+#endif
 void free_fileref(device_extension* Vcb, file_ref* fr);
 file_ref* create_fileref(device_extension* Vcb);
 void protect_superblocks(device_extension* Vcb, chunk* c);
@@ -1009,6 +1011,11 @@ void STDCALL _debug_message(const char* func, char* s, ...);
 #define FIXME(s, ...) DbgPrint("Btrfs FIXME : " funcname " : " s, ##__VA_ARGS__)
 #define ERR(s, ...) DbgPrint("Btrfs ERR : " funcname " : " s, ##__VA_ARGS__)
 
+#endif
+
+#ifdef DEBUG_FCB_REFCOUNTS
+void _free_fcb(fcb* fcb, const char* func);
+#define free_fcb(fcb) _free_fcb(fcb, funcname)
 #endif
 
 // in fastio.c
