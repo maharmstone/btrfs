@@ -18,4 +18,5 @@ EXPORTS
     CreateSnapshotW		PRIVATE
     ReflinkCopyW		PRIVATE
     StartScrubW			PRIVATE
+    StopScrubW			PRIVATE
 
