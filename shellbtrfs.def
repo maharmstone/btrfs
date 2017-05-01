@@ -17,4 +17,5 @@ EXPORTS
     CreateSubvolW		PRIVATE
     CreateSnapshotW		PRIVATE
     ReflinkCopyW		PRIVATE
+    StartScrubW			PRIVATE
 
