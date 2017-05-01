@@ -248,6 +248,9 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len,
         }
     }
     
+    if (atts == 0)
+        atts = FILE_ATTRIBUTE_NORMAL;
+
     switch (IrpSp->Parameters.QueryDirectory.FileInformationClass) {
         case FileBothDirectoryInformation:
         {
