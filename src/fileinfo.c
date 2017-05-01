@@ -2605,9 +2605,9 @@ static NTSTATUS STDCALL fill_in_file_basic_information(FILE_BASIC_INFORMATION* f
             ERR("no fileref for stream\n");
             return STATUS_INTERNAL_ERROR;
         } else
-            fbi->FileAttributes = fileref->parent->fcb->atts;
+            fbi->FileAttributes = fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fileref->parent->fcb->atts;
     } else
-        fbi->FileAttributes = fcb->atts;
+        fbi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     
     return STATUS_SUCCESS;
 }
