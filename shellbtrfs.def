@@ -13,7 +13,7 @@ EXPORTS
     ResetStatsW			PRIVATE
     ShowPropSheetW		PRIVATE
     RecvSubvolW			PRIVATE
-    SendSubvolW			PRIVATE
+    SendSubvolGUIW		PRIVATE
     CreateSubvolW		PRIVATE
     CreateSnapshotW		PRIVATE
     ReflinkCopyW		PRIVATE

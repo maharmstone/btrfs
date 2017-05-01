@@ -1034,7 +1034,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
                     t = L"\"";
                     t += dll;
-                    t += L"\",SendSubvol ";
+                    t += L"\",SendSubvolGUI ";
                     t += fn;
 
                     RtlZeroMemory(&sei, sizeof(sei));

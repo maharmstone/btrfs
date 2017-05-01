@@ -540,7 +540,7 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
         ShowError(hwnd, GetLastError());
 }
 
-void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {   
+void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     HANDLE token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
