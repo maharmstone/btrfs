@@ -1313,7 +1313,11 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         
         fcb->inode_item.st_uid = bsii->st_uid;
         
-        uid_to_sid(bsii->st_uid, &sid);
+        Status = uid_to_sid(bsii->st_uid, &sid);
+        if (!NT_SUCCESS(Status)) {
+            ERR("uid_to_sid returned %08x\n", Status);
+            goto end;
+        }
         
         Status = RtlCreateSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
         if (!NT_SUCCESS(Status)) {

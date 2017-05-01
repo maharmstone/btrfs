@@ -295,7 +295,7 @@ void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 gid) {
     InsertTailList(&gid_map_list, &gm->listentry);
 }
 
-void uid_to_sid(UINT32 uid, PSID* sid) {
+NTSTATUS uid_to_sid(UINT32 uid, PSID* sid) {
     LIST_ENTRY* le;
     uid_map* um;
     sid_header* sh;
@@ -309,11 +309,11 @@ void uid_to_sid(UINT32 uid, PSID* sid) {
             *sid = ExAllocatePoolWithTag(PagedPool, RtlLengthSid(um->sid), ALLOC_TAG);
             if (!*sid) {
                 ERR("out of memory\n");
-                return;
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             RtlCopyMemory(*sid, um->sid, RtlLengthSid(um->sid));
-            return;
+            return STATUS_SUCCESS;
         }
         
         le = le->Flink;
@@ -329,7 +329,7 @@ void uid_to_sid(UINT32 uid, PSID* sid) {
         if (!sh) {
             ERR("out of memory\n");
             *sid = NULL;
-            return;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
     
         sh->revision = 1;
@@ -349,7 +349,7 @@ void uid_to_sid(UINT32 uid, PSID* sid) {
         if (!sh) {
             ERR("out of memory\n");
             *sid = NULL;
-            return;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
         
         sh->revision = 1;
@@ -367,6 +367,8 @@ void uid_to_sid(UINT32 uid, PSID* sid) {
     }
 
     *sid = sh;
+
+    return STATUS_SUCCESS;
 }
 
 UINT32 sid_to_uid(PSID sid) {
@@ -500,11 +502,10 @@ NTSTATUS get_sd_from_xattr(fcb* fcb, ULONG buflen) {
             return Status;
         }
 
-        uid_to_sid(fcb->inode_item.st_uid, &usersid);
-
-        if (!usersid) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+        Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+        if (!NT_SUCCESS(Status)) {
+            ERR("uid_to_sid returned %08x\n", Status);
+            return Status;
         }
 
         if (!RtlEqualSid(sid, usersid)) {
@@ -650,9 +651,9 @@ static void get_top_level_sd(fcb* fcb) {
     }
     
 //     if (fcb->inode_item.st_uid != UID_NOBODY) {
-        uid_to_sid(fcb->inode_item.st_uid, &usersid);
-        if (!usersid) {
-            ERR("out of memory\n");
+        Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+        if (!NT_SUCCESS(Status)) {
+            ERR("uid_to_sid returned %08x\n", Status);
             goto end;
         }
         
@@ -763,9 +764,9 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp) {
         ERR("SeAssignSecurityEx returned %08x\n", Status);
     }
     
-    uid_to_sid(fcb->inode_item.st_uid, &usersid);
-    if (!usersid) {
-        ERR("out of memory\n");
+    Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+    if (!NT_SUCCESS(Status)) {
+        ERR("uid_to_sid returned %08x\n", Status);
         return;
     }
     

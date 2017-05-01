@@ -1120,7 +1120,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp);
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
 void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 gid);
 UINT32 sid_to_uid(PSID sid);
-void uid_to_sid(UINT32 uid, PSID* sid);
+NTSTATUS uid_to_sid(UINT32 uid, PSID* sid);
 NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as);
 void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT subjcont);
 
