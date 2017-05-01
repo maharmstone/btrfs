@@ -485,7 +485,7 @@ static ACL* load_default_acl() {
 //     }
 // }
 
-BOOL get_sd_from_xattr(fcb* fcb, ULONG buflen) {
+NTSTATUS get_sd_from_xattr(fcb* fcb, ULONG buflen) {
     NTSTATUS Status;
     PSID sid, usersid;
     
@@ -497,140 +497,142 @@ BOOL get_sd_from_xattr(fcb* fcb, ULONG buflen) {
         Status = RtlGetOwnerSecurityDescriptor(fcb->sd, &sid, &defaulted);
         if (!NT_SUCCESS(Status)) {
             ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
-        } else {
-            uid_to_sid(fcb->inode_item.st_uid, &usersid);
-            
-            if (!usersid) {
-                ERR("out of memory\n");
-                return FALSE;
+            return Status;
+        }
+
+        uid_to_sid(fcb->inode_item.st_uid, &usersid);
+
+        if (!usersid) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        if (!RtlEqualSid(sid, usersid)) {
+            SECURITY_DESCRIPTOR *newsd, *newsd2;
+            ULONG sdsize, daclsize, saclsize, ownersize, groupsize;
+            ACL *dacl, *sacl;
+            PSID owner, group;
+
+            sdsize = daclsize = saclsize = ownersize = groupsize = 0;
+
+            Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, NULL, &sdsize, NULL, &daclsize, NULL, &saclsize, NULL, &ownersize, NULL, &groupsize);
+
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
+                ERR("RtlSelfRelativeToAbsoluteSD 1 returned %08x\n", Status);
+                return Status;
             }
-            
-            if (!RtlEqualSid(sid, usersid)) {
-                SECURITY_DESCRIPTOR *newsd, *newsd2;
-                ULONG sdsize, daclsize, saclsize, ownersize, groupsize;
-                ACL *dacl, *sacl;
-                PSID owner, group;
-                
-                sdsize = daclsize = saclsize = ownersize = groupsize = 0;
-                
-                Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, NULL, &sdsize, NULL, &daclsize, NULL, &saclsize, NULL, &ownersize, NULL, &groupsize);
-                
-                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
-                    ERR("RtlSelfRelativeToAbsoluteSD 1 returned %08x\n", Status);
-                }
-                
-                TRACE("sdsize = %u, daclsize = %u, saclsize = %u, ownersize = %u, groupsize = %u\n", sdsize, daclsize, saclsize, ownersize, groupsize);
-                
-                newsd2 = sdsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, sdsize, ALLOC_TAG);
-                dacl = daclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, daclsize, ALLOC_TAG);
-                sacl = saclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, saclsize, ALLOC_TAG);
-                owner = ownersize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, ownersize, ALLOC_TAG);
-                group = groupsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, groupsize, ALLOC_TAG);
-                
-                if ((sdsize > 0 && !newsd2) || (daclsize > 0 && !dacl) || (saclsize > 0 && !sacl) || (ownersize > 0 && !owner) || (groupsize > 0 && !group)) {
-                    ERR("out of memory\n");
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    return FALSE;
-                }
-                
-                Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, newsd2, &sdsize, dacl, &daclsize, sacl, &saclsize, owner, &ownersize, group, &groupsize);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("RtlSelfRelativeToAbsoluteSD returned %08x\n", Status);
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    return FALSE;
-                }
-                
-                Status = RtlSetOwnerSecurityDescriptor(newsd2, usersid, FALSE);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    return FALSE;
-                }
-                
-                buflen = 0;
-                Status = RtlAbsoluteToSelfRelativeSD(newsd2, NULL, &buflen);
-                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
-                    ERR("RtlAbsoluteToSelfRelativeSD 1 returned %08x\n", Status);
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    return FALSE;
-                }
-                
-                if (buflen == 0 || NT_SUCCESS(Status)) {
-                    ERR("RtlAbsoluteToSelfRelativeSD said SD is zero-length\n");
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    return FALSE;
-                }
-                
-                newsd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
-                if (!newsd) {
-                    ERR("out of memory\n");
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    return FALSE;
-                }
-                
-                Status = RtlAbsoluteToSelfRelativeSD(newsd2, newsd, &buflen);
-                
-                if (!NT_SUCCESS(Status)) {
-                    ERR("RtlAbsoluteToSelfRelativeSD 2 returned %08x\n", Status);
-                    if (newsd2) ExFreePool(newsd2);
-                    if (dacl) ExFreePool(dacl);
-                    if (sacl) ExFreePool(sacl);
-                    if (owner) ExFreePool(owner);
-                    if (group) ExFreePool(group);
-                    ExFreePool(usersid);
-                    ExFreePool(newsd);
-                    return FALSE;
-                }
-                
-                ExFreePool(fcb->sd);
-                
-                fcb->sd = newsd;
-                
+
+            TRACE("sdsize = %u, daclsize = %u, saclsize = %u, ownersize = %u, groupsize = %u\n", sdsize, daclsize, saclsize, ownersize, groupsize);
+
+            newsd2 = sdsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, sdsize, ALLOC_TAG);
+            dacl = daclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, daclsize, ALLOC_TAG);
+            sacl = saclsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, saclsize, ALLOC_TAG);
+            owner = ownersize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, ownersize, ALLOC_TAG);
+            group = groupsize == 0 ? NULL : ExAllocatePoolWithTag(PagedPool, groupsize, ALLOC_TAG);
+
+            if ((sdsize > 0 && !newsd2) || (daclsize > 0 && !dacl) || (saclsize > 0 && !sacl) || (ownersize > 0 && !owner) || (groupsize > 0 && !group)) {
+                ERR("out of memory\n");
                 if (newsd2) ExFreePool(newsd2);
                 if (dacl) ExFreePool(dacl);
                 if (sacl) ExFreePool(sacl);
                 if (owner) ExFreePool(owner);
                 if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
-            
-            ExFreePool(usersid);
+
+            Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, newsd2, &sdsize, dacl, &daclsize, sacl, &saclsize, owner, &ownersize, group, &groupsize);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlSelfRelativeToAbsoluteSD returned %08x\n", Status);
+                if (newsd2) ExFreePool(newsd2);
+                if (dacl) ExFreePool(dacl);
+                if (sacl) ExFreePool(sacl);
+                if (owner) ExFreePool(owner);
+                if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                return Status;
+            }
+
+            Status = RtlSetOwnerSecurityDescriptor(newsd2, usersid, FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
+                if (newsd2) ExFreePool(newsd2);
+                if (dacl) ExFreePool(dacl);
+                if (sacl) ExFreePool(sacl);
+                if (owner) ExFreePool(owner);
+                if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                return Status;
+            }
+
+            buflen = 0;
+            Status = RtlAbsoluteToSelfRelativeSD(newsd2, NULL, &buflen);
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
+                ERR("RtlAbsoluteToSelfRelativeSD 1 returned %08x\n", Status);
+                if (newsd2) ExFreePool(newsd2);
+                if (dacl) ExFreePool(dacl);
+                if (sacl) ExFreePool(sacl);
+                if (owner) ExFreePool(owner);
+                if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                return Status;
+            }
+
+            if (buflen == 0 || NT_SUCCESS(Status)) {
+                ERR("RtlAbsoluteToSelfRelativeSD said SD is zero-length\n");
+                if (newsd2) ExFreePool(newsd2);
+                if (dacl) ExFreePool(dacl);
+                if (sacl) ExFreePool(sacl);
+                if (owner) ExFreePool(owner);
+                if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            newsd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+            if (!newsd) {
+                ERR("out of memory\n");
+                if (newsd2) ExFreePool(newsd2);
+                if (dacl) ExFreePool(dacl);
+                if (sacl) ExFreePool(sacl);
+                if (owner) ExFreePool(owner);
+                if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            Status = RtlAbsoluteToSelfRelativeSD(newsd2, newsd, &buflen);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlAbsoluteToSelfRelativeSD 2 returned %08x\n", Status);
+                if (newsd2) ExFreePool(newsd2);
+                if (dacl) ExFreePool(dacl);
+                if (sacl) ExFreePool(sacl);
+                if (owner) ExFreePool(owner);
+                if (group) ExFreePool(group);
+                ExFreePool(usersid);
+                ExFreePool(newsd);
+                return Status;
+            }
+
+            ExFreePool(fcb->sd);
+
+            fcb->sd = newsd;
+
+            if (newsd2) ExFreePool(newsd2);
+            if (dacl) ExFreePool(dacl);
+            if (sacl) ExFreePool(sacl);
+            if (owner) ExFreePool(owner);
+            if (group) ExFreePool(group);
         }
+
+        ExFreePool(usersid);
     }
     
     // FIXME - check GID here if not GID_NOBODY
     
-    return TRUE;
+    return STATUS_SUCCESS;
 }
 
 static void get_top_level_sd(fcb* fcb) {
@@ -742,7 +744,9 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp) {
     ULONG buflen;
     
     if (look_for_xattr && get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (UINT8**)&fcb->sd, (UINT16*)&buflen, Irp)) {
-        if (get_sd_from_xattr(fcb, buflen))
+        Status = get_sd_from_xattr(fcb, buflen);
+
+        if (NT_SUCCESS(Status))
             return;
     }
     

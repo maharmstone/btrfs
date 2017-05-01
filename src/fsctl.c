@@ -4118,7 +4118,10 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
             RtlCopyMemory(fcb->sd, bsxa->data + bsxa->namelen, bsxa->valuelen);
 
-            if (!get_sd_from_xattr(fcb, bsxa->valuelen)) {
+            Status = get_sd_from_xattr(fcb, bsxa->valuelen);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_sd_from_xattr returned %08x\n", Status);
+                Status = STATUS_SUCCESS;
                 ExFreePool(fcb->sd);
                 fcb->sd = NULL;
             }
