@@ -330,7 +330,7 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
     HKEY hk;
     DWORD dispos;
    
-    l = RegCreateKeyExW(root, keyname, NULL, NULL, 0, KEY_ALL_ACCESS, NULL, &hk, &dispos);
+    l = RegCreateKeyExW(root, keyname, 0, NULL, 0, KEY_ALL_ACCESS, NULL, &hk, &dispos);
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegCreateKey returned %08x", l);
@@ -339,7 +339,7 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
         return FALSE;
     }
 
-    l = RegSetValueExW(hk, val, NULL, type, data, datasize);
+    l = RegSetValueExW(hk, val, 0, type, data, datasize);
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegSetValueEx returned %08x", l);
