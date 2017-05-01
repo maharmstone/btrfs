@@ -1788,7 +1788,7 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->Header.FileSize.QuadPart = 0;
     fcb->Header.ValidDataLength.QuadPart = 0;
     
-    fcb->atts = IrpSp->Parameters.Create.FileAttributes;
+    fcb->atts = IrpSp->Parameters.Create.FileAttributes & ~FILE_ATTRIBUTE_NORMAL;
     fcb->atts_changed = fcb->atts != defda;
     
 #ifdef DEBUG_FCB_REFCOUNTS
