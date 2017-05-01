@@ -12,7 +12,7 @@ EXPORTS
     ShowScrubW			PRIVATE
     ResetStatsW			PRIVATE
     ShowPropSheetW		PRIVATE
-    RecvSubvolW			PRIVATE
+    RecvSubvolGUIW		PRIVATE
     SendSubvolGUIW		PRIVATE
     CreateSubvolW		PRIVATE
     CreateSnapshotW		PRIVATE

@@ -1938,7 +1938,7 @@ void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path) {
         ShowError(hwnd, GetLastError());
 }
 
-void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     OPENFILENAMEW ofn;
     WCHAR file[MAX_PATH];
     BtrfsRecv* recv;

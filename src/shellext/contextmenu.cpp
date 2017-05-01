@@ -1144,7 +1144,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
 
             t = L"\"";
             t += dll;
-            t += L"\",RecvSubvol ";
+            t += L"\",RecvSubvolGUI ";
             t += path;
 
             RtlZeroMemory(&sei, sizeof(sei));
