@@ -3656,7 +3656,7 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         ULONG RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
         ULONG RequestedOptions = IrpSp->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
 #ifdef DEBUG_FCB_REFCOUNTS
-        LONG rc, oc;
+        LONG rc;
 #endif
         ccb* ccb;
         
