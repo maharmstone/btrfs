@@ -1867,8 +1867,6 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
                 fileref->fcb->inode_item.sequence++;
                 fileref->fcb->inode_item.st_ctime = now;
             } else {
-                fileref->fcb->deleted = TRUE;
-            
                 // excise extents
                 
                 if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
@@ -1905,6 +1903,8 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
                         return Status;
                     }
                 }
+
+                fileref->fcb->deleted = TRUE;
             }
             
             if (fileref->dc) {
