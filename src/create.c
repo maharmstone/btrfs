@@ -2920,13 +2920,9 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
         }
     }
     
-    if (NT_SUCCESS(Status) && fileref->deleted) {
-        free_fileref(Vcb, fileref);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
-        
+    if (NT_SUCCESS(Status) && fileref->deleted)
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
-    }
-    
+
     if (NT_SUCCESS(Status)) {
         if (RequestedDisposition == FILE_CREATE) {
             TRACE("file %S already exists, returning STATUS_OBJECT_NAME_COLLISION\n", file_desc_fileref(fileref));
