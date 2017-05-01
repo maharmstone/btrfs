@@ -15,3 +15,5 @@ EXPORTS
     RecvSubvolW			PRIVATE
     SendSubvolW			PRIVATE
     CreateSubvolW		PRIVATE
+    CreateSnapshotW		PRIVATE
+

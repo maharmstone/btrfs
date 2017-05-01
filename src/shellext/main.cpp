@@ -672,6 +672,64 @@ void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     LocalFree(args);
 }
 
+static void create_snapshot2(std::wstring source, std::wstring fn) {
+    size_t found = fn.rfind(L"\\");
+    std::wstring path, file;
+    HANDLE h, src;
+    ULONG bcslen;
+    btrfs_create_snapshot* bcs;
+    IO_STATUS_BLOCK iosb;
+
+    if (found == std::wstring::npos) {
+        path = L"";
+        file = fn;
+    } else {
+        path = fn.substr(0, found);
+        file = fn.substr(found + 1);
+    }
+    path += L"\\";
+
+    src = CreateFileW(source.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (src == INVALID_HANDLE_VALUE)
+        return;
+
+    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+
+    if (h == INVALID_HANDLE_VALUE) {
+        CloseHandle(src);
+        return;
+    }
+
+    bcslen = offsetof(btrfs_create_snapshot, name[0]) + (file.length() * sizeof(WCHAR));
+    bcs = (btrfs_create_snapshot*)malloc(bcslen);
+
+    bcs->readonly = FALSE;
+    bcs->posix = FALSE;
+    bcs->namelen = file.length() * sizeof(WCHAR);
+    memcpy(bcs->name, file.c_str(), bcs->namelen);
+    bcs->subvol = src;
+
+    NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, NULL, 0);
+
+    CloseHandle(h);
+    CloseHandle(src);
+}
+
+void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    LPWSTR* args;
+    int num_args;
+
+    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+
+    if (!args)
+        return;
+
+    if (num_args >= 2)
+        create_snapshot2(args[0], args[1]);
+
+    LocalFree(args);
+}
+
 #ifdef __cplusplus
 }
 #endif
