@@ -14,4 +14,4 @@ EXPORTS
     ShowPropSheetW		PRIVATE
     RecvSubvolW			PRIVATE
     SendSubvolW			PRIVATE
-
+    CreateSubvolW		PRIVATE

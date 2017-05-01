@@ -19,6 +19,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <strsafe.h>
+#include <stddef.h>
 #include "factory.h"
 #include "resource.h"
 
@@ -621,6 +622,55 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     return TRUE;
 }
 
+static void create_subvol(std::wstring fn) {
+    size_t found = fn.rfind(L"\\");
+    std::wstring path, file;
+    HANDLE h;
+    ULONG bcslen;
+    btrfs_create_subvol* bcs;
+    IO_STATUS_BLOCK iosb;
+
+    if (found == std::wstring::npos) {
+        path = L"";
+        file = fn;
+    } else {
+        path = fn.substr(0, found);
+        file = fn.substr(found + 1);
+    }
+    path += L"\\";
+
+    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    bcslen = offsetof(btrfs_create_subvol, name[0]) + (file.length() * sizeof(WCHAR));
+    bcs = (btrfs_create_subvol*)malloc(bcslen);
+
+    bcs->readonly = FALSE;
+    bcs->posix = FALSE;
+    bcs->namelen = file.length() * sizeof(WCHAR);
+    memcpy(bcs->name, file.c_str(), bcs->namelen);
+
+    NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
+
+    CloseHandle(h);
+}
+
+void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    LPWSTR* args;
+    int num_args;
+
+    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+
+    if (!args)
+        return;
+
+    if (num_args >= 1)
+        create_subvol(args[0]);
+
+    LocalFree(args);
+}
 
 #ifdef __cplusplus
 }
