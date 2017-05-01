@@ -929,6 +929,9 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
         if (cmp == 0 && !tp.item->ignore) {
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
             Status = STATUS_INTERNAL_ERROR;
+#ifdef DEBUG_PARANOID
+            int3;
+#endif
             goto end;
         }
     } else
