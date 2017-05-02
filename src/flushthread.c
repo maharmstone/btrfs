@@ -1639,7 +1639,6 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
                     for (i = 0; i < num_bits; i++) {
                         free_write_data_stripes(&wtc[i]);
                     }
-                    ExFreePool(wtc);
                     
                     return Status;
                 }
