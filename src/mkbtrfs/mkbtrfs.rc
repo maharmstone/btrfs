@@ -7,7 +7,7 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-#include <winres.h>
+#include "winres.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -70,12 +70,12 @@ BEGIN
         BLOCK "080904b0"
         BEGIN
             VALUE "FileDescription", "Btrfs formatting utility"
-            VALUE "FileVersion", "0.9"
+            VALUE "FileVersion", "0.10"
             VALUE "InternalName", "mkbtrfs"
             VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-17"
             VALUE "OriginalFilename", "mkbtrfs.exe"
             VALUE "ProductName", "WinBtrfs"
-            VALUE "ProductVersion", "0.9"
+            VALUE "ProductVersion", "0.10"
         END
     END
     BLOCK "VarFileInfo"

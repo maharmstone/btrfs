@@ -1,5 +1,5 @@
-WinBtrfs v0.9
--------------
+WinBtrfs v0.10
+--------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
 aim is for it to be feature-complete, with only a few features still
@@ -36,7 +36,6 @@ will find it useful. But if you want to provide some pecuniary encouragement, it
 be very much appreciated:
 
 * [Paypal](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=3XQVCQ6YB55L2&lc=GB&item_name=WinBtrfs%20donation&currency_code=GBP&bn=PP%2dDonationsBF%3abtn_donate_LG%2egif%3aNonHosted)
-* Alipay (user account mark@harmstone.com)
 
 Features
 --------
@@ -71,12 +70,12 @@ Features
 * Creation of new filesystems with `mkbtrfs.exe` and `ubtrfs.dll`
 * Scrubbing
 * TRIM/DISCARD
+* Reflink copy
+* Subvol send and receive
 
 Todo
 ----
 
-* Reflink copy
-* Subvol send and receive
 * Degraded mounts
 * New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
 * Passthrough of permissions etc. for LXSS
@@ -117,14 +116,49 @@ is somewhere else, you'll need to edit the project settings. You'll also need to
 edit the post-build steps for the 64-bit versions, which are set up to
 self-sign using my own certificate.
 
-User mappings
--------------
+Mappings
+--------
 
 The user mappings are stored in the registry key
 HKLM\SYSTEM\CurrentControlSet\services\btrfs\Mappings. Create a DWORD with the
 name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001),
 and the value of your Linux uid (e.g. 1000). It will take effect next time the
 driver is loaded.
+
+Similarly, the group mappings are stored in under GroupMappings. The default
+entry maps Windows' Users group to gid 100, which is usually "users" on Linux.
+You can also specify user SIDs here to force files created by a user to belong
+to a certain group. The setgid flag also works as on Linux.
+
+Commands
+--------
+
+The DLL file shellbtrfs.dll provides the GUI interface, but it can also be used
+with rundll32.exe to carry out some tasks from the command line, which may be
+useful if you wish to schedule something to run periodically.
+
+Bear in mind that rundll32 provides no mechanism to return any error codes, so
+any of these commands may fail silently.
+
+* `rundll32.exe shellbtrfs.dll,CreateSubvol <path>`
+
+* `rundll32.exe shellbtrfs.dll,CreateSnapshot <source> <destination>`
+
+* `rundll32.exe shellbtrfs.dll,ReflinkCopy <source> <destination>`
+This also accepts wildcards, and any number of source files.
+
+The following commands need various privileges, and so must be run as Administrator
+to work:
+
+* `rundll32.exe shellbtrfs.dll,SendSubvol <source> [-p <parent>] [-c <clone subvol>] <stream file>`
+The -p and -c flags are as `btrfs send` on Linux. You can specify any number of
+clone subvolumes.
+
+* `rundll32.exe shellbtrfs.dll,RecvSubvol <stream file> <destination>`
+
+* `rundll32.exe shellbtrfs.dll,StartScrub <drive>`
+
+* `rundll32.exe shellbtrfs.dll,StopScrub <drive>`
 
 Troubleshooting
 ---------------
@@ -178,6 +212,17 @@ flag, e.g. `format /fs:ntfs D:`.
 
 Changelog
 ---------
+
+v0.10 (2017-05-02):
+* Reflink copy
+* Sending and receiving subvolumes
+* Group mappings (see Mappings section above)
+* Added commands for scripting etc. (see Commands section above)
+* Fixed an issue preventing mounting on non-PNP devices, such as VeraCrypt
+* Fixed an issue preventing new versions of LXSS from working
+* Fixed problem with the ordering of extent refs, which caused problems on Linux but wasn't picked up by `btrfs check`
+* Added support for reading compressed inline extents
+* Many miscellaneous bug fixes
 
 v0.9 (2017-03-05):
 * Scrubbing
