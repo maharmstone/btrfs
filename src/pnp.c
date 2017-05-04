@@ -182,6 +182,8 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
@@ -196,8 +198,6 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
 
     Vcb->removing = TRUE;
-    
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     if (Vcb->need_write && !Vcb->readonly) {
         Status = do_write(Vcb, Irp);
@@ -211,11 +211,12 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
     }
 
-    ExReleaseResourceLite(&Vcb->tree_lock);
 
     Status = STATUS_SUCCESS;
 end:
     ExReleaseResourceLite(&Vcb->fcb_lock);
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     return Status;
 }
