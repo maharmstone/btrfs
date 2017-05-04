@@ -155,9 +155,11 @@ end2:
 }
 
 static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject) {
-device_extension* Vcb = DeviceObject->DeviceExtension;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
@@ -174,6 +176,7 @@ device_extension* Vcb = DeviceObject->DeviceExtension;
     Vcb->removing = FALSE;
 end:
     ExReleaseResourceLite(&Vcb->fcb_lock);
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     return STATUS_SUCCESS;
 }
