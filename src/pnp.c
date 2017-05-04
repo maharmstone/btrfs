@@ -56,8 +56,6 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    
     RtlZeroMemory(&context, sizeof(pnp_context));
     KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
     
@@ -66,8 +64,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
     context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(pnp_stripe) * num_devices, ALLOC_TAG);
     if (!context.stripes) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end2;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     
     RtlZeroMemory(context.stripes, sizeof(pnp_stripe) * num_devices);
@@ -96,8 +93,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
                 }
                 ExFreePool(context.stripes);
                 
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end2;
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
@@ -147,9 +143,6 @@ end:
     }
 
     ExFreePool(context.stripes);
-    
-end2:
-    ExReleaseResourceLite(&Vcb->tree_lock);
 
     return Status;
 }
@@ -228,10 +221,14 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
     Status = send_disks_pnp_message(Vcb, IRP_MN_REMOVE_DEVICE);
-    if (!NT_SUCCESS(Status)) {
+
+    if (!NT_SUCCESS(Status))
         WARN("send_disks_pnp_message returned %08x\n", Status);
-    }
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
     
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
         Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
