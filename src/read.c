@@ -1722,7 +1722,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         else
             orig_ls = i = 0;
         
-        while (!devices[i]) {
+        while (!devices[i] || !devices[i]->devobj) {
             i = (i + 1) % ci->num_stripes;
             
             if (i == orig_ls) {
@@ -2292,11 +2292,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     context.address = addr;
     
     for (i = 0; i < ci->num_stripes; i++) {
-        if (!devices[i] || context.stripes[i].stripestart == context.stripes[i].stripeend) {
+        if (!devices[i] || !devices[i]->devobj || context.stripes[i].stripestart == context.stripes[i].stripeend) {
             context.stripes[i].status = ReadDataStatus_MissingDevice;
             context.stripes_left--;
             
-            if (!devices[i])
+            if (!devices[i] || !devices[i]->devobj)
                 missing_devices++;
         }
     }
@@ -2310,7 +2310,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     for (i = 0; i < ci->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        if (devices[i] && context.stripes[i].stripestart != context.stripes[i].stripeend && context.stripes[i].status != ReadDataStatus_Skip) {
+        if (devices[i] && devices[i]->devobj && context.stripes[i].stripestart != context.stripes[i].stripeend && context.stripes[i].status != ReadDataStatus_Skip) {
             context.stripes[i].context = (struct read_data_context*)&context;
 
             if (type == BLOCK_FLAG_RAID10) {
