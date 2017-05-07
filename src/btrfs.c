@@ -82,6 +82,7 @@ BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE volume_list_lock;
 LIST_ENTRY volume_list;
+BOOL finished_probing = FALSE;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -3854,11 +3855,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             le = le2;
         }
 
-        if (vde->children_loaded < vde->num_children) { // devices missing
-            Status = STATUS_DEVICE_NOT_READY;
-            goto exit;
-        }
-
         if (vde->num_children == 0) {
             ERR("error - number of devices is zero\n");
             Status = STATUS_INTERNAL_ERROR;
@@ -3938,7 +3934,13 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         ERR("registry_load_volume_options returned %08x\n", Status);
         goto exit;
     }
-    
+
+    if (vde && vde->children_loaded < vde->num_children && (!Vcb->options.allow_degraded || !finished_probing)) {
+        ERR("could not mount as %u device(s) missing\n", vde->num_children - vde->children_loaded);
+        Status = STATUS_DEVICE_NOT_READY;
+        goto exit;
+    }
+
     if (Vcb->options.ignore) {
         TRACE("ignoring volume\n");
         Status = STATUS_UNRECOGNIZED_VOLUME;
@@ -4052,7 +4054,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     if (Vcb->superblock.num_devices > 1) {
-        if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
+        if (Vcb->devices_loaded < Vcb->superblock.num_devices && (!Vcb->options.allow_degraded || !finished_probing)) {
             ERR("could not mount as %u device(s) missing\n", Vcb->superblock.num_devices - Vcb->devices_loaded);
             
             IoRaiseInformationalHardError(IO_ERR_INTERNAL_ERROR, NULL, NULL);
@@ -5084,6 +5086,7 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     if (!NT_SUCCESS(Status))
         ERR("IoRegisterPlugPlayNotification returned %08x\n", Status);
     
+    finished_probing = TRUE;
     IoRegisterFileSystem(DeviceObject);
 
     return STATUS_SUCCESS;
