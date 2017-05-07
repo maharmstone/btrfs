@@ -188,6 +188,7 @@
 #define IDS_SEND_PARENT_NOT_READONLY    271
 #define IDS_SEND_CANCEL                 272
 #define IDS_SEND_WRITING                273
+#define IDS_MISSING                     274
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

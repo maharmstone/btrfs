@@ -715,6 +715,7 @@ STRINGTABLE
 BEGIN
     IDS_SEND_CANCEL         "&Cancel"
     IDS_SEND_WRITING        "Writing..."
+    IDS_MISSING             "(missing)"
 END
 
 #endif    // English (U.K.) resources

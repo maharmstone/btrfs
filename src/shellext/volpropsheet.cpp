@@ -182,7 +182,15 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     dev_size = 0;
     
     while (TRUE) {
-        if (bd->device_number == 0xffffffff) {
+        if (bd->missing) {
+            if (!LoadStringW(module, IDS_MISSING, u, sizeof(u) / sizeof(WCHAR))) {
+                ShowError(hwndDlg, GetLastError());
+                goto end;
+            }
+
+            devs[k].name = (WCHAR*)malloc((wcslen(u) + 1) * sizeof(WCHAR));
+            wcscpy(devs[k].name, u);
+        } else if (bd->device_number == 0xffffffff) {
             devs[k].name = (WCHAR*)malloc(bd->namelen + sizeof(WCHAR));
             memcpy(devs[k].name, bd->name, bd->namelen);
             devs[k].name[bd->namelen / sizeof(WCHAR)] = 0;
@@ -813,7 +821,14 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         lvi.mask = LVIF_TEXT;
         lvi.iSubItem = 1;
         
-        if (bd->device_number == 0xffffffff) {
+        if (bd->missing) {
+            if (!LoadStringW(module, IDS_MISSING, u, sizeof(u) / sizeof(WCHAR))) {
+                ShowError(GetParent(devlist), GetLastError());
+                break;
+            }
+
+            wcscpy(s, u);
+        } else if (bd->device_number == 0xffffffff) {
             memcpy(s, bd->name, bd->namelen);
             s[bd->namelen / sizeof(WCHAR)] = 0;
         } else if (bd->partition_number == 0) {
