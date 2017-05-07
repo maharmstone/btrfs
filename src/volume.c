@@ -28,6 +28,7 @@
 extern PDRIVER_OBJECT drvobj;
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
+extern UNICODE_STRING registry_path;
 
 NTSTATUS STDCALL vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
@@ -872,6 +873,80 @@ NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
     return STATUS_SUCCESS;
 }
 
+static BOOL allow_degraded_mount(BTRFS_UUID* uuid) {
+    HANDLE h;
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    UNICODE_STRING path, adus;
+    UINT32 degraded = mount_allow_degraded;
+    ULONG i, j, kvfilen, retlen;
+    KEY_VALUE_FULL_INFORMATION* kvfi;
+
+    path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
+    path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
+
+    if (!path.Buffer) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+
+    RtlCopyMemory(path.Buffer, registry_path.Buffer, registry_path.Length);
+    i = registry_path.Length / sizeof(WCHAR);
+
+    path.Buffer[i] = '\\';
+    i++;
+
+    for (j = 0; j < 16; j++) {
+        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+
+        i += 2;
+
+        if (j == 3 || j == 5 || j == 7 || j == 9) {
+            path.Buffer[i] = '-';
+            i++;
+        }
+    }
+
+    InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    kvfilen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + (255 * sizeof(WCHAR));
+    kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+    if (!kvfi) {
+        ERR("out of memory\n");
+        ExFreePool(path.Buffer);
+        return FALSE;
+    }
+
+    Status = ZwOpenKey(&h, KEY_QUERY_VALUE, &oa);
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        goto end;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("ZwOpenKey returned %08x\n", Status);
+        goto end;
+    }
+
+    adus.Buffer = L"AllowDegraded";
+    adus.Length = adus.MaximumLength = wcslen(adus.Buffer) * sizeof(WCHAR);
+
+    if (NT_SUCCESS(ZwQueryValueKey(h, &adus, KeyValueFullInformation, kvfi, kvfilen, &retlen))) {
+        if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
+            UINT32* val = (UINT32*)((UINT8*)kvfi + kvfi->DataOffset);
+
+            degraded = *val;
+        }
+    }
+
+    ZwClose(h);
+
+    ExFreePool(kvfi);
+
+end:
+    ExFreePool(path.Buffer);
+
+    return degraded;
+}
+
 void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num, ULONG part_num) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -1068,7 +1143,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     if (DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA)
         voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
     
-    if (vde->num_children == vde->children_loaded) {
+    if (vde->num_children == vde->children_loaded || (vde->children_loaded == 1 && allow_degraded_mount(&sb->uuid))) {
         if (vde->num_children == 1) {
             Status = remove_drive_letter(mountmgr, devpath);
             if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
