@@ -94,6 +94,7 @@ typedef struct {
     UINT64 dev_id;
     UINT64 size;
     BOOL readonly;
+    BOOL missing;
     ULONG device_number;
     ULONG partition_number;
     UINT64 stats[5];

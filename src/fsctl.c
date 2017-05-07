@@ -1412,8 +1412,12 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
             Status = dev_ioctl(dev2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
             if (!NT_SUCCESS(Status))
                 goto end;
-        } else
+
+            dev->missing = FALSE;
+        } else {
             dev->namelen = 0;
+            dev->missing = TRUE;
+        }
         
         dev->next_entry = 0;
         dev->dev_id = dev2->devitem.dev_id;
