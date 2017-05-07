@@ -1408,9 +1408,12 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         
         structlen = length - offsetof(btrfs_device, namelen);
         
-        Status = dev_ioctl(dev2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
-        if (!NT_SUCCESS(Status))
-            goto end;
+        if (dev2->devobj) {
+            Status = dev_ioctl(dev2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &dev->namelen, structlen, TRUE, NULL);
+            if (!NT_SUCCESS(Status))
+                goto end;
+        } else
+            dev->namelen = 0;
         
         dev->next_entry = 0;
         dev->dev_id = dev2->devitem.dev_id;
