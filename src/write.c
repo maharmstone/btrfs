@@ -2174,41 +2174,43 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             stripes[i].data = data;
             stripes[i].irp_offset = irp_offset;
             
-            if (file_write) {
-                UINT8* va;
-                ULONG writelen = stripes[i].end - stripes[i].start;
-                
-                va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset;
-                
-                stripes[i].mdl = IoAllocateMdl(va, writelen, FALSE, FALSE, NULL);
-                if (!stripes[i].mdl) {
-                    ERR("IoAllocateMdl failed\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto prepare_failed;
-                }
-                
-                IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, writelen);
-            } else {
-                stripes[i].mdl = IoAllocateMdl(stripes[i].data, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
-                if (!stripes[i].mdl) {
-                    ERR("IoAllocateMdl failed\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto prepare_failed;
-                }
-                
-                Status = STATUS_SUCCESS;
+            if (c->devices[i]->devobj) {
+                if (file_write) {
+                    UINT8* va;
+                    ULONG writelen = stripes[i].end - stripes[i].start;
 
-                try {
-                    MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoReadAccess);
-                } except (EXCEPTION_EXECUTE_HANDLER) {
-                    Status = GetExceptionCode();
-                }
+                    va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset;
 
-                if (!NT_SUCCESS(Status)) {
-                    ERR("MmProbeAndLockPages threw exception %08x\n", Status);
-                    IoFreeMdl(stripes[i].mdl);
-                    stripes[i].mdl = NULL;
-                    goto prepare_failed;
+                    stripes[i].mdl = IoAllocateMdl(va, writelen, FALSE, FALSE, NULL);
+                    if (!stripes[i].mdl) {
+                        ERR("IoAllocateMdl failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto prepare_failed;
+                    }
+
+                    IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, writelen);
+                } else {
+                    stripes[i].mdl = IoAllocateMdl(stripes[i].data, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
+                    if (!stripes[i].mdl) {
+                        ERR("IoAllocateMdl failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto prepare_failed;
+                    }
+
+                    Status = STATUS_SUCCESS;
+
+                    try {
+                        MmProbeAndLockPages(stripes[i].mdl, KernelMode, IoReadAccess);
+                    } except (EXCEPTION_EXECUTE_HANDLER) {
+                        Status = GetExceptionCode();
+                    }
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                        IoFreeMdl(stripes[i].mdl);
+                        stripes[i].mdl = NULL;
+                        goto prepare_failed;
+                    }
                 }
             }
         }
