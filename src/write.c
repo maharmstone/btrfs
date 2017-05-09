@@ -2227,7 +2227,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     if (missing > allowed_missing) {
         ERR("cannot write as %u missing devices (maximum %u)\n", missing, allowed_missing);
         Status = STATUS_DEVICE_NOT_READY;
-        goto end;
+        goto prepare_failed;
     }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
@@ -2333,6 +2333,7 @@ prepare_failed:
             MmUnlockPages(wtc->parity1_mdl);
         
         IoFreeMdl(wtc->parity1_mdl);
+        wtc->parity1_mdl = NULL;
     }
     
     if (wtc->parity2_mdl) {
@@ -2340,6 +2341,7 @@ prepare_failed:
             MmUnlockPages(wtc->parity2_mdl);
         
         IoFreeMdl(wtc->parity2_mdl);
+        wtc->parity2_mdl = NULL;
     }
     
     if (wtc->mdl) {
@@ -2347,16 +2349,23 @@ prepare_failed:
             MmUnlockPages(wtc->mdl);
         
         IoFreeMdl(wtc->mdl);
+        wtc->mdl = NULL;
     }
     
-    if (wtc->parity1)
+    if (wtc->parity1) {
         ExFreePool(wtc->parity1);
+        wtc->parity1 = NULL;
+    }
     
-    if (wtc->parity2)
+    if (wtc->parity2) {
         ExFreePool(wtc->parity2);
+        wtc->parity2 = NULL;
+    }
     
-    if (wtc->scratch)
+    if (wtc->scratch) {
         ExFreePool(wtc->scratch);
+        wtc->scratch = NULL;
+    }
 
     ExFreePool(stripes);
     return Status;
