@@ -2113,6 +2113,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     write_data_stripe* stripe;
     write_stripe* stripes = NULL;
     UINT64 total_writing = 0;
+    ULONG allowed_missing, missing;
     
     TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
     
@@ -2140,24 +2141,32 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             ERR("prepare_raid0_write returned %08x\n", Status);
             goto prepare_failed;
         }
+
+        allowed_missing = 0;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
         Status = prepare_raid10_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid10_write returned %08x\n", Status);
             goto prepare_failed;
         }
+
+        allowed_missing = 1;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
         Status = prepare_raid5_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08x\n", Status);
             goto prepare_failed;
         }
+
+        allowed_missing = 1;
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         Status = prepare_raid6_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid6_write returned %08x\n", Status);
             goto prepare_failed;
         }
+
+        allowed_missing = 2;
     } else {  // write same data to every location - SINGLE, DUP, RAID1
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             stripes[i].start = address - c->offset;
@@ -2203,6 +2212,20 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
                 }
             }
         }
+
+        allowed_missing = c->chunk_item->num_stripes - 1;
+    }
+
+    missing = 0;
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (!c->devices[i]->devobj)
+            missing++;
+    }
+
+    if (missing > allowed_missing) {
+        ERR("cannot write as %u missing devices (maximum %u)\n", missing, allowed_missing);
+        Status = STATUS_DEVICE_NOT_READY;
+        goto end;
     }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
