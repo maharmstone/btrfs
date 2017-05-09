@@ -1657,7 +1657,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 send = endoff - (endoff % ci->stripe_length);
             
             for (j = 0; j < ci->sub_stripes; j++) {
-                if (j == orig_ls && devices[i+j]->devobj) {
+                if (j == orig_ls && devices[i+j] && devices[i+j]->devobj) {
                     context.stripes[i+j].stripestart = sstart;
                     context.stripes[i+j].stripeend = send;
                     stripes[i / ci->sub_stripes] = &context.stripes[i+j];
@@ -1679,7 +1679,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
             if (!stripeset) {
                 for (j = 0; j < ci->sub_stripes; j++) {
-                    if (devices[i+j]->devobj) {
+                    if (devices[i+j] && devices[i+j]->devobj) {
                         context.stripes[i+j].stripestart = sstart;
                         context.stripes[i+j].stripeend = send;
                         context.stripes[i+j].status = ReadDataStatus_Pending;
