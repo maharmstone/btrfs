@@ -2208,8 +2208,6 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
-        // FIXME - handle missing devices
-        
         stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_stripe), ALLOC_TAG);
         if (!stripe) {
             ERR("out of memory\n");
@@ -2217,7 +2215,7 @@ NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, U
             goto end;
         }
         
-        if (stripes[i].start == stripes[i].end) {
+        if (stripes[i].start == stripes[i].end || !c->devices[i]->devobj) {
             stripe->status = WriteDataStatus_Ignore;
             stripe->Irp = NULL;
             stripe->buf = stripes[i].data;
