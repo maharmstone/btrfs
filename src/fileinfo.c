@@ -2752,11 +2752,21 @@ static NTSTATUS STDCALL fill_in_file_mode_information(FILE_MODE_INFORMATION* fmi
 }
 
 static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORMATION* fai, device_extension* Vcb, LONG* length) {
+    LIST_ENTRY* le;
+
     RtlZeroMemory(fai, sizeof(FILE_ALIGNMENT_INFORMATION));
     
     *length -= sizeof(FILE_ALIGNMENT_INFORMATION);
     
-    fai->AlignmentRequirement = first_device(Vcb)->devobj->AlignmentRequirement;
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+        if (dev->devobj)
+            fai->AlignmentRequirement = dev->devobj->AlignmentRequirement;
+
+        le = le->Flink;
+    }
     
     return STATUS_SUCCESS;
 }

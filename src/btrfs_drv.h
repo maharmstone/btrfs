@@ -1354,8 +1354,6 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
     }
 }
 
-#define first_device(Vcb) CONTAINING_RECORD(Vcb->devices.Flink, device, list_entry)
-
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
 #define increase_fileref_refcount(fileref) {\
