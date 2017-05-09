@@ -1640,6 +1640,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         
         for (i = 0; i < ci->num_stripes; i += ci->sub_stripes) {
             UINT64 sstart, send;
+            BOOL stripeset = FALSE;
             
             if (startoffstripe > i)
                 sstart = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
@@ -1656,11 +1657,11 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                 send = endoff - (endoff % ci->stripe_length);
             
             for (j = 0; j < ci->sub_stripes; j++) {
-                if (j == orig_ls) {
+                if (j == orig_ls && devices[i+j]->devobj) {
                     context.stripes[i+j].stripestart = sstart;
                     context.stripes[i+j].stripeend = send;
                     stripes[i / ci->sub_stripes] = &context.stripes[i+j];
-                    
+
                     if (sstart != send) {
                         context.stripes[i+j].mdl = IoAllocateMdl(context.va, send - sstart, FALSE, FALSE, NULL);
 
@@ -1670,8 +1671,40 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
                             goto exit;
                         }
                     }
+
+                    stripeset = TRUE;
                 } else
                     context.stripes[i+j].status = ReadDataStatus_Skip;
+            }
+
+            if (!stripeset) {
+                for (j = 0; j < ci->sub_stripes; j++) {
+                    if (devices[i+j]->devobj) {
+                        context.stripes[i+j].stripestart = sstart;
+                        context.stripes[i+j].stripeend = send;
+                        context.stripes[i+j].status = ReadDataStatus_Pending;
+                        stripes[i / ci->sub_stripes] = &context.stripes[i+j];
+
+                        if (sstart != send) {
+                            context.stripes[i+j].mdl = IoAllocateMdl(context.va, send - sstart, FALSE, FALSE, NULL);
+
+                            if (!context.stripes[i+j].mdl) {
+                                ERR("IoAllocateMdl failed\n");
+                                Status = STATUS_INSUFFICIENT_RESOURCES;
+                                goto exit;
+                            }
+                        }
+
+                        stripeset = TRUE;
+                        break;
+                    }
+                }
+
+                if (!stripeset) {
+                    ERR("could not find stripe to read\n");
+                    Status = STATUS_DEVICE_NOT_READY;
+                    goto exit;
+                }
             }
         }
         
