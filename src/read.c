@@ -596,14 +596,17 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
     UINT64 lockaddr, locklen;
     UINT16 stripe;
+    BOOL no_success = TRUE;
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
             WARN("stripe %u returned error %08x\n", i, context->stripes[i].iosb.Status);
             log_device_error(Vcb, devices[i], BTRFS_DEV_STAT_READ_ERRORS);
             return context->stripes[i].iosb.Status;
-        } else if (context->stripes[i].status == ReadDataStatus_Success)
+        } else if (context->stripes[i].status == ReadDataStatus_Success) {
             stripe = i;
+            no_success = FALSE;
+        }
     }
     
     if (context->tree) {
@@ -612,10 +615,12 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
             checksum_error = TRUE;
-            log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+            if (!no_success)
+                log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
         } else if (generation != 0 && generation != th->generation) {
             checksum_error = TRUE;
-            log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
+            if (!no_success)
+                log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
 #ifdef DEBUG_STATS
@@ -707,7 +712,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
                 recovered = TRUE;
                 
-                if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
+                if (!Vcb->readonly && devices[stripe] && !devices[stripe]->readonly && devices[stripe]->devobj) { // write good data over bad
                     Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + off, t2, Vcb->superblock.node_size);
                     if (!NT_SUCCESS(Status)) {
                         WARN("write_data_phys returned %08x\n", Status);
@@ -791,7 +796,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                         ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
                         recovered = TRUE;
                         
-                        if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
+                        if (!Vcb->readonly && devices[stripe] && !devices[stripe]->readonly && devices[stripe]->devobj) { // write good data over bad
                             Status = write_data_phys(devices[stripe]->devobj, cis[stripe].offset + off,
                                                      sector, Vcb->superblock.sector_size);
                             if (!NT_SUCCESS(Status)) {
@@ -1342,6 +1347,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     UINT16 startoffstripe, allowed_missing, missing_devices = 0;
     UINT8* dummypage = NULL;
     PMDL dummy_mdl = NULL;
+    BOOL need_to_wait;
 #ifdef DEBUG_STATS
     LARGE_INTEGER time1, time2;
 #endif
@@ -2404,13 +2410,16 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
     
+    need_to_wait = FALSE;
     for (i = 0; i < ci->num_stripes; i++) {
         if (context.stripes[i].status != ReadDataStatus_MissingDevice && context.stripes[i].status != ReadDataStatus_Skip) {
             IoCallDriver(devices[i]->devobj, context.stripes[i].Irp);
+            need_to_wait = TRUE;
         }
     }
 
-    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+    if (need_to_wait)
+        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
    
 #ifdef DEBUG_STATS
     if (!is_tree) {
