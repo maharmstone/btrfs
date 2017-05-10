@@ -608,9 +608,6 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             no_success = FALSE;
         }
     }
-    
-    if (degraded && (context->tree || context->csum))
-        goto recover;
 
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
@@ -618,11 +615,11 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         if (addr != th->address || crc32 != *((UINT32*)th->csum)) {
             checksum_error = TRUE;
-            if (!no_success)
+            if (!no_success && !degraded)
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
         } else if (generation != 0 && generation != th->generation) {
             checksum_error = TRUE;
-            if (!no_success)
+            if (!no_success && !degraded)
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
@@ -634,7 +631,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
         
         if (Status == STATUS_CRC_ERROR) {
-            WARN("checksum error\n");
+            if (!degraded)
+                WARN("checksum error\n");
             checksum_error = TRUE;
         } else if (!NT_SUCCESS(Status)) {
             ERR("check_csum returned %08x\n", Status);
@@ -650,8 +648,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     
     if (!checksum_error)
         return STATUS_SUCCESS;
-    
-recover:
+
     if (c) {
         get_raid56_lock_range(c, addr, length, &lockaddr, &locklen);
         chunk_lock_range(Vcb, c, lockaddr, locklen);
