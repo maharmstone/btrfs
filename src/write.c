@@ -4662,12 +4662,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     }
                 }
                 
-                Status = do_write_file(fcb, start_data, end_data, data, Irp, TRUE, 0, rollback);
+                try {
+                    Status = do_write_file(fcb, start_data, end_data, data, Irp, TRUE, 0, rollback);
+                } except (EXCEPTION_EXECUTE_HANDLER) {
+                    Status = GetExceptionCode();
+                }
                 
                 if (!locked)
                     MmUnlockPages(Irp->MdlAddress);
-            } else
-                Status = do_write_file(fcb, start_data, end_data, data, Irp, FALSE, 0, rollback);
+            } else {
+                try {
+                    Status = do_write_file(fcb, start_data, end_data, data, Irp, FALSE, 0, rollback);
+                } except (EXCEPTION_EXECUTE_HANDLER) {
+                    Status = GetExceptionCode();
+                }
+            }
             
             if (!NT_SUCCESS(Status)) {
                 ERR("do_write_file returned %08x\n", Status);
