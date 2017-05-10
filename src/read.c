@@ -1057,7 +1057,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[physstripe]->devitem.dev_id);
                     recovered = TRUE;
                     
-                    if (!Vcb->readonly && !devices[physstripe]->readonly) { // write good data over bad
+                    if (!Vcb->readonly && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
                         Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
                                                  sector + (stripe * Vcb->superblock.node_size), Vcb->superblock.node_size);
                         if (!NT_SUCCESS(Status)) {
@@ -1236,7 +1236,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                             ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[physstripe]->devitem.dev_id);
                             recovered = TRUE;
                             
-                            if (!Vcb->readonly && !devices[physstripe]->readonly) { // write good data over bad
+                            if (!Vcb->readonly && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[physstripe]->devobj, cis[physstripe].offset + off,
                                                          sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status)) {
