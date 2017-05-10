@@ -2415,7 +2415,12 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
         chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
     
-    Status = write_data(Vcb, address, data, length, &wtc, Irp, c, file_write, irp_offset, priority);
+    try {
+        Status = write_data(Vcb, address, data, length, &wtc, Irp, c, file_write, irp_offset, priority);
+    } except (EXCEPTION_EXECUTE_HANDLER) {
+        Status = GetExceptionCode();
+    }
+
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08x\n", Status);
         
