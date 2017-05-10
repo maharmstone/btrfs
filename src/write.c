@@ -1063,6 +1063,8 @@ static NTSTATUS raid5_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 sta
     }
 
     ExFreePool(scratch);
+
+    return STATUS_SUCCESS;
 }
 
 typedef struct {
