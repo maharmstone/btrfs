@@ -589,7 +589,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 }
 
 static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context, CHUNK_ITEM* ci,
-                                device** devices, UINT64 offset, UINT64 generation, chunk* c) {
+                                device** devices, UINT64 offset, UINT64 generation, chunk* c, BOOL degraded) {
     ULONG i;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
@@ -609,6 +609,9 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         }
     }
     
+    if (degraded && (context->tree || context->csum))
+        goto recover;
+
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
         UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
@@ -648,6 +651,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     if (!checksum_error)
         return STATUS_SUCCESS;
     
+recover:
     if (c) {
         get_raid56_lock_range(c, addr, length, &lockaddr, &locklen);
         chunk_lock_range(Vcb, c, lockaddr, locklen);
@@ -709,7 +713,10 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 
             if (t3->address == addr && crc32 == *((UINT32*)t3->csum) && (generation == 0 || t3->generation == generation)) {
                 RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
-                ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
+
+                if (!degraded)
+                    ERR("recovering from checksum error at %llx, device %llx\n", addr, devices[stripe]->devitem.dev_id);
+
                 recovered = TRUE;
                 
                 if (!Vcb->readonly && devices[stripe] && !devices[stripe]->readonly && devices[stripe]->devobj) { // write good data over bad
@@ -755,7 +762,9 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 parity = (((addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size)) / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
                 
                 stripe = (parity + stripe + 1) % ci->num_stripes;
-                log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_READ_ERRORS);
+
+                if (devices[stripe]->devobj)
+                    log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_READ_ERRORS);
                 
                 for (j = 0; j < ci->num_stripes; j++) {
                     if (j != stripe) {
@@ -793,7 +802,10 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     
                     if (crc32 == context->csum[i]) {
                         RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
-                        ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
+
+                        if (!degraded)
+                            ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
+
                         recovered = TRUE;
                         
                         if (!Vcb->readonly && devices[stripe] && !devices[stripe]->readonly && devices[stripe]->devobj) { // write good data over bad
@@ -2506,7 +2518,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c);
+        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c, missing_devices > 0 ? TRUE : FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             
