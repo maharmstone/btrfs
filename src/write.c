@@ -1241,10 +1241,17 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
                     len = stripes[stripe].start - parity_start;
                 
                 context.stripes[frag_num].dev = c->devices[stripe];
-                Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("async_read_phys returned %08x\n", Status);
-                    goto exit;
+
+                if (c->devices[stripe]->devobj) {
+                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("async_read_phys returned %08x\n", Status);
+                        goto exit;
+                    }
+                } else {
+                    RtlZeroMemory(fragments2, len);
+                    context.total--;
+                    InterlockedDecrement(&context.left);
                 }
                 
                 frag_num++;
@@ -1271,10 +1278,17 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
                 PFN_NUMBER* pl;
                 
                 context.stripes[frag_num].dev = c->devices[stripe];
-                Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("async_read_phys returned %08x\n", Status);
-                    goto exit;
+
+                if (c->devices[stripe]->devobj) {
+                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("async_read_phys returned %08x\n", Status);
+                        goto exit;
+                    }
+                } else {
+                    RtlZeroMemory(fragments2, len);
+                    context.total--;
+                    InterlockedDecrement(&context.left);
                 }
                 
                 frag_num++;
@@ -1487,7 +1501,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         }
     }
     
-    if (fragment_len > 0) {
+    if (fragment_len > 0 && context.total > 0) {
         KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
         
         for (i = 0; i < context.total; i++) {
