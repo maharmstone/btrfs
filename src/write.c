@@ -1026,6 +1026,45 @@ fail:
     return Status;
 }
 
+static NTSTATUS raid5_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 start, ULONG len, UINT8* data) {
+    NTSTATUS Status;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    UINT8* scratch;
+    UINT16 i;
+
+    scratch = ExAllocatePoolWithTag(NonPagedPool, len, ALLOC_TAG);
+    if (!scratch) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        if (i != stripe) {
+            if (i == 0 || (i == 1 && stripe == 0)) {
+                Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + start, len, data, FALSE);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("sync_read_phys returned %08x\n", Status);
+                    ExFreePool(scratch);
+                    return Status;
+                }
+            } else {
+                Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + start, len, scratch, FALSE);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("sync_read_phys returned %08x\n", Status);
+                    ExFreePool(scratch);
+                    return Status;
+                }
+
+                do_xor(data, scratch, len);
+            }
+        }
+    }
+
+    ExFreePool(scratch);
+}
+
 typedef struct {
     PMDL mdl;
     PFN_NUMBER* pfns;
@@ -1249,9 +1288,14 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
                         goto exit;
                     }
                 } else {
-                    RtlZeroMemory(fragments2, len);
                     context.total--;
                     InterlockedDecrement(&context.left);
+
+                    Status = raid5_read_fragment_degraded(c, stripe, parity_start, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("raid5_read_fragment_degraded returned %08x\n", Status);
+                        goto exit;
+                    }
                 }
                 
                 frag_num++;
@@ -1286,9 +1330,14 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
                         goto exit;
                     }
                 } else {
-                    RtlZeroMemory(fragments2, len);
                     context.total--;
                     InterlockedDecrement(&context.left);
+
+                    Status = raid5_read_fragment_degraded(c, stripe, stripes[stripe].end, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("raid5_read_fragment_degraded returned %08x\n", Status);
+                        goto exit;
+                    }
                 }
                 
                 frag_num++;
