@@ -837,7 +837,7 @@ end:
     return Status;
 }
 
-static void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT16 missing1, UINT16 missing2, UINT8* out) {
+void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT16 missing1, UINT16 missing2, UINT8* out) {
     if (missing1 == num_stripes - 2 || missing2 == num_stripes - 2) { // reconstruct from q and data
         UINT16 missing = missing1 == (num_stripes - 2) ? missing2 : missing1;
         UINT16 stripe;

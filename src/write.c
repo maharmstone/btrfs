@@ -1613,6 +1613,91 @@ exit:
     return Status;
 }
 
+static NTSTATUS raid6_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 start, ULONG len, UINT8* data) {
+    NTSTATUS Status;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    UINT8* scratch;
+    ULONG num_errors = 0;
+    UINT16 error_stripe, logstripe, parity1, parity2;
+    UINT16 i, k;
+
+    scratch = ExAllocatePoolWithTag(NonPagedPool, len * (c->chunk_item->num_stripes + 2), ALLOC_TAG);
+    if (!scratch) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    parity1 = ((start / c->chunk_item->stripe_length) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
+    parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
+
+    // read b and p
+
+    i = (parity2 + 1) % c->chunk_item->num_stripes;
+    for (k = 0; k < c->chunk_item->num_stripes - 1; k++) {
+        if (i != stripe) {
+            if (c->devices[i]->devobj) {
+                Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + start, len, scratch + (k * len), FALSE);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("sync_read_phys returned %08x\n", Status);
+                    ExFreePool(scratch);
+                    return Status;
+                }
+            } else {
+                num_errors++;
+                error_stripe = k;
+            }
+
+            if (num_errors > 1) {
+                ExFreePool(scratch);
+                return STATUS_UNEXPECTED_IO_ERROR;
+            }
+        } else
+            logstripe = k;
+    }
+
+    if (num_errors == 0) {
+        BOOL first = TRUE;
+
+        // reconstruct a from b and p
+
+        for (i = 0; i < c->chunk_item->num_stripes; i++) {
+            if (i != stripe && i != parity2) {
+                if (first) {
+                    RtlCopyMemory(data, scratch + (i * len), len);
+                    first = FALSE;
+                } else
+                    do_xor(data, scratch + (i * len), len);
+            }
+        }
+    } else {
+        // read q
+
+        if (c->devices[parity2]->devobj) {
+            Status = sync_read_phys(c->devices[parity2]->devobj, cis[parity2].offset + start, len, scratch + ((c->chunk_item->num_stripes - 1) * len), FALSE);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("sync_read_phys returned %08x\n", Status);
+                ExFreePool(scratch);
+                return Status;
+            }
+        } else {
+            ExFreePool(scratch);
+            return STATUS_UNEXPECTED_IO_ERROR;
+        }
+
+        // reconstruct a from b and q, or p and q
+
+        raid6_recover2(scratch, c->chunk_item->num_stripes, len, logstripe, error_stripe, scratch + (c->chunk_item->num_stripes * len));
+
+        RtlCopyMemory(data, scratch + (c->chunk_item->num_stripes * len), len);
+    }
+
+    ExFreePool(scratch);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
                                     UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
@@ -1825,10 +1910,23 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
                     len = stripes[stripe].start - parity_start;
                 
                 context.stripes[frag_num].dev = c->devices[stripe];
-                Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("async_read_phys returned %08x\n", Status);
-                    goto exit;
+
+                if (c->devices[stripe]->devobj) {
+                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("async_read_phys returned %08x\n", Status);
+                        goto exit;
+                    }
+                } else {
+                    context.total--;
+                    if (InterlockedDecrement(&context.left) == 0)
+                        KeSetEvent(&context.Event, 0, FALSE);
+
+                    Status = raid6_read_fragment_degraded(c, stripe, parity_start, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("raid6_read_fragment_degraded returned %08x\n", Status);
+                        goto exit;
+                    }
                 }
                 
                 frag_num++;
@@ -1855,10 +1953,23 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
                 PFN_NUMBER* pl;
                 
                 context.stripes[frag_num].dev = c->devices[stripe];
-                Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("async_read_phys returned %08x\n", Status);
-                    goto exit;
+
+                if (c->devices[stripe]->devobj) {
+                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("async_read_phys returned %08x\n", Status);
+                        goto exit;
+                    }
+                } else {
+                    context.total--;
+                    if (InterlockedDecrement(&context.left) == 0)
+                        KeSetEvent(&context.Event, 0, FALSE);
+
+                    Status = raid6_read_fragment_degraded(c, stripe, stripes[stripe].end, len, fragments2);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("raid6_read_fragment_degraded returned %08x\n", Status);
+                        goto exit;
+                    }
                 }
                 
                 frag_num++;
@@ -2104,7 +2215,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
         }
     }
     
-    if (fragment_len > 0) {
+    if (fragment_len > 0 && context.total > 0) {
         KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
         
         for (i = 0; i < context.total; i++) {
