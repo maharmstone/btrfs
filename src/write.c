@@ -1654,6 +1654,8 @@ static NTSTATUS raid6_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 sta
             }
         } else
             logstripe = k;
+
+        i = (i + 1) % c->chunk_item->num_stripes;
     }
 
     if (num_errors == 0) {
@@ -1661,13 +1663,13 @@ static NTSTATUS raid6_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 sta
 
         // reconstruct a from b and p
 
-        for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (i != stripe && i != parity2) {
+        for (k = 0; k < c->chunk_item->num_stripes - 1; k++) {
+            if (k != logstripe) {
                 if (first) {
-                    RtlCopyMemory(data, scratch + (i * len), len);
+                    RtlCopyMemory(data, scratch + (k * len), len);
                     first = FALSE;
                 } else
-                    do_xor(data, scratch + (i * len), len);
+                    do_xor(data, scratch + (k * len), len);
             }
         }
     } else {
