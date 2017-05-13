@@ -1291,7 +1291,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
                     }
                 } else {
                     context.total--;
-                    InterlockedDecrement(&context.left);
+                    if (InterlockedDecrement(&context.left) == 0)
+                        KeSetEvent(&context.Event, 0, FALSE);
 
                     Status = raid5_read_fragment_degraded(c, stripe, parity_start, len, fragments2);
                     if (!NT_SUCCESS(Status)) {
@@ -1333,7 +1334,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
                     }
                 } else {
                     context.total--;
-                    InterlockedDecrement(&context.left);
+                    if (InterlockedDecrement(&context.left) == 0)
+                        KeSetEvent(&context.Event, 0, FALSE);
 
                     Status = raid5_read_fragment_degraded(c, stripe, stripes[stripe].end, len, fragments2);
                     if (!NT_SUCCESS(Status)) {
