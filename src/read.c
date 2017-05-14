@@ -205,7 +205,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, re
         }
         
         for (j = 0; j < ci->num_stripes; j++) {
-            if (j != stripe && devices[j]) {
+            if (j != stripe && devices[j] && devices[j]->devobj) {
                 Status = sync_read_phys(devices[j]->devobj, cis[j].offset + context->stripes[stripe].stripestart, Vcb->superblock.node_size, (UINT8*)t2, FALSE);
                 if (!NT_SUCCESS(Status)) {
                     WARN("sync_read_phys returned %08x\n", Status);
@@ -261,7 +261,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, re
                 BOOL recovered = FALSE;
                 
                 for (j = 0; j < ci->num_stripes; j++) {
-                    if (j != stripe && devices[j]) {
+                    if (j != stripe && devices[j] && devices[j]->devobj) {
                         Status = sync_read_phys(devices[j]->devobj, cis[j].offset + context->stripes[stripe].stripestart + UInt32x32To64(i, Vcb->superblock.sector_size),
                                                 Vcb->superblock.sector_size, sector, FALSE);
                         if (!NT_SUCCESS(Status)) {
