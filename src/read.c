@@ -589,7 +589,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 }
 
 static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context, CHUNK_ITEM* ci,
-                                device** devices, UINT64 offset, UINT64 generation, BOOL degraded) {
+                                device** devices, UINT64 offset, UINT64 generation, chunk* c, BOOL degraded) {
     ULONG i;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
@@ -606,6 +606,41 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             stripe = i;
             no_success = FALSE;
         }
+    }
+
+    if (c) {    // check partial stripes
+        LIST_ENTRY* le;
+        UINT64 ps_length = (ci->num_stripes - 1) * ci->stripe_length;
+
+        ExAcquireResourceSharedLite(&c->partial_stripes_lock, TRUE);
+
+        le = c->partial_stripes.Flink;
+        while (le != &c->partial_stripes) {
+            partial_stripe* ps = CONTAINING_RECORD(le, partial_stripe, list_entry);
+
+            if (ps->address + ps_length > addr && ps->address < addr + length) {
+                ULONG runlength, index;
+
+                runlength = RtlFindFirstRunClear(&ps->bmp, &index);
+
+                while (runlength != 0) {
+                    UINT64 runstart = ps->address + (index * Vcb->superblock.sector_size);
+                    UINT64 runend = runstart + (runlength * Vcb->superblock.sector_size);
+                    UINT64 start = max(runstart, addr);
+                    UINT64 end = min(runend, addr + length);
+
+                    if (end > start)
+                        RtlCopyMemory(buf + start - addr, &ps->data[start - ps->address], end - start);
+
+                    runlength = RtlFindNextForwardRunClear(&ps->bmp, index + runlength, &index);
+                }
+            } else if (ps->address >= addr + length)
+                break;
+
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&c->partial_stripes_lock);
     }
 
     if (context->tree) {
@@ -2537,7 +2572,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             ExFreePool(context.va);
         }
     } else if (type == BLOCK_FLAG_RAID5) {
-        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, missing_devices > 0 ? TRUE : FALSE);
+        Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c, missing_devices > 0 ? TRUE : FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08x\n", Status);
             
