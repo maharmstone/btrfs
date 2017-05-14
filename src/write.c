@@ -1050,7 +1050,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 addre
             // update existing entry
 
             RtlCopyMemory(ps->data + address - stripe_addr, data, length);
-            RtlSetBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
+            RtlClearBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
 
             // FIXME - if now filled, flush
 
@@ -1083,12 +1083,12 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 addre
     }
 
     RtlInitializeBitMap(&ps->bmp, ps->bmparr, (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size);
-    RtlClearAllBits(&ps->bmp);
+    RtlSetAllBits(&ps->bmp);
 
     RtlCopyMemory(ps->data + address - stripe_addr, data, length);
-    RtlSetBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
+    RtlClearBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
 
-    InsertTailList(le->Blink, &ps->list_entry);
+    InsertHeadList(le->Blink, &ps->list_entry);
 
     Status = STATUS_SUCCESS;
 
