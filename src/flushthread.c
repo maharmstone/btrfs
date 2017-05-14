@@ -5552,7 +5552,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                 ERR("sync_read_phys returned %08x\n", Status);
                 return Status;
             }
-        } else {
+        } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
             UINT16 i;
             UINT8* scratch;
 
@@ -5592,6 +5592,8 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             }
 
             ExFreePool(scratch);
+        } else {
+            // FIXME - reconstruct RAID6
         }
 
         offset += readlen;
@@ -5603,20 +5605,20 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
 
 static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps) {
     NTSTATUS Status;
-    UINT16 parity, stripe, startoffstripe;
+    UINT16 parity2, stripe, startoffstripe;
     UINT8* data;
     UINT64 startoff;
     ULONG runlength, index, last1;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     LIST_ENTRY* le;
-    UINT64 ps_length = (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length;
+    UINT16 k, num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
+    UINT64 ps_length = num_data_stripes * c->chunk_item->stripe_length;
 
-    // FIXME - work with RAID6
     // FIXME - do writes asynchronously?
 
-    get_raid0_offset(ps->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
+    get_raid0_offset(ps->address - c->offset, c->chunk_item->stripe_length, num_data_stripes, &startoff, &startoffstripe);
 
-    parity = (((ps->address - c->offset) / ps_length) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+    parity2 = (((ps->address - c->offset) / ps_length) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
 
     // read data (or reconstruct if degraded)
 
@@ -5625,7 +5627,7 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
 
     while (runlength != 0) {
         if (index > last1) {
-            Status = partial_stripe_read(Vcb, c, ps, startoff, parity, last1, index - last1);
+            Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, index - last1);
             if (!NT_SUCCESS(Status)) {
                 ERR("partial_stripe_read returned %08x\n", Status);
                 return Status;
@@ -5638,7 +5640,7 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
     }
 
     if (last1 < ps_length / Vcb->superblock.sector_size) {
-        Status = partial_stripe_read(Vcb, c, ps, startoff, parity, last1, (ps_length / Vcb->superblock.sector_size) - last1);
+        Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, (ps_length / Vcb->superblock.sector_size) - last1);
         if (!NT_SUCCESS(Status)) {
             ERR("partial_stripe_read returned %08x\n", Status);
             return Status;
@@ -5676,10 +5678,10 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
         le = le->Flink;
     }
 
-    stripe = (parity + 1) % c->chunk_item->num_stripes;
+    stripe = (parity2 + 1) % c->chunk_item->num_stripes;
 
     data = ps->data;
-    while (stripe != parity) {
+    for (k = 0; k < num_data_stripes; k++) {
         if (c->devices[stripe]->devobj) {
             Status = write_data_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff, data, c->chunk_item->stripe_length);
             if (!NT_SUCCESS(Status)) {
@@ -5692,18 +5694,23 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
     }
 
-    if (c->devices[parity]->devobj) { // write parity
-        UINT16 i;
+    // write parity
+    if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+        if (c->devices[parity2]->devobj) {
+            UINT16 i;
 
-        for (i = 1; i < c->chunk_item->num_stripes - 1; i++) {
-            do_xor(ps->data, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
-        }
+            for (i = 1; i < c->chunk_item->num_stripes - 1; i++) {
+                do_xor(ps->data, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+            }
 
-        Status = write_data_phys(c->devices[parity]->devobj, cis[parity].offset + startoff, ps->data, c->chunk_item->stripe_length);
-        if (!NT_SUCCESS(Status)) {
-            ERR("write_data_phys returned %08x\n", Status);
-            return Status;
+            Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, ps->data, c->chunk_item->stripe_length);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data_phys returned %08x\n", Status);
+                return Status;
+            }
         }
+    } else {
+        // FIXME - write RAID6 parity
     }
 
     return STATUS_SUCCESS;
@@ -5726,7 +5733,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
         // flush partial stripes
-        if (!Vcb->readonly && c->chunk_item->type & BLOCK_FLAG_RAID5) { // FIXME - also RAID6
+        if (!Vcb->readonly && (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)) {
             ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
 
             while (!IsListEmpty(&c->partial_stripes)) {
