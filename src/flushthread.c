@@ -5661,6 +5661,21 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
         le = le->Flink;
     }
 
+    le = c->deleting.Flink;
+    while (le != &c->deleting) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        if (s->address + s->size > ps->address && s->address < ps->address + ps_length) {
+            UINT64 start = max(ps->address, s->address);
+            UINT64 end = min(ps->address + ps_length, s->address + s->size);
+
+            RtlZeroMemory(ps->data + start - ps->address, end - start);
+        } else if (s->address >= ps->address + ps_length)
+            break;
+
+        le = le->Flink;
+    }
+
     stripe = (parity + 1) % c->chunk_item->num_stripes;
 
     data = ps->data;
