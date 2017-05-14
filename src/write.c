@@ -1121,6 +1121,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     if ((address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
         UINT64 delta = (address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length);
 
+        delta = min(irp_offset + length, delta);
         Status = add_partial_stripe(Vcb, c, address + length - delta, delta, (UINT8*)data + irp_offset + length - delta);
         if (!NT_SUCCESS(Status)) {
             ERR("add_partial_stripe returned %08x\n", Status);
@@ -1130,7 +1131,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         length -= delta;
     }
 
-    if ((address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
+    if (length > 0 && (address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
         UINT64 delta = ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) - ((address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length));
 
         Status = add_partial_stripe(Vcb, c, address, delta, (UINT8*)data + irp_offset);
