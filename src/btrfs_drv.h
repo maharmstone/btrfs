@@ -444,6 +444,14 @@ typedef struct {
 } range_lock;
 
 typedef struct {
+    UINT64 address;
+    ULONG* bmparr;
+    RTL_BITMAP bmp;
+    LIST_ENTRY list_entry;
+    UINT8 data[1];
+} partial_stripe;
+
+typedef struct {
     CHUNK_ITEM* chunk_item;
     UINT32 size;
     UINT64 offset;
@@ -468,6 +476,8 @@ typedef struct {
     BOOL cache_loaded;
     UINT64 last_alloc;
     UINT16 last_stripe;
+    LIST_ENTRY partial_stripes;
+    ERESOURCE partial_stripes_lock;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;

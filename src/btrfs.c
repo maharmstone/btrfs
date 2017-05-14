@@ -1777,6 +1777,7 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
             free_fcb(c->cache);
         
         ExDeleteResourceLite(&c->range_locks_lock);
+        ExDeleteResourceLite(&c->partial_stripes_lock);
         ExDeleteResourceLite(&c->lock);
         ExDeleteResourceLite(&c->changed_extents_lock);
         
@@ -3169,6 +3170,9 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 ExInitializeResourceLite(&c->range_locks_lock);
                 KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
                 
+                InitializeListHead(&c->partial_stripes);
+                ExInitializeResourceLite(&c->partial_stripes_lock);
+
                 c->last_alloc_set = FALSE;
                 
                 c->last_stripe = 0;

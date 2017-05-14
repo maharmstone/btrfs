@@ -5524,6 +5524,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         ExFreePool(s);
     }
     
+    ExDeleteResourceLite(&c->partial_stripes_lock);
     ExDeleteResourceLite(&c->range_locks_lock);
     ExDeleteResourceLite(&c->lock);
     ExDeleteResourceLite(&c->changed_extents_lock);

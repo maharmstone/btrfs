@@ -593,7 +593,10 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
     InitializeListHead(&c->range_locks);
     ExInitializeResourceLite(&c->range_locks_lock);
     KeInitializeEvent(&c->range_locks_event, NotificationEvent, FALSE);
-    
+
+    InitializeListHead(&c->partial_stripes);
+    ExInitializeResourceLite(&c->partial_stripes_lock);
+
     ExInitializeResourceLite(&c->lock);
     ExInitializeResourceLite(&c->changed_extents_lock);
     
@@ -1026,45 +1029,73 @@ fail:
     return Status;
 }
 
-static NTSTATUS raid5_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 start, ULONG len, UINT8* data) {
+static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 address, UINT32 length, void* data) {
     NTSTATUS Status;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-    UINT8* scratch;
-    UINT16 i;
+    LIST_ENTRY* le;
+    partial_stripe* ps;
+    UINT64 stripe_addr;
+    UINT16 num_data_stripes;
+    ULONG bmplen;
 
-    scratch = ExAllocatePoolWithTag(NonPagedPool, len, ALLOC_TAG);
-    if (!scratch) {
+    num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
+    stripe_addr = address - ((address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length));
+
+    ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
+
+    le = c->partial_stripes.Flink;
+    while (le != &c->partial_stripes) {
+        ps = CONTAINING_RECORD(le, partial_stripe, list_entry);
+
+        if (ps->address == stripe_addr) {
+            // update existing entry
+
+            RtlCopyMemory(ps->data + address - stripe_addr, data, length);
+            RtlSetBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
+
+            // FIXME - if now filled, flush
+
+            Status = STATUS_SUCCESS;
+            goto end;
+        } else if (ps->address > stripe_addr)
+            break;
+
+        le = le->Flink;
+    }
+
+    // add new entry
+
+    ps = ExAllocatePoolWithTag(NonPagedPool, offsetof(partial_stripe, data[0]) + (num_data_stripes * c->chunk_item->stripe_length), ALLOC_TAG);
+    if (!ps) {
         ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
     }
 
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (i != stripe) {
-            if (i == 0 || (i == 1 && stripe == 0)) {
-                Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + start, len, data, FALSE);
+    bmplen = sector_align(((num_data_stripes * c->chunk_item->stripe_length) / (8 * Vcb->superblock.sector_size) + 1), sizeof(ULONG));
 
-                if (!NT_SUCCESS(Status)) {
-                    ERR("sync_read_phys returned %08x\n", Status);
-                    ExFreePool(scratch);
-                    return Status;
-                }
-            } else {
-                Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + start, len, scratch, FALSE);
-
-                if (!NT_SUCCESS(Status)) {
-                    ERR("sync_read_phys returned %08x\n", Status);
-                    ExFreePool(scratch);
-                    return Status;
-                }
-
-                do_xor(data, scratch, len);
-            }
-        }
+    ps->address = stripe_addr;
+    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, bmplen, ALLOC_TAG);
+    if (!ps->bmparr) {
+        ERR("out of memory\n");
+        ExFreePool(ps);
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
     }
 
-    ExFreePool(scratch);
+    RtlInitializeBitMap(&ps->bmp, ps->bmparr, (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size);
+    RtlClearAllBits(&ps->bmp);
 
-    return STATUS_SUCCESS;
+    RtlCopyMemory(ps->data + address - stripe_addr, data, length);
+    RtlSetBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
+
+    InsertTailList(le->Blink, &ps->list_entry);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    ExReleaseResourceLite(&c->partial_stripes_lock);
+
+    return Status;
 }
 
 typedef struct {
@@ -1079,17 +1110,45 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     UINT64 pos, parity_pos, *stripeoff = NULL;
     UINT32 i;
     BOOL file_write = Irp && Irp->MdlAddress && (Irp->MdlAddress->ByteOffset == 0);
-    PMDL master_mdl, fragment_mdl = NULL;
+    PMDL master_mdl;
     NTSTATUS Status;
-    PFN_NUMBER *pfns, *parity_pfns, *fragment_pfns;
-    ULONG fragment_len = 0, num_fragments = 0, frag_num = 0;
+    PFN_NUMBER *pfns, *parity_pfns;
     log_stripe* log_stripes = NULL;
-    UINT8 *fragments = NULL, *fragments2;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     read_context context;
-    
+
     context.stripes = NULL;
     
+    if ((address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
+        UINT64 delta = (address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length);
+
+        Status = add_partial_stripe(Vcb, c, address + length - delta, delta, (UINT8*)data + irp_offset + length - delta);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_partial_stripe returned %08x\n", Status);
+            goto exit;
+        }
+
+        length -= delta;
+    }
+
+    if ((address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
+        UINT64 delta = ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) - ((address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length));
+
+        Status = add_partial_stripe(Vcb, c, address, delta, (UINT8*)data + irp_offset);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_partial_stripe returned %08x\n", Status);
+            goto exit;
+        }
+
+        address += delta;
+        length -= delta;
+        irp_offset += delta;
+    }
+
+    if (length == 0) {
+        Status = STATUS_SUCCESS;
+        goto exit;
+    }
+
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
     
@@ -1195,55 +1254,6 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     parity = (((address - c->offset + length - 1) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     stripes[parity].end = parity_end;
     
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (stripes[i].start == 0 && stripes[i].end == 0) {
-            fragment_len += parity_end - parity_start;
-            num_fragments++;
-        } else {
-            if (stripes[i].start > parity_start) {
-                fragment_len += stripes[i].start - parity_start;
-                num_fragments++;
-            }
-            
-            if (stripes[i].end < parity_end) {
-                fragment_len += parity_end - stripes[i].end;
-                num_fragments++;
-            }
-        }
-    }
-    
-    if (fragment_len > 0) {
-        fragments = ExAllocatePoolWithTag(NonPagedPool, fragment_len, ALLOC_TAG);
-        if (!fragments) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-
-        fragment_mdl = IoAllocateMdl(fragments, fragment_len, FALSE, FALSE, NULL);
-        if (!fragment_mdl) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-        
-        MmBuildMdlForNonPagedPool(fragment_mdl);
-        
-        fragment_pfns = (PFN_NUMBER*)(fragment_mdl + 1);
-        
-        context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context_stripe) * num_fragments, ALLOC_TAG);
-        if (!context.stripes) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-        
-        RtlZeroMemory(context.stripes, sizeof(read_context_stripe) * num_fragments);
-        
-        KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
-        context.total = context.left = num_fragments;
-    }
-    
     log_stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(log_stripe) * (c->chunk_item->num_stripes - 1), ALLOC_TAG);
     if (!log_stripes) {
         ERR("out of memory\n");
@@ -1263,99 +1273,6 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         
         log_stripes[i].mdl->MdlFlags |= MDL_PARTIAL;
         log_stripes[i].pfns = (PFN_NUMBER*)(log_stripes[i].mdl + 1);
-    }
-    
-    parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
-    
-    if (fragment_len > 0) {
-        UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
-        
-        fragments2 = fragments;
-        
-        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
-            if ((stripes[stripe].start == 0 && stripes[stripe].end == 0) || stripes[stripe].start > parity_start) {
-                ULONG len;
-                
-                if (stripes[stripe].start == 0 && stripes[stripe].end == 0)
-                    len = parity_end - parity_start;
-                else
-                    len = stripes[stripe].start - parity_start;
-                
-                context.stripes[frag_num].dev = c->devices[stripe];
-
-                if (c->devices[stripe]->devobj) {
-                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("async_read_phys returned %08x\n", Status);
-                        goto exit;
-                    }
-                } else {
-                    context.total--;
-                    if (InterlockedDecrement(&context.left) == 0)
-                        KeSetEvent(&context.Event, 0, FALSE);
-
-                    Status = raid5_read_fragment_degraded(c, stripe, parity_start, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("raid5_read_fragment_degraded returned %08x\n", Status);
-                        goto exit;
-                    }
-                }
-                
-                frag_num++;
-                
-                RtlCopyMemory(log_stripes[i].pfns, fragment_pfns, len * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
-                log_stripes[i].pfns += len >> PAGE_SHIFT;
-                
-                fragments2 += len;
-                fragment_pfns += len >> PAGE_SHIFT;
-            }
-            
-            stripe = (stripe + 1) % c->chunk_item->num_stripes;
-        }
-    }
-    
-    parity = (((address - c->offset + length - 1) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
-    
-    if (fragment_len > 0) {
-        UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
-        
-        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
-            if ((stripes[stripe].start != 0 || stripes[stripe].end != 0) && stripes[stripe].end < parity_end) {
-                ULONG len = parity_end - stripes[stripe].end;
-                PFN_NUMBER* pl;
-                
-                context.stripes[frag_num].dev = c->devices[stripe];
-
-                if (c->devices[stripe]->devobj) {
-                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("async_read_phys returned %08x\n", Status);
-                        goto exit;
-                    }
-                } else {
-                    context.total--;
-                    if (InterlockedDecrement(&context.left) == 0)
-                        KeSetEvent(&context.Event, 0, FALSE);
-
-                    Status = raid5_read_fragment_degraded(c, stripe, stripes[stripe].end, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("raid5_read_fragment_degraded returned %08x\n", Status);
-                        goto exit;
-                    }
-                }
-                
-                frag_num++;
-                
-                pl = (PFN_NUMBER*)(log_stripes[i].mdl + 1);
-                
-                RtlCopyMemory(&pl[(parity_end - parity_start - len) >> PAGE_SHIFT], fragment_pfns, len * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
-                
-                fragments2 += len;
-                fragment_pfns += len >> PAGE_SHIFT;
-            }
-            
-            stripe = (stripe + 1) % c->chunk_item->num_stripes;
-        }
     }
     
     wtc->parity1 = ExAllocatePoolWithTag(NonPagedPool, parity_end - parity_start, ALLOC_TAG);
@@ -1554,19 +1471,6 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         }
     }
     
-    if (fragment_len > 0 && context.total > 0) {
-        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
-        
-        for (i = 0; i < context.total; i++) {
-            if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
-                Status = context.stripes[i].iosb.Status;
-                ERR("read returned %08x\n", Status);
-                log_device_error(Vcb, context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
-                goto exit;
-            }
-        }
-    }
-
     for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
         UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[i].mdl, priority);
         
@@ -1603,12 +1507,6 @@ exit:
         ExFreePool(context.stripes);
     }
     
-    if (fragment_mdl)
-        IoFreeMdl(fragment_mdl);
-    
-    if (fragments)
-        ExFreePool(fragments);
-
     if (stripeoff)
         ExFreePool(stripeoff);
     
