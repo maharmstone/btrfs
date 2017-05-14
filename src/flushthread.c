@@ -5570,13 +5570,15 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
     UINT64 startoff;
     ULONG runlength, index, last1;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    LIST_ENTRY* le;
+    UINT64 ps_length = (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length;
 
     // FIXME - work with RAID6
     // FIXME - do writes asynchronously?
 
     get_raid0_offset(ps->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
 
-    parity = (((ps->address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+    parity = (((ps->address - c->offset) / ps_length) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
 
     // read data (or reconstruct if degraded)
 
@@ -5597,15 +5599,29 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
         runlength = RtlFindNextForwardRunClear(&ps->bmp, index + runlength, &index);
     }
 
-    if (last1 < c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1) / Vcb->superblock.sector_size) {
-        Status = partial_stripe_read(Vcb, c, ps, startoff, parity, last1, (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1) / Vcb->superblock.sector_size) - last1);
+    if (last1 < ps_length / Vcb->superblock.sector_size) {
+        Status = partial_stripe_read(Vcb, c, ps, startoff, parity, last1, (ps_length / Vcb->superblock.sector_size) - last1);
         if (!NT_SUCCESS(Status)) {
             ERR("partial_stripe_read returned %08x\n", Status);
             return Status;
         }
     }
 
-    // FIXME - set unallocated data to 0
+    // set unallocated data to 0
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        if (s->address + s->size > ps->address && s->address < ps->address + ps_length) {
+            UINT64 start = max(ps->address, s->address);
+            UINT64 end = min(ps->address + ps_length, s->address + s->size);
+
+            RtlZeroMemory(ps->data + start - ps->address, end - start);
+        } else if (s->address >= ps->address + ps_length)
+            break;
+
+        le = le->Flink;
+    }
 
     stripe = (parity + 1) % c->chunk_item->num_stripes;
 
