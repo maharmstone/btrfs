@@ -5534,30 +5534,84 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_partial_stripe(chunk* c, partial_stripe* ps) {
+static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_stripe* ps, UINT64 startoff, UINT16 parity, ULONG offset, ULONG len) {
+    NTSTATUS Status;
+    ULONG sl = c->chunk_item->stripe_length / Vcb->superblock.sector_size;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+
+    while (len > 0) {
+        ULONG readlen = min(offset + len, offset + (sl - (offset % sl))) - offset;
+        UINT16 stripe;
+
+        stripe = (parity + (offset / sl) + 1) % c->chunk_item->num_stripes;
+
+        if (c->devices[stripe]->devobj) {
+            Status = sync_read_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                                    readlen * Vcb->superblock.sector_size, ps->data + (offset * Vcb->superblock.sector_size), FALSE);
+            if (!NT_SUCCESS(Status)) {
+                ERR("sync_read_phys returned %08x\n", Status);
+                return Status;
+            }
+        } else {
+            // FIXME - reconstruct
+        }
+
+        offset += readlen;
+        len -= readlen;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps) {
+    NTSTATUS Status;
     UINT16 parity, stripe, startoffstripe;
     UINT8* data;
     UINT64 startoff;
+    ULONG runlength, index, last1;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 
     // FIXME - work with RAID6
-
-    // FIXME - flip bits of bitmap
-    // FIXME - look for runs
-    // FIXME - read allocated data (or reconstruct if degraded)
-    // FIXME - set unallocated data to 0
+    // FIXME - do writes asynchronously?
 
     get_raid0_offset(ps->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
 
     parity = (((ps->address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+
+    // read data (or reconstruct if degraded)
+
+    runlength = RtlFindFirstRunClear(&ps->bmp, &index);
+    last1 = 0;
+
+    while (runlength != 0) {
+        if (index > last1) {
+            Status = partial_stripe_read(Vcb, c, ps, startoff, parity, last1, index - last1);
+            if (!NT_SUCCESS(Status)) {
+                ERR("partial_stripe_read returned %08x\n", Status);
+                return Status;
+            }
+        }
+
+        last1 = index + runlength;
+
+        runlength = RtlFindNextForwardRunClear(&ps->bmp, index + runlength, &index);
+    }
+
+    if (last1 < c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1) / Vcb->superblock.sector_size) {
+        Status = partial_stripe_read(Vcb, c, ps, startoff, parity, last1, (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1) / Vcb->superblock.sector_size) - last1);
+        if (!NT_SUCCESS(Status)) {
+            ERR("partial_stripe_read returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    // FIXME - set unallocated data to 0
 
     stripe = (parity + 1) % c->chunk_item->num_stripes;
 
     data = ps->data;
     while (stripe != parity) {
         if (c->devices[stripe]->devobj) {
-            NTSTATUS Status;
-
             Status = write_data_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff, data, c->chunk_item->stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08x\n", Status);
@@ -5570,7 +5624,6 @@ static NTSTATUS flush_partial_stripe(chunk* c, partial_stripe* ps) {
     }
 
     if (c->devices[parity]->devobj) { // write parity
-        NTSTATUS Status;
         UINT16 i;
 
         for (i = 1; i < c->chunk_item->num_stripes - 1; i++) {
@@ -5610,7 +5663,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
             while (!IsListEmpty(&c->partial_stripes)) {
                 partial_stripe* ps = CONTAINING_RECORD(RemoveHeadList(&c->partial_stripes), partial_stripe, list_entry);
 
-                Status = flush_partial_stripe(c, ps);
+                Status = flush_partial_stripe(Vcb, c, ps);
 
                 if (ps->bmparr)
                     ExFreePool(ps->bmparr);
