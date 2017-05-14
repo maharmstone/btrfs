@@ -5553,7 +5553,45 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                 return Status;
             }
         } else {
-            // FIXME - reconstruct
+            UINT16 i;
+            UINT8* scratch;
+
+            scratch = ExAllocatePoolWithTag(NonPagedPool, readlen * Vcb->superblock.sector_size, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            for (i = 0; i < c->chunk_item->num_stripes; i++) {
+                if (i != stripe) {
+                    if (!c->devices[i]->devobj) {
+                        ExFreePool(scratch);
+                        return STATUS_UNEXPECTED_IO_ERROR;
+                    }
+
+                    if (i == 0 || (stripe == 0 && i == 1)) {
+                        Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                                                readlen * Vcb->superblock.sector_size, ps->data + (offset * Vcb->superblock.sector_size), FALSE);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("sync_read_phys returned %08x\n", Status);
+                            ExFreePool(scratch);
+                            return Status;
+                        }
+                    } else {
+                        Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                                                readlen * Vcb->superblock.sector_size, scratch, FALSE);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("sync_read_phys returned %08x\n", Status);
+                            ExFreePool(scratch);
+                            return Status;
+                        }
+
+                        do_xor(ps->data + (offset * Vcb->superblock.sector_size), scratch, readlen);
+                    }
+                }
+            }
+
+            ExFreePool(scratch);
         }
 
         offset += readlen;
