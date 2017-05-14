@@ -5569,9 +5569,19 @@ static NTSTATUS flush_partial_stripe(chunk* c, partial_stripe* ps) {
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
     }
 
-    if (c->devices[parity]->devobj) {
-        // FIXME - calculate parity
-        // FIXME - write parity
+    if (c->devices[parity]->devobj) { // write parity
+        NTSTATUS Status;
+        UINT16 i;
+
+        for (i = 1; i < c->chunk_item->num_stripes - 1; i++) {
+            do_xor(ps->data, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+        }
+
+        Status = write_data_phys(c->devices[parity]->devobj, cis[parity].offset + startoff, ps->data, c->chunk_item->stripe_length);
+        if (!NT_SUCCESS(Status)) {
+            ERR("write_data_phys returned %08x\n", Status);
+            return Status;
+        }
     }
 
     return STATUS_SUCCESS;
