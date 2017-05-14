@@ -1301,7 +1301,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
             goto exit;
         }
         
-        RtlCopyMemory(wtc->scratch, data, length);
+        RtlCopyMemory(wtc->scratch, (UINT8*)data + irp_offset, length);
         
         master_mdl = IoAllocateMdl(wtc->scratch, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
@@ -1314,7 +1314,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         
         wtc->mdl = master_mdl;
     } else {
-        master_mdl = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
+        master_mdl = IoAllocateMdl((UINT8*)data + irp_offset, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1341,6 +1341,9 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     pfns = (PFN_NUMBER*)(master_mdl + 1);
     parity_pfns = (PFN_NUMBER*)(wtc->parity1_mdl + 1);
     
+    if (file_write)
+        pfns = &pfns[irp_offset >> PAGE_SHIFT];
+
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (stripes[i].start != stripes[i].end) {
             stripes[i].mdl = IoAllocateMdl((UINT8*)MmGetMdlVirtualAddress(master_mdl) + irp_offset, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
