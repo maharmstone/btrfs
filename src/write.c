@@ -931,104 +931,6 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL async_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
-    read_context_stripe* stripe = conptr;
-    LONG left = InterlockedDecrement(&stripe->context->left);
-    
-    UNUSED(DeviceObject);
-    
-    stripe->iosb = Irp->IoStatus;
-    
-    if (left == 0)
-        KeSetEvent(&stripe->context->Event, 0, FALSE);
-    
-    return STATUS_MORE_PROCESSING_REQUIRED;
-}
-
-static NTSTATUS async_read_phys(read_context* context, read_context_stripe* stripe, PDEVICE_OBJECT DeviceObject, UINT64 StartingOffset, ULONG Length, PUCHAR Buffer) {
-    LARGE_INTEGER Offset;
-    PIRP Irp;
-    PIO_STACK_LOCATION IrpSp;
-    NTSTATUS Status;
-
-    Offset.QuadPart = StartingOffset;
-
-    Irp = IoAllocateIrp(DeviceObject->StackSize, FALSE);
-    
-    if (!Irp) {
-        ERR("IoAllocateIrp failed\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto fail;
-    }
-    
-    IrpSp = IoGetNextIrpStackLocation(Irp);
-    IrpSp->MajorFunction = IRP_MJ_READ;
-    
-    if (DeviceObject->Flags & DO_BUFFERED_IO) {
-        Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, Length, ALLOC_TAG);
-        if (!Irp->AssociatedIrp.SystemBuffer) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto fail;
-        }
-
-        Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
-
-        Irp->UserBuffer = Buffer;
-    } else if (DeviceObject->Flags & DO_DIRECT_IO) {
-        Irp->MdlAddress = IoAllocateMdl(Buffer, Length, FALSE, FALSE, NULL);
-        if (!Irp->MdlAddress) {
-            ERR("IoAllocateMdl failed\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto fail;
-        }
-        
-        Status = STATUS_SUCCESS;
-
-        try {
-            MmProbeAndLockPages(Irp->MdlAddress, KernelMode, IoWriteAccess);
-        } except (EXCEPTION_EXECUTE_HANDLER) {
-            Status = GetExceptionCode();
-        }
-
-        if (!NT_SUCCESS(Status)) {
-            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
-            IoFreeMdl(Irp->MdlAddress);
-            goto fail;
-        }
-    } else
-        Irp->UserBuffer = Buffer;
-
-    IrpSp->Parameters.Read.Length = Length;
-    IrpSp->Parameters.Read.ByteOffset = Offset;
-    
-    stripe->context = context;
-    stripe->Irp = Irp;
-    Irp->UserIosb = &stripe->iosb;
-    
-    IoSetCompletionRoutine(Irp, async_read_completion, stripe, TRUE, TRUE, TRUE);
-
-    Status = IoCallDriver(DeviceObject, Irp);
-    
-    if (Status != STATUS_PENDING && !NT_SUCCESS(Status)) {
-        ERR("read returned %08x\n", Status);
-        
-        if (Irp->MdlAddress) {
-            MmUnlockPages(Irp->MdlAddress);
-            IoFreeMdl(Irp->MdlAddress);
-        }
-        
-        goto fail;
-    }
-    
-    return STATUS_SUCCESS;
-    
-fail:
-    IoFreeIrp(Irp);
-    
-    return Status;
-}
-
 static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 address, UINT32 length, void* data) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -1517,93 +1419,6 @@ exit:
     return Status;
 }
 
-static NTSTATUS raid6_read_fragment_degraded(chunk* c, UINT16 stripe, UINT64 start, ULONG len, UINT8* data) {
-    NTSTATUS Status;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-    UINT8* scratch;
-    ULONG num_errors = 0;
-    UINT16 error_stripe, logstripe, parity1, parity2;
-    UINT16 i, k;
-
-    scratch = ExAllocatePoolWithTag(NonPagedPool, len * (c->chunk_item->num_stripes + 2), ALLOC_TAG);
-    if (!scratch) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    parity1 = ((start / c->chunk_item->stripe_length) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
-    parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
-
-    // read b and p
-
-    i = (parity2 + 1) % c->chunk_item->num_stripes;
-    for (k = 0; k < c->chunk_item->num_stripes - 1; k++) {
-        if (i != stripe) {
-            if (c->devices[i]->devobj) {
-                Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + start, len, scratch + (k * len), FALSE);
-
-                if (!NT_SUCCESS(Status)) {
-                    ERR("sync_read_phys returned %08x\n", Status);
-                    ExFreePool(scratch);
-                    return Status;
-                }
-            } else {
-                num_errors++;
-                error_stripe = k;
-            }
-
-            if (num_errors > 1) {
-                ExFreePool(scratch);
-                return STATUS_UNEXPECTED_IO_ERROR;
-            }
-        } else
-            logstripe = k;
-
-        i = (i + 1) % c->chunk_item->num_stripes;
-    }
-
-    if (num_errors == 0) {
-        BOOL first = TRUE;
-
-        // reconstruct a from b and p
-
-        for (k = 0; k < c->chunk_item->num_stripes - 1; k++) {
-            if (k != logstripe) {
-                if (first) {
-                    RtlCopyMemory(data, scratch + (k * len), len);
-                    first = FALSE;
-                } else
-                    do_xor(data, scratch + (k * len), len);
-            }
-        }
-    } else {
-        // read q
-
-        if (c->devices[parity2]->devobj) {
-            Status = sync_read_phys(c->devices[parity2]->devobj, cis[parity2].offset + start, len, scratch + ((c->chunk_item->num_stripes - 1) * len), FALSE);
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("sync_read_phys returned %08x\n", Status);
-                ExFreePool(scratch);
-                return Status;
-            }
-        } else {
-            ExFreePool(scratch);
-            return STATUS_UNEXPECTED_IO_ERROR;
-        }
-
-        // reconstruct a from b and q, or p and q
-
-        raid6_recover2(scratch, c->chunk_item->num_stripes, len, logstripe, error_stripe, scratch + (c->chunk_item->num_stripes * len));
-
-        RtlCopyMemory(data, scratch + (c->chunk_item->num_stripes * len), len);
-    }
-
-    ExFreePool(scratch);
-
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
                                     UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
@@ -1611,17 +1426,46 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
     UINT64 pos, parity_pos, *stripeoff = NULL;
     UINT32 i;
     BOOL file_write = Irp && Irp->MdlAddress && (Irp->MdlAddress->ByteOffset == 0);
-    PMDL master_mdl, fragment_mdl = NULL;
+    PMDL master_mdl;
     NTSTATUS Status;
-    PFN_NUMBER *pfns, *parity1_pfns, *parity2_pfns, *fragment_pfns;
-    ULONG fragment_len = 0, num_fragments = 0, frag_num = 0;
+    PFN_NUMBER *pfns, *parity1_pfns, *parity2_pfns;
     log_stripe* log_stripes = NULL;
-    UINT8 *fragments = NULL, *fragments2;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     read_context context;
     
     context.stripes = NULL;
     
+    if ((address + length - c->offset) % ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) > 0) {
+        UINT64 delta = (address + length - c->offset) % ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length);
+
+        delta = min(irp_offset + length, delta);
+        Status = add_partial_stripe(Vcb, c, address + length - delta, delta, (UINT8*)data + irp_offset + length - delta);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_partial_stripe returned %08x\n", Status);
+            goto exit;
+        }
+
+        length -= delta;
+    }
+
+    if (length > 0 && (address - c->offset) % ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) > 0) {
+        UINT64 delta = ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) - ((address - c->offset) % ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length));
+
+        Status = add_partial_stripe(Vcb, c, address, delta, (UINT8*)data + irp_offset);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_partial_stripe returned %08x\n", Status);
+            goto exit;
+        }
+
+        address += delta;
+        length -= delta;
+        irp_offset += delta;
+    }
+
+    if (length == 0) {
+        Status = STATUS_SUCCESS;
+        goto exit;
+    }
+
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 2, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 2, &endoff, &endoffstripe);
     
@@ -1729,55 +1573,6 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
     parity1 = (((address - c->offset + length - 1) / ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
     stripes[parity1].end = stripes[(parity1 + 1) % c->chunk_item->num_stripes].end = parity_end;
     
-    for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (stripes[i].start == 0 && stripes[i].end == 0) {
-            fragment_len += parity_end - parity_start;
-            num_fragments++;
-        } else {
-            if (stripes[i].start > parity_start) {
-                fragment_len += stripes[i].start - parity_start;
-                num_fragments++;
-            }
-            
-            if (stripes[i].end < parity_end) {
-                fragment_len += parity_end - stripes[i].end;
-                num_fragments++;
-            }
-        }
-    }
-    
-    if (fragment_len > 0) {
-        fragments = ExAllocatePoolWithTag(NonPagedPool, fragment_len, ALLOC_TAG);
-        if (!fragments) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-
-        fragment_mdl = IoAllocateMdl(fragments, fragment_len, FALSE, FALSE, NULL);
-        if (!fragment_mdl) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-        
-        MmBuildMdlForNonPagedPool(fragment_mdl);
-        
-        fragment_pfns = (PFN_NUMBER*)(fragment_mdl + 1);
-        
-        context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_context_stripe) * num_fragments, ALLOC_TAG);
-        if (!context.stripes) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto exit;
-        }
-        
-        RtlZeroMemory(context.stripes, sizeof(read_context_stripe) * num_fragments);
-        
-        KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
-        context.total = context.left = num_fragments;
-    }
-    
     log_stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(log_stripe) * (c->chunk_item->num_stripes - 2), ALLOC_TAG);
     if (!log_stripes) {
         ERR("out of memory\n");
@@ -1797,99 +1592,6 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
         
         log_stripes[i].mdl->MdlFlags |= MDL_PARTIAL;
         log_stripes[i].pfns = (PFN_NUMBER*)(log_stripes[i].mdl + 1);
-    }
-    
-    parity1 = (((address - c->offset) / ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
-    
-    if (fragment_len > 0) {
-        UINT16 stripe = (parity1 + 2) % c->chunk_item->num_stripes;
-        
-        fragments2 = fragments;
-        
-        for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
-            if ((stripes[stripe].start == 0 && stripes[stripe].end == 0) || stripes[stripe].start > parity_start) {
-                ULONG len;
-                
-                if (stripes[stripe].start == 0 && stripes[stripe].end == 0)
-                    len = parity_end - parity_start;
-                else
-                    len = stripes[stripe].start - parity_start;
-                
-                context.stripes[frag_num].dev = c->devices[stripe];
-
-                if (c->devices[stripe]->devobj) {
-                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + parity_start, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("async_read_phys returned %08x\n", Status);
-                        goto exit;
-                    }
-                } else {
-                    context.total--;
-                    if (InterlockedDecrement(&context.left) == 0)
-                        KeSetEvent(&context.Event, 0, FALSE);
-
-                    Status = raid6_read_fragment_degraded(c, stripe, parity_start, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("raid6_read_fragment_degraded returned %08x\n", Status);
-                        goto exit;
-                    }
-                }
-                
-                frag_num++;
-                
-                RtlCopyMemory(log_stripes[i].pfns, fragment_pfns, len * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
-                log_stripes[i].pfns += len >> PAGE_SHIFT;
-                
-                fragments2 += len;
-                fragment_pfns += len >> PAGE_SHIFT;
-            }
-            
-            stripe = (stripe + 1) % c->chunk_item->num_stripes;
-        }
-    }
-    
-    parity1 = (((address - c->offset + length - 1) / ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
-    
-    if (fragment_len > 0) {
-        UINT16 stripe = (parity1 + 2) % c->chunk_item->num_stripes;
-        
-        for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
-            if ((stripes[stripe].start != 0 || stripes[stripe].end != 0) && stripes[stripe].end < parity_end) {
-                ULONG len = parity_end - stripes[stripe].end;
-                PFN_NUMBER* pl;
-                
-                context.stripes[frag_num].dev = c->devices[stripe];
-
-                if (c->devices[stripe]->devobj) {
-                    Status = async_read_phys(&context, &context.stripes[frag_num], c->devices[stripe]->devobj, cis[stripe].offset + stripes[stripe].end, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("async_read_phys returned %08x\n", Status);
-                        goto exit;
-                    }
-                } else {
-                    context.total--;
-                    if (InterlockedDecrement(&context.left) == 0)
-                        KeSetEvent(&context.Event, 0, FALSE);
-
-                    Status = raid6_read_fragment_degraded(c, stripe, stripes[stripe].end, len, fragments2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("raid6_read_fragment_degraded returned %08x\n", Status);
-                        goto exit;
-                    }
-                }
-                
-                frag_num++;
-                
-                pl = (PFN_NUMBER*)(log_stripes[i].mdl + 1);
-                
-                RtlCopyMemory(&pl[(parity_end - parity_start - len) >> PAGE_SHIFT], fragment_pfns, len * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
-                
-                fragments2 += len;
-                fragment_pfns += len >> PAGE_SHIFT;
-            }
-            
-            stripe = (stripe + 1) % c->chunk_item->num_stripes;
-        }
     }
     
     wtc->parity1 = ExAllocatePoolWithTag(NonPagedPool, parity_end - parity_start, ALLOC_TAG);
@@ -1934,7 +1636,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
             goto exit;
         }
         
-        RtlCopyMemory(wtc->scratch, data, length);
+        RtlCopyMemory(wtc->scratch, (UINT8*)data + irp_offset, length);
         
         master_mdl = IoAllocateMdl(wtc->scratch, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
@@ -1947,7 +1649,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
         
         wtc->mdl = master_mdl;
     } else {
-        master_mdl = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
+        master_mdl = IoAllocateMdl((UINT8*)data + irp_offset, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1975,6 +1677,9 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
     parity1_pfns = (PFN_NUMBER*)(wtc->parity1_mdl + 1);
     parity2_pfns = (PFN_NUMBER*)(wtc->parity2_mdl + 1);
     
+    if (file_write)
+        pfns = &pfns[irp_offset >> PAGE_SHIFT];
+
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (stripes[i].start != stripes[i].end) {
             stripes[i].mdl = IoAllocateMdl((UINT8*)MmGetMdlVirtualAddress(master_mdl) + irp_offset, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
@@ -2121,19 +1826,6 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
         }
     }
     
-    if (fragment_len > 0 && context.total > 0) {
-        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
-        
-        for (i = 0; i < context.total; i++) {
-            if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
-                Status = context.stripes[i].iosb.Status;
-                ERR("read returned %08x\n", Status);
-                log_device_error(Vcb, context.stripes[i].dev, BTRFS_DEV_STAT_READ_ERRORS);
-                goto exit;
-            }
-        }
-    }
-
     for (i = 0; i < c->chunk_item->num_stripes - 2; i++) {
         UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[c->chunk_item->num_stripes - 3 - i].mdl, priority);
         
@@ -2175,12 +1867,6 @@ exit:
         ExFreePool(context.stripes);
     }
     
-    if (fragment_mdl)
-        IoFreeMdl(fragment_mdl);
-    
-    if (fragments)
-        ExFreePool(fragments);
-
     if (stripeoff)
         ExFreePool(stripeoff);
     
