@@ -5586,7 +5586,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                             return Status;
                         }
 
-                        do_xor(ps->data + (offset * Vcb->superblock.sector_size), scratch, readlen);
+                        do_xor(ps->data + (offset * Vcb->superblock.sector_size), scratch, readlen * Vcb->superblock.sector_size);
                     }
                 }
             }
