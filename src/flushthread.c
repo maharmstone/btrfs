@@ -5534,6 +5534,49 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS flush_partial_stripe(chunk* c, partial_stripe* ps) {
+    UINT16 parity, stripe, startoffstripe;
+    UINT8* data;
+    UINT64 startoff;
+    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+
+    // FIXME - work with RAID6
+
+    // FIXME - flip bits of bitmap
+    // FIXME - look for runs
+    // FIXME - read allocated data (or reconstruct if degraded)
+    // FIXME - set unallocated data to 0
+
+    get_raid0_offset(ps->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
+
+    parity = (((ps->address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+
+    stripe = (parity + 1) % c->chunk_item->num_stripes;
+
+    data = ps->data;
+    while (stripe != parity) {
+        if (c->devices[stripe]->devobj) {
+            NTSTATUS Status;
+
+            Status = write_data_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff, data, c->chunk_item->stripe_length);
+            if (!NT_SUCCESS(Status)) {
+                ERR("write_data_phys returned %08x\n", Status);
+                return Status;
+            }
+        }
+
+        data += c->chunk_item->stripe_length;
+        stripe = (stripe + 1) % c->chunk_item->num_stripes;
+    }
+
+    if (c->devices[parity]->devobj) {
+        // FIXME - calculate parity
+        // FIXME - write parity
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks_changed.Flink, *le2;
     NTSTATUS Status;
@@ -5550,6 +5593,31 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
+        // flush partial stripes
+        if (!Vcb->readonly && c->chunk_item->type & BLOCK_FLAG_RAID5) { // FIXME - also RAID6
+            ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
+
+            while (!IsListEmpty(&c->partial_stripes)) {
+                partial_stripe* ps = CONTAINING_RECORD(RemoveHeadList(&c->partial_stripes), partial_stripe, list_entry);
+
+                Status = flush_partial_stripe(c, ps);
+
+                if (ps->bmparr)
+                    ExFreePool(ps->bmparr);
+
+                ExFreePool(ps);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("flush_partial_stripe returned %08x\n", Status);
+                    ExReleaseResourceLite(&c->lock);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    return Status;
+                }
+            }
+
+            ExReleaseResourceLite(&c->partial_stripes_lock);
+        }
+
         if (c->list_entry_balance.Flink) {
             ExReleaseResourceLite(&c->lock);
             le = le2;
