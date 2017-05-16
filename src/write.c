@@ -166,7 +166,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
-        if (!dev->readonly && !dev->reloc) {
+        if (!dev->readonly && !dev->reloc && dev->devobj) {
             UINT64 usage = (dev->devitem.bytes_used * 4096) / dev->devitem.num_bytes;
             
             // favour devices which have been used the least
