@@ -263,7 +263,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     return TRUE;
 }
 
-static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size) {
+static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size, BOOL allow_missing) {
     UINT64 k, devusage = 0xffffffffffffffff;
     space* devdh = NULL;
     LIST_ENTRY* le;
@@ -275,7 +275,7 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
         UINT64 usage;
         BOOL skip = FALSE;
         
-        if (dev->readonly || dev->reloc) {
+        if (dev->readonly || dev->reloc || (!dev->devobj && !allow_missing)) {
             le = le->Flink;
             continue;
         }
@@ -327,7 +327,7 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
             device* dev = CONTAINING_RECORD(le, device, list_entry);
             BOOL skip = FALSE;
             
-            if (dev->readonly || dev->reloc) {
+            if (dev->readonly || dev->reloc || (!dev->devobj && !allow_missing)) {
                 le = le->Flink;
                 continue;
             }
@@ -377,7 +377,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
     NTSTATUS Status;
     UINT64 max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
     UINT64 total_size = 0, i, logaddr;
-    UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes;
+    UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes, allowed_missing;
     stripe* stripes = NULL;
     ULONG cisize;
     CHUNK_ITEM_STRIPE* cis;
@@ -423,36 +423,43 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
         max_stripes = 2;
         sub_stripes = 0;
         type = BLOCK_FLAG_DUPLICATE;
+        allowed_missing = 0;
     } else if (flags & BLOCK_FLAG_RAID0) {
         min_stripes = 2;
         max_stripes = Vcb->superblock.num_devices;
         sub_stripes = 0;
         type = BLOCK_FLAG_RAID0;
+        allowed_missing = 0;
     } else if (flags & BLOCK_FLAG_RAID1) {
         min_stripes = 2;
         max_stripes = 2;
         sub_stripes = 1;
         type = BLOCK_FLAG_RAID1;
+        allowed_missing = 1;
     } else if (flags & BLOCK_FLAG_RAID10) {
         min_stripes = 4;
         max_stripes = Vcb->superblock.num_devices;
         sub_stripes = 2;
         type = BLOCK_FLAG_RAID10;
+        allowed_missing = 1;
     } else if (flags & BLOCK_FLAG_RAID5) {
         min_stripes = 3;
         max_stripes = Vcb->superblock.num_devices;
         sub_stripes = 1;
         type = BLOCK_FLAG_RAID5;
+        allowed_missing = 1;
     } else if (flags & BLOCK_FLAG_RAID6) {
         min_stripes = 4;
         max_stripes = 257;
         sub_stripes = 1;
         type = BLOCK_FLAG_RAID6;
+        allowed_missing = 2;
     } else { // SINGLE
         min_stripes = 1;
         max_stripes = 1;
         sub_stripes = 1;
         type = 0;
+        allowed_missing = 0;
     }
     
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * max_stripes, ALLOC_TAG);
@@ -473,13 +480,29 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
             num_stripes = max_stripes;
     } else {
         for (i = 0; i < max_stripes; i++) {
-            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size))
+            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, FALSE))
                 break;
             else
                 num_stripes++;
         }
     }
     
+    if (num_stripes < min_stripes && Vcb->options.allow_degraded && allowed_missing > 0) {
+        UINT16 added_missing = 0;
+
+        for (i = num_stripes; i < max_stripes; i++) {
+            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, TRUE))
+                break;
+            else {
+                added_missing++;
+                if (added_missing >= allowed_missing)
+                    break;
+            }
+        }
+
+        num_stripes += added_missing;
+    }
+
     // for RAID10, round down to an even number of stripes
     if (type == BLOCK_FLAG_RAID10 && (num_stripes % sub_stripes) != 0) {
         num_stripes -= num_stripes % sub_stripes;
