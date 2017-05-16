@@ -5628,8 +5628,8 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                 i = (i + 1) % c->chunk_item->num_stripes;
             }
 
-            if (num_errors == 0) {
-                for (k = 0; k < c->chunk_item->num_stripes; k++) {
+            if (num_errors == 0 || error_stripe == c->chunk_item->num_stripes - 1) {
+                for (k = 0; k < c->chunk_item->num_stripes - 1; k++) {
                     if (k != logstripe) {
                         if (k == 0 || (k == 1 && logstripe == 0)) {
                             RtlCopyMemory(ps->data + (offset * Vcb->superblock.sector_size), scratch + (k * readlen * Vcb->superblock.sector_size),
