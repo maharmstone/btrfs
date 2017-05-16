@@ -5596,7 +5596,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             UINT8* scratch;
             UINT16 k, i, logstripe, error_stripe, num_errors = 0;
 
-            scratch = ExAllocatePoolWithTag(NonPagedPool, c->chunk_item->num_stripes * readlen * Vcb->superblock.sector_size, ALLOC_TAG);
+            scratch = ExAllocatePoolWithTag(NonPagedPool, (c->chunk_item->num_stripes + 2) * readlen * Vcb->superblock.sector_size, ALLOC_TAG);
             if (!scratch) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -5641,7 +5641,11 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                     }
                 }
             } else {
-                // FIXME - reconstruct from two failures
+                raid6_recover2(scratch, c->chunk_item->num_stripes, readlen * Vcb->superblock.sector_size, logstripe,
+                               error_stripe, scratch + (c->chunk_item->num_stripes * readlen * Vcb->superblock.sector_size));
+
+                RtlCopyMemory(ps->data + (offset * Vcb->superblock.sector_size), scratch + (c->chunk_item->num_stripes * readlen * Vcb->superblock.sector_size),
+                              readlen * Vcb->superblock.sector_size);
             }
 
             ExFreePool(scratch);
