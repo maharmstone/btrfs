@@ -25,6 +25,10 @@
 #define FSCTL_CSV_CONTROL CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 181, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #endif
 
+#ifndef FSCTL_QUERY_VOLUME_CONTAINER_STATE
+#define FSCTL_QUERY_VOLUME_CONTAINER_STATE CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 228, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#endif
+
 #define DOTDOT ".."
 
 #define SEF_AVOID_PRIVILEGE_CHECK 0x08 // on MSDN but not in any header files(?)
@@ -4981,6 +4985,12 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             Status = STATUS_INVALID_DEVICE_REQUEST;
             break;
 #endif
+        // TRACE rather than WARN because Windows 10 spams this undocumented fsctl
+        case FSCTL_QUERY_VOLUME_CONTAINER_STATE:
+            TRACE("STUB: FSCTL_QUERY_VOLUME_CONTAINER_STATE\n");
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+
         case FSCTL_GET_INTEGRITY_INFORMATION:
             Status = get_integrity_information(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp, NormalPagePriority),
                                                IrpSp->Parameters.FileSystemControl.OutputBufferLength);
