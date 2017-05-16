@@ -5710,7 +5710,55 @@ static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_st
             }
         }
     } else {
-        // FIXME - write RAID6 parity
+        UINT16 parity1 = (parity2 + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+
+        if (c->devices[parity1]->devobj || c->devices[parity2]->devobj) {
+            UINT8* scratch;
+            UINT16 i;
+
+            scratch = ExAllocatePoolWithTag(NonPagedPool, c->chunk_item->stripe_length * 2, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            i = c->chunk_item->num_stripes - 3;
+
+            while (TRUE) {
+                if (i == c->chunk_item->num_stripes - 3) {
+                    RtlCopyMemory(scratch, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                    RtlCopyMemory(scratch + c->chunk_item->stripe_length, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                } else {
+                    do_xor(scratch, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+
+                    galois_double(scratch + c->chunk_item->stripe_length, c->chunk_item->stripe_length);
+                    do_xor(scratch + c->chunk_item->stripe_length, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                }
+
+                if (i == 0)
+                    break;
+
+                i--;
+            }
+
+            if (c->devices[parity1]->devobj) {
+                Status = write_data_phys(c->devices[parity1]->devobj, cis[parity1].offset + startoff, scratch, c->chunk_item->stripe_length);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("write_data_phys returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            if (c->devices[parity2]->devobj) {
+                Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, scratch + c->chunk_item->stripe_length, c->chunk_item->stripe_length);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("write_data_phys returned %08x\n", Status);
+                    return Status;
+                }
+            }
+
+            ExFreePool(scratch);
+        }
     }
 
     return STATUS_SUCCESS;
