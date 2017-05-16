@@ -5593,7 +5593,58 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
 
             ExFreePool(scratch);
         } else {
-            // FIXME - reconstruct RAID6
+            UINT8* scratch;
+            UINT16 k, i, logstripe, error_stripe, num_errors = 0;
+
+            scratch = ExAllocatePoolWithTag(NonPagedPool, c->chunk_item->num_stripes * readlen * Vcb->superblock.sector_size, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            i = (parity + 1) % c->chunk_item->num_stripes;
+            for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                if (i != stripe) {
+                    if (c->devices[i]->devobj) {
+                        Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                                                readlen * Vcb->superblock.sector_size, scratch + (k * readlen * Vcb->superblock.sector_size), FALSE);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("sync_read_phys returned %08x\n", Status);
+                            num_errors++;
+                            error_stripe = k;
+                        }
+                    } else {
+                        num_errors++;
+                        error_stripe = k;
+                    }
+
+                    if (num_errors > 1) {
+                        ExFreePool(scratch);
+                        return STATUS_UNEXPECTED_IO_ERROR;
+                    }
+                } else
+                    logstripe = k;
+
+                i = (i + 1) % c->chunk_item->num_stripes;
+            }
+
+            if (num_errors == 0) {
+                for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                    if (k != logstripe) {
+                        if (k == 0 || (k == 1 && logstripe == 0)) {
+                            RtlCopyMemory(ps->data + (offset * Vcb->superblock.sector_size), scratch + (k * readlen * Vcb->superblock.sector_size),
+                                          readlen * Vcb->superblock.sector_size);
+                        } else {
+                            do_xor(ps->data + (offset * Vcb->superblock.sector_size), scratch + (k * readlen * Vcb->superblock.sector_size),
+                                   readlen * Vcb->superblock.sector_size);
+                        }
+                    }
+                }
+            } else {
+                // FIXME - reconstruct from two failures
+            }
+
+            ExFreePool(scratch);
         }
 
         offset += readlen;
