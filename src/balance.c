@@ -2474,7 +2474,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     if (!NT_SUCCESS(Status))
         return Status;
     
-    if (!dev->readonly) {
+    if (!dev->readonly && dev->devobj) {
         Status = remove_superblocks(dev);
         if (!NT_SUCCESS(Status))
             WARN("remove_superblocks returned %08x\n", Status);
