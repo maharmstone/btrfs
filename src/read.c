@@ -1346,10 +1346,14 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                             if (num_errors == 1) {
                                 raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, error_stripe, sector + (ci->num_stripes * Vcb->superblock.sector_size));
 
-                                crc32 = ~calc_crc32c(0xffffffff, sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-
-                                if (crc32 == context->csum[i])
+                                if (!devices[physstripe]->devobj)
                                     recovered = TRUE;
+                                else {
+                                    crc32 = ~calc_crc32c(0xffffffff, sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+
+                                    if (crc32 == context->csum[i])
+                                        recovered = TRUE;
+                                }
                             } else {
                                 for (j = 0; j < ci->num_stripes - 1; j++) {
                                     if (j != stripe) {
