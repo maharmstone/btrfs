@@ -678,7 +678,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
 #endif
-    }
+    } else if (degraded)
+        checksum_error = TRUE;
     
     if (!checksum_error)
         return STATUS_SUCCESS;
@@ -772,19 +773,23 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         }
         
         for (i = 0; i < sectors; i++) {
-            UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            UINT16 parity;
+            UINT64 off;
+            UINT32 crc32;
+
+            if (context->csum)
+                crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+
+            get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
+                             ci->num_stripes - 1, &off, &stripe);
+
+            parity = (((addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size)) / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
             
-            if (context->csum[i] != crc32) {
-                UINT16 j, parity;
-                UINT64 off;
+            stripe = (parity + stripe + 1) % ci->num_stripes;
+
+            if (!devices[stripe]->devobj || (context->csum && context->csum[i] != crc32)) {
+                UINT16 j;
                 BOOL recovered = FALSE, first = TRUE, failed = FALSE;
-                
-                get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
-                                 ci->num_stripes - 1, &off, &stripe);
-                
-                parity = (((addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size)) / ((ci->num_stripes - 1) * ci->stripe_length)) + ci->num_stripes - 1) % ci->num_stripes;
-                
-                stripe = (parity + stripe + 1) % ci->num_stripes;
 
                 if (devices[stripe]->devobj)
                     log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_READ_ERRORS);
@@ -821,9 +826,10 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                 }
                 
                 if (!failed) {
-                    crc32 = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
+                    if (context->csum)
+                        crc32 = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
                     
-                    if (crc32 == context->csum[i]) {
+                    if (!context->csum || crc32 == context->csum[i]) {
                         RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
 
                         if (!degraded)
