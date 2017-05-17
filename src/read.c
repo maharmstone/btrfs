@@ -1037,7 +1037,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         
         Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
 #endif
-    }
+    } else if (degraded)
+        checksum_error = TRUE;
     
     if (!checksum_error)
         return STATUS_SUCCESS;
@@ -1242,21 +1243,25 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         }
         
         for (i = 0; i < sectors; i++) {
-            UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+            UINT64 off;
+            UINT16 physstripe, parity1, parity2;
+            UINT32 crc32;
+
+            if (context->csum)
+                crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+
+            get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
+                             ci->num_stripes - 2, &off, &stripe);
             
-            if (context->csum[i] != crc32) {
-                UINT16 j, k, physstripe, parity1, parity2, error_stripe;
-                UINT64 off;
+            parity1 = (((addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size)) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+            parity2 = (parity1 + 1) % ci->num_stripes;
+
+            physstripe = (parity2 + stripe + 1) % ci->num_stripes;
+
+            if (!devices[physstripe]->devobj || (context->csum && context->csum[i] != crc32)) {
+                UINT16 j, k, error_stripe;
                 BOOL recovered = FALSE, failed = FALSE;
                 ULONG num_errors = 0;
-                
-                get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
-                                 ci->num_stripes - 2, &off, &stripe);
-                
-                parity1 = (((addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size)) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
-                parity2 = (parity1 + 1) % ci->num_stripes;
-
-                physstripe = (parity2 + stripe + 1) % ci->num_stripes;
                 
                 if (devices[physstripe]->devobj)
                     log_device_error(Vcb, devices[physstripe], BTRFS_DEV_STAT_READ_ERRORS);
@@ -1301,9 +1306,10 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                                 do_xor(sector + (stripe * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                         }
                         
-                        crc32 = ~calc_crc32c(0xffffffff, sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                        if (context->csum)
+                            crc32 = ~calc_crc32c(0xffffffff, sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
                         
-                        if (crc32 == context->csum[i]) {
+                        if (!context->csum || crc32 == context->csum[i]) {
                             RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
 
                             if (devices[physstripe]->devobj)
