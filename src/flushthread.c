@@ -5841,6 +5841,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("flush_partial_stripe returned %08x\n", Status);
+                    ExReleaseResourceLite(&c->partial_stripes_lock);
                     ExReleaseResourceLite(&c->lock);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
                     return Status;
