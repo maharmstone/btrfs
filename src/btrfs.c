@@ -973,6 +973,7 @@ NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_t
     InsertTailList(&Vcb->roots, &r->list_entry);
     
     if (!no_tree) {
+        RtlZeroMemory(&t->header, sizeof(tree_header));
         t->header.fs_uuid = tp.tree->header.fs_uuid;
         t->header.address = 0;
         t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
