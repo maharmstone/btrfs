@@ -1599,7 +1599,6 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes) {
 
         KeInitializeEvent(&wtc[bit_num].Event, NotificationEvent, FALSE);
         InitializeListHead(&wtc[bit_num].stripes);
-        wtc[bit_num].tree = TRUE;
         wtc[bit_num].need_wait = FALSE;
         wtc[bit_num].stripes_left = 0;
         wtc[bit_num].parity1 = wtc[bit_num].parity2 = wtc[bit_num].scratch = NULL;

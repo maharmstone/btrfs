@@ -798,7 +798,7 @@ typedef struct _write_data_context {
     KEVENT Event;
     LIST_ENTRY stripes;
     LONG stripes_left;
-    BOOL tree, need_wait;
+    BOOL need_wait;
     UINT8 *parity1, *parity2, *scratch;
     PMDL mdl, parity1_mdl, parity2_mdl;
 } write_data_context;

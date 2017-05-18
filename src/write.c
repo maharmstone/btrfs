@@ -2188,7 +2188,6 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     
     KeInitializeEvent(&wtc.Event, NotificationEvent, FALSE);
     InitializeListHead(&wtc.stripes);
-    wtc.tree = FALSE;
     wtc.stripes_left = 0;
     wtc.parity1 = wtc.parity2 = wtc.scratch = NULL;
     wtc.mdl = wtc.parity1_mdl = wtc.parity2_mdl = NULL;
