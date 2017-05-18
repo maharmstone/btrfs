@@ -45,6 +45,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
                                        void* data, UINT16 datalen, enum batch_operation operation);
+static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 
 #ifndef _MSC_VER // not in mingw yet
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
@@ -1518,12 +1519,16 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
     return STATUS_SUCCESS;
 }
 
-NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp) {
+NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes) {
     chunk* c;
     LIST_ENTRY* le;
     tree_write* tw;
     NTSTATUS Status;
     ULONG num_bits;
+    write_data_context* wtc;
+    int i;
+    ULONG bit_num = 0;
+    BOOL raid56 = FALSE;
     
     // merge together runs
     c = NULL;
@@ -1560,36 +1565,10 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
             }
         }
         
-        le = le->Flink;
-    }
-    
-    // mark RAID5/6 overlaps so we can do them one by one
-    c = NULL;
-    le = tree_writes->Flink;
-    while (le != tree_writes) {
-        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        tw->c = c;
         
-        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
-            c = get_chunk_from_address(Vcb, tw->address);
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
-            UINT64 last_stripe, this_stripe;
-            
-            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
-            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1));
-            
-            if (last_stripe == this_stripe)
-                tw->overlap = TRUE;
-        } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-            tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
-            UINT64 last_stripe, this_stripe;
-            
-            last_stripe = (tw2->address + tw2->length - 1 - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
-            this_stripe = (tw->address - c->offset) / (c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 2));
-            
-            if (last_stripe == this_stripe)
-                tw->overlap = TRUE;
-        }
+        if (c->chunk_item->type & (BLOCK_FLAG_RAID5 | BLOCK_FLAG_RAID6))
+            raid56 = TRUE;
         
         le = le->Flink;
     }
@@ -1600,114 +1579,126 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp
     while (le != tree_writes) {
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
         
-        if (!tw->overlap)
-            num_bits++;
+        num_bits++;
         
         le = le->Flink;
     }
     
-    if (num_bits > 0) {
-        write_data_context* wtc;
-        int i;
-        ULONG bit_num = 0;
-        
-        wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context) * num_bits, ALLOC_TAG);
-        if (!wtc) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        le = tree_writes->Flink;
-        
-        while (le != tree_writes) {
-            tw = CONTAINING_RECORD(le, tree_write, list_entry);
-            
-            if (!tw->overlap) {
-                TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
-                
-                KeInitializeEvent(&wtc[bit_num].Event, NotificationEvent, FALSE);
-                InitializeListHead(&wtc[bit_num].stripes);
-                wtc[bit_num].tree = TRUE;
-                wtc[bit_num].stripes_left = 0;
-                wtc[bit_num].parity1 = wtc[bit_num].parity2 = wtc[bit_num].scratch = NULL;
-                wtc[bit_num].mdl = wtc[bit_num].parity1_mdl = wtc[bit_num].parity2_mdl = NULL;
-                
-                Status = write_data(Vcb, tw->address, tw->data, tw->length, &wtc[bit_num], NULL, NULL, FALSE, 0, HighPagePriority);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("write_data returned %08x\n", Status);
-                    
-                    for (i = 0; i < num_bits; i++) {
-                        free_write_data_stripes(&wtc[i]);
-                    }
-                    ExFreePool(wtc);
-                    
-                    return Status;
-                }
-                
-                bit_num++;
-            }
-            
-            le = le->Flink;
-        }
-        
-        for (i = 0; i < num_bits; i++) {
-            if (wtc[i].stripes.Flink != &wtc[i].stripes) {
-                // launch writes and wait
-                le = wtc[i].stripes.Flink;
-                while (le != &wtc[i].stripes) {
-                    write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
-                    
-                    if (stripe->status != WriteDataStatus_Ignore)
-                        IoCallDriver(stripe->device->devobj, stripe->Irp);
-                    
-                    le = le->Flink;
-                }
-            }
-        }
+    wtc = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_context) * num_bits, ALLOC_TAG);
+    if (!wtc) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
-        for (i = 0; i < num_bits; i++) {
-            if (wtc[i].stripes.Flink != &wtc[i].stripes) {
-                KeWaitForSingleObject(&wtc[i].Event, Executive, KernelMode, FALSE, NULL);
-            }
-        }
+    le = tree_writes->Flink;
 
-        for (i = 0; i < num_bits; i++) {
+    while (le != tree_writes) {
+        tw = CONTAINING_RECORD(le, tree_write, list_entry);
+        
+        TRACE("address: %llx, size: %x\n", tw->address, tw->length);
+
+        KeInitializeEvent(&wtc[bit_num].Event, NotificationEvent, FALSE);
+        InitializeListHead(&wtc[bit_num].stripes);
+        wtc[bit_num].tree = TRUE;
+        wtc[bit_num].need_wait = FALSE;
+        wtc[bit_num].stripes_left = 0;
+        wtc[bit_num].parity1 = wtc[bit_num].parity2 = wtc[bit_num].scratch = NULL;
+        wtc[bit_num].mdl = wtc[bit_num].parity1_mdl = wtc[bit_num].parity2_mdl = NULL;
+        
+        Status = write_data(Vcb, tw->address, tw->data, tw->length, &wtc[bit_num], NULL, NULL, FALSE, 0, HighPagePriority);
+        if (!NT_SUCCESS(Status)) {
+            ERR("write_data returned %08x\n", Status);
+            
+            for (i = 0; i < num_bits; i++) {
+                free_write_data_stripes(&wtc[i]);
+            }
+            ExFreePool(wtc);
+            
+            return Status;
+        }
+        
+        bit_num++;
+
+        le = le->Flink;
+    }
+
+    for (i = 0; i < num_bits; i++) {
+        if (wtc[i].stripes.Flink != &wtc[i].stripes) {
+            // launch writes and wait
             le = wtc[i].stripes.Flink;
             while (le != &wtc[i].stripes) {
                 write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
                 
-                if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
-                    Status = stripe->iosb.Status;
-                    log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
-                    break;
+                if (stripe->status != WriteDataStatus_Ignore) {
+                    wtc[i].need_wait = TRUE;
+                    IoCallDriver(stripe->device->devobj, stripe->Irp);
                 }
                 
                 le = le->Flink;
             }
-                
-            free_write_data_stripes(&wtc[i]);
         }
-        
-        ExFreePool(wtc);
     }
-    
-    le = tree_writes->Flink;
-    while (le != tree_writes) {
-        tw = CONTAINING_RECORD(le, tree_write, list_entry);
-        
-        if (tw->overlap) {
-            TRACE("address: %llx, size: %x, overlap = %u\n", tw->address, tw->length, tw->overlap);
-            
-            Status = write_data_complete(Vcb, tw->address, tw->data, tw->length, Irp, NULL, FALSE, 0, HighPagePriority);
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data_complete returned %08x\n", Status);
-                return Status;
+
+    for (i = 0; i < num_bits; i++) {
+        if (wtc[i].need_wait)
+            KeWaitForSingleObject(&wtc[i].Event, Executive, KernelMode, FALSE, NULL);
+    }
+
+    for (i = 0; i < num_bits; i++) {
+        le = wtc[i].stripes.Flink;
+        while (le != &wtc[i].stripes) {
+            write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
+
+            if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
+                Status = stripe->iosb.Status;
+                log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+                break;
             }
+
+            le = le->Flink;
         }
-        
-        le = le->Flink;
+
+        free_write_data_stripes(&wtc[i]);
     }
     
+    ExFreePool(wtc);
+
+    if (raid56) {
+        c = NULL;
+        
+        le = tree_writes->Flink;
+        while (le != tree_writes) {
+            tw = CONTAINING_RECORD(le, tree_write, list_entry);
+            
+            if (tw->c != c) {
+                c = tw->c;
+
+                ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
+
+                while (!IsListEmpty(&c->partial_stripes)) {
+                    partial_stripe* ps = CONTAINING_RECORD(RemoveHeadList(&c->partial_stripes), partial_stripe, list_entry);
+
+                    Status = flush_partial_stripe(Vcb, c, ps);
+
+                    if (ps->bmparr)
+                        ExFreePool(ps->bmparr);
+
+                    ExFreePool(ps);
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("flush_partial_stripe returned %08x\n", Status);
+                        ExReleaseResourceLite(&c->partial_stripes_lock);
+                        return Status;
+                    }
+                }
+
+                ExReleaseResourceLite(&c->partial_stripes_lock);
+            }
+
+            le = le->Flink;
+        }
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -1983,7 +1974,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             tw->address = t->new_address;
             tw->length = Vcb->superblock.node_size;
             tw->data = data;
-            tw->overlap = FALSE;
             
             if (IsListEmpty(&tree_writes))
                 InsertTailList(&tree_writes, &tw->list_entry);
@@ -2012,7 +2002,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         le = le->Flink;
     }
     
-    Status = do_tree_writes(Vcb, &tree_writes, Irp);
+    Status = do_tree_writes(Vcb, &tree_writes);
     if (!NT_SUCCESS(Status)) {
         ERR("do_tree_writes returned %08x\n", Status);
         goto end;

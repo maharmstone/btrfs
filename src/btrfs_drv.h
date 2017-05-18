@@ -798,7 +798,7 @@ typedef struct _write_data_context {
     KEVENT Event;
     LIST_ENTRY stripes;
     LONG stripes_left;
-    BOOL tree;
+    BOOL tree, need_wait;
     UINT8 *parity1, *parity2, *scratch;
     PMDL mdl, parity1_mdl, parity2_mdl;
 } write_data_context;
@@ -806,8 +806,8 @@ typedef struct _write_data_context {
 typedef struct {
     UINT64 address;
     UINT32 length;
-    BOOL overlap;
     UINT8* data;
+    chunk* c;
     LIST_ENTRY list_entry;
 } tree_write;
 
@@ -1182,7 +1182,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
 NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp);
 NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length);
 BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp);
-NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, PIRP Irp);
+NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes);
 void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp);
 BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* address);
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size);

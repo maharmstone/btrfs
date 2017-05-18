@@ -1032,7 +1032,6 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                 tw->address = mr->new_address;
                 tw->length = Vcb->superblock.node_size;
                 tw->data = (UINT8*)mr->data;
-                tw->overlap = FALSE;
                 
                 if (IsListEmpty(&tree_writes))
                     InsertTailList(&tree_writes, &tw->list_entry);
@@ -1074,7 +1073,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
         le = le->Flink;
     }
     
-    Status = do_tree_writes(Vcb, &tree_writes, NULL);
+    Status = do_tree_writes(Vcb, &tree_writes);
     if (!NT_SUCCESS(Status)) {
         ERR("do_tree_writes returned %08x\n", Status);
         goto end;
