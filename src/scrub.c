@@ -1697,7 +1697,8 @@ static NTSTATUS STDCALL scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start, UINT64 num) {
+static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start,
+                               UINT64 num, UINT16 missing_devices) {
     ULONG sectors_per_stripe = c->chunk_item->stripe_length / Vcb->superblock.sector_size, i;
     UINT16 stripe, parity = (bit_start + num + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     UINT64 off, stripeoff;
@@ -1706,13 +1707,14 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     off = (bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1);
     stripeoff = num * sectors_per_stripe;
     
-    RtlCopyMemory(context->parity_scratch, &context->stripes[parity].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+    if (missing_devices == 0)
+        RtlCopyMemory(context->parity_scratch, &context->stripes[parity].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
     
     while (stripe != parity) {
         RtlClearAllBits(&context->stripes[stripe].error);
         
         for (i = 0; i < sectors_per_stripe; i++) {
-            if (RtlCheckBit(&context->alloc, off)) {
+            if (c->devices[stripe]->devobj && RtlCheckBit(&context->alloc, off)) {
                 if (RtlCheckBit(&context->is_tree, off)) {
                     tree_header* th = (tree_header*)&context->stripes[stripe].buf[stripeoff * Vcb->superblock.sector_size];
                     UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
@@ -1721,6 +1723,9 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                     if (crc32 != *((UINT32*)th->csum) || th->address != addr) {
                         RtlSetBits(&context->stripes[stripe].error, i, Vcb->superblock.node_size / Vcb->superblock.sector_size);
                         log_device_error(Vcb, c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+
+                        if (missing_devices > 0)
+                            log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, TRUE, FALSE, FALSE);
                     }
                     
                     off += Vcb->superblock.node_size / Vcb->superblock.sector_size;
@@ -1734,6 +1739,12 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                     if (crc32 != context->csum[off]) {
                         RtlSetBit(&context->stripes[stripe].error, i);
                         log_device_error(Vcb, c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+
+                        if (missing_devices > 0) {
+                            UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off * Vcb->superblock.sector_size);
+
+                            log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, FALSE, FALSE, FALSE);
+                        }
                     }
                 }
             }
@@ -1742,7 +1753,8 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             stripeoff++;
         }
         
-        do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+        if (missing_devices == 0)
+            do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
         
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
         stripeoff = num * sectors_per_stripe;
@@ -1750,23 +1762,28 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     
     // check parity
     
-    RtlClearAllBits(&context->stripes[parity].error);
-    
-    for (i = 0; i < sectors_per_stripe; i++) {
-        ULONG o, j;
-        
-        o = i * Vcb->superblock.sector_size;
-        for (j = 0; j < Vcb->superblock.sector_size; j++) { // FIXME - use SSE
-            if (context->parity_scratch[o] != 0) {
-                RtlSetBit(&context->stripes[parity].error, i);
-                break;
+    if (missing_devices == 0) {
+        RtlClearAllBits(&context->stripes[parity].error);
+
+        for (i = 0; i < sectors_per_stripe; i++) {
+            ULONG o, j;
+
+            o = i * Vcb->superblock.sector_size;
+            for (j = 0; j < Vcb->superblock.sector_size; j++) { // FIXME - use SSE
+                if (context->parity_scratch[o] != 0) {
+                    RtlSetBit(&context->stripes[parity].error, i);
+                    break;
+                }
+                o++;
             }
-            o++;
         }
     }
     
     // log and fix errors
     
+    if (missing_devices > 0)
+        return;
+
     for (i = 0; i < sectors_per_stripe; i++) {
         ULONG num_errors = 0;
         UINT64 bad_stripe, bad_off;
@@ -2712,7 +2729,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
             }
         } else {
             for (i = 0; i < read_stripes; i++) {
-                scrub_raid5_stripe(Vcb, c, &context, stripe_start, stripe, i);
+                scrub_raid5_stripe(Vcb, c, &context, stripe_start, stripe, i, missing_devices);
             }
         }
         stripe += read_stripes;
