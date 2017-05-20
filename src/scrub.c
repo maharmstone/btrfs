@@ -667,30 +667,35 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
     BOOL csum_error = FALSE;
     ULONG i;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    UINT16 present_devices = 0;
     
     if (csum) {
         ULONG good_stripe = 0xffffffff;
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            // if first stripe is okay, we only need to check that the others are identical to it
-            if (good_stripe != 0xffffffff) {
-                if (RtlCompareMemory(context->stripes[i].buf, context->stripes[good_stripe].buf,
-                                     context->stripes[good_stripe].length) != context->stripes[i].length) {
-                    context->stripes[i].csum_error = TRUE;
-                    csum_error = TRUE;
-                    log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+            if (c->devices[i]->devobj) {
+                present_devices++;
+
+                // if first stripe is okay, we only need to check that the others are identical to it
+                if (good_stripe != 0xffffffff) {
+                    if (RtlCompareMemory(context->stripes[i].buf, context->stripes[good_stripe].buf,
+                                        context->stripes[good_stripe].length) != context->stripes[i].length) {
+                        context->stripes[i].csum_error = TRUE;
+                        csum_error = TRUE;
+                        log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                    }
+                } else {
+                    Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, csum);
+                    if (Status == STATUS_CRC_ERROR) {
+                        context->stripes[i].csum_error = TRUE;
+                        csum_error = TRUE;
+                        log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                    } else if (!NT_SUCCESS(Status)) {
+                        ERR("check_csum returned %08x\n", Status);
+                        return Status;
+                    } else
+                        good_stripe = i;
                 }
-            } else {
-                Status = check_csum(Vcb, context->stripes[i].buf, context->stripes[i].length / Vcb->superblock.sector_size, csum);
-                if (Status == STATUS_CRC_ERROR) {
-                    context->stripes[i].csum_error = TRUE;
-                    csum_error = TRUE;
-                    log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
-                } else if (!NT_SUCCESS(Status)) {
-                    ERR("check_csum returned %08x\n", Status);
-                    return Status;
-                } else
-                    good_stripe = i;
             }
         }
     } else {
@@ -699,28 +704,30 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             ULONG j;
             
-            // if first stripe is okay, we only need to check that the others are identical to it
-            if (good_stripe != 0xffffffff) {
-                if (RtlCompareMemory(context->stripes[i].buf, context->stripes[good_stripe].buf,
-                                     context->stripes[good_stripe].length) != context->stripes[i].length) {
-                    context->stripes[i].csum_error = TRUE;
-                    csum_error = TRUE;
-                    log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
-                }
-            } else {
-                for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
-                    UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-                    
-                    if (crc32 != *((UINT32*)th->csum) || th->address != offset + UInt32x32To64(j, Vcb->superblock.node_size)) {
+            if (c->devices[i]->devobj) {
+                // if first stripe is okay, we only need to check that the others are identical to it
+                if (good_stripe != 0xffffffff) {
+                    if (RtlCompareMemory(context->stripes[i].buf, context->stripes[good_stripe].buf,
+                                         context->stripes[good_stripe].length) != context->stripes[i].length) {
                         context->stripes[i].csum_error = TRUE;
                         csum_error = TRUE;
                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     }
+                } else {
+                    for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
+                        tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+
+                        if (crc32 != *((UINT32*)th->csum) || th->address != offset + UInt32x32To64(j, Vcb->superblock.node_size)) {
+                            context->stripes[i].csum_error = TRUE;
+                            csum_error = TRUE;
+                            log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                        }
+                    }
+
+                    if (!context->stripes[i].csum_error)
+                        good_stripe = i;
                 }
-                
-                if (!context->stripes[i].csum_error)
-                    good_stripe = i;
             }
         }
     }
@@ -763,11 +770,11 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         }
     }
     
-    if (c->chunk_item->num_stripes > 1) {
+    if (present_devices > 1) {
         ULONG good_stripe = 0xffffffff;
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (!context->stripes[i].csum_error) {
+            if (c->devices[i]->devobj && !context->stripes[i].csum_error) {
                 good_stripe = i;
                 break;
             }
@@ -826,60 +833,62 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             ULONG j;
             
-            if (csum) {
-                for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
-                    if (context->stripes[i].bad_csums[j] != csum[j]) {
-                        ULONG k;
-                        UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
-                        BOOL recovered = FALSE;
-                        
-                        for (k = 0; k < c->chunk_item->num_stripes; k++) {
-                            if (i != k && context->stripes[k].bad_csums[j] == csum[j]) {
-                                log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, TRUE, FALSE);
-                                log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
-                                
-                                RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
-                                              context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-                                
-                                recovered = TRUE;
-                                break;
-                            }
-                        }
-                        
-                        if (!recovered) {
-                            log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE, FALSE);
-                            log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
-                        }
-                    }
-                }
-            } else {
-                for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
-                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
-                    
-                    if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr) {
-                        ULONG k;
-                        BOOL recovered = FALSE;
-                        
-                        for (k = 0; k < c->chunk_item->num_stripes; k++) {
-                            if (i != k) {
-                                tree_header* th2 = (tree_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
-                                
-                                if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum) && th2->address == addr) {
-                                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE, FALSE);
+            if (c->devices[i]->devobj) {
+                if (csum) {
+                    for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
+                        if (context->stripes[i].bad_csums[j] != csum[j]) {
+                            ULONG k;
+                            UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                            BOOL recovered = FALSE;
+
+                            for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                                if (i != k && c->devices[k]->devobj && context->stripes[k].bad_csums[j] == csum[j]) {
+                                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, TRUE, FALSE);
                                     log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
-                                    
-                                    RtlCopyMemory(th, th2, Vcb->superblock.node_size);
-                                    
+
+                                    RtlCopyMemory(context->stripes[i].buf + (j * Vcb->superblock.sector_size),
+                                                  context->stripes[k].buf + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+
                                     recovered = TRUE;
                                     break;
                                 }
                             }
+
+                            if (!recovered) {
+                                log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE, FALSE);
+                                log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                            }
                         }
-                        
-                        if (!recovered) {
-                            log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE, FALSE);
-                            log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                    }
+                } else {
+                    for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
+                        tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                        UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
+
+                        if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr) {
+                            ULONG k;
+                            BOOL recovered = FALSE;
+
+                            for (k = 0; k < c->chunk_item->num_stripes; k++) {
+                                if (i != k && c->devices[k]->devobj) {
+                                    tree_header* th2 = (tree_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
+
+                                    if (context->stripes[k].bad_csums[j] == *((UINT32*)th2->csum) && th2->address == addr) {
+                                        log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, TRUE, FALSE);
+                                        log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+
+                                        RtlCopyMemory(th, th2, Vcb->superblock.node_size);
+
+                                        recovered = TRUE;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (!recovered) {
+                                log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE, FALSE);
+                                log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                            }
                         }
                     }
                 }
@@ -889,7 +898,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
         // write good data over bad
         
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (!c->devices[i]->readonly) {
+            if (c->devices[i]->devobj && !c->devices[i]->readonly) {
                 Status = write_data_phys(c->devices[i]->devobj, cis[i].offset + offset - c->offset,
                                          context->stripes[i].buf, context->stripes[i].length);
                 if (!NT_SUCCESS(Status)) {
@@ -904,23 +913,25 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, UINT64 offset,
     }
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        ULONG j;
-        
-        if (csum) {
-            for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
-                if (context->stripes[i].bad_csums[j] != csum[j]) {
-                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
-                    
-                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE, FALSE);
+        if (c->devices[i]->devobj) {
+            ULONG j;
+
+            if (csum) {
+                for (j = 0; j < context->stripes[i].length / Vcb->superblock.sector_size; j++) {
+                    if (context->stripes[i].bad_csums[j] != csum[j]) {
+                        UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+
+                        log_error(Vcb, addr, c->devices[i]->devitem.dev_id, FALSE, FALSE, FALSE);
+                    }
                 }
-            }
-        } else {
-            for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
-                UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
-                
-                if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr)
-                    log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE, FALSE);
+            } else {
+                for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
+                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                    UINT64 addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
+
+                    if (context->stripes[i].bad_csums[j] != *((UINT32*)th->csum) || th->address != addr)
+                        log_error(Vcb, addr, c->devices[i]->devitem.dev_id, TRUE, FALSE, FALSE);
+                }
             }
         }
     }
@@ -1359,8 +1370,6 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     NTSTATUS Status;
     UINT16 startoffstripe;
     
-    // FIXME - make work when degraded
-    
     TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
     
     context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
@@ -1452,7 +1461,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             goto end;
         }
         
-        if (context.stripes[i].length > 0) {
+        if (context.stripes[i].length > 0 && c->devices[i]->devobj) {
             context.stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, context.stripes[i].length, ALLOC_TAG);
             
             if (!context.stripes[i].buf) {
@@ -1530,7 +1539,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
     
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        if (context.stripes[i].length > 0)
+        if (c->devices[i]->devobj && context.stripes[i].length > 0)
             IoCallDriver(c->devices[i]->devobj, context.stripes[i].Irp);
     }
     
