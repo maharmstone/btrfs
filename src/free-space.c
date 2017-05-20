@@ -1539,7 +1539,9 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     Status = do_write_file(c->cache, 0, c->cache->inode_item.st_size, data, NULL, FALSE, 0, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("do_write_file returned %08x\n", Status);
-        return Status;
+
+        // Writing the cache isn't critical, so we don't return an error if writing fails. This means
+        // we can still flush on a degraded mount if metadata is RAID1 but data is RAID0.
     }
 
     ExFreePool(data);
