@@ -1368,7 +1368,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
     scrub_context context;
     CHUNK_ITEM_STRIPE* cis;
     NTSTATUS Status;
-    UINT16 startoffstripe;
+    UINT16 startoffstripe, num_missing, allowed_missing;
     
     TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
     
@@ -1407,6 +1407,8 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             else
                 context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start;
         }
+
+        allowed_missing = 0;
     } else if (type == BLOCK_FLAG_RAID10) {
         UINT64 startoff, endoff;
         UINT16 endoffstripe, j, sub_stripes = max(c->chunk_item->sub_stripes, 1);
@@ -1445,8 +1447,12 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
         }
         
         startoffstripe /= sub_stripes;
-    }
-    
+        allowed_missing = 1;
+    } else
+        allowed_missing = c->chunk_item->num_stripes - 1;
+
+    num_missing = 0;
+
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         PIO_STACK_LOCATION IrpSp;
         
@@ -1461,7 +1467,15 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
             goto end;
         }
         
-        if (context.stripes[i].length > 0 && c->devices[i]->devobj) {
+        if (!c->devices[i]->devobj) {
+            num_missing++;
+
+            if (num_missing > allowed_missing) {
+                ERR("too many missing devices (at least %u, maximum allowed %u)\n", num_missing, allowed_missing);
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+        } else if (context.stripes[i].length > 0) {
             context.stripes[i].buf = ExAllocatePoolWithTag(NonPagedPool, context.stripes[i].length, ALLOC_TAG);
             
             if (!context.stripes[i].buf) {
