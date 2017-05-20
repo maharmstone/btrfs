@@ -1665,7 +1665,7 @@ typedef struct {
     void* context;
     IO_STATUS_BLOCK iosb;
     UINT64 offset;
-    BOOL rewrite;
+    BOOL rewrite, missing;
     RTL_BITMAP error;
     ULONG* errorarr;
 } scrub_context_raid56_stripe;
@@ -2588,10 +2588,13 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     
     stripe = stripe_start;
     
+    Status = STATUS_SUCCESS;
+
     chunk_lock_range(Vcb, c, run_start, run_end - run_start);
     
     do {
-        ULONG read_stripes;
+        ULONG read_stripes, missing_devices = 0;
+        BOOL need_wait = FALSE;
         
         if (max_read < stripe_end + 1 - stripe)
             read_stripes = max_read;
@@ -2602,79 +2605,104 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
         
         // read megabyte by megabyte
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            PIO_STACK_LOCATION IrpSp;
+            if (c->devices[i]->devobj) {
+                PIO_STACK_LOCATION IrpSp;
 
-            context.stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
-            
-            if (!context.stripes[i].Irp) {
-                ERR("IoAllocateIrp failed\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end2;
-            }
-            
-            IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
-            IrpSp->MajorFunction = IRP_MJ_READ;
-            
-            if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, read_stripes * c->chunk_item->stripe_length, ALLOC_TAG);
-                if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
+                context.stripes[i].Irp = IoAllocateIrp(c->devices[i]->devobj->StackSize, FALSE);
 
-                context.stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
-
-                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
-            } else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length, FALSE, FALSE, NULL);
-                if (!context.stripes[i].Irp->MdlAddress) {
-                    ERR("IoAllocateMdl failed\n");
+                if (!context.stripes[i].Irp) {
+                    ERR("IoAllocateIrp failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end;
+                    goto end3;
                 }
                 
-                Status = STATUS_SUCCESS;
+                context.stripes[i].Irp->MdlAddress = NULL;
 
-                try {
-                    MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
-                } except (EXCEPTION_EXECUTE_HANDLER) {
-                    Status = GetExceptionCode();
-                }
+                IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
+                IrpSp->MajorFunction = IRP_MJ_READ;
 
-                if (!NT_SUCCESS(Status)) {
-                    ERR("MmProbeAndLockPages threw exception %08x\n", Status);
-                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
-                    goto end;
-                }
-            } else
-                context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
-            
-            context.stripes[i].offset = stripe * c->chunk_item->stripe_length;
+                if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO) {
+                    context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, read_stripes * c->chunk_item->stripe_length, ALLOC_TAG);
+                    if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end3;
+                    }
 
-            IrpSp->Parameters.Read.Length = read_stripes * c->chunk_item->stripe_length;
-            IrpSp->Parameters.Read.ByteOffset.QuadPart = cis[i].offset + context.stripes[i].offset;
-            
-            context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
-            
-            IoSetCompletionRoutine(context.stripes[i].Irp, scrub_read_completion_raid56, &context.stripes[i], TRUE, TRUE, TRUE);
-            
-            Vcb->scrub.data_scrubbed += read_stripes * c->chunk_item->stripe_length;
+                    context.stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+
+                    context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
+                } else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
+                    context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length, FALSE, FALSE, NULL);
+                    if (!context.stripes[i].Irp->MdlAddress) {
+                        ERR("IoAllocateMdl failed\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto end3;
+                    }
+
+                    Status = STATUS_SUCCESS;
+
+                    try {
+                        MmProbeAndLockPages(context.stripes[i].Irp->MdlAddress, KernelMode, IoWriteAccess);
+                    } except (EXCEPTION_EXECUTE_HANDLER) {
+                        Status = GetExceptionCode();
+                    }
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                        IoFreeMdl(context.stripes[i].Irp->MdlAddress);
+                        goto end3;
+                    }
+                } else
+                    context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
+
+                context.stripes[i].offset = stripe * c->chunk_item->stripe_length;
+
+                IrpSp->Parameters.Read.Length = read_stripes * c->chunk_item->stripe_length;
+                IrpSp->Parameters.Read.ByteOffset.QuadPart = cis[i].offset + context.stripes[i].offset;
+
+                context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
+                context.stripes[i].missing = FALSE;
+
+                IoSetCompletionRoutine(context.stripes[i].Irp, scrub_read_completion_raid56, &context.stripes[i], TRUE, TRUE, TRUE);
+
+                Vcb->scrub.data_scrubbed += read_stripes * c->chunk_item->stripe_length;
+                need_wait = TRUE;
+            } else {
+                context.stripes[i].Irp = NULL;
+                context.stripes[i].missing = TRUE;
+                missing_devices++;
+                InterlockedDecrement(&context.stripes_left);
+            }
         }
         
-        KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
-        
-        for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            IoCallDriver(c->devices[i]->devobj, context.stripes[i].Irp);
+        if (c->chunk_item->type & BLOCK_FLAG_RAID5 && missing_devices > 1) {
+            ERR("too many missing devices (%u, maximum 1)\n", missing_devices);
+            Status = STATUS_UNEXPECTED_IO_ERROR;
+            goto end3;
+        } else if (c->chunk_item->type & BLOCK_FLAG_RAID6 && missing_devices > 2) {
+            ERR("too many missing devices (%u, maximum 2)\n", missing_devices);
+            Status = STATUS_UNEXPECTED_IO_ERROR;
+            goto end3;
         }
-        
-        KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+
+        if (need_wait) {
+            KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+
+            for (i = 0; i < c->chunk_item->num_stripes; i++) {
+                if (c->devices[i]->devobj)
+                    IoCallDriver(c->devices[i]->devobj, context.stripes[i].Irp);
+            }
+
+            KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+        }
         
         // return an error if any of the stripes returned an error
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (!NT_SUCCESS(context.stripes[i].iosb.Status)) {
+            if (!context.stripes[i].missing && !NT_SUCCESS(context.stripes[i].iosb.Status)) {
                 Status = context.stripes[i].iosb.Status;
                 log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_READ_ERRORS);
-                goto end2;
+                goto end3;
             }
         }
         
@@ -2689,6 +2717,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
         }
         stripe += read_stripes;
         
+end3:
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (context.stripes[i].Irp) {
                 if (c->devices[i]->devobj->Flags & DO_DIRECT_IO && context.stripes[i].Irp->MdlAddress) {
@@ -2705,18 +2734,19 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_phys returned %08x\n", Status);
                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_WRITE_ERRORS);
-                        return Status;
+                        goto end2;
                     }
                 }
             }
         }
+
+        if (!NT_SUCCESS(Status))
+            break;
     } while (stripe < stripe_end);
     
+end2:
     chunk_unlock_range(Vcb, c, run_start, run_end - run_start);
     
-    Status = STATUS_SUCCESS;
-    
-end2:
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         ExFreePool(context.stripes[i].buf);
         ExFreePool(context.stripes[i].errorarr);
