@@ -168,6 +168,7 @@ typedef struct {
 
 typedef struct {
     UINT8 uuid[16];
+    BOOL missing;
     USHORT name_length;
     WCHAR name[1];
 } btrfs_filesystem_device;

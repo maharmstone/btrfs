@@ -115,28 +115,33 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
             
             RtlCopyMemory(&bfd->uuid, &dev->devitem.device_uuid, sizeof(BTRFS_UUID));
             
-            Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
-            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                ExReleaseResourceLite(&Vcb->tree_lock);
-                ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-                goto end;
+            if (dev->devobj) {
+                Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                    ExReleaseResourceLite(&Vcb->tree_lock);
+                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                    goto end;
+                }
+
+                if (mdn.NameLength > length) {
+                    ExReleaseResourceLite(&Vcb->tree_lock);
+                    Status = STATUS_BUFFER_OVERFLOW;
+                    goto end;
+                }
+
+                Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &bfd->name_length, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, TRUE, NULL);
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                    ExReleaseResourceLite(&Vcb->tree_lock);
+                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                    goto end;
+                }
+
+                itemsize += bfd->name_length;
+                length -= bfd->name_length;
+            } else {
+                bfd->missing = TRUE;
+                bfd->name_length = 0;
             }
-            
-            if (mdn.NameLength > length) {
-                ExReleaseResourceLite(&Vcb->tree_lock);
-                Status = STATUS_BUFFER_OVERFLOW;
-                goto end;
-            }
-            
-            Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &bfd->name_length, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, TRUE, NULL);
-            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                ExReleaseResourceLite(&Vcb->tree_lock);
-                ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-                goto end;
-            }
-            
-            itemsize += bfd->name_length;
-            length -= bfd->name_length;
             
             le2 = le2->Flink;
         }
