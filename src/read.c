@@ -471,7 +471,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
         }
 
         for (j = 0; j < ci->sub_stripes; j++) {
-            if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j]->devobj) {
+            if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j] && devices[stripe + j]->devobj) {
                 Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
                                         Vcb->superblock.node_size, (UINT8*)t2, FALSE);
                 if (!NT_SUCCESS(Status)) {
@@ -544,7 +544,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
                 log_device_error(Vcb, devices[stripe + badsubstripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 
                 for (j = 0; j < ci->sub_stripes; j++) {
-                    if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j]->devobj) {
+                    if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j] && devices[stripe + j]->devobj) {
                         Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
                                                 Vcb->superblock.sector_size, sector, FALSE);
                         if (!NT_SUCCESS(Status)) {
