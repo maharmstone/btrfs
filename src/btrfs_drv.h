@@ -1127,7 +1127,6 @@ ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode,
 // in security.c
 NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-NTSTATUS get_sd_from_xattr(fcb* fcb, ULONG buflen);
 void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp);
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
 void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 gid);

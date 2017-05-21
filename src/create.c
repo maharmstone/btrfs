@@ -904,16 +904,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         
                         RtlCopyMemory(fcb->sd, &di->name[di->n], di->m);
                         
-                        Status = get_sd_from_xattr(fcb, di->m);
-
-                        if (NT_SUCCESS(Status))
-                            sd_set = TRUE;
-                        else {
-                            ERR("get_sd_from_xattr returned %08x\n", Status);
-                            Status = STATUS_SUCCESS;
-                            ExFreePool(fcb->sd);
-                            fcb->sd = NULL;
-                        }
+                        sd_set = TRUE;
                     }
                 } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->n == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(EA_PROP_COMPRESSION, di->name, di->n) == di->n) {
                     if (di->m > 0) {
