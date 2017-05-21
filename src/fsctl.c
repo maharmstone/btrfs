@@ -193,18 +193,23 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, UINT64 addr, root* sub
     }
     
     if (wtc.stripes.Flink != &wtc.stripes) {
+        BOOL need_wait = FALSE;
+
         // launch writes and wait
         le = wtc.stripes.Flink;
         while (le != &wtc.stripes) {
             write_data_stripe* stripe = CONTAINING_RECORD(le, write_data_stripe, list_entry);
             
-            if (stripe->status != WriteDataStatus_Ignore)
+            if (stripe->status != WriteDataStatus_Ignore) {
+                need_wait = TRUE;
                 IoCallDriver(stripe->device->devobj, stripe->Irp);
+            }
             
             le = le->Flink;
         }
         
-        KeWaitForSingleObject(&wtc.Event, Executive, KernelMode, FALSE, NULL);
+        if (need_wait)
+            KeWaitForSingleObject(&wtc.Event, Executive, KernelMode, FALSE, NULL);
         
         le = wtc.stripes.Flink;
         while (le != &wtc.stripes) {
