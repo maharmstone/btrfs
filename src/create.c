@@ -3494,7 +3494,7 @@ NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
         
-        if (dev->removable) {
+        if (dev->devobj && dev->removable) {
             ULONG cc;
             IO_STATUS_BLOCK iosb;
             
