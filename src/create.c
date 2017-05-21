@@ -894,7 +894,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         }
                     }
                 } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == strlen(EA_NTACL) && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
-                    if (di->m > 0 && RtlValidRelativeSecurityDescriptor(&di->name[di->n], di->m, 0)) {
+                    if (di->m > 0) {
                         fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->sd) {
                             ERR("out of memory\n");
@@ -904,7 +904,12 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         
                         RtlCopyMemory(fcb->sd, &di->name[di->n], di->m);
                         
-                        sd_set = TRUE;
+                        // We have to test against our copy rather than the source, as RtlValidRelativeSecurityDescriptor
+                        // will fail if the ACLs aren't 32-bit aligned.
+                        if (!RtlValidRelativeSecurityDescriptor(fcb->sd, di->m, 0))
+                            ExFreePool(fcb->sd);
+                        else
+                            sd_set = TRUE;
                     }
                 } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->n == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(EA_PROP_COMPRESSION, di->name, di->n) == di->n) {
                     if (di->m > 0) {
