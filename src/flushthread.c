@@ -43,8 +43,6 @@ typedef struct {
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
-static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                       void* data, UINT16 datalen, enum batch_operation operation);
 static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 
 #ifndef _MSC_VER // not in mingw yet
@@ -1510,10 +1508,12 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
         le = le->Flink;
     }
     
-    Status = update_chunk_caches(Vcb, Irp, rollback);
-    if (!NT_SUCCESS(Status)) {
-        ERR("update_chunk_caches returned %08x\n", Status);
-        return Status;
+    if (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
+        Status = update_chunk_caches(Vcb, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_chunk_caches returned %08x\n", Status);
+            return Status;
+        }
     }
     
     return STATUS_SUCCESS;
@@ -4367,8 +4367,8 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, UINT64 sta
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                       void* data, UINT16 datalen, enum batch_operation operation) {
+NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
+                                void* data, UINT16 datalen, enum batch_operation operation) {
     LIST_ENTRY* le;
     batch_root* br = NULL;
     batch_item* bi;
@@ -7029,10 +7029,18 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
             goto end;
         }
         
-        Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("allocate_cache returned %08x\n", Status);
-            goto end;
+        if (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
+            Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("allocate_cache returned %08x\n", Status);
+                goto end;
+            }
+        } else {
+            Status = update_chunk_caches_tree(Vcb, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("update_chunk_caches_tree returned %08x\n", Status);
+                goto end;
+            }
         }
 
 #ifdef DEBUG_WRITE_LOOPS

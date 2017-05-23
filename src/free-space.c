@@ -1606,6 +1606,58 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    FREE_SPACE_INFO* fsi;
+
+    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_INFO), ALLOC_TAG);
+    if (!fsi) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    space_list_merge(&c->space, &c->space_size, &c->deleting);
+
+    fsi->count = 0;
+    fsi->flags = 0;
+
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        fsi->count++;
+
+        Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, s->address, TYPE_FREE_SPACE_EXTENT, s->size,
+                                        NULL, 0, Batch_Insert);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item_batch returned %08x\n", Status);
+            ExFreePool(fsi);
+            return Status;
+        }
+
+        le = le->Flink;
+    }
+
+    Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
+                                    NULL, 0, Batch_DeleteFreeSpace);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item_batch returned %08x\n", Status);
+        ExFreePool(fsi);
+        return Status;
+    }
+
+    Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
+                                    fsi, sizeof(FREE_SPACE_INFO), Batch_Insert);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item_batch returned %08x\n", Status);
+        ExFreePool(fsi);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
     NTSTATUS Status;
@@ -1640,6 +1692,40 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
         return Status;
     }
     
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
+    LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
+    NTSTATUS Status;
+    chunk* c;
+
+    Vcb->superblock.compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID;
+
+    InitializeListHead(&batchlist);
+
+    while (le != &Vcb->chunks_changed) {
+        c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+
+        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        Status = update_chunk_cache_tree(Vcb, c, &batchlist);
+        ExReleaseResourceLite(&c->lock);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_chunk_cache_tree(%llx) returned %08x\n", c->offset, Status);
+            clear_batch_list(Vcb, &batchlist);
+            return Status;
+        }
+
+        le = le->Flink;
+    }
+
+    Status = commit_batch_list(Vcb, &batchlist, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("commit_batch_list returned %08x\n", Status);
+        return Status;
+    }
+
     return STATUS_SUCCESS;
 }
 

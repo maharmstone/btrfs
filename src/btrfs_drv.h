@@ -383,6 +383,7 @@ enum batch_operation {
     Batch_DeleteInodeExtRef,
     Batch_DeleteXattr,
     Batch_DeleteExtentData,
+    Batch_DeleteFreeSpace,
 };
 
 typedef struct {
@@ -1186,6 +1187,8 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes);
 void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp);
 BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* address);
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size);
+NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
+                                void* data, UINT16 datalen, enum batch_operation operation);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
@@ -1207,6 +1210,7 @@ NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp);
 NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 offset, UINT64 size);
 void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback);
