@@ -650,6 +650,56 @@ clearcache:
     return STATUS_NOT_FOUND;
 }
 
+static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp, next_tp;
+    NTSTATUS Status;
+
+    TRACE("(%p, %llx)\n", Vcb, c->offset);
+
+    if (!Vcb->space_root)
+        return STATUS_NOT_FOUND;
+
+    searchkey.obj_id = c->offset;
+    searchkey.obj_type = TYPE_FREE_SPACE_INFO;
+    searchkey.offset = c->chunk_item->size;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, FALSE, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08x\n", Status);
+        return Status;
+    }
+
+    if (keycmp(tp.item->key, searchkey)) {
+        TRACE("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        return STATUS_NOT_FOUND;
+    }
+
+    if (tp.item->size < sizeof(FREE_SPACE_INFO)) {
+        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_INFO));
+        return STATUS_NOT_FOUND;
+    }
+
+    while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
+        tp = next_tp;
+
+        if (tp.item->key.obj_id >= c->offset + c->chunk_item->size)
+            break;
+
+        if (tp.item->key.obj_type == TYPE_FREE_SPACE_EXTENT) {
+            Status = add_space_entry(&c->space, &c->space_size, tp.item->key.obj_id, tp.item->key.offset);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_space_entry returned %08x\n", Status);
+                return Status;
+            }
+        } else if (tp.item->key.obj_type == TYPE_FREE_SPACE_BITMAP) {
+            // FIXME
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
@@ -659,7 +709,14 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
     NTSTATUS Status;
 //     LIST_ENTRY* le;
     
-    if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
+    if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID) {
+        Status = load_stored_free_space_tree(Vcb, c, Irp);
+
+        if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+            ERR("load_stored_free_space_tree returned %08x\n", Status);
+            return Status;
+        }
+    } else if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
         Status = load_stored_free_space_cache(Vcb, c, Irp);
         
         if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {

@@ -47,7 +47,7 @@
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES)
-#define COMPAT_RO_SUPPORTED 0
+#define COMPAT_RO_SUPPORTED (BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE | BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID)
 
 static WCHAR device_name[] = {'\\','B','t','r','f','s',0};
 static WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e','s','\\','B','t','r','f','s',0};
@@ -2530,8 +2530,13 @@ static NTSTATUS STDCALL add_root(device_extension* Vcb, UINT64 id, UINT64 addr, 
             Vcb->uuid_root = r;
             break;
             
+        case BTRFS_ROOT_FREE_SPACE:
+            Vcb->space_root = r;
+            break;
+
         case BTRFS_ROOT_DATA_RELOC:
             Vcb->data_reloc_root = r;
+            break;
     }
     
     return STATUS_SUCCESS;
@@ -4142,9 +4147,14 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     InitializeListHead(&batchlist);
     
     // We've already increased the generation by one
-    if (!Vcb->readonly && (Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation || Vcb->options.clear_cache)) {
+    if (!Vcb->readonly && (
+        Vcb->options.clear_cache ||
+        (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE) && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) ||
+        (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID)))) {
         if (Vcb->options.clear_cache)
             WARN("ClearCache option was set, clearing cache...\n");
+        else if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID))
+            WARN("clearing free-space tree created by buggy Linux driver\n");
         else
             WARN("generation was %llx, free-space cache generation was %llx; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
         

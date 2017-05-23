@@ -684,6 +684,7 @@ typedef struct _device_extension {
     root* dev_root;
     root* uuid_root;
     root* data_reloc_root;
+    root* space_root;
     BOOL log_to_phys_loaded;
     LIST_ENTRY sys_chunks;
     LIST_ENTRY chunks;
