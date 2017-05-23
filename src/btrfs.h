@@ -34,6 +34,9 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 #define TYPE_SHARED_BLOCK_REF  0xB6
 #define TYPE_SHARED_DATA_REF   0xB8
 #define TYPE_BLOCK_GROUP_ITEM  0xC0
+#define TYPE_FREE_SPACE_INFO   0xC6
+#define TYPE_FREE_SPACE_EXTENT 0xC7
+#define TYPE_FREE_SPACE_BITMAP 0xC8
 #define TYPE_DEV_EXTENT        0xCC
 #define TYPE_DEV_ITEM          0xD8
 #define TYPE_CHUNK_ITEM        0xE4
@@ -49,6 +52,7 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 #define BTRFS_ROOT_FSTREE       5
 #define BTRFS_ROOT_CHECKSUM     7
 #define BTRFS_ROOT_UUID         9
+#define BTRFS_ROOT_FREE_SPACE   0xa
 #define BTRFS_ROOT_DATA_RELOC   0xFFFFFFFFFFFFFFF7
 
 #define BTRFS_COMPRESSION_NONE  0
@@ -92,7 +96,8 @@ static const UINT64 superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4
 
 #define BTRFS_SUBVOL_READONLY   0x1
 
-#define BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE  0x1
+#define BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE          0x1
+#define BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID    0x2
 
 #define BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF      0x0001
 #define BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL     0x0002
@@ -495,6 +500,13 @@ typedef struct {
     BALANCE_ARGS system;
     UINT8 reserved[32];
 } BALANCE_ITEM;
+
+#define BTRFS_FREE_SPACE_USING_BITMAPS      1
+
+typedef struct {
+    UINT32 count;
+    UINT32 flags;
+} FREE_SPACE_INFO;
 
 #define BTRFS_DEV_STAT_WRITE_ERRORS          0
 #define BTRFS_DEV_STAT_READ_ERRORS           1
