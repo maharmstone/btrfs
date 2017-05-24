@@ -656,6 +656,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     NTSTATUS Status;
     ULONG* bmparr = NULL;
     ULONG bmplen = 0;
+    LIST_ENTRY* le;
 
     TRACE("(%p, %llx)\n", Vcb, c->offset);
 
@@ -762,6 +763,31 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
 
     if (bmparr)
         ExFreePool(bmparr);
+
+    le = c->space.Flink;
+    while (le != &c->space) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+        LIST_ENTRY* le2 = le->Flink;
+
+        if (le2 != &c->space) {
+            space* s2 = CONTAINING_RECORD(le2, space, list_entry);
+
+            if (s2->address == s->address + s->size) {
+                s->size += s2->size;
+
+                RemoveEntryList(&s2->list_entry);
+                RemoveEntryList(&s2->list_entry_size);
+                ExFreePool(s2);
+
+                RemoveEntryList(&s->list_entry_size);
+                order_space_entry(s, &c->space_size);
+
+                le2 = le;
+            }
+        }
+
+        le = le2;
+    }
 
     return STATUS_SUCCESS;
 }
