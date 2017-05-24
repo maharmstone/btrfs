@@ -126,6 +126,30 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
     else
         do_rollback(Vcb, &rollback);
     
+    if (Vcb->space_root) {
+        searchkey.obj_id = 0;
+        searchkey.obj_type = 0;
+        searchkey.offset = 0;
+
+        Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            return Status;
+        }
+
+        do {
+            Status = delete_tree_item(Vcb, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08x\n", Status);
+                return Status;
+            }
+
+            b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
+            if (b)
+                tp = next_tp;
+        } while (b);
+    }
+
     return Status;
 }
 
