@@ -3733,7 +3733,8 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         while (le != &Vcb->trees) {
             t = CONTAINING_RECORD(le, tree, list_entry);
             
-            if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent && t->size < min_size && is_tree_unique(Vcb, t, Irp)) {
+            if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent && t->size < min_size &&
+                t->root->id != BTRFS_ROOT_FREE_SPACE && is_tree_unique(Vcb, t, Irp)) {
                 BOOL done;
                 
                 do {
