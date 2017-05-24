@@ -654,6 +654,8 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
+    ULONG* bmparr = NULL;
+    ULONG bmplen = 0;
 
     TRACE("(%p, %llx)\n", Vcb, c->offset);
 
@@ -690,12 +692,76 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             Status = add_space_entry(&c->space, &c->space_size, tp.item->key.obj_id, tp.item->key.offset);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08x\n", Status);
+                if (bmparr) ExFreePool(bmparr);
                 return Status;
             }
         } else if (tp.item->key.obj_type == TYPE_FREE_SPACE_BITMAP) {
-            // FIXME
+            ULONG explen, index, runlength;
+            RTL_BITMAP bmp;
+            UINT64 lastoff;
+
+            explen = tp.item->key.offset / (Vcb->superblock.sector_size * 8);
+
+            if (tp.item->size < explen) {
+                WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, explen);
+                return STATUS_NOT_FOUND;
+            } else if (tp.item->size == 0) {
+                WARN("(%llx,%x,%llx) has size of 0\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                return STATUS_NOT_FOUND;
+            }
+
+            if (bmplen < tp.item->size) {
+                if (bmparr)
+                    ExFreePool(bmparr);
+
+                bmplen = sector_align(tp.item->size, sizeof(ULONG));
+                bmparr = ExAllocatePoolWithTag(PagedPool, bmplen, ALLOC_TAG);
+                if (!bmparr) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+            }
+
+            // We copy the bitmap because it supposedly has to be ULONG-aligned
+            RtlCopyMemory(bmparr, tp.item->data, tp.item->size);
+
+            RtlInitializeBitMap(&bmp, bmparr, tp.item->key.offset / Vcb->superblock.sector_size);
+
+            lastoff = tp.item->key.obj_id;
+
+            runlength = RtlFindFirstRunClear(&bmp, &index);
+
+            while (runlength != 0) {
+                UINT64 runstart = tp.item->key.obj_id + (index * Vcb->superblock.sector_size);
+                UINT64 runend = runstart + (runlength * Vcb->superblock.sector_size);
+
+                if (runstart > lastoff) {
+                    Status = add_space_entry(&c->space, &c->space_size, lastoff, runstart - lastoff);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("add_space_entry returned %08x\n", Status);
+                        if (bmparr) ExFreePool(bmparr);
+                        return Status;
+                    }
+                }
+
+                lastoff = runend;
+
+                runlength = RtlFindNextForwardRunClear(&bmp, index + runlength, &index);
+            }
+
+            if (lastoff < tp.item->key.obj_id + tp.item->key.offset) {
+                Status = add_space_entry(&c->space, &c->space_size, lastoff, tp.item->key.obj_id + tp.item->key.offset - lastoff);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_space_entry returned %08x\n", Status);
+                    if (bmparr) ExFreePool(bmparr);
+                    return Status;
+                }
+            }
         }
     }
+
+    if (bmparr)
+        ExFreePool(bmparr);
 
     return STATUS_SUCCESS;
 }
