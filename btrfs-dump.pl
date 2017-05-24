@@ -549,7 +549,7 @@ sub dump_item {
 		$s=substr($s,0x18);
 		printf("block_group_item size=%x chunktreeid=%x flags=%x",$b[0],$b[1],$b[2]);
         } elsif ($type == 0xc6) { # FREE_SPACE_INFO
-		@b=unpack("vv",$s);
+		@b=unpack("VV",$s);
 		$s=substr($s,0x8);
 		printf("free_space_info count=%x flags=%x",$b[0],$b[1]);
 	} elsif ($type == 0xc7) { # FREE_SPACE_EXTENT
