@@ -150,6 +150,41 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
         } while (b);
     }
 
+    // regenerate free space tree
+    if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE) {
+        LIST_ENTRY* le;
+
+        ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+
+        le = Vcb->chunks.Flink;
+        while (le != &Vcb->chunks) {
+            chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+
+            if (!c->cache_loaded) {
+                NTSTATUS Status;
+
+                ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+                Status = load_cache_chunk(Vcb, c, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("load_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+                    ExReleaseResourceLite(&c->lock);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    return Status;
+                }
+
+                if (!c->list_entry_changed.Flink)
+                    InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+
+                ExReleaseResourceLite(&c->lock);
+            }
+
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&Vcb->chunk_lock);
+    }
+
     return Status;
 }
 
