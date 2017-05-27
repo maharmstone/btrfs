@@ -2096,10 +2096,18 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     Vcb->need_write = TRUE;
     
 end:
+    if (NT_SUCCESS(Status)) {
+        Status = do_write(Vcb, NULL);
+        if (!NT_SUCCESS(Status))
+            ERR("do_write returned %08x\n", Status);
+    }
+
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
+
+    free_trees(Vcb);
     
     ExReleaseResourceLite(&Vcb->tree_lock);
     
