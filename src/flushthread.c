@@ -759,7 +759,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
         
-        if (!origchunk->readonly && !origchunk->reloc && origchunk->chunk_item->type == flags &&
+        if (origchunk && !origchunk->readonly && !origchunk->reloc && origchunk->chunk_item->type == flags &&
             insert_tree_extent(Vcb, t->header.level, t->root->id, origchunk, &addr, Irp, rollback)) {
             t->new_address = addr;
             t->has_new_address = TRUE;
@@ -1519,7 +1519,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
     return STATUS_SUCCESS;
 }
 
-NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes) {
+NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, BOOL no_free) {
     chunk* c;
     LIST_ENTRY* le;
     tree_write* tw;
@@ -1552,11 +1552,15 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes) {
                 RtlCopyMemory(data, tw2->data, tw2->length);
                 RtlCopyMemory(&data[tw2->length], tw->data, tw->length);
                 
-                ExFreePool(tw2->data);
+                if (!no_free)
+                    ExFreePool(tw2->data);
+
                 tw2->data = data;
                 tw2->length += tw->length;
                 
-                ExFreePool(tw->data);
+                if (!no_free) // FIXME - what if we allocated this just now?
+                    ExFreePool(tw->data);
+
                 RemoveEntryList(&tw->list_entry);
                 ExFreePool(tw);
                 
@@ -2001,7 +2005,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
         le = le->Flink;
     }
     
-    Status = do_tree_writes(Vcb, &tree_writes);
+    Status = do_tree_writes(Vcb, &tree_writes, FALSE);
     if (!NT_SUCCESS(Status)) {
         ERR("do_tree_writes returned %08x\n", Status);
         goto end;

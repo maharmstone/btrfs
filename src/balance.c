@@ -1062,6 +1062,12 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
         }
     }
     
+    Status = do_tree_writes(Vcb, &tree_writes, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_tree_writes returned %08x\n", Status);
+        goto end;
+    }
+
     le = items->Flink;
     while (le != items) {
         metadata_reloc* mr = CONTAINING_RECORD(le, metadata_reloc, list_entry);
@@ -1073,12 +1079,6 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
         }
         
         le = le->Flink;
-    }
-    
-    Status = do_tree_writes(Vcb, &tree_writes);
-    if (!NT_SUCCESS(Status)) {
-        ERR("do_tree_writes returned %08x\n", Status);
-        goto end;
     }
     
     Status = STATUS_SUCCESS;
@@ -1176,11 +1176,19 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, BOOL* ch
     Vcb->need_write = TRUE;
     
 end:
+    if (NT_SUCCESS(Status)) {
+        Status = do_write(Vcb, NULL);
+        if (!NT_SUCCESS(Status))
+            ERR("do_write returned %08x\n", Status);
+    }
+
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
     else
         do_rollback(Vcb, &rollback);
     
+    free_trees(Vcb);
+
     ExReleaseResourceLite(&Vcb->tree_lock);
     
     while (!IsListEmpty(&items)) {
