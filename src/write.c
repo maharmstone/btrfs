@@ -28,22 +28,6 @@ typedef struct {
     UINT32 irp_offset;
 } write_stripe;
 
-struct _read_context;
-
-typedef struct {
-    PIRP Irp;
-    IO_STATUS_BLOCK iosb;
-    device* dev;
-    struct _read_context* context;
-} read_context_stripe;
-
-typedef struct _read_context {
-    KEVENT Event;
-    ULONG total;
-    LONG left;
-    read_context_stripe* stripes;
-} read_context;
-
 // static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
@@ -1039,9 +1023,6 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     NTSTATUS Status;
     PFN_NUMBER *pfns, *parity_pfns;
     log_stripe* log_stripes = NULL;
-    read_context context;
-
-    context.stripes = NULL;
     
     if ((address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
         UINT64 delta = (address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length);
@@ -1421,21 +1402,6 @@ exit:
         ExFreePool(log_stripes);
     }
     
-    if (context.stripes) {
-        if (context.total > 0) {
-            KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
-            
-            for (i = 0; i < context.total; i++) {
-                if (context.stripes[i].Irp && context.stripes[i].Irp->MdlAddress) {
-                    MmUnlockPages(context.stripes[i].Irp->MdlAddress);
-                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
-                }
-            }
-        }
-        
-        ExFreePool(context.stripes);
-    }
-    
     if (stripeoff)
         ExFreePool(stripeoff);
     
@@ -1453,9 +1419,6 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
     NTSTATUS Status;
     PFN_NUMBER *pfns, *parity1_pfns, *parity2_pfns;
     log_stripe* log_stripes = NULL;
-    read_context context;
-    
-    context.stripes = NULL;
     
     if ((address + length - c->offset) % ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) > 0) {
         UINT64 delta = (address + length - c->offset) % ((c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length);
@@ -1873,21 +1836,6 @@ exit:
         }
         
         ExFreePool(log_stripes);
-    }
-    
-    if (context.stripes) {
-        if (context.total > 0) {
-            KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
-            
-            for (i = 0; i < context.total; i++) {
-                if (context.stripes[i].Irp && context.stripes[i].Irp->MdlAddress) {
-                    MmUnlockPages(context.stripes[i].Irp->MdlAddress);
-                    IoFreeMdl(context.stripes[i].Irp->MdlAddress);
-                }
-            }
-        }
-        
-        ExFreePool(context.stripes);
     }
     
     if (stripeoff)
