@@ -3013,6 +3013,9 @@ static void balance_thread(void* context) {
                 
                 KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
                 
+                if (Vcb->readonly)
+                    Vcb->balance.stopping = TRUE;
+
                 if (Vcb->balance.stopping)
                     break;
             } while (changed);
@@ -3060,6 +3063,9 @@ static void balance_thread(void* context) {
                 
                 KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
                 
+                if (Vcb->readonly)
+                    Vcb->balance.stopping = TRUE;
+
                 if (Vcb->balance.stopping)
                     break;
             } while (changed);
