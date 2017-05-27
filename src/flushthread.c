@@ -5302,6 +5302,13 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
     }
     
+    if (!c->cache) {
+        Status = load_stored_free_space_cache(Vcb, c, TRUE, Irp);
+
+        if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
+            WARN("load_stored_free_space_cache returned %08x\n", Status);
+    }
+
     // remove free space cache
     if (c->cache) {
         c->cache->deleted = TRUE;

@@ -454,7 +454,7 @@ end:
     return Status;
 }
 
-static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
+NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load_only, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
@@ -507,6 +507,9 @@ static NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, PI
         return STATUS_NOT_FOUND;
     }
     
+    if (load_only)
+        return STATUS_SUCCESS;
+
     if (c->cache->inode_item.st_size == 0) {
         WARN("cache had zero length\n");
         free_fcb(c->cache);
@@ -868,7 +871,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
             return Status;
         }
     } else if (Vcb->superblock.generation - 1 == Vcb->superblock.cache_generation) {
-        Status = load_stored_free_space_cache(Vcb, c, Irp);
+        Status = load_stored_free_space_cache(Vcb, c, FALSE, Irp);
         
         if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
             ERR("load_stored_free_space_cache returned %08x\n", Status);
