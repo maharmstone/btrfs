@@ -988,6 +988,7 @@ extern UINT32 mount_no_barrier;
 extern UINT32 mount_no_trim;
 extern UINT32 mount_clear_cache;
 extern UINT32 mount_allow_degraded;
+extern UINT32 mount_readonly;
 
 #ifdef _DEBUG
 

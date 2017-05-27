@@ -37,7 +37,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     options->compress = mount_compress;
     options->compress_force = mount_compress_force;
     options->compress_type = mount_compress_type > BTRFS_COMPRESSION_LZO ? 0 : mount_compress_type;
-    options->readonly = FALSE;
+    options->readonly = mount_readonly;
     options->zlib_level = mount_zlib_level;
     options->flush_interval = mount_flush_interval;
     options->max_inline = min(mount_max_inline, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
@@ -754,6 +754,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
     get_registry_value(h, L"NoTrim", REG_DWORD, &mount_no_trim, sizeof(mount_no_trim));
     get_registry_value(h, L"ClearCache", REG_DWORD, &mount_clear_cache, sizeof(mount_clear_cache));
     get_registry_value(h, L"AllowDegraded", REG_DWORD, &mount_allow_degraded, sizeof(mount_allow_degraded));
+    get_registry_value(h, L"Readonly", REG_DWORD, &mount_readonly, sizeof(mount_readonly));
     
     if (mount_flush_interval == 0)
         mount_flush_interval = 1;

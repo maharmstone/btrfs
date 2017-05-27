@@ -71,6 +71,7 @@ UINT32 mount_no_barrier = 0;
 UINT32 mount_no_trim = 0;
 UINT32 mount_clear_cache = 0;
 UINT32 mount_allow_degraded = 0;
+UINT32 mount_readonly = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters PsUpdateDiskCounters;
