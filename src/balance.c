@@ -71,6 +71,8 @@ typedef struct {
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
 #endif
 
+#define BALANCE_UNIT 0x100000 // only read 1 MB at a time
+
 static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     metadata_reloc* mr;
@@ -1651,52 +1653,6 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS reloc_csums(device_extension* Vcb, data_reloc* dr) {
-    NTSTATUS Status;
-    KEY searchkey;
-    traverse_ptr tp, next_tp;
-    BOOL b;
-
-    searchkey.obj_id = EXTENT_CSUM_ID;
-    searchkey.obj_type = TYPE_EXTENT_CSUM;
-    searchkey.offset = dr->address;
-
-    Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
-        return Status;
-    }
-
-    do {
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE, NULL);
-
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-            UINT64 run_end = tp.item->key.offset + (tp.item->size / sizeof(UINT32) * Vcb->superblock.sector_size);
-
-            if (run_end > dr->address && tp.item->key.offset < dr->address + dr->size) {
-                UINT64 start, end;
-                ULONG sectors;
-                UINT32* csum;
-
-                start = max(tp.item->key.offset, dr->address);
-                end = min(run_end, dr->address + dr->size);
-
-                sectors = (end - start) / Vcb->superblock.sector_size;
-                csum = (UINT32*)(tp.item->data + (((start - tp.item->key.offset) / Vcb->superblock.sector_size) * sizeof(UINT32)));
-
-                add_checksum_entry(Vcb, start - dr->address + dr->new_address, sectors, csum, NULL);
-                add_checksum_entry(Vcb, start, sectors, NULL, NULL);
-            } else if (tp.item->key.offset >= dr->address + dr->size)
-                return STATUS_SUCCESS;
-        }
-
-        if (b)
-            tp = next_tp;
-    } while (b);
-
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* changed) {
     KEY searchkey;
     traverse_ptr tp;
@@ -1770,7 +1726,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     } else
         *changed = TRUE;
     
-    data = ExAllocatePoolWithTag(PagedPool, 0x100000, ALLOC_TAG);
+    data = ExAllocatePoolWithTag(PagedPool, BALANCE_UNIT, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1782,7 +1738,10 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
         BOOL done = FALSE;
         LIST_ENTRY* le2;
-        UINT64 off;
+        UINT32* csum;
+        RTL_BITMAP bmp;
+        ULONG* bmparr;
+        ULONG runlength, index, lastoff;
         
         if (newchunk) {
             ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
@@ -1853,30 +1812,180 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         
         dr->newchunk = newchunk;
         
-        Status = reloc_csums(Vcb, dr);
-        if (!NT_SUCCESS(Status)) {
-            ERR("reloc_csums returned %08x\n", Status);
+        bmparr = ExAllocatePoolWithTag(PagedPool, sector_align((dr->size / Vcb->superblock.sector_size) + 1, sizeof(ULONG)), ALLOC_TAG);
+        if (!bmparr) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
 
-        off = 0;
+        csum = ExAllocatePoolWithTag(PagedPool, dr->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+        if (!csum) {
+            ERR("out of memory\n");
+            ExFreePool(bmparr);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        RtlInitializeBitMap(&bmp, bmparr, dr->size / Vcb->superblock.sector_size);
+        RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
+
+        searchkey.obj_id = EXTENT_CSUM_ID;
+        searchkey.obj_type = TYPE_EXTENT_CSUM;
+        searchkey.offset = dr->address;
         
-        while (off < dr->size) {
-            ULONG ds = min(dr->size - off, 0x100000);
-            
-            Status = read_data(Vcb, dr->address + off, ds, NULL, FALSE, data, c, NULL, NULL, 0, FALSE, NormalPagePriority);
-            if (!NT_SUCCESS(Status)) {
-                ERR("read_data returned %08x\n", Status);
-                goto end;
+        Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, NULL);
+        if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+            ERR("find_item returned %08x\n", Status);
+            ExFreePool(csum);
+            ExFreePool(bmparr);
+            goto end;
+        }
+
+        if (Status != STATUS_NOT_FOUND) {
+            do {
+                traverse_ptr next_tp;
+
+                if (tp.item->key.obj_type == TYPE_EXTENT_CSUM) {
+                    if (tp.item->key.offset >= dr->address + dr->size)
+                        break;
+                    else if (tp.item->size >= sizeof(UINT32) && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32)) >= dr->address) {
+                        UINT64 cs = max(dr->address, tp.item->key.offset);
+                        UINT64 ce = min(dr->address + dr->size, tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(UINT32)));
+
+                        RtlCopyMemory(csum + ((cs - dr->address) / Vcb->superblock.sector_size),
+                                      tp.item->data + ((cs - tp.item->key.offset) * sizeof(UINT32) / Vcb->superblock.sector_size),
+                                      (ce - cs) * sizeof(UINT32) / Vcb->superblock.sector_size);
+
+                        RtlClearBits(&bmp, (cs - dr->address) / Vcb->superblock.sector_size, (ce - cs) / Vcb->superblock.sector_size);
+
+                        if (ce == dr->address + dr->size)
+                            break;
+                    }
+                }
+
+                if (find_next_item(Vcb, &tp, &next_tp, FALSE, NULL))
+                    tp = next_tp;
+                else
+                    break;
+            } while (TRUE);
+        }
+
+        lastoff = 0;
+        runlength = RtlFindFirstRunClear(&bmp, &index);
+
+        while (runlength != 0) {
+            if (index > lastoff) {
+                ULONG off = lastoff;
+                ULONG size = index - lastoff;
+
+                // handle no csum run
+                do {
+                    ULONG rl;
+
+                    if (size * Vcb->superblock.sector_size > BALANCE_UNIT)
+                        rl = BALANCE_UNIT / Vcb->superblock.sector_size;
+                    else
+                        rl = size;
+
+                    Status = read_data(Vcb, dr->address + (off * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, NULL, FALSE, data,
+                                       c, NULL, NULL, 0, FALSE, NormalPagePriority);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("read_data returned %08x\n", Status);
+                        ExFreePool(csum);
+                        ExFreePool(bmparr);
+                        goto end;
+                    }
+
+                    Status = write_data_complete(Vcb, dr->new_address + (off * Vcb->superblock.sector_size), data, rl * Vcb->superblock.sector_size,
+                                                 NULL, newchunk, FALSE, 0, NormalPagePriority);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("write_data_complete returned %08x\n", Status);
+                        ExFreePool(csum);
+                        ExFreePool(bmparr);
+                        goto end;
+                    }
+
+                    size -= rl;
+                    off += rl;
+                } while (size > 0);
             }
-            
-            Status = write_data_complete(Vcb, dr->new_address + off, data, ds, NULL, newchunk, FALSE, 0, NormalPagePriority);
-            if (!NT_SUCCESS(Status)) {
-                ERR("write_data_complete returned %08x\n", Status);
-                goto end;
-            }
-            
-            off += ds;
+
+            add_checksum_entry(Vcb, dr->new_address + (index * Vcb->superblock.sector_size), runlength, &csum[index], NULL);
+            add_checksum_entry(Vcb, dr->address + (index * Vcb->superblock.sector_size), runlength, NULL, NULL);
+
+            // handle csum run
+            do {
+                ULONG rl;
+
+                if (runlength * Vcb->superblock.sector_size > BALANCE_UNIT)
+                    rl = BALANCE_UNIT / Vcb->superblock.sector_size;
+                else
+                    rl = runlength;
+
+                Status = read_data(Vcb, dr->address + (index * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index], FALSE, data,
+                                   c, NULL, NULL, 0, FALSE, NormalPagePriority);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("read_data returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(bmparr);
+                    goto end;
+                }
+
+                Status = write_data_complete(Vcb, dr->new_address + (index * Vcb->superblock.sector_size), data, rl * Vcb->superblock.sector_size,
+                                             NULL, newchunk, FALSE, 0, NormalPagePriority);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("write_data_complete returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(bmparr);
+                    goto end;
+                }
+
+                runlength -= rl;
+                index += rl;
+            } while (runlength > 0);
+
+            lastoff = index;
+            runlength = RtlFindNextForwardRunClear(&bmp, index, &index);
+        }
+
+        ExFreePool(csum);
+        ExFreePool(bmparr);
+
+        // handle final nocsum run
+        if (lastoff < dr->size / Vcb->superblock.sector_size) {
+            ULONG off = lastoff;
+            ULONG size = (dr->size / Vcb->superblock.sector_size) - lastoff;
+
+            do {
+                ULONG rl;
+
+                if (size * Vcb->superblock.sector_size > BALANCE_UNIT)
+                    rl = BALANCE_UNIT / Vcb->superblock.sector_size;
+                else
+                    rl = size;
+
+                Status = read_data(Vcb, dr->address + (off * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, NULL, FALSE, data,
+                                   c, NULL, NULL, 0, FALSE, NormalPagePriority);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("read_data returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(bmparr);
+                    goto end;
+                }
+
+                Status = write_data_complete(Vcb, dr->new_address + (off * Vcb->superblock.sector_size), data, rl * Vcb->superblock.sector_size,
+                                             NULL, newchunk, FALSE, 0, NormalPagePriority);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("write_data_complete returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(bmparr);
+                    goto end;
+                }
+
+                size -= rl;
+                off += rl;
+            } while (size > 0);
         }
 
         le = le->Flink;
