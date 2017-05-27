@@ -5340,6 +5340,15 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
     }
     
+    if (Vcb->space_root) {
+        Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
+                                        NULL, 0, Batch_DeleteFreeSpace);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item_batch returned %08x\n", Status);
+            return Status;
+        }
+    }
+
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (!c->created) {
             // remove DEV_EXTENTs from tree 4
