@@ -369,8 +369,6 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
     space* s = NULL;
     LIST_ENTRY* le;
 
-    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-    
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -667,8 +665,6 @@ end:
         *pc = c;
     }
     
-    ExReleaseResourceLite(&Vcb->chunk_lock);
-
     return Status;
 }
 
