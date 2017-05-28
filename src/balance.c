@@ -2831,6 +2831,136 @@ end:
     dev->num_trim_entries = 0;
 }
 
+static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags) {
+    NTSTATUS Status;
+    BOOL changed;
+    LIST_ENTRY* le;
+    chunk* rc = NULL;
+    UINT64 used_minus_cache;
+
+    // FIXME - allow with metadata chunks?
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+
+    // choose the least-used chunk
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+
+        if (c->chunk_item->type & BLOCK_FLAG_DATA && !c->readonly && (!rc || c->used < rc->used))
+            rc = c;
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+
+    if (!rc) {
+        ERR("could not find least-used data chunk\n");
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (rc->list_entry_balance.Flink) {
+        RemoveEntryList(&rc->list_entry_balance);
+        // FIXME - update stats etc.
+    }
+
+    rc->list_entry_balance.Flink = (LIST_ENTRY*)1; // so it doesn't get dropped
+    rc->reloc = TRUE;
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    do {
+        changed = FALSE;
+
+        FsRtlEnterFileSystem();
+
+        Status = balance_data_chunk(Vcb, rc, &changed);
+
+        FsRtlExitFileSystem();
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("balance_data_chunk returned %08x\n", Status);
+            Vcb->balance.status = Status;
+            rc->list_entry_balance.Flink = NULL;
+            rc->reloc = FALSE;
+            return Status;
+        }
+
+        KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
+
+        if (Vcb->readonly)
+            Vcb->balance.stopping = TRUE;
+
+        if (Vcb->balance.stopping)
+            break;
+    } while (changed);
+
+    used_minus_cache = rc->used;
+
+    // FIXME - if using trees, load cache
+
+    // subtract self-hosted cache
+    if (used_minus_cache > 0 && rc->cache && rc->cache->inode_item.st_size == rc->used) {
+        LIST_ENTRY* le3;
+
+        ExAcquireResourceSharedLite(rc->cache->Header.Resource, TRUE);
+
+        le3 = rc->cache->extents.Flink;
+        while (le3 != &rc->cache->extents) {
+            extent* ext = CONTAINING_RECORD(le3, extent, list_entry);
+            EXTENT_DATA* ed = &ext->extent_data;
+
+            if (!ext->ignore) {
+                if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+
+                    if (ed2->size != 0 && ed2->address >= rc->offset && ed2->address + ed2->size <= rc->offset + rc->chunk_item->size)
+                        used_minus_cache -= ed2->size;
+                }
+            }
+
+            le3 = le3->Flink;
+        }
+
+        ExReleaseResourceLite(rc->cache->Header.Resource);
+    }
+
+    if (used_minus_cache > 0)
+        return STATUS_DISK_FULL;
+
+    rc->list_entry_balance.Flink = NULL;
+
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
+    if (!rc->list_entry_changed.Flink)
+        InsertTailList(&Vcb->chunks_changed, &rc->list_entry_changed);
+
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+
+    Status = do_write(Vcb, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_write returned %08x\n", Status);
+        return Status;
+    }
+
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
+    Status = alloc_chunk(Vcb, flags, &rc);
+    if (!NT_SUCCESS(Status)) {
+        ERR("alloc_chunk returned %08x\n", Status);
+        ExReleaseResourceLite(&Vcb->chunk_lock);
+        return Status;
+    }
+
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+
+    return Status;
+}
+
 static void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
@@ -2916,8 +3046,6 @@ static void balance_thread(void* context) {
         
         if ((!(Vcb->balance.opts[sort].flags & BTRFS_BALANCE_OPTS_LIMIT) || num_chunks[sort] < Vcb->balance.opts[sort].limit_end) &&
             should_balance_chunk(Vcb, sort, c)) {
-            c->reloc = TRUE;
-            
             InsertTailList(&chunks, &c->list_entry_balance);
             
             num_chunks[sort]++;
@@ -2970,7 +3098,7 @@ static void balance_thread(void* context) {
         ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
         Status = alloc_chunk(Vcb, Vcb->data_flags, &c);
-        if (!NT_SUCCESS(Status)) {
+        if (!NT_SUCCESS(Status) && Status != STATUS_DISK_FULL) {
             ERR("alloc_chunk returned %08x\n", Status);
             ExReleaseResourceLite(&Vcb->chunk_lock);
             Vcb->balance.status = Status;
@@ -2978,6 +3106,15 @@ static void balance_thread(void* context) {
         }
 
         ExReleaseResourceLite(&Vcb->chunk_lock);
+
+        if (Status == STATUS_DISK_FULL) {
+            Status = try_consolidation(Vcb, Vcb->data_flags);
+            if (!NT_SUCCESS(Status)) {
+                ERR("try_consolidation returned %08x\n", Status);
+                Vcb->balance.status = Status;
+                goto end;
+            }
+        }
     }
 
     if (okay_system_chunks == 0) {
@@ -2995,6 +3132,19 @@ static void balance_thread(void* context) {
 
         ExReleaseResourceLite(&Vcb->chunk_lock);
     }
+
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+
+    le = chunks.Flink;
+    while (le != &chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_balance);
+
+        c->reloc = TRUE;
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&Vcb->chunk_lock);
 
     Vcb->balance.chunks_left = Vcb->balance.total_chunks;
     
@@ -3032,8 +3182,12 @@ static void balance_thread(void* context) {
                     break;
             } while (changed);
         
+            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
             if (!c->list_entry_changed.Flink)
                 InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+
+            ExReleaseResourceLite(&Vcb->chunk_lock);
         }
 
         if (Vcb->balance.stopping)
@@ -3081,9 +3235,13 @@ static void balance_thread(void* context) {
                 if (Vcb->balance.stopping)
                     break;
             } while (changed);
-            
+
+            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
             if (!c->list_entry_changed.Flink)
                 InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+
+            ExReleaseResourceLite(&Vcb->chunk_lock);
         }
         
         if (Vcb->balance.stopping)
