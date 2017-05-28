@@ -2951,6 +2951,8 @@ static void balance_thread(void* context) {
     if (okay_metadata_chunks == 0) {
         chunk* c;
 
+        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
         Status = alloc_chunk(Vcb, Vcb->metadata_flags, &c);
         if (!NT_SUCCESS(Status)) {
             ERR("alloc_chunk returned %08x\n", Status);
@@ -2958,10 +2960,14 @@ static void balance_thread(void* context) {
             Vcb->balance.status = Status;
             goto end;
         }
+
+        ExReleaseResourceLite(&Vcb->chunk_lock);
     }
 
     if (okay_data_chunks == 0) {
         chunk* c;
+
+        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
         Status = alloc_chunk(Vcb, Vcb->data_flags, &c);
         if (!NT_SUCCESS(Status)) {
@@ -2970,10 +2976,14 @@ static void balance_thread(void* context) {
             Vcb->balance.status = Status;
             goto end;
         }
+
+        ExReleaseResourceLite(&Vcb->chunk_lock);
     }
 
     if (okay_system_chunks == 0) {
         chunk* c;
+
+        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
         Status = alloc_chunk(Vcb, Vcb->system_flags, &c);
         if (!NT_SUCCESS(Status)) {
@@ -2982,6 +2992,8 @@ static void balance_thread(void* context) {
             Vcb->balance.status = Status;
             goto end;
         }
+
+        ExReleaseResourceLite(&Vcb->chunk_lock);
     }
 
     Vcb->balance.chunks_left = Vcb->balance.total_chunks;
