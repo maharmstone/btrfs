@@ -479,6 +479,7 @@ typedef struct {
     UINT16 last_stripe;
     LIST_ENTRY partial_stripes;
     ERESOURCE partial_stripes_lock;
+    ULONG balance_num;
     
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_changed;
@@ -594,6 +595,7 @@ typedef struct {
     BOOL stopping;
     BOOL removing;
     BOOL dev_readonly;
+    ULONG balance_num;
     NTSTATUS status;
     KEVENT event;
     KEVENT finished;

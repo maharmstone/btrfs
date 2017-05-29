@@ -795,6 +795,8 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                         
                         ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                         
+                        newchunk->balance_num = Vcb->balance.balance_num;
+
                         if (!find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                             ExReleaseResourceLite(&newchunk->lock);
                             ERR("could not find address in new chunk\n");
@@ -1802,6 +1804,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                 
                 ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
                 
+                newchunk->balance_num = Vcb->balance.balance_num;
+
                 if (!find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                     ExReleaseResourceLite(&newchunk->lock);
                     ERR("could not find address in new chunk\n");
@@ -2849,7 +2853,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags) {
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->chunk_item->type & BLOCK_FLAG_DATA && !c->readonly && (!rc || c->used < rc->used))
+        if (c->chunk_item->type & BLOCK_FLAG_DATA && !c->readonly && c->balance_num != Vcb->balance.balance_num && (!rc || c->used < rc->used))
             rc = c;
 
         le = le->Flink;
@@ -2968,6 +2972,8 @@ static void balance_thread(void* context) {
     UINT64 num_chunks[3], okay_metadata_chunks = 0, okay_data_chunks = 0, okay_system_chunks = 0;
     NTSTATUS Status;
     
+    Vcb->balance.balance_num++;
+
     Vcb->balance.stopping = FALSE;
     KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, FALSE);
     
@@ -3089,6 +3095,8 @@ static void balance_thread(void* context) {
             goto end;
         }
 
+        c->balance_num = Vcb->balance.balance_num;
+
         ExReleaseResourceLite(&Vcb->chunk_lock);
     }
 
@@ -3104,6 +3112,8 @@ static void balance_thread(void* context) {
             Vcb->balance.status = Status;
             goto end;
         }
+
+        c->balance_num = Vcb->balance.balance_num;
 
         ExReleaseResourceLite(&Vcb->chunk_lock);
 
@@ -3129,6 +3139,8 @@ static void balance_thread(void* context) {
             Vcb->balance.status = Status;
             goto end;
         }
+
+        c->balance_num = Vcb->balance.balance_num;
 
         ExReleaseResourceLite(&Vcb->chunk_lock);
     }

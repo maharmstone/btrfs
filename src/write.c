@@ -595,6 +595,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     c->last_alloc_set = FALSE;
     c->last_stripe = 0;
     c->cache_loaded = TRUE;
+    c->balance_num = 0;
     
     InitializeListHead(&c->space);
     InitializeListHead(&c->space_size);
