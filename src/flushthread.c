@@ -1884,11 +1884,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 crash = TRUE;
             }
             
-            if (t->header.level > 0 && t->header.num_items == 1) {
-                ERR("tree %llx, level %x: internal tree has only one item\n", t->root->id, t->header.level);
-                crash = TRUE;
-            }
-            
             if (crash) {
                 ERR("tree %p\n", t);
                 le2 = t->itemlist.Flink;
