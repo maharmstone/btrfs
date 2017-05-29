@@ -785,7 +785,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                     
                     // allocate new chunk if necessary
                     if (!done) {
-                        Status = alloc_chunk(Vcb, flags, &newchunk);
+                        Status = alloc_chunk(Vcb, flags, &newchunk, FALSE);
                         
                         if (!NT_SUCCESS(Status)) {
                             ERR("alloc_chunk returned %08x\n", Status);
@@ -1792,7 +1792,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             
             // allocate new chunk if necessary
             if (!done) {
-                Status = alloc_chunk(Vcb, Vcb->data_flags, &newchunk);
+                Status = alloc_chunk(Vcb, Vcb->data_flags, &newchunk, FALSE);
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("alloc_chunk returned %08x\n", Status);
@@ -2949,7 +2949,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags) {
 
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-    Status = alloc_chunk(Vcb, flags, &rc);
+    Status = alloc_chunk(Vcb, flags, &rc, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("alloc_chunk returned %08x\n", Status);
         ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -3081,7 +3081,7 @@ static void balance_thread(void* context) {
 
         ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-        Status = alloc_chunk(Vcb, Vcb->metadata_flags, &c);
+        Status = alloc_chunk(Vcb, Vcb->metadata_flags, &c, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("alloc_chunk returned %08x\n", Status);
             ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -3097,7 +3097,7 @@ static void balance_thread(void* context) {
 
         ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-        Status = alloc_chunk(Vcb, Vcb->data_flags, &c);
+        Status = alloc_chunk(Vcb, Vcb->data_flags, &c, TRUE);
         if (!NT_SUCCESS(Status) && Status != STATUS_DISK_FULL) {
             ERR("alloc_chunk returned %08x\n", Status);
             ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -3122,7 +3122,7 @@ static void balance_thread(void* context) {
 
         ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-        Status = alloc_chunk(Vcb, Vcb->system_flags, &c);
+        Status = alloc_chunk(Vcb, Vcb->system_flags, &c, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("alloc_chunk returned %08x\n", Status);
             ExReleaseResourceLite(&Vcb->chunk_lock);

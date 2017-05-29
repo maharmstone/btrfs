@@ -139,7 +139,7 @@ static UINT64 find_new_chunk_address(device_extension* Vcb, UINT64 size) {
     return lastaddr;
 }
 
-static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 max_stripe_size) {
+static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 max_stripe_size, BOOL full_size) {
     UINT64 devusage = 0xffffffffffffffff;
     space *devdh1 = NULL, *devdh2 = NULL;
     LIST_ENTRY* le;
@@ -189,6 +189,9 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
         
         // Can't find hole of at least max_stripe_size; look for the largest one we can find
         
+        if (full_size)
+            return FALSE;
+
         le = Vcb->devices.Flink;
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -247,7 +250,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     return TRUE;
 }
 
-static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size, BOOL allow_missing) {
+static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UINT64 max_stripe_size, BOOL allow_missing, BOOL full_size) {
     UINT64 k, devusage = 0xffffffffffffffff;
     space* devdh = NULL;
     LIST_ENTRY* le;
@@ -306,6 +309,9 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
     if (!devdh) {
         // Can't find hole of at least max_stripe_size; look for the largest one we can find
         
+        if (full_size)
+            return FALSE;
+
         le = Vcb->devices.Flink;
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -357,7 +363,7 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
     return TRUE;
 }
 
-NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
+NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_size) {
     NTSTATUS Status;
     UINT64 max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
     UINT64 total_size = 0, i, logaddr;
@@ -454,7 +460,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
     num_stripes = 0;
     
     if (type == BLOCK_FLAG_DUPLICATE) {
-        if (!find_new_dup_stripes(Vcb, stripes, max_stripe_size)) {
+        if (!find_new_dup_stripes(Vcb, stripes, max_stripe_size, full_size)) {
             Status = STATUS_DISK_FULL;
             goto end;
         }
@@ -462,7 +468,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
             num_stripes = max_stripes;
     } else {
         for (i = 0; i < max_stripes; i++) {
-            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, FALSE))
+            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, FALSE, full_size))
                 break;
             else
                 num_stripes++;
@@ -473,7 +479,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc) {
         UINT16 added_missing = 0;
 
         for (i = num_stripes; i < max_stripes; i++) {
-            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, TRUE))
+            if (!find_new_stripe(Vcb, stripes, i, max_stripe_size, TRUE, full_size))
                 break;
             else {
                 added_missing++;
@@ -3003,7 +3009,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
         
         ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
 
-        Status = alloc_chunk(fcb->Vcb, flags, &c);
+        Status = alloc_chunk(fcb->Vcb, flags, &c, FALSE);
 
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
@@ -3116,7 +3122,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         
         ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
         
-        Status = alloc_chunk(Vcb, flags, &c);
+        Status = alloc_chunk(Vcb, flags, &c, FALSE);
 
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 

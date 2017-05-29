@@ -794,7 +794,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     
     // allocate new chunk if necessary
 
-    Status = alloc_chunk(Vcb, flags, &c);
+    Status = alloc_chunk(Vcb, flags, &c, FALSE);
 
     if (!NT_SUCCESS(Status)) {
         ERR("alloc_chunk returned %08x\n", Status);

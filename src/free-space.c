@@ -1011,7 +1011,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
 
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    Status = alloc_chunk(fcb->Vcb, flags, &c);
+    Status = alloc_chunk(fcb->Vcb, flags, &c, FALSE);
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 

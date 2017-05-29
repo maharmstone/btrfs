@@ -468,7 +468,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c);
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, FALSE);
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
@@ -859,7 +859,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
 
     ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
     
-    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c);
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, FALSE);
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
