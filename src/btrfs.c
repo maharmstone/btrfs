@@ -81,15 +81,15 @@ tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
 tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
-ERESOURCE volume_list_lock;
+ERESOURCE volume_list_lock, mapping_lock;
 LIST_ENTRY volume_list;
 BOOL finished_probing = FALSE;
-HANDLE reg_thread_handle = NULL;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
 PDEVICE_OBJECT comdo = NULL;
 HANDLE log_handle = NULL;
+ERESOURCE log_lock;
 #endif
 
 static NTSTATUS STDCALL close_file(PFILE_OBJECT FileObject);
@@ -145,6 +145,8 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
     va_start(ap, s);
     vsprintf(buf, s, ap);
     
+    ExAcquireResourceSharedLite(&log_lock, TRUE);
+
     if (!log_started || (log_device.Length == 0 && log_file.Length == 0)) {
         DbgPrint(buf2);
     } else if (log_device.Length > 0) {
@@ -230,6 +232,8 @@ exit:
     }
     
 exit2:
+    ExReleaseResourceLite(&log_lock);
+
     va_end(ap);
     
     if (buf2)
@@ -307,6 +311,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     
     if (registry_path.Buffer)
         ExFreePool(registry_path.Buffer);
+
+    ExDeleteResourceLite(&log_lock);
+    ExDeleteResourceLite(&mapping_lock);
 }
 
 static BOOL STDCALL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
@@ -429,9 +436,9 @@ static NTSTATUS STDCALL drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
-    TRACE("close\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("close\n");
 
     top_level = is_top_level(Irp);
     
@@ -463,9 +470,9 @@ end:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
-    FsRtlExitFileSystem();
-    
     TRACE("returning %08x\n", Status);
+
+    FsRtlExitFileSystem();
 
     return Status;
 }
@@ -478,9 +485,9 @@ static NTSTATUS STDCALL drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIR
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
-    TRACE("flush buffers\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("flush buffers\n");
 
     top_level = is_top_level(Irp);
     
@@ -649,9 +656,9 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
     
-    TRACE("query volume information\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("query volume information\n");
     top_level = is_top_level(Irp);
     
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
@@ -871,9 +878,9 @@ end:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
-    FsRtlExitFileSystem();
-    
     TRACE("query volume information returning %08x\n", Status);
+
+    FsRtlExitFileSystem();
 
     return Status;
 }
@@ -1082,9 +1089,9 @@ static NTSTATUS STDCALL drv_set_volume_information(IN PDEVICE_OBJECT DeviceObjec
     NTSTATUS Status;
     BOOL top_level;
 
-    TRACE("set volume information\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("set volume information\n");
 
     top_level = is_top_level(Irp);
     
@@ -2029,9 +2036,9 @@ static NTSTATUS STDCALL drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     fcb* fcb;
     BOOL top_level;
 
-    TRACE("cleanup\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("cleanup\n");
 
     top_level = is_top_level(Irp);
     
@@ -4527,9 +4534,9 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
-    TRACE("file system control\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("file system control\n");
 
     top_level = is_top_level(Irp);
     
@@ -4638,9 +4645,9 @@ static NTSTATUS STDCALL drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
 
-    TRACE("shutdown\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("shutdown\n");
 
     top_level = is_top_level(Irp);
     
@@ -4893,6 +4900,8 @@ static void STDCALL check_cpu() {
 
 #ifdef _DEBUG
 static void init_logging() {
+    ExAcquireResourceExclusiveLite(&log_lock, TRUE);
+
     if (log_device.Length > 0)
         init_serial();
     else if (log_file.Length > 0) {
@@ -4910,7 +4919,7 @@ static void init_logging() {
         
         if (!NT_SUCCESS(Status)) {
             ERR("ZwCreateFile returned %08x\n", Status);
-            return;
+            goto end;
         }
         
         if (iosb.Information == FILE_OPENED) { // already exists
@@ -4925,7 +4934,7 @@ static void init_logging() {
             
             if (!NT_SUCCESS(Status)) {
                 ERR("ZwQueryInformationFile returned %08x\n", Status);
-                return;
+                goto end;
             }
             
             fpi.CurrentByteOffset = fsi.EndOfFile;
@@ -4934,14 +4943,14 @@ static void init_logging() {
             
             if (!NT_SUCCESS(Status)) {
                 ERR("ZwSetInformationFile returned %08x\n", Status);
-                return;
+                goto end;
             }
 
             Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, delim, strlen(delim), NULL, NULL);
         
             if (!NT_SUCCESS(Status)) {
                 ERR("ZwWriteFile returned %08x\n", Status);
-                return;
+                goto end;
             }
         }
         
@@ -4949,7 +4958,7 @@ static void init_logging() {
         
         if (!dateline) {
             ERR("out of memory\n");
-            return;
+            goto end;
         }
         
         KeQuerySystemTime(&time);
@@ -4962,11 +4971,14 @@ static void init_logging() {
         
         if (!NT_SUCCESS(Status)) {
             ERR("ZwWriteFile returned %08x\n", Status);
-            return;
+            goto end;
         }
         
         ExFreePool(dateline);
     }
+
+end:
+    ExReleaseResourceLite(&log_lock);
 }
 #endif
 
@@ -4983,6 +4995,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     InitializeListHead(&uid_map_list);
     InitializeListHead(&gid_map_list);
     
+    ExInitializeResourceLite(&log_lock);
+    ExInitializeResourceLite(&mapping_lock);
+
     log_device.Buffer = NULL;
     log_device.Length = log_device.MaximumLength = 0;
     log_file.Buffer = NULL;

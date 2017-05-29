@@ -3870,9 +3870,9 @@ NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     FILE_FULL_EA_INFORMATION* ffei;
     ULONG retlen = 0;
     
-    TRACE("(%p, %p)\n", DeviceObject, Irp);
-
     FsRtlEnterFileSystem();
+
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     top_level = is_top_level(Irp);
     
@@ -4105,9 +4105,9 @@ NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
     
-    TRACE("(%p, %p)\n", DeviceObject, Irp);
-
     FsRtlEnterFileSystem();
+
+    TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     top_level = is_top_level(Irp);
     

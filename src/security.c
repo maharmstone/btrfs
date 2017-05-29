@@ -51,6 +51,7 @@ static dacl def_dacls[] = {
 };
 
 extern LIST_ENTRY uid_map_list, gid_map_list;
+extern ERESOURCE mapping_lock;
 
 // UINT32 STDCALL get_uid() {
 //     PACCESS_TOKEN at = PsReferencePrimaryToken(PsGetCurrentProcess());
@@ -301,6 +302,8 @@ NTSTATUS uid_to_sid(UINT32 uid, PSID* sid) {
     sid_header* sh;
     UCHAR els;
     
+    ExAcquireResourceSharedLite(&mapping_lock, TRUE);
+
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
         um = CONTAINING_RECORD(le, uid_map, listentry);
@@ -309,16 +312,20 @@ NTSTATUS uid_to_sid(UINT32 uid, PSID* sid) {
             *sid = ExAllocatePoolWithTag(PagedPool, RtlLengthSid(um->sid), ALLOC_TAG);
             if (!*sid) {
                 ERR("out of memory\n");
+                ExReleaseResourceLite(&mapping_lock);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
             
             RtlCopyMemory(*sid, um->sid, RtlLengthSid(um->sid));
+            ExReleaseResourceLite(&mapping_lock);
             return STATUS_SUCCESS;
         }
         
         le = le->Flink;
     }
     
+    ExReleaseResourceLite(&mapping_lock);
+
     if (uid == 0) { // root
         // FIXME - find actual Administrator account, rather than SYSTEM (S-1-5-18)
         // (of form S-1-5-21-...-500)
@@ -376,16 +383,22 @@ UINT32 sid_to_uid(PSID sid) {
     uid_map* um;
     sid_header* sh = sid;
 
+    ExAcquireResourceSharedLite(&mapping_lock, TRUE);
+
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
         um = CONTAINING_RECORD(le, uid_map, listentry);
         
-        if (RtlEqualSid(sid, um->sid))
+        if (RtlEqualSid(sid, um->sid)) {
+            ExReleaseResourceLite(&mapping_lock);
             return um->uid;
+        }
         
         le = le->Flink;
     }
     
+    ExReleaseResourceLite(&mapping_lock);
+
     if (RtlEqualSid(sid, &sid_SY))
         return 0; // root
         
@@ -669,9 +682,9 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
 
-    TRACE("query security\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("query security\n");
 
     top_level = is_top_level(Irp);
     
@@ -745,9 +758,9 @@ end:
     if (top_level) 
         IoSetTopLevelIrp(NULL);    
     
-    FsRtlExitFileSystem();
-
     TRACE("returning %08x\n", Status);
+
+    FsRtlExitFileSystem();
     
     return Status;
 }
@@ -842,9 +855,9 @@ NTSTATUS STDCALL drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     ULONG access_req = 0;
     BOOL top_level;
 
-    TRACE("set security\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("set security\n");
 
     top_level = is_top_level(Irp);
     
@@ -939,14 +952,19 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
         return;
     }
 
-    if (!subjcont || !subjcont->PrimaryToken || IsListEmpty(&gid_map_list))
+    ExAcquireResourceSharedLite(&mapping_lock, TRUE);
+
+    if (!subjcont || !subjcont->PrimaryToken || IsListEmpty(&gid_map_list)) {
+        ExReleaseResourceLite(&mapping_lock);
         return;
+    }
 
     Status = SeQueryInformationToken(subjcont->PrimaryToken, TokenOwner, (void**)&to);
     if (!NT_SUCCESS(Status))
         ERR("SeQueryInformationToken returned %08x\n", Status);
     else {
         if (search_for_gid(fcb, to->Owner)) {
+            ExReleaseResourceLite(&mapping_lock);
             ExFreePool(to);
             return;
         }
@@ -959,6 +977,7 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
         ERR("SeQueryInformationToken returned %08x\n", Status);
     else {
         if (search_for_gid(fcb, tpg->PrimaryGroup)) {
+            ExReleaseResourceLite(&mapping_lock);
             ExFreePool(tpg);
             return;
         }
@@ -974,6 +993,7 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
 
         for (i = 0; i < tg->GroupCount; i++) {
             if (search_for_gid(fcb, tg->Groups[i].Sid)) {
+                ExReleaseResourceLite(&mapping_lock);
                 ExFreePool(tg);
                 return;
             }
@@ -981,6 +1001,8 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
 
         ExFreePool(tg);
     }
+
+    ExReleaseResourceLite(&mapping_lock);
 }
 
 NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {

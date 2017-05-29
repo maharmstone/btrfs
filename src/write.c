@@ -4754,9 +4754,9 @@ exit:
     if (top_level) 
         IoSetTopLevelIrp(NULL);
     
-    FsRtlExitFileSystem();
-    
     TRACE("returning %08x\n", Status);
+
+    FsRtlExitFileSystem();
 
     return Status;
 }

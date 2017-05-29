@@ -19,7 +19,12 @@
 
 extern UNICODE_STRING log_device, log_file, registry_path;
 extern LIST_ENTRY uid_map_list, gid_map_list;
-extern HANDLE reg_thread_handle;
+extern ERESOURCE mapping_lock;
+
+#ifdef _DEBUG
+extern HANDLE log_handle;
+extern ERESOURCE log_lock;
+#endif
 
 WORK_QUEUE_ITEM wqi;
 
@@ -742,12 +747,19 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     ULONG dispos;
     ULONG kvfilen;
     KEY_VALUE_FULL_INFORMATION* kvfi;
+#ifdef _DEBUG
+    UNICODE_STRING old_log_file;
+#endif
     
     static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
     
+    ExAcquireResourceExclusiveLite(&mapping_lock, TRUE);
+
     read_mappings(regpath);
     read_group_mappings(regpath);
     
+    ExReleaseResourceLite(&mapping_lock);
+
     InitializeObjectAttributes(&oa, regpath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     
     Status = ZwCreateKey(&h, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
@@ -833,6 +845,8 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     kvfilen = 0;
     Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
     
+    old_log_file = log_file;
+
     if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
         kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
         
@@ -892,6 +906,32 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
         }
         
         RtlCopyMemory(log_file.Buffer, def_log_file, log_file.Length);
+    }
+
+    if (log_file.Length != old_log_file.Length || RtlCompareMemory(log_file.Buffer, old_log_file.Buffer, log_file.Length) != log_file.Length) {
+        if (old_log_file.Buffer)
+            ExFreePool(old_log_file.Buffer);
+
+        if (log_file.Length > 0 && refresh) {
+            OBJECT_ATTRIBUTES oa;
+            IO_STATUS_BLOCK iosb;
+
+            ExAcquireResourceExclusiveLite(&log_lock, TRUE);
+
+            if (log_handle)
+                ZwClose(log_handle);
+
+            InitializeObjectAttributes(&oa, &log_file, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+            Status = ZwCreateFile(&log_handle, FILE_WRITE_DATA, &oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
+                                  FILE_OPEN_IF, FILE_NON_DIRECTORY_FILE | FILE_WRITE_THROUGH | FILE_SYNCHRONOUS_IO_ALERT, NULL, 0);
+            if (!NT_SUCCESS(Status)) {
+                ERR("ZwCreateFile returned %08x\n", Status);
+                log_handle = NULL;
+            }
+
+            ExReleaseResourceLite(&log_lock);
+        }
     }
 #endif
     

@@ -3563,12 +3563,12 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     BOOL top_level, locked = FALSE;
     LIST_ENTRY rollback;
     
-    TRACE("create (flags = %x)\n", Irp->Flags);
-    
     InitializeListHead(&rollback);
     
     FsRtlEnterFileSystem();
     
+    TRACE("create (flags = %x)\n", Irp->Flags);
+
     top_level = is_top_level(Irp);
     
     /* return success if just called for FS device object */

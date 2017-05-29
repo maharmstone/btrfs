@@ -24,32 +24,42 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
     fcb* fcb;
     ccb* ccb;
     
+    FsRtlEnterFileSystem();
+
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, wait, fbi, IoStatus, DeviceObject);
     
-    if (!FileObject)
+    if (!FileObject) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
     fcb = FileObject->FsContext;
     
-    if (!fcb)
+    if (!fcb) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
     ccb = FileObject->FsContext2;
     
-    if (!ccb)
+    if (!ccb) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
-    if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)))
+    if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES))) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
     if (fcb->ads) {
-        if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb)
+        if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb) {
+            FsRtlExitFileSystem();
             return FALSE;
+        }
         
         fcb = ccb->fileref->parent->fcb;
     }
-    
-    FsRtlEnterFileSystem();
     
     if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
         FsRtlExitFileSystem();
@@ -87,18 +97,22 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
     BOOL ads;
     ULONG adssize;
     
+    FsRtlEnterFileSystem();
+
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, wait, fsi, IoStatus, DeviceObject);
     
-    if (!FileObject)
+    if (!FileObject) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
     
-    if (!fcb)
+    if (!fcb) {
+        FsRtlExitFileSystem();
         return FALSE;
-    
-    FsRtlEnterFileSystem();
+    }
     
     if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
         FsRtlExitFileSystem();

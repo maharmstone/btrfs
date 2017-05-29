@@ -1001,9 +1001,9 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
 
-    TRACE("directory control\n");
-    
     FsRtlEnterFileSystem();
+
+    TRACE("directory control\n");
 
     top_level = is_top_level(Irp);
     
