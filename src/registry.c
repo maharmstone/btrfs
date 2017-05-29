@@ -24,6 +24,8 @@ extern ERESOURCE mapping_lock;
 #ifdef _DEBUG
 extern HANDLE log_handle;
 extern ERESOURCE log_lock;
+extern PFILE_OBJECT comfo;
+extern PDEVICE_OBJECT comdo;
 #endif
 
 WORK_QUEUE_ITEM wqi;
@@ -748,7 +750,7 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     ULONG kvfilen;
     KEY_VALUE_FULL_INFORMATION* kvfi;
 #ifdef _DEBUG
-    UNICODE_STRING old_log_file;
+    UNICODE_STRING old_log_file, old_log_device;
 #endif
     
     static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
@@ -797,6 +799,11 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     kvfilen = 0;
     Status = ZwQueryValueKey(h, &us, KeyValueFullInformation, kvfi, kvfilen, &kvfilen);
     
+    old_log_device = log_device;
+
+    log_device.Length = log_device.MaximumLength = 0;
+    log_device.Buffer = NULL;
+
     if ((Status == STATUS_BUFFER_TOO_SMALL || Status == STATUS_BUFFER_OVERFLOW) && kvfilen > 0) {
         kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
         
@@ -839,6 +846,32 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
         ERR("ZwQueryValueKey returned %08x\n", Status);
     }
     
+    ExAcquireResourceExclusiveLite(&log_lock, TRUE);
+
+    if (refresh && (log_device.Length != old_log_device.Length || RtlCompareMemory(log_device.Buffer, old_log_device.Buffer, log_device.Length) != log_device.Length || (!comfo && log_device.Length > 0))) {
+        if (comfo)
+            ObDereferenceObject(comfo);
+
+        if (log_handle) {
+            ZwClose(log_handle);
+            log_handle = NULL;
+        }
+
+        comfo = NULL;
+        comdo = NULL;
+
+        if (log_device.Length > 0) {
+            Status = IoGetDeviceObjectPointer(&log_device, FILE_WRITE_DATA, &comfo, &comdo);
+            if (!NT_SUCCESS(Status))
+                DbgPrint("IoGetDeviceObjectPointer returned %08x\n", Status);
+        }
+    }
+
+    ExReleaseResourceLite(&log_lock);
+
+    if (old_log_device.Buffer)
+        ExFreePool(old_log_device.Buffer);
+
     RtlInitUnicodeString(&us, L"LogFile");
     
     kvfi = NULL;
@@ -908,31 +941,33 @@ void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
         RtlCopyMemory(log_file.Buffer, def_log_file, log_file.Length);
     }
 
-    if (log_file.Length != old_log_file.Length || RtlCompareMemory(log_file.Buffer, old_log_file.Buffer, log_file.Length) != log_file.Length) {
-        if (old_log_file.Buffer)
-            ExFreePool(old_log_file.Buffer);
+    ExAcquireResourceExclusiveLite(&log_lock, TRUE);
 
-        if (log_file.Length > 0 && refresh) {
+    if ((log_file.Length != old_log_file.Length || RtlCompareMemory(log_file.Buffer, old_log_file.Buffer, log_file.Length) != log_file.Length || (!log_handle && log_file.Length > 0)) && refresh) {
+        if (log_handle) {
+            ZwClose(log_handle);
+            log_handle = NULL;
+        }
+
+        if (!comfo && log_file.Length > 0 && refresh) {
             OBJECT_ATTRIBUTES oa;
             IO_STATUS_BLOCK iosb;
-
-            ExAcquireResourceExclusiveLite(&log_lock, TRUE);
-
-            if (log_handle)
-                ZwClose(log_handle);
 
             InitializeObjectAttributes(&oa, &log_file, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
             Status = ZwCreateFile(&log_handle, FILE_WRITE_DATA, &oa, &iosb, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
                                   FILE_OPEN_IF, FILE_NON_DIRECTORY_FILE | FILE_WRITE_THROUGH | FILE_SYNCHRONOUS_IO_ALERT, NULL, 0);
             if (!NT_SUCCESS(Status)) {
-                ERR("ZwCreateFile returned %08x\n", Status);
+                DbgPrint("ZwCreateFile returned %08x\n", Status);
                 log_handle = NULL;
             }
-
-            ExReleaseResourceLite(&log_lock);
         }
     }
+
+    ExReleaseResourceLite(&log_lock);
+
+    if (old_log_file.Buffer)
+        ExFreePool(old_log_file.Buffer);
 #endif
     
     ZwClose(h);
