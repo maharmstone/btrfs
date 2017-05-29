@@ -2993,7 +2993,7 @@ static void balance_thread(void* context) {
     }
     
     num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
-    Vcb->balance.total_chunks = 0;
+    Vcb->balance.total_chunks = Vcb->balance.chunks_left = 0;
     
     InitializeListHead(&chunks);
     
@@ -3029,6 +3029,7 @@ static void balance_thread(void* context) {
             
             num_chunks[sort]++;
             Vcb->balance.total_chunks++;
+            Vcb->balance.chunks_left++;
         } else if (sort == BALANCE_OPTS_METADATA)
             okay_metadata_chunks++;
         else if (sort == BALANCE_OPTS_DATA)
@@ -3132,8 +3133,6 @@ static void balance_thread(void* context) {
 
     ExReleaseResourceLite(&Vcb->chunk_lock);
 
-    Vcb->balance.chunks_left = Vcb->balance.total_chunks;
-    
     // do data chunks before metadata
     le = chunks.Flink;
     while (le != &chunks) {
