@@ -2975,6 +2975,11 @@ static void balance_thread(void* context) {
             RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_DATA], &Vcb->balance.opts[BALANCE_OPTS_METADATA], sizeof(btrfs_balance_opts));
     }
     
+    num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
+    Vcb->balance.total_chunks = Vcb->balance.chunks_left = 0;
+
+    InitializeListHead(&chunks);
+
     // FIXME - what are we supposed to do with limit_start?
     
     if (!Vcb->readonly) {
@@ -2982,6 +2987,7 @@ static void balance_thread(void* context) {
             Status = add_balance_item(Vcb);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_balance_item returned %08x\n", Status);
+                Vcb->balance.status = Status;
                 goto end;
             }
         } else {
@@ -2992,16 +2998,12 @@ static void balance_thread(void* context) {
                 
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_write returned %08x\n", Status);
+                    Vcb->balance.status = Status;
                     goto end;
                 }
             }
         }
     }
-    
-    num_chunks[0] = num_chunks[1] = num_chunks[2] = 0;
-    Vcb->balance.total_chunks = Vcb->balance.chunks_left = 0;
-    
-    InitializeListHead(&chunks);
     
     KeWaitForSingleObject(&Vcb->balance.event, Executive, KernelMode, FALSE, NULL);
     
