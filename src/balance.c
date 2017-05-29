@@ -3056,71 +3056,102 @@ static void balance_thread(void* context) {
     ExReleaseResourceLite(&Vcb->chunk_lock);
 
     // If we're doing a full balance, try and allocate a new chunk now, before we mess things up
-    if (okay_metadata_chunks == 0) {
+    if (okay_metadata_chunks == 0 || okay_data_chunks == 0 || okay_system_chunks == 0) {
+        BOOL consolidated = FALSE;
         chunk* c;
 
-        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+        if (okay_metadata_chunks == 0) {
+            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-        Status = alloc_chunk(Vcb, Vcb->metadata_flags, &c, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("alloc_chunk returned %08x\n", Status);
-            ExReleaseResourceLite(&Vcb->chunk_lock);
-            Vcb->balance.status = Status;
-            goto end;
-        }
-
-        c->balance_num = Vcb->balance.balance_num;
-
-        ExReleaseResourceLite(&Vcb->chunk_lock);
-    }
-
-    if (okay_data_chunks == 0) {
-        chunk* c;
-
-        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-
-        Status = alloc_chunk(Vcb, Vcb->data_flags, &c, TRUE);
-        if (NT_SUCCESS(Status))
-            c->balance_num = Vcb->balance.balance_num;
-        else if (Status != STATUS_DISK_FULL) {
-            ERR("alloc_chunk returned %08x\n", Status);
-            ExReleaseResourceLite(&Vcb->chunk_lock);
-            Vcb->balance.status = Status;
-            goto end;
-        }
-
-        ExReleaseResourceLite(&Vcb->chunk_lock);
-
-        if (Status == STATUS_DISK_FULL) {
-            Status = try_consolidation(Vcb, Vcb->data_flags, &c);
-            if (!NT_SUCCESS(Status)) {
-                ERR("try_consolidation returned %08x\n", Status);
+            Status = alloc_chunk(Vcb, Vcb->metadata_flags, &c, TRUE);
+            if (NT_SUCCESS(Status))
+                c->balance_num = Vcb->balance.balance_num;
+            else if (Status != STATUS_DISK_FULL || consolidated) {
+                ERR("alloc_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 Vcb->balance.status = Status;
                 goto end;
-            } else
-                c->balance_num = Vcb->balance.balance_num;
+            }
 
-            if (Vcb->balance.stopping)
-                goto end;
-        }
-    }
-
-    if (okay_system_chunks == 0) {
-        chunk* c;
-
-        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-
-        Status = alloc_chunk(Vcb, Vcb->system_flags, &c, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("alloc_chunk returned %08x\n", Status);
             ExReleaseResourceLite(&Vcb->chunk_lock);
-            Vcb->balance.status = Status;
-            goto end;
+
+            if (Status == STATUS_DISK_FULL) {
+                Status = try_consolidation(Vcb, Vcb->metadata_flags, &c);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("try_consolidation returned %08x\n", Status);
+                    Vcb->balance.status = Status;
+                    goto end;
+                } else
+                    c->balance_num = Vcb->balance.balance_num;
+
+                consolidated = TRUE;
+
+                if (Vcb->balance.stopping)
+                    goto end;
+            }
         }
 
-        c->balance_num = Vcb->balance.balance_num;
+        if (okay_data_chunks == 0) {
+            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-        ExReleaseResourceLite(&Vcb->chunk_lock);
+            Status = alloc_chunk(Vcb, Vcb->data_flags, &c, TRUE);
+            if (NT_SUCCESS(Status))
+                c->balance_num = Vcb->balance.balance_num;
+            else if (Status != STATUS_DISK_FULL || consolidated) {
+                ERR("alloc_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
+                Vcb->balance.status = Status;
+                goto end;
+            }
+
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+
+            if (Status == STATUS_DISK_FULL) {
+                Status = try_consolidation(Vcb, Vcb->data_flags, &c);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("try_consolidation returned %08x\n", Status);
+                    Vcb->balance.status = Status;
+                    goto end;
+                } else
+                    c->balance_num = Vcb->balance.balance_num;
+
+                consolidated = TRUE;
+
+                if (Vcb->balance.stopping)
+                    goto end;
+            }
+        }
+
+        if (okay_system_chunks == 0) {
+            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
+            Status = alloc_chunk(Vcb, Vcb->system_flags, &c, TRUE);
+            if (NT_SUCCESS(Status))
+                c->balance_num = Vcb->balance.balance_num;
+            else if (Status != STATUS_DISK_FULL || consolidated) {
+                ERR("alloc_chunk returned %08x\n", Status);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
+                Vcb->balance.status = Status;
+                goto end;
+            }
+
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+
+            if (Status == STATUS_DISK_FULL) {
+                Status = try_consolidation(Vcb, Vcb->system_flags, &c);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("try_consolidation returned %08x\n", Status);
+                    Vcb->balance.status = Status;
+                    goto end;
+                } else
+                    c->balance_num = Vcb->balance.balance_num;
+
+                consolidated = TRUE;
+
+                if (Vcb->balance.stopping)
+                    goto end;
+            }
+        }
     }
 
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
