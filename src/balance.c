@@ -2943,6 +2943,7 @@ static void balance_thread(void* context) {
     LIST_ENTRY chunks;
     LIST_ENTRY* le;
     UINT64 num_chunks[3], okay_metadata_chunks = 0, okay_data_chunks = 0, okay_system_chunks = 0;
+    UINT64 old_data_flags = 0, old_metadata_flags = 0, old_system_flags = 0;
     NTSTATUS Status;
     
     Vcb->balance.balance_num++;
@@ -2951,16 +2952,21 @@ static void balance_thread(void* context) {
     KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, FALSE);
     
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
+        old_data_flags = Vcb->data_flags;
         Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
         
         FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
     }
     
-    if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_CONVERT)
+    if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
+        old_metadata_flags = Vcb->metadata_flags;
         Vcb->metadata_flags = BLOCK_FLAG_METADATA | (Vcb->balance.opts[BALANCE_OPTS_METADATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_METADATA].convert);
+    }
     
-    if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_CONVERT)
+    if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_CONVERT) {
+        old_system_flags = Vcb->system_flags;
         Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
+    }
     
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
         if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED)
@@ -3282,6 +3288,15 @@ end:
                 le = le->Flink;
                 c->list_entry_balance.Flink = NULL;
             }
+
+            if (old_data_flags != 0)
+                Vcb->data_flags = old_data_flags;
+
+            if (old_metadata_flags != 0)
+                Vcb->metadata_flags = old_metadata_flags;
+
+            if (old_system_flags != 0)
+                Vcb->system_flags = old_system_flags;
         }
 
         if (!Vcb->balance.removing) {
