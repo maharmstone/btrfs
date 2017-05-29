@@ -312,7 +312,9 @@ static void STDCALL DriverUnload(PDRIVER_OBJECT DriverObject) {
     if (registry_path.Buffer)
         ExFreePool(registry_path.Buffer);
 
+#ifdef _DEBUG
     ExDeleteResourceLite(&log_lock);
+#endif
     ExDeleteResourceLite(&mapping_lock);
 }
 
@@ -4995,7 +4997,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     InitializeListHead(&uid_map_list);
     InitializeListHead(&gid_map_list);
     
+#ifdef _DEBUG
     ExInitializeResourceLite(&log_lock);
+#endif
     ExInitializeResourceLite(&mapping_lock);
 
     log_device.Buffer = NULL;
