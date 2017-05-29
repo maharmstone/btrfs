@@ -243,7 +243,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
                     return;
                 }
                 
-                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.error) == STRSAFE_E_INSUFFICIENT_BUFFER)
+                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.error, format_ntstatus(bqb.error).c_str()) == STRSAFE_E_INSUFFICIENT_BUFFER)
                     return;
                 
                 SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
