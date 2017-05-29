@@ -18,6 +18,10 @@
 #include "btrfs_drv.h"
 
 extern UNICODE_STRING log_device, log_file, registry_path;
+extern LIST_ENTRY uid_map_list, gid_map_list;
+extern HANDLE reg_thread_handle;
+
+WORK_QUEUE_ITEM wqi;
 
 static WCHAR option_mounted[] = L"Mounted";
 
@@ -441,7 +445,7 @@ static void reset_subkeys(HANDLE h, PUNICODE_STRING reg_path) {
         if (NT_SUCCESS(Status)) {
             key_name* kn;
             
-            ERR("key: %.*S\n", kbi->NameLength / sizeof(WCHAR), kbi->Name);
+            TRACE("key: %.*S\n", kbi->NameLength / sizeof(WCHAR), kbi->Name);
             
             if (is_uuid(kbi->NameLength, kbi->Name)) {
                 kn = ExAllocatePoolWithTag(PagedPool, sizeof(key_name), ALLOC_TAG);
@@ -521,6 +525,13 @@ static void read_mappings(PUNICODE_STRING regpath) {
     
     const WCHAR mappings[] = L"\\Mappings";
     
+    while (!IsListEmpty(&uid_map_list)) {
+        uid_map* um = CONTAINING_RECORD(RemoveHeadList(&uid_map_list), uid_map, listentry);
+
+        if (um->sid) ExFreePool(um->sid);
+        ExFreePool(um);
+    }
+
     path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
     if (!path) {
         ERR("out of memory\n");
@@ -535,7 +546,6 @@ static void read_mappings(PUNICODE_STRING regpath) {
     
     InitializeObjectAttributes(&oa, &us, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     
-    // FIXME - keep open and do notify for changes
     Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
     
     if (!NT_SUCCESS(Status)) {
@@ -588,6 +598,13 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
 
     const WCHAR mappings[] = L"\\GroupMappings";
 
+    while (!IsListEmpty(&gid_map_list)) {
+        gid_map* gm = CONTAINING_RECORD(RemoveHeadList(&gid_map_list), gid_map, listentry);
+
+        if (gm->sid) ExFreePool(gm->sid);
+        ExFreePool(gm);
+    }
+
     path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
     if (!path) {
         ERR("out of memory\n");
@@ -602,7 +619,6 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
 
     InitializeObjectAttributes(&oa, &us, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
-    // FIXME - keep open and do notify for changes
     Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
 
     if (!NT_SUCCESS(Status)) {
@@ -718,7 +734,7 @@ static void get_registry_value(HANDLE h, WCHAR* string, ULONG type, void* val, U
     }
 }
 
-void STDCALL read_registry(PUNICODE_STRING regpath) {
+void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
@@ -741,7 +757,8 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
         return;
     }
     
-    reset_subkeys(h, regpath);
+    if (!refresh)
+        reset_subkeys(h, regpath);
     
     get_registry_value(h, L"Compress", REG_DWORD, &mount_compress, sizeof(mount_compress));
     get_registry_value(h, L"CompressForce", REG_DWORD, &mount_compress_force, sizeof(mount_compress_force));
@@ -879,4 +896,29 @@ void STDCALL read_registry(PUNICODE_STRING regpath) {
 #endif
     
     ZwClose(h);
+}
+
+static void registry_work_item(PVOID Parameter) {
+    NTSTATUS Status;
+    HANDLE regh = (HANDLE)Parameter;
+    IO_STATUS_BLOCK iosb;
+
+    TRACE("registry changed\n");
+
+    read_registry(&registry_path, TRUE);
+
+    Status = ZwNotifyChangeKey(regh, NULL, (PVOID)&wqi, (PVOID)DelayedWorkQueue, &iosb, REG_NOTIFY_CHANGE_LAST_SET, TRUE, NULL, 0, TRUE);
+    if (!NT_SUCCESS(Status))
+        ERR("ZwNotifyChangeKey returned %08x\n", Status);
+}
+
+void watch_registry(HANDLE regh) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+
+    ExInitializeWorkItem(&wqi, registry_work_item, regh);
+
+    Status = ZwNotifyChangeKey(regh, NULL, (PVOID)&wqi, (PVOID)DelayedWorkQueue, &iosb, REG_NOTIFY_CHANGE_LAST_SET, TRUE, NULL, 0, TRUE);
+    if (!NT_SUCCESS(Status))
+        ERR("ZwNotifyChangeKey returned %08x\n", Status);
 }

@@ -84,6 +84,7 @@ void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entr
 ERESOURCE volume_list_lock;
 LIST_ENTRY volume_list;
 BOOL finished_probing = FALSE;
+HANDLE reg_thread_handle = NULL;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -4975,6 +4976,9 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     UNICODE_STRING device_nameW;
     UNICODE_STRING dosdevice_nameW;
     control_device_extension* cde;
+    HANDLE regh;
+    OBJECT_ATTRIBUTES oa;
+    ULONG dispos;
     
     InitializeListHead(&uid_map_list);
     InitializeListHead(&gid_map_list);
@@ -4983,17 +4987,6 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     log_device.Length = log_device.MaximumLength = 0;
     log_file.Buffer = NULL;
     log_file.Length = log_file.MaximumLength = 0;
-    
-    read_registry(RegistryPath);
-    
-#ifdef _DEBUG
-    if (debug_log_level > 0)
-        init_logging();
-    
-    log_started = TRUE;
-#endif
-
-    TRACE("DriverEntry\n");
     
     registry_path.Length = registry_path.MaximumLength = RegistryPath->Length;
     registry_path.Buffer = ExAllocatePoolWithTag(PagedPool, registry_path.Length, ALLOC_TAG);
@@ -5004,6 +4997,17 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     }
     
     RtlCopyMemory(registry_path.Buffer, RegistryPath->Buffer, registry_path.Length);
+
+    read_registry(&registry_path, FALSE);
+
+#ifdef _DEBUG
+    if (debug_log_level > 0)
+        init_logging();
+
+    log_started = TRUE;
+#endif
+
+    TRACE("DriverEntry\n");
    
     check_cpu();
    
@@ -5111,6 +5115,15 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     
     InitializeListHead(&volume_list);
     
+    InitializeObjectAttributes(&oa, RegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    Status = ZwCreateKey(&regh, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS | KEY_NOTIFY, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ZwCreateKey returned %08x\n", Status);
+        return Status;
+    }
+
+    watch_registry(regh);
+
     Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
                                             (PVOID)&GUID_DEVINTERFACE_VOLUME, DriverObject, volume_notification, DriverObject, &notification_entry2);
     if (!NT_SUCCESS(Status))
