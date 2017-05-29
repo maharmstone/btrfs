@@ -2871,7 +2871,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
 
         if (rc->list_entry_balance.Flink) {
             RemoveEntryList(&rc->list_entry_balance);
-            // FIXME - update stats etc.
+            Vcb->balance.chunks_left--;
         }
 
         rc->list_entry_balance.Flink = (LIST_ENTRY*)1; // so it doesn't get dropped
