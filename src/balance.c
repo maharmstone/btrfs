@@ -2055,6 +2055,49 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     
 end:
     if (NT_SUCCESS(Status)) {
+        // update extents in cache inodes before we flush
+        le = Vcb->chunks.Flink;
+        while (le != &Vcb->chunks) {
+            chunk* c2 = CONTAINING_RECORD(le, chunk, list_entry);
+
+            if (c2->cache) {
+                LIST_ENTRY* le2;
+
+                ExAcquireResourceExclusiveLite(c2->cache->Header.Resource, TRUE);
+
+                le2 = c2->cache->extents.Flink;
+                while (le2 != &c2->cache->extents) {
+                    extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
+
+                    if (!ext->ignore) {
+                        if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+
+                            if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->size) {
+                                LIST_ENTRY* le3 = items.Flink;
+                                while (le3 != &items) {
+                                    data_reloc* dr = CONTAINING_RECORD(le3, data_reloc, list_entry);
+
+                                    if (ed2->address == dr->address) {
+                                        ed2->address = dr->new_address;
+                                        break;
+                                    }
+
+                                    le3 = le3->Flink;
+                                }
+                            }
+                        }
+                    }
+
+                    le2 = le2->Flink;
+                }
+
+                ExReleaseResourceLite(c2->cache->Header.Resource);
+            }
+
+            le = le->Flink;
+        }
+
         Status = do_write(Vcb, NULL);
         if (!NT_SUCCESS(Status))
             ERR("do_write returned %08x\n", Status);
