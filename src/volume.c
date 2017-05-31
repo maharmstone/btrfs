@@ -1071,6 +1071,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             
             le = le->Flink;
         }
+
+        voldev = vde->device;
     }
     
     vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
