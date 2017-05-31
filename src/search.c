@@ -254,26 +254,22 @@ end:
 
 void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock) {
     NTSTATUS Status;
+    device_extension* Vcb = vde->mounted_device ? vde->mounted_device->DeviceExtension : NULL;
     
     if (vc->notification_entry)
         IoUnregisterPlugPlayNotificationEx(vc->notification_entry);
 
-    if (vde->mounted_device) {
-//         device_extension* Vcb = vde->mounted_device->DeviceExtension;
-// 
-        // FIXME - hangs
-//         Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
-//         if (!NT_SUCCESS(Status))
-//             WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
-        
+    if (vde->mounted_device && (!Vcb || !Vcb->options.allow_degraded)) {
         Status = pnp_surprise_removal(vde->mounted_device, NULL);
         if (!NT_SUCCESS(Status))
             ERR("pnp_surprise_removal returned %08x\n", Status);
     }
     
-    Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
-    if (!NT_SUCCESS(Status))
-        WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+    if (!Vcb || !Vcb->options.allow_degraded) {
+        Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
+        if (!NT_SUCCESS(Status))
+            WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+    }
     
     if (vde->children_loaded > 0) {
         UNICODE_STRING mmdevpath;
@@ -281,53 +277,73 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
         PDEVICE_OBJECT mountmgr;
         LIST_ENTRY* le;
         
-        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
-        if (!NT_SUCCESS(Status))
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        else {
-            le = vde->children.Flink;
-            
-            while (le != &vde->children) {
-                volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+        if (!Vcb || !Vcb->options.allow_degraded) {
+            RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+            Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+            if (!NT_SUCCESS(Status))
+                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+            else {
+                le = vde->children.Flink;
                 
-                if (vc->had_drive_letter) { // re-add entry to mountmgr
-                    MOUNTDEV_NAME mdn;
+                while (le != &vde->children) {
+                    volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
                     
-                    Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
-                    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
-                        ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
-                    else {
-                        MOUNTDEV_NAME* mdn2;
-                        ULONG mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+                    if (vc->had_drive_letter) { // re-add entry to mountmgr
+                        MOUNTDEV_NAME mdn;
                         
-                        mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
-                        if (!mdn2)
-                            ERR("out of memory\n");
+                        Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+                        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                         else {
-                            Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
-                            if (!NT_SUCCESS(Status))
-                                ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                            MOUNTDEV_NAME* mdn2;
+                            ULONG mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+
+                            mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
+                            if (!mdn2)
+                                ERR("out of memory\n");
                             else {
-                                UNICODE_STRING name;
-                                
-                                name.Buffer = mdn2->Name;
-                                name.Length = name.MaximumLength = mdn2->NameLength;
-                                
-                                Status = mountmgr_add_drive_letter(mountmgr, &name);
+                                Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
                                 if (!NT_SUCCESS(Status))
-                                    WARN("mountmgr_add_drive_letter returned %08x\n", Status);
+                                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                                else {
+                                    UNICODE_STRING name;
+
+                                    name.Buffer = mdn2->Name;
+                                    name.Length = name.MaximumLength = mdn2->NameLength;
+
+                                    Status = mountmgr_add_drive_letter(mountmgr, &name);
+                                    if (!NT_SUCCESS(Status))
+                                        WARN("mountmgr_add_drive_letter returned %08x\n", Status);
+                                }
+
+                                ExFreePool(mdn2);
                             }
-                            
-                            ExFreePool(mdn2);
                         }
                     }
+
+                    le = le->Flink;
+                }
+
+                ObDereferenceObject(FileObject);
+            }
+        } else {
+            LIST_ENTRY* le;
+
+            ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+            le = Vcb->devices.Flink;
+            while (le != &Vcb->devices) {
+                device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+                if (dev->devobj == vc->devobj) {
+                    dev->devobj = NULL; // mark as missing
+                    break;
                 }
                 
                 le = le->Flink;
             }
             
-            ObDereferenceObject(FileObject);
+            ExReleaseResourceLite(&Vcb->tree_lock);
         }
         
         if (vde->device->Characteristics & FILE_REMOVABLE_MEDIA) {
@@ -358,6 +374,12 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
         ExReleaseResourceLite(&vde->child_lock);
         RemoveEntryList(&vde->list_entry);
         
+        if (Vcb && Vcb->options.allow_degraded) {
+            Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
+            if (!NT_SUCCESS(Status))
+                WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+        }
+
         vde->removing = TRUE;
 
         IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
