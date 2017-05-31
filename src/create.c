@@ -3484,7 +3484,7 @@ exit:
     return Status;
 }
 
-NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     
