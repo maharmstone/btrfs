@@ -618,17 +618,12 @@ static NTSTATUS vol_get_device_number(volume_device_extension* vde, PIRP Irp) {
     
     ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
     
-    if (IsListEmpty(&vde->children)) {
+    if (IsListEmpty(&vde->children) || vde->num_children > 1) {
         ExReleaseResourceLite(&vde->child_lock);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
     
     vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
-    
-    if (vc->list_entry.Flink != &vde->children) { // more than once device
-        ExReleaseResourceLite(&vde->child_lock);
-        return STATUS_INVALID_DEVICE_REQUEST;
-    }
     
     if (vc->disk_num == 0xffffffff) {
         ExReleaseResourceLite(&vde->child_lock);
