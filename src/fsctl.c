@@ -2934,6 +2934,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     vc->devid = dev_id;
     vc->generation = Vcb->superblock.generation;
     vc->devobj = DeviceObject;
+    vc->fileobj = fileobj;
     vc->notification_entry = NULL;
     
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj,
@@ -2998,13 +2999,14 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     
     // FIXME - send notification that volume size has increased
     
-    ObReferenceObject(DeviceObject); // once for vde
-    ObReferenceObject(DeviceObject); // and again for Vcb
+    ObReferenceObject(DeviceObject); // for Vcb
     
     Status = do_write(Vcb, Irp);
     if (!NT_SUCCESS(Status))
         ERR("do_write returned %08x\n", Status);
     
+    ObReferenceObject(fileobj);
+
 end:
     free_trees(Vcb);
     

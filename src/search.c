@@ -347,7 +347,7 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
         }
     }
     
-    ObDereferenceObject(vc->devobj);
+    ObDereferenceObject(vc->fileobj);
     ExFreePool(vc->pnp_name.Buffer);
     RemoveEntryList(&vc->list_entry);
     ExFreePool(vc);

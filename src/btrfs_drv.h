@@ -734,6 +734,7 @@ typedef struct {
     UINT64 devid;
     UINT64 generation;
     PDEVICE_OBJECT devobj;
+    PFILE_OBJECT fileobj;
     UNICODE_STRING pnp_name;
     UINT64 size;
     BOOL seeding;

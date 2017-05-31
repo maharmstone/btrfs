@@ -981,7 +981,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
         ExReleaseResourceLite(&volume_list_lock);
-        goto end;
+        return;
     }
     
     if (!vde) {
@@ -992,7 +992,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         if (!NT_SUCCESS(Status)) {
             ERR("IoReportDetectedDevice returned %08x\n", Status);
             ExReleaseResourceLite(&volume_list_lock);
-            goto end;
+            goto fail;
         }
         
         volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
@@ -1001,7 +1001,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         if (!volname.Buffer) {
             ERR("out of memory\n");
             ExReleaseResourceLite(&volume_list_lock);
-            goto end;
+            goto fail;
         }
         
         RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
@@ -1023,7 +1023,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         if (!NT_SUCCESS(Status)) {
             ERR("IoCreateDevice returned %08x\n", Status);
             ExReleaseResourceLite(&volume_list_lock);
-            goto end;
+            goto fail;
         }
         
         voldev->SectorSize = sb->sector_size;
@@ -1066,7 +1066,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
                 // duplicate, ignore
                 ExReleaseResourceLite(&vde->child_lock);
                 ExReleaseResourceLite(&volume_list_lock);
-                goto end;
+                goto fail;
             }
             
             le = le->Flink;
@@ -1076,7 +1076,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
     if (!vc) {
         ERR("out of memory\n");
-        goto end;
+        goto fail;
     }
 
     vc->uuid = sb->dev_item.device_uuid;
@@ -1089,8 +1089,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     if (!NT_SUCCESS(Status))
         WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
 
-    ObReferenceObject(DeviceObject);
     vc->devobj = DeviceObject;
+    vc->fileobj = FileObject;
 
     devpath2 = *devpath;
 
@@ -1163,7 +1163,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
                 
                 if (!name.Buffer) {
                     ERR("out of memory\n");
-                    goto end;
+                    goto fail;
                 }
                 
                 RtlCopyMemory(name.Buffer, L"\\??", 3 * sizeof(WCHAR));
@@ -1197,7 +1197,9 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         
         ExReleaseResourceLite(&volume_list_lock);
     }
+
+    return;
     
-end:
+fail:
     ObDereferenceObject(FileObject);
 }
