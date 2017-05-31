@@ -252,7 +252,7 @@ end:
     ObDereferenceObject(mountmgrfo);
 }
 
-void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock) {
+void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock, BOOL skip_dev) {
     NTSTATUS Status;
     device_extension* Vcb = vde->mounted_device ? vde->mounted_device->DeviceExtension : NULL;
     
@@ -326,7 +326,7 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
 
                 ObDereferenceObject(FileObject);
             }
-        } else {
+        } else if (!skip_dev) {
             LIST_ENTRY* le;
 
             ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
@@ -449,7 +449,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                 if (vc->disk_num == sdn.DeviceNumber && vc->part_num == 0) {
                     TRACE("removing device\n");
                     
-                    remove_volume_child(vde, vc, FALSE);
+                    remove_volume_child(vde, vc, FALSE, FALSE);
                     changed = TRUE;
 
                     break;
@@ -519,7 +519,7 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             if (vc->pnp_name.Length == devpath2.Length && RtlCompareMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length) == devpath2.Length) {
                 TRACE("removing device\n");
                 
-                remove_volume_child(vde, vc, FALSE);
+                remove_volume_child(vde, vc, FALSE, FALSE);
                 changed = TRUE;
                 
                 break;

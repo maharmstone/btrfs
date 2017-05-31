@@ -3883,7 +3883,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
             
             if (!still_has_superblock(vc->devobj)) {
-                remove_volume_child(vde, vc, TRUE);
+                remove_volume_child(vde, vc, TRUE, FALSE);
 
                 if (vde->num_children == 0) {
                     ERR("error - number of devices is zero\n");
