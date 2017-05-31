@@ -192,19 +192,25 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
     ccb* ccb;
     file_ref* fileref;
     
+    FsRtlEnterFileSystem();
+
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, Wait, fnoi, IoStatus, DeviceObject);
     
     RtlZeroMemory(fnoi, sizeof(FILE_NETWORK_OPEN_INFORMATION));
     
     fcb = FileObject->FsContext;
     
-    if (!fcb || fcb == fcb->Vcb->volume_fcb)
+    if (!fcb || fcb == fcb->Vcb->volume_fcb) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
     ccb = FileObject->FsContext2;
     
-    if (!ccb)
+    if (!ccb) {
+        FsRtlExitFileSystem();
         return FALSE;
+    }
     
     fileref = ccb->fileref;
     
@@ -219,6 +225,7 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
         if (fcb->ads) {
             if (!fileref || !fileref->parent) {
                 ERR("no fileref for stream\n");
+                FsRtlExitFileSystem();
                 return FALSE;
             }
 
@@ -241,6 +248,8 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
         fnoi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
     
+    FsRtlExitFileSystem();
+
     return TRUE;
 }
 
