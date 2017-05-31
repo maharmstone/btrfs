@@ -957,6 +957,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     BOOL new_vde = FALSE;
     volume_child* vc;
     PFILE_OBJECT FileObject;
+    UNICODE_STRING devpath2;
+    BOOL inserted = FALSE;
     
     if (devpath->Length == 0)
         return;
@@ -1072,73 +1074,71 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     }
     
     vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
-    if (!vc)
+    if (!vc) {
         ERR("out of memory\n");
-    else {
-        UNICODE_STRING devpath2;
-        BOOL inserted = FALSE;
-        
-        vc->uuid = sb->dev_item.device_uuid;
-        vc->devid = sb->dev_item.dev_id;
-        vc->generation = sb->generation;
-        vc->notification_entry = NULL;
-        
-        Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
-                                                drvobj, pnp_removal, vde, &vc->notification_entry);
-        if (!NT_SUCCESS(Status))
-            WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
-        
-        ObReferenceObject(DeviceObject);
-        vc->devobj = DeviceObject;
-        
-        devpath2 = *devpath;
-        
-        // The PNP path sometimes begins \\?\ and sometimes \??\. We need to remove this prefix
-        // so we can compare properly if the device is removed.
-        if (devpath->Length > 4 * sizeof(WCHAR) && devpath->Buffer[0] == '\\' && (devpath->Buffer[1] == '\\' || devpath->Buffer[1] == '?') &&
-            devpath->Buffer[2] == '?' && devpath->Buffer[3] == '\\') {
-            devpath2.Buffer = &devpath2.Buffer[3];
-            devpath2.Length -= 3 * sizeof(WCHAR);
-            devpath2.MaximumLength -= 3 * sizeof(WCHAR);
-        }
-        
-        vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath2.Length;
-        vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath2.Length, ALLOC_TAG);
-        
-        if (vc->pnp_name.Buffer)
-            RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
-        else {
-            ERR("out of memory\n");
-            vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
-        }
-        
-        vc->size = length;
-        vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
-        vc->disk_num = disk_num;
-        vc->part_num = part_num;
-        vc->had_drive_letter = FALSE;
-        
-        le = vde->children.Flink;
-        while (le != &vde->children) {
-            volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
-            
-            if (vc2->generation < vc->generation) {
-                if (le == vde->children.Flink)
-                    vde->num_children = sb->num_devices;
-                
-                InsertHeadList(vc2->list_entry.Blink, &vc->list_entry);
-                inserted = TRUE;
-                break;
-            }
-            
-            le = le->Flink;
-        }
-        
-        if (!inserted)
-            InsertTailList(&vde->children, &vc->list_entry);
-        
-        vde->children_loaded++;
+        goto end;
     }
+
+    vc->uuid = sb->dev_item.device_uuid;
+    vc->devid = sb->dev_item.dev_id;
+    vc->generation = sb->generation;
+    vc->notification_entry = NULL;
+
+    Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
+                                            drvobj, pnp_removal, vde, &vc->notification_entry);
+    if (!NT_SUCCESS(Status))
+        WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
+
+    ObReferenceObject(DeviceObject);
+    vc->devobj = DeviceObject;
+
+    devpath2 = *devpath;
+
+    // The PNP path sometimes begins \\?\ and sometimes \??\. We need to remove this prefix
+    // so we can compare properly if the device is removed.
+    if (devpath->Length > 4 * sizeof(WCHAR) && devpath->Buffer[0] == '\\' && (devpath->Buffer[1] == '\\' || devpath->Buffer[1] == '?') &&
+        devpath->Buffer[2] == '?' && devpath->Buffer[3] == '\\') {
+        devpath2.Buffer = &devpath2.Buffer[3];
+        devpath2.Length -= 3 * sizeof(WCHAR);
+        devpath2.MaximumLength -= 3 * sizeof(WCHAR);
+    }
+
+    vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath2.Length;
+    vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath2.Length, ALLOC_TAG);
+
+    if (vc->pnp_name.Buffer)
+        RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
+    else {
+        ERR("out of memory\n");
+        vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
+    }
+
+    vc->size = length;
+    vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? TRUE : FALSE;
+    vc->disk_num = disk_num;
+    vc->part_num = part_num;
+    vc->had_drive_letter = FALSE;
+
+    le = vde->children.Flink;
+    while (le != &vde->children) {
+        volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
+
+        if (vc2->generation < vc->generation) {
+            if (le == vde->children.Flink)
+                vde->num_children = sb->num_devices;
+
+            InsertHeadList(vc2->list_entry.Blink, &vc->list_entry);
+            inserted = TRUE;
+            break;
+        }
+
+        le = le->Flink;
+    }
+
+    if (!inserted)
+        InsertTailList(&vde->children, &vc->list_entry);
+
+    vde->children_loaded++;
     
     if (DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA)
         voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
