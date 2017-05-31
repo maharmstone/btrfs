@@ -1137,6 +1137,29 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
     vde->children_loaded++;
     
+    if (vde->mounted_device) {
+        device_extension* Vcb = vde->mounted_device->DeviceExtension;
+
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->devobj && RtlCompareMemory(&dev->devitem.device_uuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                dev->devobj = DeviceObject;
+                dev->disk_num = disk_num;
+                dev->part_num = part_num;
+                init_device(Vcb, dev, FALSE);
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&Vcb->tree_lock);
+    }
+
     if (DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA)
         voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
     
