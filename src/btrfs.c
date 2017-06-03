@@ -4480,13 +4480,9 @@ static NTSTATUS verify_device(device_extension* Vcb, device* dev) {
                     ExReleaseResourceLite(&Vcb->vde->child_lock);
             }
         } else if (!NT_SUCCESS(Status)) {
-            ExReleaseResourceLite(&Vcb->tree_lock);
             ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x\n", Status);
             return Status;
-        }
-
-        if (iosb.Information < sizeof(ULONG)) {
-            ExReleaseResourceLite(&Vcb->tree_lock);
+        } else if (iosb.Information < sizeof(ULONG)) {
             ERR("iosb.Information was too short\n");
             return STATUS_INTERNAL_ERROR;
         }
