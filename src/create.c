@@ -3484,55 +3484,10 @@ exit:
     return Status;
 }
 
-static void full_verify_vcb(device_extension* Vcb) {
-    NTSTATUS Status;
-    LIST_ENTRY* le;
-
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-
-    le = Vcb->devices.Flink;
-    while (le != &Vcb->devices) {
-        device* dev = CONTAINING_RECORD(le, device, list_entry);
-
-        if (dev->devobj && dev->removable) {
-            ULONG cc;
-            IO_STATUS_BLOCK iosb;
-
-            Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
-
-            if (IoIsErrorUserInduced(Status)) {
-                LIST_ENTRY* le2;
-
-                ExAcquireResourceExclusiveLite(&Vcb->vde->child_lock, TRUE);
-
-                le2 = Vcb->vde->children.Flink;
-                while (le2 != &Vcb->vde->children) {
-                    volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
-
-                    if (vc->devobj == dev->devobj) {
-                        TRACE("removing device\n");
-
-                        remove_volume_child(Vcb->vde, vc, TRUE, TRUE);
-
-                        break;
-                    }
-
-                    le2 = le2->Flink;
-                }
-
-                ExReleaseResourceLite(&Vcb->vde->child_lock);
-            }
-        }
-
-        le = le->Flink;
-    }
-
-    ExReleaseResourceLite(&Vcb->tree_lock);
-}
-
 static NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
+    BOOL need_verify = FALSE;
     
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
@@ -3547,46 +3502,17 @@ static NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
             Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
             
             if (IoIsErrorUserInduced(Status)) {
-                ExReleaseResourceLite(&Vcb->tree_lock);
-
-                if (Vcb->vde)
-                    full_verify_vcb(Vcb);
-
-                dev->devobj = NULL;
-
-                return Status;
+                ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x (user-induced)\n", Status);
+                need_verify = TRUE;
             } else if (!NT_SUCCESS(Status)) {
-                ERR("dev_ioctl returned %08x\n", Status);
+                ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x\n", Status);
                 goto end;
-            }
-            
-            if (iosb.Information < sizeof(ULONG)) {
+            } else if (iosb.Information < sizeof(ULONG)) {
                 ERR("iosb.Information was too short\n");
                 Status = STATUS_INTERNAL_ERROR;
-                goto end;
-            }
-            
-            if (cc != dev->change_count) {
-                PDEVICE_OBJECT devobj;
-                
+            } else if (cc != dev->change_count) {
                 dev->devobj->Flags |= DO_VERIFY_VOLUME;
-                
-                devobj = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
-                IoSetDeviceToVerify(Irp->Tail.Overlay.Thread, NULL);
-                
-                if (!devobj) {
-                    devobj = IoGetDeviceToVerify(PsGetCurrentThread());
-                    IoSetDeviceToVerify(PsGetCurrentThread(), NULL);
-                }
-                
-                devobj = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
-                
-                if (devobj)
-                    Status = IoVerifyVolume(devobj, FALSE);
-                else
-                    Status = STATUS_VERIFY_REQUIRED;
-
-                goto end;
+                need_verify = TRUE;
             }
         }
         
@@ -3598,6 +3524,25 @@ static NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
 end:
     ExReleaseResourceLite(&Vcb->tree_lock);
     
+    if (need_verify) {
+        PDEVICE_OBJECT devobj;
+
+        devobj = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
+        IoSetDeviceToVerify(Irp->Tail.Overlay.Thread, NULL);
+
+        if (!devobj) {
+            devobj = IoGetDeviceToVerify(PsGetCurrentThread());
+            IoSetDeviceToVerify(PsGetCurrentThread(), NULL);
+        }
+
+        devobj = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
+
+        if (devobj)
+            Status = IoVerifyVolume(devobj, FALSE);
+        else
+            Status = STATUS_VERIFY_REQUIRED;
+    }
+
     return Status;
 }
 

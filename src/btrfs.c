@@ -4437,99 +4437,146 @@ exit2:
     return Status;
 }
 
+static NTSTATUS verify_device(device_extension* Vcb, device* dev) {
+    NTSTATUS Status;
+    superblock* sb;
+    UINT32 crc32;
+    ULONG to_read, cc;
+
+    if (!dev->devobj)
+        return STATUS_WRONG_VOLUME;
+
+    if (dev->removable) {
+        IO_STATUS_BLOCK iosb;
+
+        Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
+
+        if (IoIsErrorUserInduced(Status)) {
+            ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x (user-induced)\n", Status);
+
+            if (Vcb->vde) {
+                LIST_ENTRY* le2;
+                BOOL changed = FALSE;
+
+                ExAcquireResourceExclusiveLite(&Vcb->vde->child_lock, TRUE);
+
+                le2 = Vcb->vde->children.Flink;
+                while (le2 != &Vcb->vde->children) {
+                    volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+
+                    if (vc->devobj == dev->devobj) {
+                        TRACE("removing device\n");
+
+                        remove_volume_child(Vcb->vde, vc, FALSE, TRUE);
+                        changed = TRUE;
+
+                        break;
+                    }
+
+                    le2 = le2->Flink;
+                }
+
+                if (!changed)
+                    ExReleaseResourceLite(&Vcb->vde->child_lock);
+            }
+        } else if (!NT_SUCCESS(Status)) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x\n", Status);
+            return Status;
+        }
+
+        if (iosb.Information < sizeof(ULONG)) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            ERR("iosb.Information was too short\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        dev->change_count = cc;
+    }
+
+    to_read = dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize);
+
+    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = sync_read_phys(dev->devobj, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+    if (!NT_SUCCESS(Status)) {
+        ERR("Failed to read superblock: %08x\n", Status);
+        ExFreePool(sb);
+        return Status;
+    }
+
+    if (sb->magic != BTRFS_MAGIC) {
+        ERR("not a BTRFS volume\n");
+        ExFreePool(sb);
+        return STATUS_WRONG_VOLUME;
+    }
+
+    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+
+    if (crc32 != *((UINT32*)sb->checksum)) {
+        ERR("checksum error\n");
+        ExFreePool(sb);
+        return STATUS_WRONG_VOLUME;
+    }
+
+    if (RtlCompareMemory(&sb->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
+        ERR("different UUIDs\n");
+        ExFreePool(sb);
+        return STATUS_WRONG_VOLUME;
+    }
+
+    ExFreePool(sb);
+
+    dev->devobj->Flags &= ~DO_VERIFY_VOLUME;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
     device_extension* Vcb = devobj->DeviceExtension;
-    ULONG cc;
     NTSTATUS Status;
     LIST_ENTRY* le;
+    UINT64 failed_devices = 0;
+    BOOL locked = FALSE;
     
     if (Vcb->removing)
         return STATUS_WRONG_VOLUME;
     
-    Status = dev_ioctl(Vcb->Vpb->RealDevice, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, NULL);
-    
-    if (!NT_SUCCESS(Status)) {
-        ERR("dev_ioctl returned %08x\n", Status);
-        return Status;
+    if (!ExIsResourceAcquiredExclusive(&Vcb->tree_lock)) {
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        locked = TRUE;
     }
-    
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
-        superblock* sb;
-        UINT32 crc32;
-        ULONG to_read;
         
-        if (dev->removable) {
-            IO_STATUS_BLOCK iosb;
-            
-            Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), TRUE, &iosb);
-            
-            if (!NT_SUCCESS(Status)) {
-                ExReleaseResourceLite(&Vcb->tree_lock);
-                ERR("dev_ioctl returned %08x\n", Status);
-                return Status;
-            }
-            
-            if (iosb.Information < sizeof(ULONG)) {
-                ExReleaseResourceLite(&Vcb->tree_lock);
-                ERR("iosb.Information was too short\n");
-                return STATUS_INTERNAL_ERROR;
-            }
-            
-            dev->change_count = cc;
-        }
-        
-        to_read = dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize);
-        
-        sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
-        if (!sb) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        
-        Status = sync_read_phys(dev->devobj, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+        Status = verify_device(Vcb, dev);
         if (!NT_SUCCESS(Status)) {
-            ERR("Failed to read superblock: %08x\n", Status);
-            ExFreePool(sb);
-            return Status;
+            failed_devices++;
+
+            if (dev->devobj && Vcb->options.allow_degraded)
+                dev->devobj = NULL;
         }
-        
-        if (sb->magic != BTRFS_MAGIC) {
-            ERR("not a BTRFS volume\n");
-            ExFreePool(sb);
-            return STATUS_WRONG_VOLUME;
-        }
-        
-        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-        TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
-        
-        if (crc32 != *((UINT32*)sb->checksum)) {
-            ERR("checksum error\n");
-            ExFreePool(sb);
-            return STATUS_WRONG_VOLUME;
-        }
-        
-        if (RtlCompareMemory(&sb->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
-            ERR("different UUIDs\n");
-            ExFreePool(sb);
-            return STATUS_WRONG_VOLUME;
-        }
-        
-        ExFreePool(sb);
-        
-        dev->devobj->Flags &= ~DO_VERIFY_VOLUME;
         
         le = le->Flink;
     }
     
-    ExReleaseResourceLite(&Vcb->tree_lock);
+    if (locked)
+        ExReleaseResourceLite(&Vcb->tree_lock);
     
-    Vcb->Vpb->RealDevice->Flags &= ~DO_VERIFY_VOLUME;
+    if (failed_devices == 0 || (Vcb->options.allow_degraded && failed_devices < Vcb->superblock.num_devices)) {
+        Vcb->Vpb->RealDevice->Flags &= ~DO_VERIFY_VOLUME;
+
+        return STATUS_SUCCESS;
+    }
     
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
