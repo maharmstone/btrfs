@@ -2309,7 +2309,6 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
     }
     
     devobj = fileobj->DeviceObject;
-    ObDereferenceObject(fileobj);
 
     ExAcquireResourceSharedLite(&global_loading_lock, TRUE);
     
@@ -2400,6 +2399,8 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
 end:
     ExReleaseResourceLite(&global_loading_lock);
     
+    ObDereferenceObject(fileobj);
+
     return Status;
 }
 
