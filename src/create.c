@@ -3582,9 +3582,10 @@ static NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
                 devobj = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
                 
                 if (devobj)
-                    IoVerifyVolume(devobj, FALSE);
-                
-                Status = STATUS_VERIFY_REQUIRED;
+                    Status = IoVerifyVolume(devobj, FALSE);
+                else
+                    Status = STATUS_VERIFY_REQUIRED;
+
                 goto end;
             }
         }
