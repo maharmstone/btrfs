@@ -84,6 +84,8 @@ void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entr
 ERESOURCE volume_list_lock, mapping_lock;
 LIST_ENTRY volume_list;
 BOOL finished_probing = FALSE;
+HANDLE degraded_wait_handle = NULL;
+BOOL degraded_wait = TRUE;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -3986,7 +3988,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto exit;
     }
 
-    if (vde && vde->children_loaded < vde->num_children && (!Vcb->options.allow_degraded || !finished_probing)) {
+    if (vde && vde->children_loaded < vde->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
         ERR("could not mount as %u device(s) missing\n", vde->num_children - vde->children_loaded);
         Status = STATUS_DEVICE_NOT_READY;
         goto exit;
@@ -5052,6 +5054,28 @@ end:
 }
 #endif
 
+static void degraded_wait_thread(void* context) {
+    KTIMER timer;
+    LARGE_INTEGER delay;
+
+    UNUSED(context);
+
+    KeInitializeTimer(&timer);
+
+    delay.QuadPart = (UINT64)3 * -10000000; // wait three seconds
+    KeSetTimer(&timer, delay, NULL);
+    KeWaitForSingleObject(&timer, Executive, KernelMode, FALSE, NULL);
+
+    TRACE("timer expired\n");
+
+    degraded_wait = FALSE;
+
+    ZwClose(degraded_wait_handle);
+    degraded_wait_handle = NULL;
+
+    PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
 NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
     NTSTATUS Status;
     PDEVICE_OBJECT DeviceObject;
@@ -5210,6 +5234,10 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     }
 
     watch_registry(regh);
+
+    Status = PsCreateSystemThread(&degraded_wait_handle, 0, NULL, NULL, NULL, degraded_wait_thread, NULL);
+    if (!NT_SUCCESS(Status))
+        WARN("PsCreateSystemThread returned %08x\n", Status);
 
     Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
                                             (PVOID)&GUID_DEVINTERFACE_VOLUME, DriverObject, volume_notification, DriverObject, &notification_entry2);
