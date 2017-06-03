@@ -2555,24 +2555,6 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
     
     for (i = 0; i < ci->num_stripes; i++) {
         if (context.stripes[i].status == ReadDataStatus_Error && IoIsErrorUserInduced(context.stripes[i].iosb.Status)) {
-            if (Irp && context.stripes[i].iosb.Status == STATUS_VERIFY_REQUIRED) {
-                PDEVICE_OBJECT dev;
-                
-                dev = IoGetDeviceToVerify(Irp->Tail.Overlay.Thread);
-                IoSetDeviceToVerify(Irp->Tail.Overlay.Thread, NULL);
-                
-                if (!dev) {
-                    dev = IoGetDeviceToVerify(PsGetCurrentThread());
-                    IoSetDeviceToVerify(PsGetCurrentThread(), NULL);
-                }
-                
-                dev = Vcb->Vpb ? Vcb->Vpb->RealDevice : NULL;
-                
-                if (dev)
-                    IoVerifyVolume(dev, FALSE);
-            }
-//             IoSetHardErrorOrVerifyDevice(context.stripes[i].Irp, devices[i]->devobj);
-            
             Status = context.stripes[i].iosb.Status;
             goto exit;
         }
