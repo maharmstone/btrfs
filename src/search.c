@@ -351,9 +351,9 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
             
             le = vde->children.Flink;
             while (le != &vde->children) {
-                volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+                volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
                 
-                if (vc->devobj->Characteristics & FILE_REMOVABLE_MEDIA) {
+                if (vc2 != vc && vc2->devobj->Characteristics & FILE_REMOVABLE_MEDIA) {
                     vde->device->Characteristics |= FILE_REMOVABLE_MEDIA;
                     break;
                 }
