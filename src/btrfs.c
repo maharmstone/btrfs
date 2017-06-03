@@ -1651,7 +1651,11 @@ void STDCALL uninit(device_extension* Vcb, BOOL flush) {
     LIST_ENTRY* le;
     LARGE_INTEGER time;
     
-    Vcb->removing = TRUE;
+    if (!Vcb->removing) {
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        Vcb->removing = TRUE;
+        ExReleaseResourceLite(&Vcb->tree_lock);
+    }
     
     RemoveEntryList(&Vcb->list_entry);
     
@@ -3902,7 +3906,7 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             le = le2;
         }
 
-        if (vde->num_children == 0) {
+        if (vde->num_children == 0 || vde->children_loaded == 0) {
             ERR("error - number of devices is zero\n");
             Status = STATUS_INTERNAL_ERROR;
             goto exit;
@@ -4538,9 +4542,9 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UINT64 failed_devices = 0;
-    BOOL locked = FALSE;
+    BOOL locked = FALSE, remove = FALSE;
     
-    if (Vcb->removing)
+    if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
         return STATUS_WRONG_VOLUME;
     
     if (!ExIsResourceAcquiredExclusive(&Vcb->tree_lock)) {
@@ -4548,6 +4552,13 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
         locked = TRUE;
     }
     
+    if (Vcb->removing) {
+        if (locked) ExReleaseResourceLite(&Vcb->tree_lock);
+        return STATUS_WRONG_VOLUME;
+    }
+
+    InterlockedIncrement(&Vcb->open_files); // so pnp_surprise_removal doesn't uninit the device while we're still using it
+
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -4562,10 +4573,20 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
         
         le = le->Flink;
     }
-    
+
+    InterlockedDecrement(&Vcb->open_files);
+
+    if (Vcb->removing && Vcb->open_files == 0)
+        remove = TRUE;
+
     if (locked)
         ExReleaseResourceLite(&Vcb->tree_lock);
     
+    if (remove) {
+        uninit(Vcb, FALSE);
+        return Status;
+    }
+
     if (failed_devices == 0 || (Vcb->options.allow_degraded && failed_devices < Vcb->superblock.num_devices)) {
         Vcb->Vpb->RealDevice->Flags &= ~DO_VERIFY_VOLUME;
 
@@ -4627,7 +4648,9 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
             
             if (!NT_SUCCESS(Status) && Vcb->Vpb->Flags & VPB_MOUNTED) {
                 if (Vcb->open_files > 0) {
+                    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
                     Vcb->removing = TRUE;
+                    ExReleaseResourceLite(&Vcb->tree_lock);
 //                     Vcb->Vpb->Flags &= ~VPB_MOUNTED;
                 } else
                     uninit(Vcb, FALSE);

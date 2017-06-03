@@ -51,6 +51,8 @@ NTSTATUS STDCALL vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     
     Irp->IoStatus.Information = 0;
 
+    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+
     if (InterlockedDecrement(&vde->open_count) == 0 && vde->removing) {
         NTSTATUS Status;
         UNICODE_STRING mmdevpath;
@@ -67,11 +69,20 @@ NTSTATUS STDCALL vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             ObDereferenceObject(mountmgrfo);
         }
 
+        if (vde->mounted_device) {
+            device_extension* Vcb = vde->mounted_device->DeviceExtension;
+
+            Vcb->vde = NULL;
+        }
+
         if (vde->name.Buffer)
             ExFreePool(vde->name.Buffer);
 
+        ExReleaseResourceLite(&vde->child_lock);
         ExDeleteResourceLite(&vde->child_lock);
-    }
+        IoDeleteDevice(vde->device);
+    } else
+        ExReleaseResourceLite(&vde->child_lock);
 
     return STATUS_SUCCESS;
 }

@@ -371,7 +371,7 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
     vde->children_loaded--;
 
     if (vde->children_loaded == 0) { // remove volume device
-        ExReleaseResourceLite(&vde->child_lock);
+        BOOL remove = FALSE;
         RemoveEntryList(&vde->list_entry);
         
         if (Vcb && Vcb->options.allow_degraded) {
@@ -386,7 +386,21 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
         
         IoDetachDevice(vde->pdo);
         
-        IoDeleteDevice(vde->device);
+        if (vde->open_count == 0)
+            remove = TRUE;
+
+        ExReleaseResourceLite(&vde->child_lock);
+
+        if (remove) {
+            if (vde->name.Buffer)
+                ExFreePool(vde->name.Buffer);
+
+            if (Vcb)
+                Vcb->vde = NULL;
+
+            ExDeleteResourceLite(&vde->child_lock);
+            IoDeleteDevice(vde->device);
+        }
     } else if (!no_release_lock)
         ExReleaseResourceLite(&vde->child_lock);
 }
