@@ -3739,7 +3739,7 @@ static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject, BOOL* no_pnp) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     
-    Status = sync_read_phys(DeviceObject, superblock_addrs[0], to_read, (PUCHAR)sb, FALSE);
+    Status = sync_read_phys(DeviceObject, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("sync_read_phys returned %08x\n", Status);
         goto end;
@@ -3758,6 +3758,8 @@ static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject, BOOL* no_pnp) {
         goto end;
     }
     
+    DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
+
     pnp_name.Buffer = NULL;
 
     Status = get_device_pnp_name(DeviceObject, &pnp_name, &guid);
