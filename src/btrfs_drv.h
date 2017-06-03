@@ -1192,6 +1192,7 @@ BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* add
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size);
 NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
                                 void* data, UINT16 datalen, enum batch_operation operation);
+NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 
 // in read.c
 NTSTATUS STDCALL drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);

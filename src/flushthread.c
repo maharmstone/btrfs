@@ -43,7 +43,6 @@ typedef struct {
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
-static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 
 #ifndef _MSC_VER // not in mingw yet
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
@@ -5663,7 +5662,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps) {
+NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps) {
     NTSTATUS Status;
     UINT16 parity2, stripe, startoffstripe;
     UINT8* data;

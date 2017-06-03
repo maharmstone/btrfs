@@ -964,7 +964,21 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 addre
             RtlCopyMemory(ps->data + address - stripe_addr, data, length);
             RtlClearBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
 
-            // FIXME - if now filled, flush
+            // if now filled, flush
+            if (RtlAreBitsClear(&ps->bmp, 0, (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size)) {
+                Status = flush_partial_stripe(Vcb, c, ps);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("flush_partial_stripe returned %08x\n", Status);
+                    goto end;
+                }
+
+                RemoveEntryList(&ps->list_entry);
+
+                if (ps->bmparr)
+                    ExFreePool(ps->bmparr);
+
+                ExFreePool(ps);
+            }
 
             Status = STATUS_SUCCESS;
             goto end;
