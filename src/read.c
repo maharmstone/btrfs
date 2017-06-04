@@ -1598,7 +1598,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             
             if (!context.va) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
             }
         } else
             context.va = buf;
@@ -1606,7 +1607,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
         }
 
         Status = STATUS_SUCCESS;
@@ -1620,7 +1622,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         if (!NT_SUCCESS(Status)) {
             ERR("MmProbeAndLockPages threw exception %08x\n", Status);
             IoFreeMdl(master_mdl);
-            return Status;
+            goto exit;
         }
         
         pfns = (PFN_NUMBER*)(master_mdl + 1);
@@ -1654,7 +1656,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
         }
 
         RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes);
@@ -1717,7 +1720,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
             
             if (!context.va) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
             }
         } else
             context.va = buf;
@@ -1735,7 +1739,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         master_mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
         }
 
         Status = STATUS_SUCCESS;
@@ -1749,7 +1754,7 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         if (!NT_SUCCESS(Status)) {
             ERR("MmProbeAndLockPages threw exception %08x\n", Status);
             IoFreeMdl(master_mdl);
-            return Status;
+            goto exit;
         }
 
         pfns = (PFN_NUMBER*)(master_mdl + 1);
@@ -1757,7 +1762,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripes) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
         }
         
         RtlZeroMemory(stripes, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes);
@@ -1835,7 +1841,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto exit;
         }
 
         RtlZeroMemory(stripeoff, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes);
@@ -1900,7 +1907,8 @@ NTSTATUS STDCALL read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UI
 
             if (!context.va) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
             }
 
             context.stripes[i].mdl = IoAllocateMdl(context.va, length, FALSE, FALSE, NULL);
