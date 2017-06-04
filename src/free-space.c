@@ -1364,13 +1364,17 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
 }
 
 NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
+    LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
 
     *changed = FALSE;
     
     InitializeListHead(&batchlist);
     
+    // exclusive because allocate_cache_chunk can add entries to chunks_changed
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+
+    le = Vcb->chunks_changed.Flink;
     while (le != &Vcb->chunks_changed) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
 
@@ -1386,6 +1390,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
 
             if (!NT_SUCCESS(Status)) {
                 ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 clear_batch_list(Vcb, &batchlist);
                 return Status;
             }
@@ -1393,6 +1398,8 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
         
         le = le->Flink;
     }
+
+    ExReleaseResourceLite(&Vcb->chunk_lock);
     
     Status = commit_batch_list(Vcb, &batchlist, Irp);
     if (!NT_SUCCESS(Status)) {
