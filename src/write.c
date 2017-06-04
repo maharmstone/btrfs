@@ -3862,8 +3862,14 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         remove_fcb_extent(fcb, ext, rollback);
     }
 
-    if (c && !c->list_entry_changed.Flink)
-        InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
+    if (c && !c->list_entry_changed.Flink) {
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+
+        if (!c->list_entry_changed.Flink)
+            InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
+
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+    }
 
     return STATUS_SUCCESS;
 }
