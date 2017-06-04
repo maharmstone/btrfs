@@ -475,6 +475,7 @@ typedef struct {
     BOOL reloc;
     BOOL last_alloc_set;
     BOOL cache_loaded;
+    BOOL changed;
     UINT64 last_alloc;
     UINT16 last_stripe;
     LIST_ENTRY partial_stripes;

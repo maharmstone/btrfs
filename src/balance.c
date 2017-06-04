@@ -2952,8 +2952,10 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
 
         ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-        if (!rc->list_entry_changed.Flink)
+        if (!rc->list_entry_changed.Flink) {
+            rc->changed = TRUE;
             InsertTailList(&Vcb->chunks_changed, &rc->list_entry_changed);
+        }
 
         rc->balance_num = Vcb->balance.balance_num;
 
@@ -3254,8 +3256,10 @@ static void balance_thread(void* context) {
         
             ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-            if (!c->list_entry_changed.Flink)
+            if (!c->list_entry_changed.Flink) {
+                c->changed = TRUE;
                 InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+            }
 
             ExReleaseResourceLite(&Vcb->chunk_lock);
         }
@@ -3308,8 +3312,10 @@ static void balance_thread(void* context) {
 
             ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
-            if (!c->list_entry_changed.Flink)
+            if (!c->list_entry_changed.Flink) {
+                c->changed = TRUE;
                 InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
+            }
 
             ExReleaseResourceLite(&Vcb->chunk_lock);
         }

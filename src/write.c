@@ -595,6 +595,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     c->last_alloc_set = FALSE;
     c->last_stripe = 0;
     c->cache_loaded = TRUE;
+    c->changed = FALSE;
     c->balance_num = 0;
     
     InitializeListHead(&c->space);
@@ -666,6 +667,7 @@ end:
             InsertTailList(&Vcb->chunks, &c->list_entry);
         
         c->created = TRUE;
+        c->changed = TRUE;
         InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
         c->list_entry_balance.Flink = NULL;
 
@@ -3491,7 +3493,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
     EXTENT_DATA* ed = &ext->extent_data;
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
     NTSTATUS Status;
-    chunk* c;
+    chunk* c = NULL;
     
     if (start_data <= ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace all
         extent* newext;
@@ -3547,6 +3549,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         add_insert_extent_rollback(rollback, fcb, newext);
         
         remove_fcb_extent(fcb, ext, rollback);
+
+        c = get_chunk_from_address(fcb->Vcb, ed2->address);
     } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
         EXTENT_DATA2* ned2;
         extent *newext1, *newext2;
@@ -3857,7 +3861,10 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
 
         remove_fcb_extent(fcb, ext, rollback);
     }
-    
+
+    if (c && !c->list_entry_changed.Flink)
+        InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
+
     return STATUS_SUCCESS;
 }
 
@@ -3918,6 +3925,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                 if (ed->type == EXTENT_TYPE_REGULAR) {
                     UINT64 writeaddr = ed2->address + ed2->offset + start + written - ext->offset;
                     UINT64 write_len = min(len, length);
+                    chunk* c;
                                     
                     TRACE("doing non-COW write to %llx\n", writeaddr);
                     
@@ -3927,6 +3935,10 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                         return Status;
                     }
                     
+                    c = get_chunk_from_address(fcb->Vcb, writeaddr);
+                    if (c && !c->list_entry_changed.Flink)
+                        InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
+
                     // This shouldn't ever get called - nocow files should always also be nosum.
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
                         calc_csum(fcb->Vcb, (UINT8*)data + written, write_len / fcb->Vcb->superblock.sector_size,

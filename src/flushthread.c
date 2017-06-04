@@ -303,8 +303,11 @@ static void clean_space_cache(device_extension* Vcb) {
         
         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
         
-        clean_space_cache_chunk(Vcb, c);
+        if (c->changed)
+            clean_space_cache_chunk(Vcb, c);
+
         RemoveEntryList(&c->list_entry_changed);
+        c->changed = FALSE;
         c->list_entry_changed.Flink = NULL;
         
         ExReleaseResourceLite(&c->lock);
@@ -5871,50 +5874,52 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
             continue;
         }
         
-        used_minus_cache = c->used;
-        
-        // subtract self-hosted cache
-        if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache && c->cache->inode_item.st_size == c->used) {
-            LIST_ENTRY* le3;
-            
-            le3 = c->cache->extents.Flink;
-            while (le3 != &c->cache->extents) {
-                extent* ext = CONTAINING_RECORD(le3, extent, list_entry);
-                EXTENT_DATA* ed = &ext->extent_data;
-                
-                if (!ext->ignore) {
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+        if (c->changed) {
+            used_minus_cache = c->used;
 
-                        if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
-                            used_minus_cache -= ed2->size;
+            // subtract self-hosted cache
+            if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache && c->cache->inode_item.st_size == c->used) {
+                LIST_ENTRY* le3;
+
+                le3 = c->cache->extents.Flink;
+                while (le3 != &c->cache->extents) {
+                    extent* ext = CONTAINING_RECORD(le3, extent, list_entry);
+                    EXTENT_DATA* ed = &ext->extent_data;
+
+                    if (!ext->ignore) {
+                        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+
+                            if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
+                                used_minus_cache -= ed2->size;
+                        }
                     }
+
+                    le3 = le3->Flink;
                 }
-                
-                le3 = le3->Flink;
             }
-        }
-        
-        if (used_minus_cache == 0) {
-            Status = drop_chunk(Vcb, c, batchlist, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("drop_chunk returned %08x\n", Status);
+
+            if (used_minus_cache == 0) {
+                Status = drop_chunk(Vcb, c, batchlist, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("drop_chunk returned %08x\n", Status);
+                    ExReleaseResourceLite(&c->lock);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    return Status;
+                }
+            } else if (c->created) {
+                Status = create_chunk(Vcb, c, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("create_chunk returned %08x\n", Status);
+                    ExReleaseResourceLite(&c->lock);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    return Status;
+                }
+            }
+
+            if (used_minus_cache > 0)
                 ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                return Status;
-            }
-        } else if (c->created) {
-            Status = create_chunk(Vcb, c, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("create_chunk returned %08x\n", Status);
-                ExReleaseResourceLite(&c->lock);
-                ExReleaseResourceLite(&Vcb->chunk_lock);
-                return Status;
-            }
         }
-        
-        if (used_minus_cache > 0)
-            ExReleaseResourceLite(&c->lock);
 
         le = le2;
     }
