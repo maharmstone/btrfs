@@ -3936,8 +3936,14 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                     }
                     
                     c = get_chunk_from_address(fcb->Vcb, writeaddr);
-                    if (c && !c->list_entry_changed.Flink)
-                        InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
+                    if (c && !c->list_entry_changed.Flink) {
+                        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+
+                        if (!c->list_entry_changed.Flink)
+                            InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
+
+                        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                    }
 
                     // This shouldn't ever get called - nocow files should always also be nosum.
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
