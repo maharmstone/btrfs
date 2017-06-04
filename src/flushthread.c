@@ -1515,7 +1515,10 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
     }
     
     if (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
+        ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
         Status = update_chunk_caches(Vcb, Irp, rollback);
+        ExReleaseResourceLite(&Vcb->chunk_lock);
+
         if (!NT_SUCCESS(Status)) {
             ERR("update_chunk_caches returned %08x\n", Status);
             return Status;
