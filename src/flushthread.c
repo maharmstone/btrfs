@@ -6973,13 +6973,11 @@ static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
         }
     }
     
-    if (!IsListEmpty(&Vcb->chunks_changed)) {
-        Status = update_chunks(Vcb, &batchlist, Irp, rollback);
-        
-        if (!NT_SUCCESS(Status)) {
-            ERR("update_chunks returned %08x\n", Status);
-            return Status;
-        }
+    Status = update_chunks(Vcb, &batchlist, Irp, rollback);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("update_chunks returned %08x\n", Status);
+        return Status;
     }
     
     Status = commit_batch_list(Vcb, &batchlist, Irp);
