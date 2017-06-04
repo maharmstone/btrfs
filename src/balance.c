@@ -108,7 +108,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
         
         c->used -= Vcb->superblock.node_size;
         
-        space_list_add(Vcb, c, TRUE, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
+        space_list_add(c, TRUE, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
         
         ExReleaseResourceLite(&c->lock);
     }
@@ -749,7 +749,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                     
                     if (newchunk->chunk_item->type == flags && find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                         newchunk->used += Vcb->superblock.node_size;
-                        space_list_subtract(Vcb, newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
+                        space_list_subtract(newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                         done = TRUE;
                     }
                     
@@ -769,7 +769,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                             if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.node_size) {
                                 if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
                                     c2->used += Vcb->superblock.node_size;
-                                    space_list_subtract(Vcb, c2, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
+                                    space_list_subtract(c2, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                                     ExReleaseResourceLite(&c2->lock);
                                     newchunk = c2;
                                     done = TRUE;
@@ -804,7 +804,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
                             goto end;
                         } else {
                             newchunk->used += Vcb->superblock.node_size;
-                            space_list_subtract(Vcb, newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
+                            space_list_subtract(newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                         }
                         
                         ExReleaseResourceLite(&newchunk->lock);
@@ -1339,7 +1339,7 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
         
         c->used -= tp->item->key.offset;
         
-        space_list_add(Vcb, c, TRUE, tp->item->key.obj_id, tp->item->key.offset, rollback);
+        space_list_add(c, TRUE, tp->item->key.obj_id, tp->item->key.offset, rollback);
         
         ExReleaseResourceLite(&c->lock);
     }
@@ -1758,7 +1758,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             
             if (find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                 newchunk->used += dr->size;
-                space_list_subtract(Vcb, newchunk, FALSE, dr->new_address, dr->size, &rollback);
+                space_list_subtract(newchunk, FALSE, dr->new_address, dr->size, &rollback);
                 done = TRUE;
             }
             
@@ -1778,7 +1778,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                     if ((c2->chunk_item->size - c2->used) >= dr->size) {
                         if (find_data_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
                             c2->used += dr->size;
-                            space_list_subtract(Vcb, c2, FALSE, dr->new_address, dr->size, &rollback);
+                            space_list_subtract(c2, FALSE, dr->new_address, dr->size, &rollback);
                             ExReleaseResourceLite(&c2->lock);
                             newchunk = c2;
                             done = TRUE;
@@ -1813,7 +1813,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                     goto end;
                 } else {
                     newchunk->used += dr->size;
-                    space_list_subtract(Vcb, newchunk, FALSE, dr->new_address, dr->size, &rollback);
+                    space_list_subtract(newchunk, FALSE, dr->new_address, dr->size, &rollback);
                 }
                 
                 ExReleaseResourceLite(&newchunk->lock);
@@ -2950,16 +2950,8 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
 
         rc->list_entry_balance.Flink = NULL;
 
-        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-
-        if (!rc->list_entry_changed.Flink) {
-            rc->changed = TRUE;
-            InsertTailList(&Vcb->chunks_changed, &rc->list_entry_changed);
-        }
-
+        rc->changed = TRUE;
         rc->balance_num = Vcb->balance.balance_num;
-
-        ExReleaseResourceLite(&Vcb->chunk_lock);
 
         Status = do_write(Vcb, NULL);
         if (!NT_SUCCESS(Status)) {
@@ -3254,14 +3246,7 @@ static void balance_thread(void* context) {
                     break;
             } while (changed);
         
-            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-
-            if (!c->list_entry_changed.Flink) {
-                c->changed = TRUE;
-                InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
-            }
-
-            ExReleaseResourceLite(&Vcb->chunk_lock);
+            c->changed = TRUE;
         }
 
         if (Vcb->balance.stopping)
@@ -3310,14 +3295,7 @@ static void balance_thread(void* context) {
                     break;
             } while (changed);
 
-            ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
-
-            if (!c->list_entry_changed.Flink) {
-                c->changed = TRUE;
-                InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
-            }
-
-            ExReleaseResourceLite(&Vcb->chunk_lock);
+            c->changed = TRUE;
         }
         
         if (Vcb->balance.stopping)

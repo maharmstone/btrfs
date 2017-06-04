@@ -173,10 +173,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                     return Status;
                 }
 
-                if (!c->list_entry_changed.Flink) {
-                    c->changed = TRUE;
-                    InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
-                }
+                c->changed = TRUE;
 
                 ExReleaseResourceLite(&c->lock);
             }
@@ -973,7 +970,7 @@ NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         return Status;
     }
     
-    protect_superblocks(Vcb, c);
+    protect_superblocks(c);
     
     c->cache_loaded = TRUE;
 
@@ -1259,11 +1256,9 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
                     
                     if (ed2->size != 0) {
                         chunk* c2 = get_chunk_from_address(Vcb, ed2->address);
-                        
-                        if (!c2->list_entry_changed.Flink) {
+
+                        if (c2)
                             c2->changed = TRUE;
-                            InsertTailList(&Vcb->chunks_changed, &c2->list_entry_changed);
-                        }
                     }
                 }
                 
@@ -1371,12 +1366,11 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
     
     InitializeListHead(&batchlist);
     
-    // exclusive because allocate_cache_chunk can add entries to chunks_changed
-    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
 
-    le = Vcb->chunks_changed.Flink;
-    while (le != &Vcb->chunks_changed) {
-        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (c->changed) {
             BOOL b;
@@ -1827,7 +1821,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_EN
 }
 
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
+    LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
     chunk* c;
     LARGE_INTEGER time;
@@ -1838,8 +1832,9 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     
     InitializeListHead(&batchlist);
     
-    while (le != &Vcb->chunks_changed) {
-        c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
         
         if (c->changed) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
@@ -1862,11 +1857,11 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
         return Status;
     }
     
-    le = Vcb->chunks_changed.Flink;
-    while (le != &Vcb->chunks_changed) {
-        c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        if (c->changed && (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)) {
             ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
 
             while (!IsListEmpty(&c->partial_stripes)) {
@@ -1896,7 +1891,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
 }
 
 NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
-    LIST_ENTRY *le = Vcb->chunks_changed.Flink, batchlist;
+    LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
     chunk* c;
 
@@ -1906,8 +1901,9 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
 
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
 
-    while (le != &Vcb->chunks_changed) {
-        c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (c->changed) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
@@ -1936,18 +1932,15 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void space_list_add(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
     LIST_ENTRY* list;
     
-    TRACE("(%p, %p, %u, %llx, %llx, %p)\n", Vcb, c, deleting, address, length, rollback);
+    TRACE("(%p, %u, %llx, %llx, %p)\n", c, deleting, address, length, rollback);
     
     list = deleting ? &c->deleting : &c->space;
     
-    if (!c->list_entry_changed.Flink) {
-        c->changed = TRUE;
-        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
-    }
-    
+    c->changed = TRUE;
+
     space_list_add2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
 }
 
@@ -2030,15 +2023,12 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addres
     }
 }
 
-void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void space_list_subtract(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
     LIST_ENTRY* list;
     
     list = deleting ? &c->deleting : &c->space;
     
-    if (!c->list_entry_changed.Flink) {
-        c->changed = TRUE;
-        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
-    }
+    c->changed = TRUE;
     
     space_list_subtract2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
 }

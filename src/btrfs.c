@@ -3204,7 +3204,6 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
 
                 InsertTailList(&Vcb->chunks, &c->list_entry);
                 
-                c->list_entry_changed.Flink = NULL;
                 c->list_entry_balance.Flink = NULL;
             }
         }
@@ -3234,7 +3233,7 @@ static NTSTATUS STDCALL load_chunk_root(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-void protect_superblocks(device_extension* Vcb, chunk* c) {
+void protect_superblocks(chunk* c) {
     UINT16 i = 0, j;
     UINT64 off_start, off_end;
     
@@ -3242,7 +3241,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
     // I realize this confuses physical and logical addresses, but this is what btrfs-progs does - 
     // evidently Linux assumes the chunk at 0 is always SINGLE.
     if (c->offset < superblock_addrs[0])
-        space_list_subtract(Vcb, c, FALSE, c->offset, superblock_addrs[0] - c->offset, NULL);
+        space_list_subtract(c, FALSE, c->offset, superblock_addrs[0] - c->offset, NULL);
     
     while (superblock_addrs[i] != 0) {
         CHUNK_ITEM* ci = c->chunk_item;
@@ -3273,7 +3272,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     TRACE("startoff = %llx, superblock = %llx\n", startoff + cis[j].offset, superblock_addrs[i]);
 #endif
                     
-                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
@@ -3292,7 +3291,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     
                     TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
 
-                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
@@ -3311,7 +3310,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     
                     TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
 
-                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else { // SINGLE, DUPLICATE, RAID1
@@ -3324,7 +3323,7 @@ void protect_superblocks(device_extension* Vcb, chunk* c) {
                     off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
                     off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
                     
-                    space_list_subtract(Vcb, c, FALSE, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         }
@@ -4074,7 +4073,6 @@ static NTSTATUS STDCALL mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     }
     
     InitializeListHead(&Vcb->chunks);
-    InitializeListHead(&Vcb->chunks_changed);
     InitializeListHead(&Vcb->trees);
     InitializeListHead(&Vcb->trees_hash);
     InitializeListHead(&Vcb->all_fcbs);

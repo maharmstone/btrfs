@@ -483,7 +483,6 @@ typedef struct {
     ULONG balance_num;
     
     LIST_ENTRY list_entry;
-    LIST_ENTRY list_entry_changed;
     LIST_ENTRY list_entry_balance;
 } chunk;
 
@@ -692,7 +691,6 @@ typedef struct _device_extension {
     BOOL log_to_phys_loaded;
     LIST_ENTRY sys_chunks;
     LIST_ENTRY chunks;
-    LIST_ENTRY chunks_changed;
     LIST_ENTRY trees;
     LIST_ENTRY trees_hash;
     LIST_ENTRY* trees_ptrs[256];
@@ -949,7 +947,7 @@ void free_fcb(fcb* fcb);
 #endif
 void free_fileref(device_extension* Vcb, file_ref* fr);
 file_ref* create_fileref(device_extension* Vcb);
-void protect_superblocks(device_extension* Vcb, chunk* c);
+void protect_superblocks(chunk* c);
 BOOL is_top_level(PIRP Irp);
 NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);
 void STDCALL uninit(device_extension* Vcb, BOOL flush);
@@ -1217,9 +1215,9 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
 NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp);
 NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 offset, UINT64 size);
-void space_list_add(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
+void space_list_add(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback);
-void space_list_subtract(device_extension* Vcb, chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
+void space_list_subtract(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback);
 void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback);
 NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load_only, PIRP Irp);
 

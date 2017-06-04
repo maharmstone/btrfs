@@ -625,7 +625,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     InsertTailList(&c->space, &s->list_entry);
     InsertTailList(&c->space_size, &s->list_entry_size);
     
-    protect_superblocks(Vcb, c);
+    protect_superblocks(c);
     
     for (i = 0; i < num_stripes; i++) {
         stripes[i].device->devitem.bytes_used += stripe_size;
@@ -668,7 +668,6 @@ end:
         
         c->created = TRUE;
         c->changed = TRUE;
-        InsertTailList(&Vcb->chunks_changed, &c->list_entry_changed);
         c->list_entry_balance.Flink = NULL;
 
         *pc = c;
@@ -2868,7 +2867,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     }
     
     c->used += length;
-    space_list_subtract(Vcb, c, FALSE, address, length, rollback);
+    space_list_subtract(c, FALSE, address, length, rollback);
     
     fcb->inode_item.st_blocks += decoded_size;
     
@@ -3862,14 +3861,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         remove_fcb_extent(fcb, ext, rollback);
     }
 
-    if (c && !c->list_entry_changed.Flink) {
-        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
-
-        if (!c->list_entry_changed.Flink)
-            InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
-
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-    }
+    if (c)
+        c->changed = TRUE;
 
     return STATUS_SUCCESS;
 }
@@ -3942,14 +3935,8 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
                     }
                     
                     c = get_chunk_from_address(fcb->Vcb, writeaddr);
-                    if (c && !c->list_entry_changed.Flink) {
-                        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
-
-                        if (!c->list_entry_changed.Flink)
-                            InsertTailList(&fcb->Vcb->chunks_changed, &c->list_entry_changed);
-
-                        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-                    }
+                    if (c)
+                        c->changed = TRUE;
 
                     // This shouldn't ever get called - nocow files should always also be nosum.
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {

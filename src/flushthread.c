@@ -293,6 +293,7 @@ static NTSTATUS STDCALL ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
 }
 
 static void clean_space_cache(device_extension* Vcb) {
+    LIST_ENTRY* le;
     chunk* c;
     ULONG num;
     
@@ -300,19 +301,22 @@ static void clean_space_cache(device_extension* Vcb) {
     
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
 
-    while (!IsListEmpty(&Vcb->chunks_changed)) {
-        c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
         
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        
-        if (c->changed)
-            clean_space_cache_chunk(Vcb, c);
+        if (c->changed) {
+            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
 
-        RemoveEntryList(&c->list_entry_changed);
-        c->changed = FALSE;
-        c->list_entry_changed.Flink = NULL;
+            if (c->changed)
+                clean_space_cache_chunk(Vcb, c);
+
+            c->changed = FALSE;
+
+            ExReleaseResourceLite(&c->lock);
+        }
         
-        ExReleaseResourceLite(&c->lock);
+        le = le->Flink;
     }
     
     ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -586,7 +590,7 @@ static BOOL insert_tree_extent_skinny(device_extension* Vcb, UINT8 level, UINT64
     
     ExAcquireResourceExclusiveLite(&c->lock, TRUE);
     
-    space_list_subtract(Vcb, c, FALSE, address, Vcb->superblock.node_size, rollback);
+    space_list_subtract(c, FALSE, address, Vcb->superblock.node_size, rollback);
 
     ExReleaseResourceLite(&c->lock);
     
@@ -727,7 +731,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
     
     ExAcquireResourceExclusiveLite(&c->lock, TRUE);
     
-    space_list_subtract(Vcb, c, FALSE, address, Vcb->superblock.node_size, rollback);
+    space_list_subtract(c, FALSE, address, Vcb->superblock.node_size, rollback);
     
     ExReleaseResourceLite(&c->lock);
 
@@ -903,7 +907,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
             
             c->used -= Vcb->superblock.node_size;
             
-            space_list_add(Vcb, c, TRUE, address, Vcb->superblock.node_size, rollback);
+            space_list_add(c, TRUE, address, Vcb->superblock.node_size, rollback);
             
             ExReleaseResourceLite(&c->lock);
         } else
@@ -2494,7 +2498,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
 end:
     if (ce->count == 0 && !ce->superseded) {
         c->used -= ce->size;
-        space_list_add(Vcb, c, TRUE, ce->address, ce->size, rollback);
+        space_list_add(c, TRUE, ce->address, ce->size, rollback);
     }
 
     RemoveEntryList(&ce->list_entry);
@@ -4592,7 +4596,7 @@ cont:
                 
                 er->chunk->used -= er->skip_start;
                 
-                space_list_add(fcb->Vcb, er->chunk, TRUE, er->address, er->skip_start, NULL);
+                space_list_add(er->chunk, TRUE, er->address, er->skip_start, NULL);
                 
                 ExReleaseResourceLite(&er->chunk->lock);
                 
@@ -4646,7 +4650,7 @@ cont:
                 
                 er->chunk->used -= er->skip_end;
                 
-                space_list_add(fcb->Vcb, er->chunk, TRUE, er->address + er->length - er->skip_end, er->skip_end, NULL);
+                space_list_add(er->chunk, TRUE, er->address + er->length - er->skip_end, er->skip_end, NULL);
                 
                 ExReleaseResourceLite(&er->chunk->lock);
                 
@@ -5518,9 +5522,6 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     
     Vcb->superblock.bytes_used -= c->oldused;
     
-    if (c->list_entry_changed.Flink)
-        RemoveEntryList(&c->list_entry_changed);
-    
     ExFreePool(c->chunk_item);
     ExFreePool(c->devices);
     
@@ -5834,7 +5835,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
 }
 
 static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
-    LIST_ENTRY *le = Vcb->chunks_changed.Flink, *le2;
+    LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     UINT64 used_minus_cache;
     
@@ -5842,46 +5843,47 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
     
     // FIXME - do tree chunks before data chunks
     
-    while (le != &Vcb->chunks_changed) {
-        chunk* c = CONTAINING_RECORD(le, chunk, list_entry_changed);
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
         
         le2 = le->Flink;
         
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
-        
-        // flush partial stripes
-        if (!Vcb->readonly && (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)) {
-            ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
+        if (c->changed) {
+            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
 
-            while (!IsListEmpty(&c->partial_stripes)) {
-                partial_stripe* ps = CONTAINING_RECORD(RemoveHeadList(&c->partial_stripes), partial_stripe, list_entry);
+            // flush partial stripes
+            if (!Vcb->readonly && (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)) {
+                ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, TRUE);
 
-                Status = flush_partial_stripe(Vcb, c, ps);
+                while (!IsListEmpty(&c->partial_stripes)) {
+                    partial_stripe* ps = CONTAINING_RECORD(RemoveHeadList(&c->partial_stripes), partial_stripe, list_entry);
 
-                if (ps->bmparr)
-                    ExFreePool(ps->bmparr);
+                    Status = flush_partial_stripe(Vcb, c, ps);
 
-                ExFreePool(ps);
+                    if (ps->bmparr)
+                        ExFreePool(ps->bmparr);
 
-                if (!NT_SUCCESS(Status)) {
-                    ERR("flush_partial_stripe returned %08x\n", Status);
-                    ExReleaseResourceLite(&c->partial_stripes_lock);
-                    ExReleaseResourceLite(&c->lock);
-                    ExReleaseResourceLite(&Vcb->chunk_lock);
-                    return Status;
+                    ExFreePool(ps);
+
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("flush_partial_stripe returned %08x\n", Status);
+                        ExReleaseResourceLite(&c->partial_stripes_lock);
+                        ExReleaseResourceLite(&c->lock);
+                        ExReleaseResourceLite(&Vcb->chunk_lock);
+                        return Status;
+                    }
                 }
+
+                ExReleaseResourceLite(&c->partial_stripes_lock);
             }
 
-            ExReleaseResourceLite(&c->partial_stripes_lock);
-        }
+            if (c->list_entry_balance.Flink) {
+                ExReleaseResourceLite(&c->lock);
+                le = le2;
+                continue;
+            }
 
-        if (c->list_entry_balance.Flink) {
-            ExReleaseResourceLite(&c->lock);
-            le = le2;
-            continue;
-        }
-        
-        if (c->changed) {
             used_minus_cache = c->used;
 
             // subtract self-hosted cache
