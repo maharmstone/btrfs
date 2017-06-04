@@ -298,6 +298,8 @@ static void clean_space_cache(device_extension* Vcb) {
     
     TRACE("(%p)\n", Vcb);
     
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+
     while (!IsListEmpty(&Vcb->chunks_changed)) {
         c = CONTAINING_RECORD(Vcb->chunks_changed.Flink, chunk, list_entry_changed);
         
@@ -313,6 +315,8 @@ static void clean_space_cache(device_extension* Vcb) {
         ExReleaseResourceLite(&c->lock);
     }
     
+    ExReleaseResourceLite(&Vcb->chunk_lock);
+
     if (Vcb->trim && !Vcb->options.no_trim) {
         ioctl_context context;
         LIST_ENTRY* le;
