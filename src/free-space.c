@@ -1904,6 +1904,8 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
 
     InitializeListHead(&batchlist);
 
+    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+
     while (le != &Vcb->chunks_changed) {
         c = CONTAINING_RECORD(le, chunk, list_entry_changed);
 
@@ -1914,6 +1916,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
 
             if (!NT_SUCCESS(Status)) {
                 ERR("update_chunk_cache_tree(%llx) returned %08x\n", c->offset, Status);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 clear_batch_list(Vcb, &batchlist);
                 return Status;
             }
@@ -1921,6 +1924,8 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
 
         le = le->Flink;
     }
+
+    ExReleaseResourceLite(&Vcb->chunk_lock);
 
     Status = commit_batch_list(Vcb, &batchlist, Irp);
     if (!NT_SUCCESS(Status)) {
