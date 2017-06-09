@@ -48,7 +48,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
 #endif
 
-static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -59,7 +59,7 @@ static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS STDCALL write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length) {
+NTSTATUS write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length) {
     NTSTATUS Status;
     LARGE_INTEGER offset;
     PIRP Irp;
@@ -278,7 +278,7 @@ typedef struct {
     ioctl_context_stripe* stripes;
 } ioctl_context;
 
-static NTSTATUS STDCALL ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     ioctl_context* context = (ioctl_context*)conptr;
     LONG left2 = InterlockedDecrement(&context->left);
 
@@ -2035,7 +2035,7 @@ typedef struct _write_superblocks_context {
     LONG left;
 } write_superblocks_context;
 
-static NTSTATUS STDCALL write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_superblocks_stripe* stripe = conptr;
     write_superblocks_context* context = stripe->context;
 
@@ -2049,7 +2049,7 @@ static NTSTATUS STDCALL write_superblock_completion(PDEVICE_OBJECT DeviceObject,
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS STDCALL write_superblock(device_extension* Vcb, device* device, write_superblocks_context* context) {
+static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_superblocks_context* context) {
     unsigned int i = 0;
 
     // All the documentation says that the Linux driver only writes one superblock
@@ -2777,7 +2777,7 @@ static void get_first_item(tree* t, KEY* key) {
     }
 }
 
-static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirstitem, UINT32 numitems, UINT32 size) {
+static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirstitem, UINT32 numitems, UINT32 size) {
     tree *nt, *pt;
     tree_data* td;
     tree_data* oldlastitem;
@@ -2975,7 +2975,7 @@ end:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL split_tree(device_extension* Vcb, tree* t) {
+static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
     LIST_ENTRY* le;
     UINT32 size, ds, numitems;
 
@@ -3425,7 +3425,7 @@ static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PI
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     ULONG level, max_level;
     UINT32 min_size;
     BOOL empty, done_deletions = FALSE;
@@ -4076,8 +4076,8 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
     }
 }
 
-static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, ULONG namelen,
-                                  UINT32 crc32, UINT8* data, UINT16 datalen) {
+static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, ULONG namelen,
+                          UINT32 crc32, UINT8* data, UINT16 datalen) {
     NTSTATUS Status;
     ULONG xasize;
     DIR_ITEM* xa;
@@ -4111,8 +4111,8 @@ static NTSTATUS STDCALL set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, 
     return STATUS_SUCCESS;
 }
 
-static BOOL STDCALL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name,
-                                 ULONG namelen, UINT32 crc32) {
+static BOOL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name,
+                         ULONG namelen, UINT32 crc32) {
     NTSTATUS Status;
     ULONG xasize;
     DIR_ITEM* xa;
@@ -5882,7 +5882,7 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, PIRP Irp) {
+static NTSTATUS update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     UINT8* data;
@@ -6625,7 +6625,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
     BOOL cache_changed = FALSE;
@@ -6991,7 +6991,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL do_write(device_extension* Vcb, PIRP Irp) {
+NTSTATUS do_write(device_extension* Vcb, PIRP Irp) {
     LIST_ENTRY rollback;
     NTSTATUS Status;
 
@@ -7060,7 +7060,7 @@ static void do_flush(device_extension* Vcb) {
     FsRtlExitFileSystem();
 }
 
-void STDCALL flush_thread(void* context) {
+void flush_thread(void* context) {
     DEVICE_OBJECT* devobj = context;
     device_extension* Vcb = devobj->DeviceExtension;
     LARGE_INTEGER due_time;

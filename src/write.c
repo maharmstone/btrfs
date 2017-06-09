@@ -25,7 +25,7 @@ typedef struct {
     UINT32 irp_offset;
 } write_stripe;
 
-static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
+static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
@@ -1856,8 +1856,8 @@ exit:
     return Status;
 }
 
-NTSTATUS STDCALL write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
-                            chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
+NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
+                    chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
     NTSTATUS Status;
     UINT32 i;
     CHUNK_ITEM_STRIPE* cis;
@@ -2138,7 +2138,7 @@ void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lock
     *locklen = (endoff - startoff) * datastripes;
 }
 
-NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
+NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
     write_data_context wtc;
     NTSTATUS Status;
     UINT64 lockaddr, locklen;
@@ -2220,7 +2220,7 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     return Status;
 }
 
-static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_data_stripe* stripe = conptr;
     write_data_context* context = (write_data_context*)stripe->context;
     LIST_ENTRY* le;
@@ -4568,7 +4568,7 @@ exit:
     return Status;
 }
 
-NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);

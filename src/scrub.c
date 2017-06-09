@@ -647,7 +647,7 @@ static void log_error(device_extension* Vcb, UINT64 addr, UINT64 devid, BOOL met
     }
 }
 
-static NTSTATUS STDCALL scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_stripe* stripe = conptr;
     scrub_context* context = (scrub_context*)stripe->context;
     ULONG left = InterlockedDecrement(&context->stripes_left);
@@ -1682,7 +1682,7 @@ typedef struct {
     UINT8* parity_scratch2;
 } scrub_context_raid56;
 
-static NTSTATUS STDCALL scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_raid56_stripe* stripe = conptr;
     scrub_context_raid56* context = (scrub_context_raid56*)stripe->context;
     LONG left = InterlockedDecrement(&context->stripes_left);

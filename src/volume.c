@@ -30,7 +30,7 @@ extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
 extern UNICODE_STRING registry_path;
 
-NTSTATUS STDCALL vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
@@ -44,7 +44,7 @@ NTSTATUS STDCALL vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS STDCALL vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
@@ -103,7 +103,7 @@ static NTSTATUS vol_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS STDCALL vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     volume_child* vc;
     NTSTATUS Status;
@@ -180,7 +180,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL vol_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     volume_child* vc;
     NTSTATUS Status;
@@ -259,49 +259,49 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL vol_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_set_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_set_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     Irp->IoStatus.Information = 0;
@@ -309,19 +309,19 @@ NTSTATUS STDCALL vol_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS STDCALL vol_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
@@ -731,7 +731,7 @@ static NTSTATUS vol_ioctl_passthrough(volume_device_extension* vde, PIRP Irp) {
     return Status;
 }
 
-NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -797,25 +797,25 @@ NTSTATUS STDCALL vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS STDCALL vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
 

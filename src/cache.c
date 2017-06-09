@@ -20,7 +20,7 @@
 
 CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
-static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
+static BOOLEAN acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -41,7 +41,7 @@ static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
     return TRUE;
 }
 
-static void STDCALL release_from_lazy_write(PVOID Context) {
+static void release_from_lazy_write(PVOID Context) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -57,7 +57,7 @@ static void STDCALL release_from_lazy_write(PVOID Context) {
         IoSetTopLevelIrp(NULL);
 }
 
-static BOOLEAN STDCALL acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
+static BOOLEAN acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -71,7 +71,7 @@ static BOOLEAN STDCALL acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
     return TRUE;
 }
 
-static void STDCALL release_from_read_ahead(PVOID Context) {
+static void release_from_read_ahead(PVOID Context) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -83,7 +83,7 @@ static void STDCALL release_from_read_ahead(PVOID Context) {
         IoSetTopLevelIrp(NULL);
 }
 
-NTSTATUS STDCALL init_cache() {
+NTSTATUS init_cache() {
     cache_callbacks = ExAllocatePoolWithTag(NonPagedPool, sizeof(CACHE_MANAGER_CALLBACKS), ALLOC_TAG);
     if (!cache_callbacks) {
         ERR("out of memory\n");
@@ -98,6 +98,6 @@ NTSTATUS STDCALL init_cache() {
     return STATUS_SUCCESS;
 }
 
-void STDCALL free_cache() {
+void free_cache() {
     ExFreePool(cache_callbacks);
 }

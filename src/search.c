@@ -34,8 +34,8 @@ typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpat
 
 extern PDEVICE_OBJECT devobj;
 
-static void STDCALL test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
-                             DWORD disk_num, DWORD part_num, UINT64 length) {
+static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
+                     DWORD disk_num, DWORD part_num, UINT64 length) {
     NTSTATUS Status;
     ULONG toread;
     UINT8* data = NULL;

@@ -17,7 +17,7 @@
 
 #include "btrfs_drv.h"
 
-NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp) {
+NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp) {
     UINT8* buf;
     NTSTATUS Status;
     tree_header* th;
@@ -241,7 +241,7 @@ static tree* free_tree2(tree* t) {
     return NULL;
 }
 
-NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp) {
+NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp) {
     BOOL ret;
 
     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
@@ -278,7 +278,7 @@ NTSTATUS STDCALL do_load_tree(device_extension* Vcb, tree_holder* th, root* r, t
     return STATUS_SUCCESS;
 }
 
-tree* STDCALL free_tree(tree* t) {
+tree* free_tree(tree* t) {
     tree* ret;
     root* r = t->root;
 
@@ -418,7 +418,7 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
     }
 }
 
-static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
+static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
     int cmp;
     tree_data *td, *lasttd;
     KEY key2;
@@ -524,7 +524,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
     }
 }
 
-NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp) {
+NTSTATUS find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
 
@@ -544,7 +544,7 @@ NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, con
     return Status;
 }
 
-NTSTATUS STDCALL find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
+NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
 
@@ -569,7 +569,7 @@ NTSTATUS STDCALL find_item_to_level(device_extension* Vcb, root* r, traverse_ptr
     return Status;
 }
 
-BOOL STDCALL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
+BOOL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
     tree* t;
     tree_data *td, *next;
     NTSTATUS Status;
@@ -672,7 +672,7 @@ static __inline tree_data* last_item(tree* t) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
+BOOL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
     tree* t;
     tree_data* td;
     NTSTATUS Status;
@@ -764,7 +764,7 @@ void free_trees_root(device_extension* Vcb, root* r) {
     }
 }
 
-void STDCALL free_trees(device_extension* Vcb) {
+void free_trees(device_extension* Vcb) {
     LIST_ENTRY* le;
     ULONG level;
 
@@ -814,7 +814,7 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     InsertTailList(rollback, &ri->list_entry);
 }
 
-NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
+NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -965,7 +965,7 @@ static __inline tree_data* first_valid_item(tree* t) {
     return NULL;
 }
 
-NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
+NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
     tree* t;
     UINT64 gen;
 

@@ -31,7 +31,7 @@ typedef struct {
     dir_child* dc;
 } dir_entry;
 
-ULONG STDCALL get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp) {
+ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp) {
     fcb* fcb;
     ULONG tag = 0, br;
     NTSTATUS Status;
@@ -118,7 +118,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP 
         return 0;
 }
 
-static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
+static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
     UINT32 needed;
     UINT64 inode;
@@ -494,7 +494,7 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len,
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS STDCALL next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, dir_child** pdc) {
+static NTSTATUS next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
 
@@ -573,7 +573,7 @@ next:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS query_directory(device_extension* Vcb, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status, status2;
     fcb* fcb;
@@ -904,7 +904,7 @@ end2:
     return Status;
 }
 
-static NTSTATUS STDCALL notify_change_directory(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
@@ -981,7 +981,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     ULONG func;

@@ -741,7 +741,7 @@ static void get_registry_value(HANDLE h, WCHAR* string, ULONG type, void* val, U
     }
 }
 
-void STDCALL read_registry(PUNICODE_STRING regpath, BOOL refresh) {
+void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;

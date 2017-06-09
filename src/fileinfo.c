@@ -22,7 +22,7 @@
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
 #endif
 
-static NTSTATUS STDCALL set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -168,7 +168,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL set_disposition_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_DISPOSITION_INFORMATION* fdi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -1285,7 +1285,7 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     }
 }
 
-static NTSTATUS STDCALL set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
+static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext;
@@ -1873,7 +1873,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
+NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
@@ -1943,7 +1943,7 @@ NTSTATUS STDCALL stream_set_end_of_file_information(device_extension* Vcb, UINT6
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, BOOL prealloc) {
+static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL advance_only, BOOL prealloc) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -2064,7 +2064,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
+static NTSTATUS set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
 
     TRACE("setting the position on %S to %llx\n", file_desc(FileObject), fpi->CurrentByteOffset.QuadPart);
@@ -2076,7 +2076,7 @@ static NTSTATUS STDCALL set_position_information(PFILE_OBJECT FileObject, PIRP I
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
+static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
     FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *parfcb;
     ccb* ccb = FileObject->FsContext2;
@@ -2412,7 +2412,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -2579,7 +2579,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INODE_ITEM* ii, LONG* length, fcb* fcb, file_ref* fileref) {
+static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INODE_ITEM* ii, LONG* length, fcb* fcb, file_ref* fileref) {
     RtlZeroMemory(fbi, sizeof(FILE_BASIC_INFORMATION));
 
     *length -= sizeof(FILE_BASIC_INFORMATION);
@@ -2608,7 +2608,7 @@ static NTSTATUS STDCALL fill_in_file_basic_information(FILE_BASIC_INFORMATION* f
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMATION* fnoi, fcb* fcb, file_ref* fileref, LONG* length) {
+static NTSTATUS fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMATION* fnoi, fcb* fcb, file_ref* fileref, LONG* length) {
     INODE_ITEM* ii;
 
     if (*length < sizeof(FILE_NETWORK_OPEN_INFORMATION)) {
@@ -2654,7 +2654,7 @@ static NTSTATUS STDCALL fill_in_file_network_open_information(FILE_NETWORK_OPEN_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMATION* fsi, fcb* fcb, file_ref* fileref, LONG* length) {
+static NTSTATUS fill_in_file_standard_information(FILE_STANDARD_INFORMATION* fsi, fcb* fcb, file_ref* fileref, LONG* length) {
     RtlZeroMemory(fsi, sizeof(FILE_STANDARD_INFORMATION));
 
     *length -= sizeof(FILE_STANDARD_INFORMATION);
@@ -2682,7 +2682,7 @@ static NTSTATUS STDCALL fill_in_file_standard_information(FILE_STANDARD_INFORMAT
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_internal_information(FILE_INTERNAL_INFORMATION* fii, fcb* fcb, LONG* length) {
+static NTSTATUS fill_in_file_internal_information(FILE_INTERNAL_INFORMATION* fii, fcb* fcb, LONG* length) {
     *length -= sizeof(FILE_INTERNAL_INFORMATION);
 
     fii->IndexNumber.QuadPart = make_file_id(fcb->subvol, fcb->inode);
@@ -2690,7 +2690,7 @@ static NTSTATUS STDCALL fill_in_file_internal_information(FILE_INTERNAL_INFORMAT
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_ea_information(FILE_EA_INFORMATION* eai, fcb* fcb, LONG* length) {
+static NTSTATUS fill_in_file_ea_information(FILE_EA_INFORMATION* eai, fcb* fcb, LONG* length) {
     *length -= sizeof(FILE_EA_INFORMATION);
 
     /* This value appears to be the size of the structure NTFS stores on disk, and not,
@@ -2703,7 +2703,7 @@ static NTSTATUS STDCALL fill_in_file_ea_information(FILE_EA_INFORMATION* eai, fc
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_access_information(FILE_ACCESS_INFORMATION* fai, LONG* length) {
+static NTSTATUS fill_in_file_access_information(FILE_ACCESS_INFORMATION* fai, LONG* length) {
     *length -= sizeof(FILE_ACCESS_INFORMATION);
 
     fai->AccessFlags = GENERIC_READ;
@@ -2711,7 +2711,7 @@ static NTSTATUS STDCALL fill_in_file_access_information(FILE_ACCESS_INFORMATION*
     return STATUS_NOT_IMPLEMENTED; // FIXME
 }
 
-static NTSTATUS STDCALL fill_in_file_position_information(FILE_POSITION_INFORMATION* fpi, PFILE_OBJECT FileObject, LONG* length) {
+static NTSTATUS fill_in_file_position_information(FILE_POSITION_INFORMATION* fpi, PFILE_OBJECT FileObject, LONG* length) {
     RtlZeroMemory(fpi, sizeof(FILE_POSITION_INFORMATION));
 
     *length -= sizeof(FILE_POSITION_INFORMATION);
@@ -2721,7 +2721,7 @@ static NTSTATUS STDCALL fill_in_file_position_information(FILE_POSITION_INFORMAT
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_mode_information(FILE_MODE_INFORMATION* fmi, ccb* ccb, LONG* length) {
+static NTSTATUS fill_in_file_mode_information(FILE_MODE_INFORMATION* fmi, ccb* ccb, LONG* length) {
     RtlZeroMemory(fmi, sizeof(FILE_MODE_INFORMATION));
 
     *length -= sizeof(FILE_MODE_INFORMATION);
@@ -2747,7 +2747,7 @@ static NTSTATUS STDCALL fill_in_file_mode_information(FILE_MODE_INFORMATION* fmi
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_alignment_information(FILE_ALIGNMENT_INFORMATION* fai, device_extension* Vcb, LONG* length) {
+static NTSTATUS fill_in_file_alignment_information(FILE_ALIGNMENT_INFORMATION* fai, device_extension* Vcb, LONG* length) {
     LIST_ENTRY* le;
 
     RtlZeroMemory(fai, sizeof(FILE_ALIGNMENT_INFORMATION));
@@ -2851,7 +2851,7 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
     return Status;
 }
 
-static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, file_ref* fileref, LONG* length) {
+static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* fcb, file_ref* fileref, LONG* length) {
     ULONG reqlen;
     UNICODE_STRING fn;
     NTSTATUS Status;
@@ -2908,7 +2908,7 @@ static NTSTATUS STDCALL fill_in_file_name_information(FILE_NAME_INFORMATION* fni
     return Status;
 }
 
-static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, ccb* ccb, PIRP Irp, LONG* length) {
+static NTSTATUS fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, ccb* ccb, PIRP Irp, LONG* length) {
     *length -= sizeof(FILE_ATTRIBUTE_TAG_INFORMATION);
 
     if (fcb->ads) {
@@ -2929,7 +2929,7 @@ static NTSTATUS STDCALL fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_IN
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, file_ref* fileref, LONG* length) {
+static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, file_ref* fileref, LONG* length) {
     ULONG reqsize;
     LIST_ENTRY* le;
     FILE_STREAM_INFORMATION *entry, *lastentry;
@@ -3038,7 +3038,7 @@ end:
     return Status;
 }
 
-static NTSTATUS STDCALL fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORMATION* fsli, fcb* fcb, file_ref* fileref, LONG* length) {
+static NTSTATUS fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORMATION* fsli, fcb* fcb, file_ref* fileref, LONG* length) {
     TRACE("FileStandardLinkInformation\n");
 
     // FIXME - NumberOfAccessibleLinks should subtract open links which have been marked as delete_on_close
@@ -3324,7 +3324,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_ref* fileref, PIRP Irp, LONG* length) {
+static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_ref* fileref, PIRP Irp, LONG* length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     ULONG bytes_needed;
@@ -3507,7 +3507,7 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS STDCALL query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
+static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
     fcb* fcb = FileObject->FsContext;
@@ -3809,7 +3809,7 @@ exit:
     return Status;
 }
 
-NTSTATUS STDCALL drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     fcb* fcb;
@@ -3855,7 +3855,7 @@ end:
     return Status;
 }
 
-NTSTATUS STDCALL drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -4084,7 +4084,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } ea_item;
 
-NTSTATUS STDCALL drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     BOOL top_level;
