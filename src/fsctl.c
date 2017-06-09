@@ -4565,11 +4565,44 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
         goto end;
     }
 
-    if (br->size > 0 && dev->devitem.num_bytes > br->size) {
-        FIXME("FIXME - allow reducing device size\n"); // FIXME
-        Status = STATUS_NOT_IMPLEMENTED;
-        goto end;
-    } else {
+    if (br->size > 0 && dev->devitem.num_bytes > br->size) { // shrink device
+        BOOL need_balance = TRUE;
+        UINT64 old_size, delta;
+
+        le = dev->space.Flink;
+        while (le != &dev->space) {
+            space* s = CONTAINING_RECORD(le, space, list_entry);
+
+            if (s->address <= br->size && s->address + s->size >= dev->devitem.num_bytes) {
+                need_balance = FALSE;
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        if (need_balance) {
+            FIXME("FIXME - do balance\n"); // FIXME
+            Status = STATUS_NOT_IMPLEMENTED;
+            goto end;
+        }
+
+        delta = dev->devitem.num_bytes - br->size;
+
+        old_size = dev->devitem.num_bytes;
+        dev->devitem.num_bytes = br->size;
+
+        Status = update_dev_item(Vcb, dev, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_dev_item returned %08x\n", Status);
+            dev->devitem.num_bytes = old_size;
+            goto end;
+        }
+
+        space_list_subtract2(&dev->space, NULL, br->size, delta, NULL, NULL);
+
+        Vcb->superblock.total_bytes -= delta;
+    } else { // extend device
         GET_LENGTH_INFORMATION gli;
         UINT64 old_size, delta;
 
