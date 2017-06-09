@@ -480,7 +480,7 @@ static BOOL trees_consistent(device_extension* Vcb) {
 }
 
 static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
-    UINT8 level;
+    ULONG level;
     LIST_ENTRY* le;
     
     for (level = 0; level <= 255; level++) {
@@ -1719,7 +1719,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, BOOL no_
 }
 
 static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
-    UINT8 level;
+    ULONG level;
     UINT8 *data, *body;
     UINT32 crc32;
     NTSTATUS Status;
@@ -3626,7 +3626,7 @@ static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* r
 //     LIST_ENTRY *le, *le2;
 //     write_tree* wt;
 //     tree_data* td;
-    UINT8 level, max_level;
+    ULONG level, max_level;
     UINT32 min_size;
     BOOL empty, done_deletions = FALSE;
     NTSTATUS Status;

@@ -779,7 +779,7 @@ BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trave
 
 void free_trees_root(device_extension* Vcb, root* r) {
     LIST_ENTRY* le;
-    UINT8 level;
+    ULONG level;
     
     for (level = 0; level <= 255; level++) {
         BOOL empty = TRUE;
@@ -816,7 +816,7 @@ void free_trees_root(device_extension* Vcb, root* r) {
 
 void STDCALL free_trees(device_extension* Vcb) {
     LIST_ENTRY* le;
-    UINT8 level;
+    ULONG level;
     
     for (level = 0; level <= 255; level++) {
         BOOL empty = TRUE;
