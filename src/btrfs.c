@@ -3085,6 +3085,7 @@ static NTSTATUS load_chunk_root(device_extension* Vcb, PIRP Irp) {
                 c->reloc = FALSE;
                 c->cache_loaded = FALSE;
                 c->changed = FALSE;
+                c->space_changed = FALSE;
                 c->balance_num = 0;
 
                 c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, tp.item->size, ALLOC_TAG);

@@ -174,6 +174,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                 }
 
                 c->changed = TRUE;
+                c->space_changed = TRUE;
 
                 ExReleaseResourceLite(&c->lock);
             }
@@ -1246,8 +1247,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
                     if (ed2->size != 0) {
                         chunk* c2 = get_chunk_from_address(Vcb, ed2->address);
 
-                        if (c2)
+                        if (c2) {
                             c2->changed = TRUE;
+                            c2->space_changed = TRUE;
+                        }
                     }
                 }
 
@@ -1361,7 +1364,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->changed) {
+        if (c->space_changed) {
             BOOL b;
 
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
@@ -1825,7 +1828,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->changed) {
+        if (c->space_changed) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             Status = update_chunk_cache(Vcb, c, &now, &batchlist, Irp, rollback);
             ExReleaseResourceLite(&c->lock);
@@ -1894,7 +1897,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->changed) {
+        if (c->space_changed) {
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
             Status = update_chunk_cache_tree(Vcb, c, &batchlist);
             ExReleaseResourceLite(&c->lock);
@@ -1929,6 +1932,7 @@ void space_list_add(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST
     list = deleting ? &c->deleting : &c->space;
 
     c->changed = TRUE;
+    c->space_changed = TRUE;
 
     space_list_add2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
 }
@@ -2018,6 +2022,7 @@ void space_list_subtract(chunk* c, BOOL deleting, UINT64 address, UINT64 length,
     list = deleting ? &c->deleting : &c->space;
 
     c->changed = TRUE;
+    c->space_changed = TRUE;
 
     space_list_subtract2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
 }

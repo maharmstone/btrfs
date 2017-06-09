@@ -2949,6 +2949,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
         rc->list_entry_balance.Flink = NULL;
 
         rc->changed = TRUE;
+        rc->space_changed = TRUE;
         rc->balance_num = Vcb->balance.balance_num;
 
         Status = do_write(Vcb, NULL);
@@ -3245,6 +3246,7 @@ static void balance_thread(void* context) {
             } while (changed);
 
             c->changed = TRUE;
+            c->space_changed = TRUE;
         }
 
         if (Vcb->balance.stopping)
@@ -3294,6 +3296,7 @@ static void balance_thread(void* context) {
             } while (changed);
 
             c->changed = TRUE;
+            c->space_changed = TRUE;
         }
 
         if (Vcb->balance.stopping)

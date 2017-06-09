@@ -590,6 +590,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     c->last_stripe = 0;
     c->cache_loaded = TRUE;
     c->changed = FALSE;
+    c->space_changed = FALSE;
     c->balance_num = 0;
 
     InitializeListHead(&c->space);
@@ -662,6 +663,7 @@ end:
 
         c->created = TRUE;
         c->changed = TRUE;
+        c->space_changed = TRUE;
         c->list_entry_balance.Flink = NULL;
 
         *pc = c;
