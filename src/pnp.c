@@ -323,15 +323,6 @@ NTSTATUS STDCALL drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             goto exit;
     }
 
-// //     Irp->IoStatus.Status = Status;
-// //     Irp->IoStatus.Information = 0;
-//
-//     IoSkipCurrentIrpStackLocation(Irp);
-//
-//     Status = IoCallDriver(first_device(Vcb)->devobj, Irp);
-//
-// //     IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
 end:
     Irp->IoStatus.Status = Status;
 

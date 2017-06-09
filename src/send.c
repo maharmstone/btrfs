@@ -3497,8 +3497,6 @@ static void send_thread(void* ctx) {
     } else
         ExReleaseResourceLite(&context->Vcb->tree_lock);
 
-//     send_write_data(context, context->data, context->datalen);
-
     KeClearEvent(&context->send->cleared_event);
     KeSetEvent(&context->buffer_event, 0, TRUE);
     KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, FALSE, NULL);

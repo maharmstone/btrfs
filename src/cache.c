@@ -26,9 +26,6 @@ static BOOLEAN STDCALL acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
 
     TRACE("(%p, %u)\n", Context, Wait);
 
-//     if (!fcb || FileObject->Flags & FO_CLEANUP_COMPLETE)
-//         return FALSE;
-
     if (!ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, Wait))
         return FALSE;
 
@@ -49,9 +46,6 @@ static void STDCALL release_from_lazy_write(PVOID Context) {
     fcb* fcb = FileObject->FsContext;
 
     TRACE("(%p)\n", Context);
-
-//     if (!fcb || FileObject->Flags & FO_CLEANUP_COMPLETE)
-//         return;
 
     fcb->lazy_writer_thread = NULL;
 

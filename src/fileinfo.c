@@ -1988,11 +1988,7 @@ static NTSTATUS STDCALL set_end_of_file_information(device_extension* Vcb, PIRP 
     TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
 
-//     int3;
     TRACE("setting new end to %llx bytes (currently %llx)\n", feofi->EndOfFile.QuadPart, fcb->inode_item.st_size);
-
-//     if (feofi->EndOfFile.QuadPart==0x36c000)
-//         int3;
 
     if (feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
         if (advance_only) {

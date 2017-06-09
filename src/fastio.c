@@ -357,13 +357,6 @@ void __stdcall init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     FastIoDispatch.FastIoCheckIfPossible = fast_io_check_if_possible;
     FastIoDispatch.FastIoQueryBasicInfo = fast_query_basic_info;
     FastIoDispatch.FastIoQueryStandardInfo = fast_query_standard_info;
-//     FastIoDispatch.FastIoLock = fast_io_lock;
-//     FastIoDispatch.FastIoUnlockSingle = fast_io_unlock_single;
-//     FastIoDispatch.FastIoUnlockAll = fast_io_unlock_all;
-//     FastIoDispatch.FastIoUnlockAllByKey = fast_io_unlock_all_by_key;
-//     FastIoDispatch.FastIoDeviceControl = fast_io_device_control;
-//     FastIoDispatch.AcquireFileForNtCreateSection = acquire_file_for_create_section;
-//     FastIoDispatch.ReleaseFileForNtCreateSection = release_file_for_create_section;
     FastIoDispatch.FastIoQueryNetworkOpenInfo = fast_io_query_network_open_info;
     FastIoDispatch.AcquireForModWrite = fast_io_acquire_for_mod_write;
     FastIoDispatch.ReleaseForModWrite = fast_io_release_for_mod_write;

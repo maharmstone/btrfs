@@ -580,8 +580,6 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
         LIST_ENTRY* le2;
         chunk* pc;
 
-//         ERR("address %llx\n", mr->address);
-
         mr->data = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
         if (!mr->data) {
             ERR("out of memory\n");

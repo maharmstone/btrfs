@@ -53,72 +53,6 @@ static dacl def_dacls[] = {
 extern LIST_ENTRY uid_map_list, gid_map_list;
 extern ERESOURCE mapping_lock;
 
-// UINT32 STDCALL get_uid() {
-//     PACCESS_TOKEN at = PsReferencePrimaryToken(PsGetCurrentProcess());
-//     HANDLE h;
-//     ULONG len, size;
-//     TOKEN_USER* tu;
-//     NTSTATUS Status;
-//     UINT32 uid = UID_NOBODY;
-//     LIST_ENTRY* le;
-//     uid_map* um;
-// //     char s[256];
-//
-//     Status = ObOpenObjectByPointer(at, OBJ_KERNEL_HANDLE, NULL, GENERIC_READ, NULL, KernelMode, &h);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("ObOpenObjectByPointer returned %08x\n", Status);
-//         goto exit;
-//     }
-//
-//     Status = ZwQueryInformationToken(h, TokenUser, NULL, 0, &len);
-//     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
-//         ERR("ZwQueryInformationToken(1) returned %08x (len = %u)\n", Status, len);
-//         goto exit2;
-//     }
-//
-// //     TRACE("len = %u\n", len);
-//
-//     tu = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-//
-//     Status = ZwQueryInformationToken(h, TokenUser, tu, len, &len);
-//
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("ZwQueryInformationToken(2) returned %08x\n", Status);
-//         goto exit3;
-//     }
-//
-//     size = 8 + (4 * ((sid_header*)tu->User.Sid)->elements);
-//
-//     le = uid_map_list.Flink;
-//     while (le != &uid_map_list) {
-//         um = CONTAINING_RECORD(le, uid_map, listentry);
-//
-//         if (((sid_header*)um->sid)->elements == ((sid_header*)tu->User.Sid)->elements &&
-//             RtlCompareMemory(um->sid, tu->User.Sid, size) == size) {
-//             uid = um->uid;
-//             break;
-//         }
-//
-//         le = le->Flink;
-//     }
-//
-// //     sid_to_string(tu->User.Sid, s);
-//
-// //     TRACE("got SID: %s\n", s);
-//     TRACE("uid = %u\n", uid);
-//
-// exit3:
-//     ExFreePool(tu);
-//
-// exit2:
-//     ZwClose(h);
-//
-// exit:
-//     PsDereferencePrimaryToken(at);
-//
-//     return uid;
-// }
-
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     unsigned int i, np;
     UINT8 numdashes;
@@ -126,7 +60,6 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
     ULONG sidsize;
     sid_header* sid;
     uid_map* um;
-//     char s[255];
 
     if (sidstringlength < 4 ||
         sidstring[0] != 'S' ||
@@ -196,9 +129,6 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid) {
             break;
     }
 
-//     sid_to_string(sid, s);
-
-//     TRACE("%s\n", s);
     um = ExAllocatePoolWithTag(PagedPool, sizeof(uid_map), ALLOC_TAG);
     if (!um) {
         ERR("out of memory\n");
@@ -485,21 +415,6 @@ static ACL* load_default_acl() {
     return acl;
 }
 
-// static void STDCALL sid_to_string(PSID sid, char* s) {
-//     sid_header* sh = (sid_header*)sid;
-//     LARGE_INTEGER authnum;
-//     UINT8 i;
-//
-//     authnum.LowPart = sh->auth[5] | (sh->auth[4] << 8) | (sh->auth[3] << 16) | (sh->auth[2] << 24);
-//     authnum.HighPart =  sh->auth[1] | (sh->auth[0] << 8);
-//
-//     sprintf(s, "S-%u-%u", sh->revision, (UINT32)authnum.QuadPart);
-//
-//     for (i = 0; i < sh->elements; i++) {
-//         sprintf(s, "%s-%u", s, sh->nums[i]);
-//     }
-// }
-
 static void get_top_level_sd(fcb* fcb) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
@@ -514,36 +429,32 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-//     if (fcb->inode_item.st_uid != UID_NOBODY) {
-        Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
-        if (!NT_SUCCESS(Status)) {
-            ERR("uid_to_sid returned %08x\n", Status);
-            goto end;
-        }
+    Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+    if (!NT_SUCCESS(Status)) {
+        ERR("uid_to_sid returned %08x\n", Status);
+        goto end;
+    }
 
-        RtlSetOwnerSecurityDescriptor(&sd, usersid, FALSE);
+    RtlSetOwnerSecurityDescriptor(&sd, usersid, FALSE);
 
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
-            goto end;
-        }
-//     }
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
+        goto end;
+    }
 
-//     if (fcb->inode_item.st_gid != GID_NOBODY) {
-        gid_to_sid(fcb->inode_item.st_gid, &groupsid);
-        if (!groupsid) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
+    gid_to_sid(fcb->inode_item.st_gid, &groupsid);
+    if (!groupsid) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
 
-        RtlSetGroupSecurityDescriptor(&sd, groupsid, FALSE);
+    RtlSetGroupSecurityDescriptor(&sd, groupsid, FALSE);
 
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlSetGroupSecurityDescriptor returned %08x\n", Status);
-            goto end;
-        }
-//     }
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlSetGroupSecurityDescriptor returned %08x\n", Status);
+        goto end;
+    }
 
     acl = load_default_acl();
 
@@ -569,8 +480,6 @@ static void get_top_level_sd(fcb* fcb) {
         ERR("RtlAbsoluteToSelfRelativeSD 1 returned %08x\n", Status);
         goto end;
     }
-
-//     fcb->sdlen = buflen;
 
     if (buflen == 0 || Status == STATUS_SUCCESS) {
         TRACE("RtlAbsoluteToSelfRelativeSD said SD is zero-length\n");
@@ -659,8 +568,6 @@ static NTSTATUS STDCALL get_file_security(PFILE_OBJECT FileObject, SECURITY_DESC
         }
     }
 
-//     TRACE("buflen = %u, fcb->sdlen = %u\n", *buflen, fcb->sdlen);
-
     // Why (void**)? Is this a bug in mingw?
     Status = SeQuerySecurityDescriptorInfo(&flags, relsd, buflen, (void**)&fcb->sd);
 
@@ -727,7 +634,6 @@ NTSTATUS STDCALL drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     TRACE("length = %u\n", IrpSp->Parameters.QuerySecurity.Length);
 
     sd = map_user_buffer(Irp, NormalPagePriority);
-//     sd = Irp->AssociatedIrp.SystemBuffer;
     TRACE("sd = %p\n", sd);
 
     if (Irp->MdlAddress && !sd) {

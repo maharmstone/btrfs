@@ -17,9 +17,6 @@
 
 #include "btrfs_drv.h"
 
-// BOOL did_split;
-BOOL chunk_test = FALSE;
-
 typedef struct {
     UINT64 start;
     UINT64 end;
@@ -28,7 +25,6 @@ typedef struct {
     UINT32 irp_offset;
 } write_stripe;
 
-// static BOOL extent_item_is_shared(EXTENT_ITEM* ei, ULONG len);
 static NTSTATUS STDCALL write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
@@ -97,8 +93,6 @@ chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address) {
     le2 = Vcb->chunks.Flink;
     while (le2 != &Vcb->chunks) {
         c = CONTAINING_RECORD(le2, chunk, list_entry);
-
-//         TRACE("chunk: %llx, %llx\n", c->offset, c->chunk_item->size);
 
         if (address >= c->offset && address < c->offset + c->chunk_item->size) {
             ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -2148,9 +2142,6 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
     write_data_context wtc;
     NTSTATUS Status;
     UINT64 lockaddr, locklen;
-// #ifdef DEBUG_PARANOID
-//     UINT8* buf2;
-// #endif
 
     KeInitializeEvent(&wtc.Event, NotificationEvent, FALSE);
     InitializeListHead(&wtc.stripes);
@@ -2225,16 +2216,6 @@ NTSTATUS STDCALL write_data_complete(device_extension* Vcb, UINT64 address, void
 
     if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
         chunk_unlock_range(Vcb, c, lockaddr, locklen);
-
-// #ifdef DEBUG_PARANOID
-//     buf2 = ExAllocatePoolWithTag(NonPagedPool, length, ALLOC_TAG);
-//     Status = read_data(Vcb, address, length, NULL, FALSE, buf2, NULL, Irp);
-//
-//     if (!NT_SUCCESS(Status) || RtlCompareMemory(buf2, data, length) != length)
-//         int3;
-//
-//     ExFreePool(buf2);
-// #endif
 
     return Status;
 }
@@ -2799,29 +2780,11 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     EXTENT_DATA2* ed2;
     ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
     UINT32* csum = NULL;
-// #ifdef DEBUG_PARANOID
-//     traverse_ptr tp;
-//     KEY searchkey;
-// #endif
 
     TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
 
     if (!find_data_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
-
-// #ifdef DEBUG_PARANOID
-//     searchkey.obj_id = address;
-//     searchkey.obj_type = TYPE_EXTENT_ITEM;
-//     searchkey.offset = 0xffffffffffffffff;
-//
-//     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-//     if (!NT_SUCCESS(Status)) {
-//         ERR("error - find_item returned %08x\n", Status);
-//     } else if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
-//         ERR("address %llx already allocated\n", address);
-//         int3;
-//     }
-// #endif
 
     // add extent data to inode
     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
@@ -3058,15 +3021,6 @@ cont:
 end:
     return Status;
 }
-
-// static void print_tree(tree* t) {
-//     LIST_ENTRY* le = t->itemlist.Flink;
-//     while (le != &t->itemlist) {
-//         tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-//         ERR("%llx,%x,%llx (ignore = %s)\n", td->key.obj_id, td->key.obj_type, td->key.offset, td->ignore ? "TRUE" : "FALSE");
-//         le = le->Flink;
-//     }
-// }
 
 static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
                               PIRP Irp, BOOL file_write, UINT32 irp_offset, LIST_ENTRY* rollback) {
@@ -4073,7 +4027,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     BOOL make_inline;
     UINT8* data;
     INODE_ITEM* origii;
-    BOOL changed_length = FALSE/*, lazy_writer = FALSE, write_eof = FALSE*/;
+    BOOL changed_length = FALSE;
     NTSTATUS Status;
     LARGE_INTEGER time;
     BTRFS_TIME now;
@@ -4104,10 +4058,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
-    if (offset.LowPart == FILE_WRITE_TO_END_OF_FILE && offset.HighPart == -1) {
+    if (offset.LowPart == FILE_WRITE_TO_END_OF_FILE && offset.HighPart == -1)
         offset = fcb->Header.FileSize;
-//         write_eof = TRUE;
-    }
 
     TRACE("fcb->Header.Flags = %x\n", fcb->Header.Flags);
 
@@ -4175,11 +4127,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         newlength = 0;
 
     TRACE("newlength = %llx\n", newlength);
-
-//     if (KeGetCurrentThread() == fcb->lazy_writer_thread) {
-//         ERR("lazy writer on the TV\n");
-//         lazy_writer = TRUE;
-//     }
 
     if (offset.QuadPart + *length > newlength) {
         if (paging_io) {
@@ -4469,23 +4416,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
 
-//         ERR("no_cache = %s, FileObject->PrivateCacheMap = %p\n", no_cache ? "TRUE" : "FALSE", FileObject->PrivateCacheMap);
-//
-//         if (!no_cache) {
-//             if (!FileObject->PrivateCacheMap) {
-//                 CC_FILE_SIZES ccfs;
-//
-//                 ccfs.AllocationSize = fcb->Header.AllocationSize;
-//                 ccfs.FileSize = fcb->Header.FileSize;
-//                 ccfs.ValidDataLength = fcb->Header.ValidDataLength;
-//
-//                 TRACE("calling CcInitializeCacheMap...\n");
-//                 CcInitializeCacheMap(FileObject, &ccfs, FALSE, cache_callbacks, fcb);
-//
-//                 changed_length = FALSE;
-//             }
-//         }
-
         if (fcb->ads) {
             if (fileref && fileref->parent)
                 origii = &fileref->parent->fcb->inode_item;
@@ -4537,13 +4467,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
     }
 
-    // FIXME - make sure this still called if STATUS_PENDING and async
-//     if (!no_cache) {
-//         if (!CcCopyWrite(FileObject, &offset, *length, TRUE, buf)) {
-//             ERR("CcCopyWrite failed.\n");
-//         }
-//     }
-
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
@@ -4578,13 +4501,9 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     LARGE_INTEGER offset = IrpSp->Parameters.Write.ByteOffset;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
-//     BOOL locked = FALSE;
-//     LARGE_INTEGER freq, time1, time2;
     LIST_ENTRY rollback;
 
     InitializeListHead(&rollback);
-
-//     time1 = KeQueryPerformanceCounter(&freq);
 
     TRACE("write\n");
 
@@ -4606,21 +4525,12 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
 
     TRACE("buf = %p\n", buf);
 
-//     if (Irp->Flags & IRP_NOCACHE) {
-//         if (!ExAcquireResourceSharedLite(&Vcb->tree_lock, wait)) {
-//             Status = STATUS_PENDING;
-//             goto exit;
-//         }
-//         locked = TRUE;
-//     }
-
     if (fcb && !(Irp->Flags & IRP_PAGING_IO) && !FsRtlCheckLockForWriteAccess(&fcb->lock, Irp)) {
         WARN("tried to write to locked region\n");
         Status = STATUS_FILE_LOCK_CONFLICT;
         goto exit;
     }
 
-//     ERR("Irp->Flags = %x\n", Irp->Flags);
     Status = write_file2(Vcb, Irp, offset, buf, &IrpSp->Parameters.Write.Length, Irp->Flags & IRP_PAGING_IO, Irp->Flags & IRP_NOCACHE,
                          wait, deferred_write, TRUE, &rollback);
 
@@ -4631,18 +4541,8 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
         goto exit;
     }
 
-//     if (locked)
-//         Status = consider_write(Vcb);
-
     if (NT_SUCCESS(Status)) {
         Irp->IoStatus.Information = IrpSp->Parameters.Write.Length;
-
-#ifdef DEBUG_PARANOID
-//         if (locked)
-//             check_extents_consistent(Vcb, FileObject->FsContext); // TESTING
-
-//         check_extent_tree_consistent(Vcb);
-#endif
 
         if (diskacc && Status != STATUS_PENDING && Irp->Flags & IRP_NOCACHE) {
             PETHREAD thread = NULL;
@@ -4660,18 +4560,10 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_wr
     }
 
 exit:
-//     if (locked) {
-        if (NT_SUCCESS(Status))
-            clear_rollback(&rollback);
-        else
-            do_rollback(Vcb, &rollback);
-//
-//         ExReleaseResourceLite(&Vcb->tree_lock);
-//     }
-
-//     time2 = KeQueryPerformanceCounter(NULL);
-
-//     ERR("time = %u (freq = %u)\n", (UINT32)(time2.QuadPart - time1.QuadPart), (UINT32)freq.QuadPart);
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
 
     return Status;
 }
@@ -4740,8 +4632,6 @@ NTSTATUS STDCALL drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = STATUS_MEDIA_WRITE_PROTECTED;
         goto end;
     }
-
-//     ERR("recursive = %s\n", Irp != IoGetTopLevelIrp() ? "TRUE" : "FALSE");
 
     try {
         if (IrpSp->MinorFunction & IRP_MN_COMPLETE) {

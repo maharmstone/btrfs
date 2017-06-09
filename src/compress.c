@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
-// Portion of the LZO decompression code here were cribbed from code in
+// Portions of the LZO decompression code here were cribbed from code in
 // libavcodec, also under the LGPL. Thank you, Reimar Doeffinger.
 
 // The LZO compression code comes from v0.22 of lzo, written way back in

@@ -284,7 +284,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len,
             fbdi->FileNameLength = de->name.Length;
             fbdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp) : ealen;
             fbdi->ShortNameLength = 0;
-//             fibdi->ShortName[12];
 
             RtlCopyMemory(fbdi->FileName, de->name.Buffer, de->name.Length);
 
@@ -383,9 +382,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len,
                 return STATUS_BUFFER_OVERFLOW;
             }
 
-//             if (!buf)
-//                 return STATUS_INVALID_POINTER;
-
             fibdi->NextEntryOffset = 0;
             fibdi->FileIndex = 0;
             fibdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
@@ -405,7 +401,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len,
             fibdi->FileNameLength = de->name.Length;
             fibdi->EaSize = (r && atts & FILE_ATTRIBUTE_REPARSE_POINT) ? get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp) : ealen;
             fibdi->ShortNameLength = 0;
-//             fibdi->ShortName[12];
             fibdi->FileId.QuadPart = r ? make_file_id(r, inode) : make_file_id(fcb->Vcb->dummy_fcb->subvol, fcb->Vcb->dummy_fcb->inode);
 
             RtlCopyMemory(fibdi->FileName, de->name.Buffer, de->name.Length);
@@ -427,9 +422,6 @@ static NTSTATUS STDCALL query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len,
                 TRACE("buffer overflow - %u > %u\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
-
-//             if (!buf)
-//                 return STATUS_INVALID_POINTER;
 
             fifdi->NextEntryOffset = 0;
             fifdi->FileIndex = 0;
@@ -592,17 +584,12 @@ static NTSTATUS STDCALL query_directory(device_extension* Vcb, PIRP Irp) {
     LONG length;
     ULONG count;
     BOOL has_wildcard = FALSE, specific_file = FALSE, initial;
-//     UINT64 num_reads_orig;
     dir_entry de;
     UINT64 newoffset;
     ANSI_STRING utf8;
     dir_child* dc = NULL;
 
     TRACE("query directory\n");
-
-//     get_uid(); // TESTING
-
-//     num_reads_orig = num_reads;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     fcb = IrpSp->FileObject->FsContext;
@@ -1042,9 +1029,6 @@ NTSTATUS STDCALL drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 
 end:
     Irp->IoStatus.Status = Status;
-
-//     if (Irp->UserIosb)
-//         *Irp->UserIosb = Irp->IoStatus;
 
     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
 

@@ -17,8 +17,6 @@
 
 #include "btrfs_drv.h"
 
-// #define DEBUG_TREE_LOCKS
-
 NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp) {
     UINT8* buf;
     NTSTATUS Status;
@@ -53,14 +51,11 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
     }
 
     RtlCopyMemory(&t->header, th, sizeof(tree_header));
-//     t->address = addr;
-//     t->level = th->level;
     t->hash = calc_crc32c(0xffffffff, (UINT8*)&addr, sizeof(UINT64));
     t->has_address = TRUE;
     t->Vcb = Vcb;
     t->parent = NULL;
     t->root = r;
-//     t->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     t->paritem = NULL;
     t->size = 0;
     t->new_address = 0;
@@ -69,9 +64,6 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
     t->write = FALSE;
     t->uniqueness_determined = FALSE;
 
-//     ExInitializeResourceLite(&t->nonpaged->load_tree_lock);
-
-//     t->items = ExAllocatePoolWithTag(PagedPool, num_items * sizeof(tree_data), ALLOC_TAG);
     InitializeListHead(&t->itemlist);
 
     if (t->header.level == 0) { // leaf node
@@ -93,7 +85,6 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
             }
 
             td->key = ln[i].key;
-//             TRACE("load_tree: leaf item %u (%x,%x,%x)\n", i, (UINT32)ln[i].key.obj_id, ln[i].key.obj_type, (UINT32)ln[i].key.offset);
 
             if (ln[i].size > 0)
                 td->data = buf + sizeof(tree_header) + ln[i].offset;
@@ -130,12 +121,10 @@ NTSTATUS STDCALL load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** p
             }
 
             td->key = in[i].key;
-//             TRACE("load_tree: internal item %u (%x,%x,%x)\n", i, (UINT32)in[i].key.obj_id, in[i].key.obj_type, (UINT32)in[i].key.offset);
 
             td->treeholder.address = in[i].address;
             td->treeholder.generation = in[i].generation;
             td->treeholder.tree = NULL;
-//             td->treeholder.nonpaged->status = tree_holder_unloaded;
             td->ignore = FALSE;
             td->inserted = FALSE;
 
@@ -204,26 +193,13 @@ static tree* free_tree2(tree* t) {
 
     par = t->parent;
 
-//     if (par) ExAcquireResourceExclusiveLite(&par->nonpaged->load_tree_lock, TRUE);
-
     if (r && r->treeholder.tree != t)
         r = NULL;
-
-//         if (r) {
-//             FsRtlEnterFileSystem();
-//             ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-//         }
 
     if (par) {
         if (t->paritem)
             t->paritem->treeholder.tree = NULL;
-
-//             ExReleaseResourceLite(&par->nonpaged->load_tree_lock);
     }
-
-//         ExDeleteResourceLite(&t->nonpaged->load_tree_lock);
-
-//         ExFreePool(t->nonpaged);
 
     while (!IsListEmpty(&t->itemlist)) {
         le = RemoveHeadList(&t->itemlist);
@@ -237,11 +213,8 @@ static tree* free_tree2(tree* t) {
 
     RemoveEntryList(&t->list_entry);
 
-    if (r) {
+    if (r)
         r->treeholder.tree = NULL;
-//             ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-//             FsRtlExitFileSystem();
-    }
 
     if (t->list_entry_hash.Flink) {
         UINT8 h = t->hash >> 24;
@@ -460,7 +433,7 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
 
     do {
         cmp = keycmp(key2, td->key);
-//         TRACE("(%u) comparing (%x,%x,%x) to (%x,%x,%x) - %i (ignore = %s)\n", t->header.level, (UINT32)searchkey->obj_id, searchkey->obj_type, (UINT32)searchkey->offset, (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset, cmp, td->ignore ? "TRUE" : "FALSE");
+
         if (cmp == 1) {
             lasttd = td;
             td = next_item(t, td);
@@ -537,9 +510,6 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
             return STATUS_SUCCESS;
         }
 
-//         if (i > 0)
-//             TRACE("entering tree from (%x,%x,%x) to (%x,%x,%x) (%p)\n", (UINT32)t->items[i].key.obj_id, t->items[i].key.obj_type, (UINT32)t->items[i].key.offset, (UINT32)t->items[i+1].key.obj_id, t->items[i+1].key.obj_type, (UINT32)t->items[i+1].key.offset, t->items[i].tree);
-
         if (!td->treeholder.tree) {
             Status = do_load_tree(Vcb, &td->treeholder, t->root, t, td, &loaded, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -557,7 +527,6 @@ static NTSTATUS STDCALL find_item_in_tree(device_extension* Vcb, tree* t, traver
 NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
-//     KIRQL irql;
 
     if (!r->treeholder.tree) {
         Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp);
@@ -571,13 +540,6 @@ NTSTATUS STDCALL find_item(device_extension* Vcb, root* r, traverse_ptr* tp, con
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
         ERR("find_item_in_tree returned %08x\n", Status);
     }
-
-// #ifdef DEBUG_PARANOID
-//     if (b && !ignore && tp->item->ignore) {
-//         ERR("error - returning ignored item\n");
-//         int3;
-//     }
-// #endif
 
     return Status;
 }
@@ -765,18 +727,6 @@ BOOL STDCALL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, trave
     return TRUE;
 }
 
-// static void free_tree_holder(tree_holder* th) {
-//     root* r = th->tree->root;
-//
-// //     ExAcquireResourceExclusiveLite(&th->nonpaged->lock, TRUE);
-//     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-//
-//     free_tree2(th->tree, funcname, __FILE__, __LINE__);
-//
-// //     ExReleaseResourceLite(&th->nonpaged->lock);
-//     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-// }
-
 void free_trees_root(device_extension* Vcb, root* r) {
     LIST_ENTRY* le;
     ULONG level;
@@ -878,13 +828,6 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
 
     TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp);
 
-// #ifdef DEBUG_PARANOID
-//     if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
-//         ERR("ERROR - tree_lock not held exclusively\n");
-//         int3;
-//     }
-// #endif
-
     searchkey.obj_id = obj_id;
     searchkey.obj_type = obj_type;
     searchkey.offset = offset;
@@ -966,7 +909,6 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
 
         paritem = tp.tree->paritem;
         while (paritem) {
-//             ERR("paritem = %llx,%x,%llx, tp.item->key = %llx,%x,%llx\n", paritem->key.obj_id, paritem->key.obj_type, paritem->key.offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
             if (!keycmp(paritem->key, tp.item->key)) {
                 paritem->key = searchkey;
             } else
@@ -981,8 +923,6 @@ NTSTATUS STDCALL insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id,
 
     tp.tree->header.num_items++;
     tp.tree->size += size + sizeof(leaf_node);
-//     ERR("tree %p, num_items now %x\n", tp.tree, tp.tree->header.num_items);
-//     ERR("size now %x\n", tp.tree->size);
 
     if (!tp.tree->write) {
         tp.tree->write = TRUE;
@@ -1032,11 +972,6 @@ NTSTATUS STDCALL delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
     TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
 
 #ifdef DEBUG_PARANOID
-//     if (!ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
-//         ERR("ERROR - tree_lock not held exclusively\n");
-//         int3;
-//     }
-
     if (tp->item->ignore) {
         ERR("trying to delete already-deleted item %llx,%x,%llx\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
         int3;

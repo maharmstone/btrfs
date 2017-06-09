@@ -56,7 +56,6 @@ static NTSTATUS STDCALL write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
     context->iosb = Irp->IoStatus;
     KeSetEvent(&context->Event, 0, FALSE);
 
-//     return STATUS_SUCCESS;
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
@@ -709,18 +708,9 @@ static BOOL insert_tree_extent(device_extension* Vcb, UINT8 level, UINT64 root_i
     eit2->eit.extent_item.refcount = 1;
     eit2->eit.extent_item.generation = Vcb->superblock.generation;
     eit2->eit.extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
-//     eit2->eit.firstitem = wt->firstitem;
     eit2->eit.level = level;
     eit2->type = TYPE_TREE_BLOCK_REF;
     eit2->tbr.offset = root_id;
-
-// #ifdef DEBUG_PARANOID
-//     if (wt->firstitem.obj_type == 0xcc) { // TESTING
-//         ERR("error - firstitem not set (wt = %p, tree = %p, address = %x)\n", wt, wt->tree, (UINT32)address);
-//         ERR("num_items = %u, level = %u, root = %x, delete = %u\n", wt->tree->header.num_items, wt->tree->header.level, (UINT32)wt->tree->root->id, wt->delete);
-//         int3;
-//     }
-// #endif
 
     Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -752,19 +742,6 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
         flags = Vcb->system_flags;
     else
         flags = Vcb->metadata_flags;
-
-//     TRACE("flags = %x\n", (UINT32)wt->flags);
-
-//     if (!chunk_test) { // TESTING
-//         if ((c = alloc_chunk(Vcb, flags))) {
-//             if ((c->chunk_item->size - c->used) >= Vcb->superblock.node_size) {
-//                 if (insert_tree_extent(Vcb, t, c)) {
-//                     chunk_test = TRUE;
-//                     return STATUS_SUCCESS;
-//                 }
-//             }
-//         }
-//     }
 
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.address);
@@ -832,39 +809,6 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
 
     return STATUS_DISK_FULL;
 }
-
-// TESTING
-// static void check_tree_num_items(tree* t) {
-//     LIST_ENTRY* le2;
-//     UINT32 ni;
-//
-//     le2 = t->itemlist.Flink;
-//     ni = 0;
-//     while (le2 != &t->itemlist) {
-//         tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
-//         if (!td->ignore)
-//             ni++;
-//         le2 = le2->Flink;
-//     }
-//
-//     if (t->header.num_items != ni) {
-//         ERR("tree %p not okay: num_items was %x, expecting %x\n", t, ni, t->header.num_items);
-//         int3;
-//     } else {
-//         ERR("tree %p okay\n", t);
-//     }
-// }
-//
-// static void check_trees_num_items(LIST_ENTRY* tc) {
-//     LIST_ENTRY* le = tc->Flink;
-//     while (le != tc) {
-//         tree_cache* tc2 = CONTAINING_RECORD(le, tree_cache, list_entry);
-//
-//         check_tree_num_items(tc2->tree);
-//
-//         le = le->Flink;
-//     }
-// }
 
 static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* t, UINT64 parent_root, UINT8 level, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -1779,36 +1723,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                     }
 
                     if (keycmp(searchkey, tp.item->key)) {
-//                         traverse_ptr next_tp;
-//                         BOOL b;
-//                         tree_data* paritem;
-
                         ERR("could not find %llx,%x,%llx in extent_root (found %llx,%x,%llx instead)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-
-//                         searchkey.obj_id = 0;
-//                         searchkey.obj_type = 0;
-//                         searchkey.offset = 0;
-//
-//                         find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE);
-//
-//                         paritem = NULL;
-//                         do {
-//                             if (tp.tree->paritem != paritem) {
-//                                 paritem = tp.tree->paritem;
-//                                 ERR("paritem: %llx,%x,%llx\n", paritem->key.obj_id, paritem->key.obj_type, paritem->key.offset);
-//                             }
-//
-//                             ERR("%llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
-//
-//                             b = find_next_item(Vcb, &tp, &next_tp, NULL, FALSE);
-//                             if (b) {
-//                                 free_traverse_ptr(&tp);
-//                                 tp = next_tp;
-//                             }
-//                         } while (b);
-//
-//                         free_traverse_ptr(&tp);
-
                         return STATUS_INTERNAL_ERROR;
                     }
 
@@ -2390,8 +2305,6 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
                 if (cer2->type == TYPE_SHARED_DATA_REF && cer2->sdr.offset == cer->sdr.offset) {
-//                     old_count = cer2->edr.count;
-
                     RemoveEntryList(&cer2->list_entry);
                     ExFreePool(cer2);
                     break;
@@ -2868,35 +2781,8 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     tree *nt, *pt;
     tree_data* td;
     tree_data* oldlastitem;
-//     write_tree* wt2;
-// //     tree_data *firsttd, *lasttd;
-// //     LIST_ENTRY* le;
-// #ifdef DEBUG_PARANOID
-//     KEY lastkey1, lastkey2;
-//     traverse_ptr tp, next_tp;
-//     ULONG numitems1, numitems2;
-// #endif
 
     TRACE("splitting tree in %llx at (%llx,%x,%llx)\n", t->root->id, newfirstitem->key.obj_id, newfirstitem->key.obj_type, newfirstitem->key.offset);
-
-// #ifdef DEBUG_PARANOID
-//     lastkey1.obj_id = 0xffffffffffffffff;
-//     lastkey1.obj_type = 0xff;
-//     lastkey1.offset = 0xffffffffffffffff;
-//
-//     if (!find_item(Vcb, t->root, &tp, &lastkey1, NULL, FALSE))
-//         ERR("error - find_item failed\n");
-//     else {
-//         lastkey1 = tp.item->key;
-//         numitems1 = 0;
-//         while (find_prev_item(Vcb, &tp, &next_tp, NULL, FALSE)) {
-//             free_traverse_ptr(&tp);
-//             tp = next_tp;
-//             numitems1++;
-//         }
-//         free_traverse_ptr(&tp);
-//     }
-// #endif
 
     nt = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!nt) {
@@ -2919,7 +2805,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
 #endif
 
     nt->root = t->root;
-//     nt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     nt->new_address = 0;
     nt->has_new_address = FALSE;
     nt->updated_extents = FALSE;
@@ -2929,23 +2814,7 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     nt->buf = NULL;
     InitializeListHead(&nt->itemlist);
 
-//     ExInitializeResourceLite(&nt->nonpaged->load_tree_lock);
-
     oldlastitem = CONTAINING_RECORD(newfirstitem->list_entry.Blink, tree_data, list_entry);
-
-// //     firsttd = CONTAINING_RECORD(wt->tree->itemlist.Flink, tree_data, list_entry);
-// //     lasttd = CONTAINING_RECORD(wt->tree->itemlist.Blink, tree_data, list_entry);
-// //
-// //     TRACE("old tree in %x was from (%x,%x,%x) to (%x,%x,%x)\n",
-// //                   (UINT32)wt->tree->root->id, (UINT32)firsttd->key.obj_id, firsttd->key.obj_type, (UINT32)firsttd->key.offset,
-// //                   (UINT32)lasttd->key.obj_id, lasttd->key.obj_type, (UINT32)lasttd->key.offset);
-// //
-// //     le = wt->tree->itemlist.Flink;
-// //     while (le != &wt->tree->itemlist) {
-// //         td = CONTAINING_RECORD(le, tree_data, list_entry);
-// //         TRACE("old tree item was (%x,%x,%x)\n", (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset);
-// //         le = le->Flink;
-// //     }
 
     nt->itemlist.Flink = &newfirstitem->list_entry;
     nt->itemlist.Blink = t->itemlist.Blink;
@@ -2955,40 +2824,12 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     t->itemlist.Blink = &oldlastitem->list_entry;
     t->itemlist.Blink->Flink = &t->itemlist;
 
-// //     le = wt->tree->itemlist.Flink;
-// //     while (le != &wt->tree->itemlist) {
-// //         td = CONTAINING_RECORD(le, tree_data, list_entry);
-// //         TRACE("old tree item now (%x,%x,%x)\n", (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset);
-// //         le = le->Flink;
-// //     }
-// //
-// //     firsttd = CONTAINING_RECORD(wt->tree->itemlist.Flink, tree_data, list_entry);
-// //     lasttd = CONTAINING_RECORD(wt->tree->itemlist.Blink, tree_data, list_entry);
-// //
-// //     TRACE("old tree in %x is now from (%x,%x,%x) to (%x,%x,%x)\n",
-// //                   (UINT32)wt->tree->root->id, (UINT32)firsttd->key.obj_id, firsttd->key.obj_type, (UINT32)firsttd->key.offset,
-// //                   (UINT32)lasttd->key.obj_id, lasttd->key.obj_type, (UINT32)lasttd->key.offset);
-
     nt->size = t->size - size;
     t->size = size;
     t->header.num_items = numitems;
     nt->write = TRUE;
 
     InsertTailList(&Vcb->trees, &nt->list_entry);
-
-// //     // TESTING
-// //     td = wt->tree->items;
-// //     while (td) {
-// //         if (!td->ignore) {
-// //             TRACE("old tree item: (%x,%x,%x)\n", (UINT32)td->key.obj_id, td->key.obj_type, (UINT32)td->key.offset);
-// //         }
-// //         td = td->next;
-// //     }
-
-// //     oldlastitem->next = NULL;
-// //     wt->tree->lastitem = oldlastitem;
-
-// //     TRACE("last item is now (%x,%x,%x)\n", (UINT32)oldlastitem->key.obj_id, oldlastitem->key.obj_type, (UINT32)oldlastitem->key.offset);
 
     if (nt->header.level > 0) {
         LIST_ENTRY* le = nt->itemlist.Flink;
@@ -3042,7 +2883,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
         td->ignore = FALSE;
         td->inserted = TRUE;
         td->treeholder.tree = nt;
-//         td->treeholder.nonpaged->status = tree_holder_loaded;
         nt->paritem = td;
 
         nt->parent->header.num_items++;
@@ -3078,15 +2918,12 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     pt->new_address = 0;
     pt->has_new_address = FALSE;
     pt->updated_extents = FALSE;
-//     pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
     pt->size = pt->header.num_items * sizeof(internal_node);
     pt->uniqueness_determined = TRUE;
     pt->is_unique = TRUE;
     pt->list_entry_hash.Flink = NULL;
     pt->buf = NULL;
     InitializeListHead(&pt->itemlist);
-
-//     ExInitializeResourceLite(&pt->nonpaged->load_tree_lock);
 
     InsertTailList(&Vcb->trees, &pt->list_entry);
 
@@ -3102,7 +2939,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     td->treeholder.address = 0;
     td->treeholder.generation = Vcb->superblock.generation;
     td->treeholder.tree = t;
-//     td->treeholder.nonpaged->status = tree_holder_loaded;
     InsertTailList(&pt->itemlist, &td->list_entry);
     t->paritem = td;
 
@@ -3118,7 +2954,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
     td->treeholder.address = 0;
     td->treeholder.generation = Vcb->superblock.generation;
     td->treeholder.tree = nt;
-//     td->treeholder.nonpaged->status = tree_holder_loaded;
     InsertTailList(&pt->itemlist, &td->list_entry);
     nt->paritem = td;
 
@@ -3136,31 +2971,6 @@ static NTSTATUS STDCALL split_tree_at(device_extension* Vcb, tree* t, tree_data*
 
 end:
     t->root->root_item.bytes_used += Vcb->superblock.node_size;
-
-// #ifdef DEBUG_PARANOID
-//     lastkey2.obj_id = 0xffffffffffffffff;
-//     lastkey2.obj_type = 0xff;
-//     lastkey2.offset = 0xffffffffffffffff;
-//
-//     if (!find_item(Vcb, wt->tree->root, &tp, &lastkey2, NULL, FALSE))
-//         ERR("error - find_item failed\n");
-//     else {
-//         lastkey2 = tp.item->key;
-//
-//         numitems2 = 0;
-//         while (find_prev_item(Vcb, &tp, &next_tp, NULL, FALSE)) {
-//             free_traverse_ptr(&tp);
-//             tp = next_tp;
-//             numitems2++;
-//         }
-//         free_traverse_ptr(&tp);
-//     }
-//
-//     ERR("lastkey1 = %llx,%x,%llx\n", lastkey1.obj_id, lastkey1.obj_type, lastkey1.offset);
-//     ERR("lastkey2 = %llx,%x,%llx\n", lastkey2.obj_id, lastkey2.obj_type, lastkey2.offset);
-//     ERR("numitems1 = %u\n", numitems1);
-//     ERR("numitems2 = %u\n", numitems2);
-// #endif
 
     return STATUS_SUCCESS;
 }
@@ -3296,9 +3106,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
         return STATUS_SUCCESS;
 
     TRACE("nextparitem: key = %llx,%x,%llx\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
-//     nextparitem = t->paritem;
-
-//     ExAcquireResourceExclusiveLite(&t->parent->nonpaged->load_tree_lock, TRUE);
 
     Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, &loaded, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -3308,8 +3115,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
 
     if (!is_tree_unique(Vcb, nextparitem->treeholder.tree, Irp))
         return STATUS_SUCCESS;
-
-//     ExReleaseResourceLite(&t->parent->nonpaged->load_tree_lock);
 
     next_tree = nextparitem->treeholder.tree;
 
@@ -3485,8 +3290,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
             le = le->Flink;
         }
 
-//         ERR("firstitem = %llx,%x,%llx\n", firstitem.obj_id, firstitem.obj_type, firstitem.offset);
-
         // FIXME - once ascension is working, make this work with parent's parent, etc.
         if (next_tree->paritem)
             next_tree->paritem->key = firstitem;
@@ -3623,9 +3426,6 @@ static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PI
 }
 
 static NTSTATUS STDCALL do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-//     LIST_ENTRY *le, *le2;
-//     write_tree* wt;
-//     tree_data* td;
     ULONG level, max_level;
     UINT32 min_size;
     BOOL empty, done_deletions = FALSE;
@@ -4683,10 +4483,6 @@ cont:
 
                         changed = TRUE;
                         continue;
-//                     } else { // FIXME - make changing of beginning of offset work
-//                         er2->length = er2->address + er->length - er->address - MAX_EXTENT_SIZE;
-//                         er2->address = er->address + MAX_EXTENT_SIZE;
-//                         er->length = MAX_EXTENT_SIZE;
                     }
                 }
             }

@@ -860,7 +860,6 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
     BOOL b;
     space* s;
     NTSTATUS Status;
-//     LIST_ENTRY* le;
 
     if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID) {
         Status = load_stored_free_space_tree(Vcb, c, Irp);
@@ -944,16 +943,6 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
             TRACE("(%llx,%llx)\n", s->address, s->size);
         }
     }
-
-//     le = c->space_size.Flink;
-//     while (le != &c->space_size) {
-//         space* s = CONTAINING_RECORD(le, space, list_entry_size);
-//
-//         ERR("(%llx, %llx)\n", s->address, s->size);
-//
-//         le = le->Flink;
-//     }
-//     ERR("---\n");
 
     return STATUS_SUCCESS;
 }

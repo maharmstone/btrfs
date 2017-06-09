@@ -107,12 +107,9 @@ static NTSTATUS STDCALL dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PV
 
     UNUSED(DeviceObject);
 
-//     DbgPrint("dbg_completion\n");
-
     context->iosb = Irp->IoStatus;
     KeSetEvent(&context->Event, 0, FALSE);
 
-//     return STATUS_SUCCESS;
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
@@ -166,8 +163,6 @@ void STDCALL _debug_message(const char* func, char* s, ...) {
         RtlZeroMemory(&context, sizeof(read_context));
 
         KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
-
-    //     status = ZwWriteFile(comh, NULL, NULL, NULL, &io, buf2, strlen(buf2), &offset, NULL);
 
         Irp = IoAllocateIrp(comdo->StackSize, FALSE);
 
@@ -797,7 +792,6 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
 
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-//             orig_label_len = label_len = (ULONG)(wcslen(Vcb->label) * sizeof(WCHAR));
             RtlUTF8ToUnicodeN(NULL, 0, &label_len, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
             orig_label_len = label_len;
 
@@ -822,7 +816,6 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             if (label_len > 0) {
                 ULONG bytecount;
 
-//                 RtlCopyMemory(&data->VolumeLabel[0], Vcb->label, label_len);
                 RtlUTF8ToUnicodeN(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
                 TRACE("label = %.*S\n", label_len / sizeof(WCHAR), data->VolumeLabel);
             }
@@ -863,12 +856,6 @@ static NTSTATUS STDCALL drv_query_volume_information(IN PDEVICE_OBJECT DeviceObj
             break;
     }
 
-//     if (NT_SUCCESS(Status) && IrpSp->Parameters.QueryVolume.Length < BytesCopied) { // FIXME - should not copy anything if overflow
-//         WARN("overflow: %u < %u\n", IrpSp->Parameters.QueryVolume.Length, BytesCopied);
-//         BytesCopied = IrpSp->Parameters.QueryVolume.Length;
-//         Status = STATUS_BUFFER_OVERFLOW;
-//     }
-
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
         Irp->IoStatus.Information = 0;
     else
@@ -894,12 +881,9 @@ static NTSTATUS STDCALL read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, P
 
     UNUSED(DeviceObject);
 
-//     DbgPrint("read_completion\n");
-
     context->iosb = Irp->IoStatus;
     KeSetEvent(&context->Event, 0, FALSE);
 
-//     return STATUS_SUCCESS;
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
@@ -1025,7 +1009,6 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     ULONG utf8len;
     NTSTATUS Status;
     USHORT vollen, i;
-//     HANDLE h;
 
     TRACE("label = %.*S\n", ffli->VolumeLabelLength / sizeof(WCHAR), ffli->VolumeLabel);
 
@@ -1066,17 +1049,7 @@ static NTSTATUS STDCALL set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATI
     if (utf8len < MAX_LABEL_SIZE)
         RtlZeroMemory(Vcb->superblock.label + utf8len, MAX_LABEL_SIZE - utf8len);
 
-//     test_tree_deletion(Vcb); // TESTING
-//     test_tree_splitting(Vcb);
-//     test_dropping_tree(Vcb);
-//     test_creating_root(Vcb);
-//     test_alloc_chunk(Vcb);
-//     test_space_list(Vcb);
-//     test_calc_thread(Vcb);
-
     Vcb->need_write = TRUE;
-
-//     PsCreateSystemThread(&h, 0, NULL, NULL, NULL, tree_test, Vcb);
 
 release:
     ExReleaseResourceLite(&Vcb->tree_lock);
@@ -1384,13 +1357,6 @@ void free_fcb(fcb* fcb) {
 #endif
     LONG rc;
 
-// #ifdef DEBUG
-//     if (!ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fcb->Vcb->tree_lock)) {
-//         ERR("fcb_lock not acquired exclusively\n");
-//         int3;
-//     }
-// #endif
-
     rc = InterlockedDecrement(&fcb->refcount);
 
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1404,15 +1370,11 @@ void free_fcb(fcb* fcb) {
     if (rc > 0)
         return;
 
-//     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
-
     if (fcb->list_entry.Flink)
         RemoveEntryList(&fcb->list_entry);
 
     if (fcb->list_entry_all.Flink)
         RemoveEntryList(&fcb->list_entry_all);
-
-//     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
 
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
@@ -1501,13 +1463,6 @@ void free_fcb(fcb* fcb) {
 
 void free_fileref(device_extension* Vcb, file_ref* fr) {
     LONG rc;
-
-// #ifdef DEBUG
-//     if (!ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&fr->fcb->Vcb->tree_lock) && !fr->dirty) {
-//         ERR("fcb_lock not acquired exclusively\n");
-//         int3;
-//     }
-// #endif
 
     rc = InterlockedDecrement(&fr->refcount);
 
@@ -3373,48 +3328,6 @@ static NTSTATUS STDCALL find_chunk_usage(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-// static void STDCALL root_test(device_extension* Vcb) {
-//     root* r;
-//     KEY searchkey;
-//     traverse_ptr tp, next_tp;
-//     BOOL b;
-//
-//     r = Vcb->roots;
-//     while (r) {
-//         if (r->id == 0x102)
-//             break;
-//         r = r->next;
-//     }
-//
-//     if (!r) {
-//         ERR("Could not find root tree.\n");
-//         return;
-//     }
-//
-//     searchkey.obj_id = 0x1b6;
-//     searchkey.obj_type = 0xb;
-//     searchkey.offset = 0;
-//
-//     if (!find_item(Vcb, r, &tp, &searchkey, NULL, FALSE)) {
-//         ERR("Could not find first item.\n");
-//         return;
-//     }
-//
-//     b = TRUE;
-//     do {
-//         TRACE("%x,%x,%x\n", (UINT32)tp.item->key.obj_id, tp.item->key.obj_type, (UINT32)tp.item->key.offset);
-//
-//         b = find_prev_item(Vcb, &tp, &next_tp, NULL, FALSE);
-//
-//         if (b) {
-//             free_traverse_ptr(&tp);
-//             tp = next_tp;
-//         }
-//     } while (b);
-//
-//     free_traverse_ptr(&tp);
-// }
-
 static NTSTATUS load_sys_chunks(device_extension* Vcb) {
     KEY key;
     ULONG n = Vcb->superblock.n;
@@ -4652,7 +4565,6 @@ static NTSTATUS STDCALL drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, 
                     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
                     Vcb->removing = TRUE;
                     ExReleaseResourceLite(&Vcb->tree_lock);
-//                     Vcb->Vpb->Flags &= ~VPB_MOUNTED;
                 } else
                     uninit(Vcb, FALSE);
             }
@@ -5120,8 +5032,6 @@ NTSTATUS STDCALL DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regist
     TRACE("DriverEntry\n");
 
     check_cpu();
-
-//    TRACE("check CRC32C: %08x\n", calc_crc32c((UINT8*)"123456789", 9)); // should be e3069283
 
     if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
         UNICODE_STRING name;

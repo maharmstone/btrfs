@@ -2856,7 +2856,6 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     BOOL buf_free;
                     UINT32 bumpoff = 0, *csum;
                     UINT64 addr;
-//                     UINT64 lockaddr, locklen;
                     chunk* c;
 
                     read = len - off;
@@ -2904,11 +2903,6 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                         goto exit;
                     }
 
-//                     if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
-//                         get_raid56_lock_range(c, addr, to_read, &lockaddr, &locklen);
-//                         chunk_lock_range(fcb->Vcb, c, lockaddr, locklen);
-//                     }
-
                     if (ext->csum) {
                         if (ed->compression == BTRFS_COMPRESSION_NONE)
                             csum = &ext->csum[off / fcb->Vcb->superblock.sector_size];
@@ -2922,17 +2916,11 @@ NTSTATUS STDCALL read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, U
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08x\n", Status);
 
-//                         if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
-//                             chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
-
                         if (buf_free)
                             ExFreePool(buf);
 
                         goto exit;
                     }
-
-//                     if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
-//                         chunk_unlock_range(fcb->Vcb, c, lockaddr, locklen);
 
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
                         if (buf_free)
@@ -3131,7 +3119,6 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
     }
 
     TRACE("FileObject %p fcb %p FileSize = %llx st_size = %llx (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
-//     int3;
 
     if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
         data = map_user_buffer(Irp, fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);

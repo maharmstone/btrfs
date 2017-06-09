@@ -360,18 +360,6 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     return STATUS_SUCCESS;
 }
 
-// #ifdef DEBUG_FCB_REFCOUNTS
-// static void print_fcbs(device_extension* Vcb) {
-//     fcb* fcb = Vcb->fcbs;
-//
-//     while (fcb) {
-//         ERR("fcb %p (%.*S): refcount %u\n", fcb, fcb->full_filename.Length / sizeof(WCHAR), fcb->full_filename.Buffer, fcb->refcount);
-//
-//         fcb = fcb->next;
-//     }
-// }
-// #endif
-
 NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
@@ -1741,7 +1729,6 @@ static NTSTATUS STDCALL file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_S
     fcb->inode_item.st_blocks = 0;
     fcb->inode_item.block_group = 0;
     fcb->inode_item.st_nlink = 1;
-//     fcb->inode_item.st_uid = UID_NOBODY; // FIXME?
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     fcb->inode_item.st_mode = inherit_mode(parfileref->fcb, type == BTRFS_TYPE_DIRECTORY); // use parent's permissions by default
     fcb->inode_item.st_rdev = 0;
@@ -2226,10 +2213,8 @@ static __inline BOOL called_from_lxss() {
 static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related,
                                     PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-//     fcb *fcb, *parfcb = NULL;
     file_ref *fileref, *parfileref = NULL;
     ULONG i, j;
-//     ULONG utf8len;
     ccb* ccb;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
@@ -2405,32 +2390,6 @@ static NTSTATUS STDCALL file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJEC
     FileObject->FsContext2 = ccb;
 
     FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
-
-//     TRACE("returning FCB %p with parent %p\n", fcb, parfcb);
-
-//     ULONG fnlen;
-//
-//     fcb->name_offset = fcb->par->full_filename.Length / sizeof(WCHAR);
-//
-//     if (fcb->par != Vcb->root_fcb)
-//         fcb->name_offset++;
-//
-//     fnlen = (fcb->name_offset * sizeof(WCHAR)) + fcb->filepart.Length;
-//
-//     fcb->full_filename.Buffer = ExAllocatePoolWithTag(PagedPool, fnlen, ALLOC_TAG);
-//     if (!fcb->full_filename.Buffer) {
-//         ERR("out of memory\n");
-//         Status = STATUS_INSUFFICIENT_RESOURCES;
-//         goto end;
-//     }
-//
-//     fcb->full_filename.Length = fcb->full_filename.MaximumLength = fnlen;
-//     RtlCopyMemory(fcb->full_filename.Buffer, fcb->par->full_filename.Buffer, fcb->par->full_filename.Length);
-//
-//     if (fcb->par != Vcb->root_fcb)
-//         fcb->full_filename.Buffer[fcb->par->full_filename.Length / sizeof(WCHAR)] = '\\';
-//
-//     RtlCopyMemory(&fcb->full_filename.Buffer[fcb->name_offset], fcb->filepart.Buffer, fcb->filepart.Length);
 
     goto end2;
 
@@ -3181,14 +3140,6 @@ static NTSTATUS STDCALL open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_EN
                 goto exit;
             }
 
-            // FIXME - where did we get this from?
-//             if (fcb->refcount > 1) {
-//                 WARN("cannot overwrite open file (fcb = %p, refcount = %u)\n", fcb, fcb->refcount);
-//                 Status = STATUS_ACCESS_DENIED;
-//                 free_fcb(fcb);
-//                 goto exit;
-//             }
-
             // FIXME - make sure not ADS!
             Status = truncate_file(fileref->fcb, 0, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -3645,10 +3596,6 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         TRACE("flags: (none)\n");
     }
 
-//     Vpb = DeviceObject->DeviceExtension;
-
-//     TRACE("create called for something other than FS device object\n");
-
     // opening volume
     // FIXME - also check if RelatedFileObject is Vcb
     if (IrpSp->FileObject->FileName.Length == 0 && !IrpSp->FileObject->RelatedFileObject) {
@@ -3731,14 +3678,11 @@ NTSTATUS STDCALL drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         if (!skip_lock)
             ExReleaseResourceLite(&Vcb->tree_lock);
-
-//         Status = STATUS_ACCESS_DENIED;
     }
 
 exit:
     Irp->IoStatus.Status = Status;
     IoCompleteRequest( Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT );
-//     IoCompleteRequest( Irp, IO_DISK_INCREMENT );
 
     TRACE("create returning %08x\n", Status);
 

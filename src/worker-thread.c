@@ -46,10 +46,6 @@ void do_read_job(PIRP Irp) {
 
     Irp->IoStatus.Status = Status;
 
-//     // fastfat doesn't do this, but the Wine ntdll file test seems to think we ought to
-//     if (Irp->UserIosb)
-//         *Irp->UserIosb = Irp->IoStatus;
-
     TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
     TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
     TRACE("returning %08x\n", Status);
