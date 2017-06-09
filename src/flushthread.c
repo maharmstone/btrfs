@@ -5680,7 +5680,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                 continue;
             }
 
-            if (c->space_changed) {
+            if (c->space_changed || c->created) {
                 used_minus_cache = c->used;
 
                 // subtract self-hosted cache
