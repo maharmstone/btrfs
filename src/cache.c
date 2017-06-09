@@ -16,7 +16,6 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
-#include <wdm.h>
 
 CACHE_MANAGER_CALLBACKS* cache_callbacks;
 

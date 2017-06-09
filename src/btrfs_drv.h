@@ -26,11 +26,23 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _NO_CRT_STDIO_INLINE
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4163)
+#pragma warning(disable:4311)
+#pragma warning(disable:4312)
+#endif
+
 #include <ntifs.h>
 #include <ntddk.h>
 #include <mountmgr.h>
 #include <windef.h>
 #include <wdm.h>
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stddef.h>
