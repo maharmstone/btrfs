@@ -5119,7 +5119,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             
             do {
                 UINT8 c = atts % 16;
-                *val2 = (c >= 0 && c <= 9) ? (c + '0') : (c - 0xa + 'a');
+                *val2 = c <= 9 ? (c + '0') : (c - 0xa + 'a');
                 
                 val2--;
                 atts >>= 4;
