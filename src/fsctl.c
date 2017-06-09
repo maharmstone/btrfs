@@ -4524,6 +4524,9 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
 
     // FIXME - require privilege
 
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     le = Vcb->devices.Flink;
@@ -4546,6 +4549,12 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
 
     if (!dev->devobj) {
         ERR("trying to resize missing device\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (dev->readonly) {
+        ERR("trying to resize readonly device\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
