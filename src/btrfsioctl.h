@@ -191,7 +191,7 @@ typedef struct {
     BOOL recovered;
     BOOL is_metadata;
     BOOL parity;
-    
+
     union {
         struct {
             UINT64 subvol;
@@ -199,7 +199,7 @@ typedef struct {
             UINT16 filename_length;
             WCHAR filename[1];
         } data;
-        
+
         struct {
             UINT64 root;
             UINT8 level;

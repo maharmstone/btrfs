@@ -1,17 +1,17 @@
 /* Copyright (c) Mark Harmstone 2016-17
- * 
+ *
  * This file is part of WinBtrfs.
- * 
+ *
  * WinBtrfs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public Licence as published by
  * the Free Software Foundation, either version 3 of the Licence, or
  * (at your option) any later version.
- * 
+ *
  * WinBtrfs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public Licence for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
@@ -143,9 +143,9 @@ typedef struct {
     BOOL ignore;
     BOOL inserted;
     UINT32* csum;
-    
+
     LIST_ENTRY list_entry;
-    
+
     EXTENT_DATA extent_data;
 } extent;
 
@@ -216,13 +216,13 @@ typedef struct _fcb {
     BOOL inode_item_changed;
     enum prop_compression_type prop_compression;
     LIST_ENTRY xattrs;
-    
+
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
     LIST_ENTRY dir_children_hash_uc;
     LIST_ENTRY** hash_ptrs;
     LIST_ENTRY** hash_ptrs_uc;
-    
+
     BOOL dirty;
     BOOL sd_dirty, sd_deleted;
     BOOL atts_changed, atts_deleted;
@@ -232,13 +232,13 @@ typedef struct _fcb {
     BOOL prop_compression_changed;
     BOOL xattrs_changed;
     BOOL created;
-    
+
     BOOL ads;
     UINT32 adshash;
     ULONG adsmaxlen;
     ANSI_STRING adsxattr;
     ANSI_STRING adsdata;
-    
+
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_all;
     LIST_ENTRY list_entry_dirty;
@@ -263,9 +263,9 @@ typedef struct _file_ref {
     struct _file_ref* parent;
     WCHAR* debug_desc;
     dir_child* dc;
-    
+
     BOOL dirty;
-    
+
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
 } file_ref;
@@ -318,10 +318,10 @@ typedef struct _tree_data {
     LIST_ENTRY list_entry;
     BOOL ignore;
     BOOL inserted;
-    
+
     union {
         tree_holder treeholder;
-        
+
         struct {
             UINT32 size;
             UINT8* data;
@@ -481,7 +481,7 @@ typedef struct {
     LIST_ENTRY partial_stripes;
     ERESOURCE partial_stripes_lock;
     ULONG balance_num;
-    
+
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_balance;
 } chunk;
@@ -501,12 +501,12 @@ typedef struct {
 
 typedef struct {
     UINT8 type;
-    
+
     union {
         EXTENT_DATA_REF edr;
         SHARED_DATA_REF sdr;
     };
-    
+
     LIST_ENTRY list_entry;
 } changed_extent_ref;
 
@@ -570,7 +570,7 @@ typedef struct {
     UINT64 read_total_time;
     UINT64 read_csum_time;
     UINT64 read_disk_time;
-    
+
     UINT64 num_opens;
     UINT64 open_total_time;
     UINT64 num_overwrites;
@@ -608,7 +608,7 @@ typedef struct {
     BOOL is_metadata;
     BOOL parity;
     LIST_ENTRY list_entry;
-    
+
     union {
         struct {
             UINT64 subvol;
@@ -616,7 +616,7 @@ typedef struct {
             UINT16 filename_length;
             WCHAR filename[1];
         } data;
-        
+
         struct {
             UINT64 root;
             UINT8 level;
@@ -755,12 +755,12 @@ typedef struct _volume_device_extension {
     PDEVICE_OBJECT attached_device;
     BOOL removing;
     LONG open_count;
-    
+
     UINT64 num_children;
     UINT64 children_loaded;
     ERESOURCE child_lock;
     LIST_ENTRY children;
-    
+
     LIST_ENTRY list_entry;
 } volume_device_extension;
 
@@ -834,17 +834,17 @@ static __inline UINT64 unix_time_to_win(BTRFS_TIME* t) {
 
 static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
     ULONGLONG l = t.QuadPart - 116444736000000000;
-    
+
     out->seconds = l / 10000000;
     out->nanoseconds = (l % 10000000) * 100;
 }
 
 static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 num_stripes, UINT64* stripeoff, UINT16* stripe) {
     UINT64 initoff, startoff;
-    
+
     startoff = off % (num_stripes * stripe_length);
     initoff = (off / (num_stripes * stripe_length)) * stripe_length;
-    
+
     *stripe = (UINT16)(startoff / stripe_length);
     *stripeoff = initoff + startoff - (*stripe * stripe_length);
 }
@@ -880,7 +880,7 @@ __inline static BOOL is_subvol_readonly(root* r, PIRP Irp) {
 
     if (!r->reserved)
         return TRUE;
-    
+
     return (!Irp || Irp->RequestorMode == UserMode) && PsGetCurrentProcess() != r->reserved ? TRUE : FALSE;
 }
 
@@ -1337,36 +1337,36 @@ static __inline BOOL write_fcb_compressed(fcb* fcb) {
     // make sure we don't accidentally write the cache inodes or pagefile compressed
     if (fcb->subvol->id == BTRFS_ROOT_ROOT || fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
         return FALSE;
-    
+
     if (fcb->Vcb->options.compress_force)
         return TRUE;
-    
+
     if (fcb->inode_item.flags & BTRFS_INODE_NOCOMPRESS)
         return FALSE;
-    
+
     if (fcb->inode_item.flags & BTRFS_INODE_COMPRESS || fcb->Vcb->options.compress)
         return TRUE;
-    
+
     return FALSE;
 }
 
 static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
     UINT32 j;
     __m128i x1, x2;
-    
+
     if (have_sse2 && ((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
         while (len >= 16) {
             x1 = _mm_load_si128((__m128i*)buf1);
             x2 = _mm_load_si128((__m128i*)buf2);
             x1 = _mm_xor_si128(x1, x2);
             _mm_store_si128((__m128i*)buf1, x1);
-            
+
             buf1 += 16;
             buf2 += 16;
             len -= 16;
         }
     }
-    
+
     for (j = 0; j < len; j++) {
         *buf1 ^= *buf2;
         buf1++;

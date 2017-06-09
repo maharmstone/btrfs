@@ -1,17 +1,17 @@
 /* Copyright (c) Mark Harmstone 2016-17
- * 
+ *
  * This file is part of WinBtrfs.
- * 
+ *
  * WinBtrfs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public Licence as published by
  * the Free Software Foundation, either version 3 of the Licence, or
  * (at your option) any later version.
- * 
+ *
  * WinBtrfs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public Licence for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
@@ -104,10 +104,10 @@ public:
         flags = flags_set = 0;
         has_subvols = FALSE;
         filename = L"";
-        
+
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
         totalsize = 0;
-        
+
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -116,36 +116,36 @@ public:
             GlobalUnlock(stgm.hGlobal);
             ReleaseStgMedium(&stgm);
         }
-        
+
         InterlockedDecrement(&objs_loaded);
     }
 
     // IUnknown
-    
+
     HRESULT __stdcall QueryInterface(REFIID riid, void **ppObj);
-    
+
     ULONG __stdcall AddRef() {
         return InterlockedIncrement(&refcount);
     }
 
     ULONG __stdcall Release() {
         LONG rc = InterlockedDecrement(&refcount);
-        
+
         if (rc == 0)
             delete this;
-        
+
         return rc;
     }
-    
+
     // IShellExtInit
-    
+
     virtual HRESULT __stdcall Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID);
-    
+
     // IShellPropSheetExt
-    
+
     virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
-    
+
     void init_propsheet(HWND hwndDlg);
     void change_inode_flag(HWND hDlg, UINT64 flag, UINT state);
     void change_perm_flag(HWND hDlg, ULONG perm, UINT state);
@@ -159,7 +159,7 @@ public:
     void update_size_details_dialog(HWND hDlg);
     void open_as_admin(HWND hwndDlg);
     void set_cmdline(std::wstring cmdline);
- 
+
     BOOL readonly;
     BOOL can_change_perms;
     BOOL can_change_owner;
@@ -173,7 +173,7 @@ public:
     UINT32 uid, gid;
     BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols,
          ro_subvol, various_ro, ro_changed, show_admin_button;
-    
+
 private:
     LONG refcount;
     BOOL ignore;
@@ -183,7 +183,7 @@ private:
     UINT64 sizes[4], totalsize;
     std::deque<WCHAR*> search_list;
     std::wstring filename;
-    
+
     void apply_changes_file(HWND hDlg, std::wstring fn);
     HRESULT check_file(std::wstring fn, UINT i, UINT num_files, UINT* sv);
     HRESULT load_file_list();

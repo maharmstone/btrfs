@@ -1,17 +1,17 @@
 /* Copyright (c) Mark Harmstone 2016-17
- * 
+ *
  * This file is part of WinBtrfs.
- * 
+ *
  * WinBtrfs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public Licence as published by
  * the Free Software Foundation, either version 3 of the Licence, or
  * (at your option) any later version.
- * 
+ *
  * WinBtrfs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public Licence for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
@@ -23,44 +23,44 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
                                              PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
     ccb* ccb;
-    
+
     FsRtlEnterFileSystem();
 
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, wait, fbi, IoStatus, DeviceObject);
-    
+
     if (!FileObject) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     fcb = FileObject->FsContext;
-    
+
     if (!fcb) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     ccb = FileObject->FsContext2;
-    
+
     if (!ccb) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     if (!(ccb->access & (FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES))) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     if (fcb->ads) {
         if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb) {
             FsRtlExitFileSystem();
             return FALSE;
         }
-        
+
         fcb = ccb->fileref->parent->fcb;
     }
-    
+
     if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
         FsRtlExitFileSystem();
         return FALSE;
@@ -82,11 +82,11 @@ static BOOLEAN STDCALL fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wa
 
     IoStatus->Status = STATUS_SUCCESS;
     IoStatus->Information = sizeof(FILE_BASIC_INFORMATION);
-    
+
     ExReleaseResourceLite(fcb->Header.Resource);
 
     FsRtlExitFileSystem();
-    
+
     return TRUE;
 }
 
@@ -96,48 +96,48 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
     ccb* ccb;
     BOOL ads;
     ULONG adssize;
-    
+
     FsRtlEnterFileSystem();
 
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, wait, fsi, IoStatus, DeviceObject);
-    
+
     if (!FileObject) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
-    
+
     if (!fcb) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     ads = fcb->ads;
-    
+
     if (ads) {
         struct _fcb* fcb2;
-        
+
         if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb) {
             ExReleaseResourceLite(fcb->Header.Resource);
             FsRtlExitFileSystem();
             return FALSE;
         }
-        
+
         adssize = fcb->adsdata.Length;
-        
+
         fcb2 = ccb->fileref->parent->fcb;
-        
+
         ExReleaseResourceLite(fcb->Header.Resource);
-        
+
         fcb = fcb2;
-        
+
         if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
             FsRtlExitFileSystem();
             return FALSE;
@@ -152,16 +152,16 @@ static BOOLEAN STDCALL fast_query_standard_info(PFILE_OBJECT FileObject, BOOLEAN
         fsi->NumberOfLinks = fcb->inode_item.st_nlink;
         fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
     }
-    
+
     fsi->DeletePending = ccb->fileref ? ccb->fileref->delete_on_close : FALSE;
 
     IoStatus->Status = STATUS_SUCCESS;
     IoStatus->Information = sizeof(FILE_STANDARD_INFORMATION);
-    
+
     ExReleaseResourceLite(fcb->Header.Resource);
 
     FsRtlExitFileSystem();
-    
+
     return TRUE;
 }
 
@@ -170,11 +170,11 @@ static BOOLEAN STDCALL fast_io_check_if_possible(PFILE_OBJECT FileObject, PLARGE
                                          PDEVICE_OBJECT DeviceObject) {
     fcb* fcb = FileObject->FsContext;
     LARGE_INTEGER len2;
-    
+
     TRACE("(%p, %llx, %x, %x, %x, %x, %p, %p)\n", FileObject, FileOffset->QuadPart, Length, Wait, LockKey, CheckForReadOperation, IoStatus, DeviceObject);
-    
+
     len2.QuadPart = Length;
-    
+
     if (CheckForReadOperation) {
         if (FsRtlFastCheckLockForRead(&fcb->lock, FileOffset, &len2, LockKey, FileObject, PsGetCurrentProcess()))
             return TRUE;
@@ -182,7 +182,7 @@ static BOOLEAN STDCALL fast_io_check_if_possible(PFILE_OBJECT FileObject, PLARGE
         if (!fcb->Vcb->readonly && !is_subvol_readonly(fcb->subvol, NULL) && FsRtlFastCheckLockForWrite(&fcb->lock, FileOffset, &len2, LockKey, FileObject, PsGetCurrentProcess()))
             return TRUE;
     }
-    
+
     return FALSE;
 }
 
@@ -191,32 +191,32 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
-    
+
     FsRtlEnterFileSystem();
 
     TRACE("(%p, %u, %p, %p, %p)\n", FileObject, Wait, fnoi, IoStatus, DeviceObject);
-    
+
     RtlZeroMemory(fnoi, sizeof(FILE_NETWORK_OPEN_INFORMATION));
-    
+
     fcb = FileObject->FsContext;
-    
+
     if (!fcb || fcb == fcb->Vcb->volume_fcb) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     ccb = FileObject->FsContext2;
-    
+
     if (!ccb) {
         FsRtlExitFileSystem();
         return FALSE;
     }
-    
+
     fileref = ccb->fileref;
-    
+
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
-        
+
         KeQuerySystemTime(&time);
         fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
     } else {
@@ -247,7 +247,7 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
         fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
         fnoi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
-    
+
     FsRtlExitFileSystem();
 
     return TRUE;
@@ -255,47 +255,47 @@ static BOOLEAN STDCALL fast_io_query_network_open_info(PFILE_OBJECT FileObject, 
 
 static NTSTATUS STDCALL fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, PLARGE_INTEGER EndingOffset, struct _ERESOURCE **ResourceToRelease, PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
-    
+
     TRACE("(%p, %llx, %p, %p)\n", FileObject, EndingOffset->QuadPart, ResourceToRelease, DeviceObject);
-    
+
     fcb = FileObject->FsContext;
-    
+
     if (!fcb)
         return STATUS_INVALID_PARAMETER;
-    
+
     *ResourceToRelease = fcb->Header.PagingIoResource;
-    
+
     if (!ExAcquireResourceSharedLite(*ResourceToRelease, FALSE))
         return STATUS_CANT_WAIT;
-    
+
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS STDCALL fast_io_release_for_mod_write(PFILE_OBJECT FileObject, struct _ERESOURCE *ResourceToRelease, PDEVICE_OBJECT DeviceObject) {
     TRACE("(%p, %p, %p)\n", FileObject, ResourceToRelease, DeviceObject);
-    
+
     ExReleaseResourceLite(ResourceToRelease);
-    
+
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS STDCALL fast_io_acquire_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject) {
     TRACE("STUB: fast_io_acquire_for_ccflush\n");
-    
+
     UNUSED(FileObject);
     UNUSED(DeviceObject);
-    
+
     IoSetTopLevelIrp((PIRP)FSRTL_CACHE_TOP_LEVEL_IRP);
-    
+
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS STDCALL fast_io_release_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject) {
     TRACE("STUB: fast_io_release_for_ccflush\n");
-    
+
     UNUSED(FileObject);
     UNUSED(DeviceObject);
-    
+
     if (IoGetTopLevelIrp() == (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP)
         IoSetTopLevelIrp(NULL);
 
@@ -308,12 +308,12 @@ static BOOLEAN STDCALL fast_io_write(PFILE_OBJECT FileObject, PLARGE_INTEGER Fil
 
     if (FsRtlCopyWrite(FileObject, FileOffset, Length, Wait, LockKey, Buffer, IoStatus, DeviceObject)) {
         fcb* fcb = FileObject->FsContext;
-        
+
         fcb->inode_item.st_size = fcb->Header.FileSize.QuadPart;
-        
+
         return TRUE;
     }
-    
+
     return FALSE;
 }
 
@@ -370,7 +370,7 @@ void __stdcall init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     FastIoDispatch.AcquireForCcFlush = fast_io_acquire_for_ccflush;
     FastIoDispatch.ReleaseForCcFlush = fast_io_release_for_ccflush;
     FastIoDispatch.FastIoWrite = fast_io_write;
-    
+
 #ifdef _DEBUG
     FastIoDispatch.FastIoRead = fast_io_read;
     FastIoDispatch.MdlRead = fast_io_mdl_read;
@@ -384,6 +384,6 @@ void __stdcall init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     FastIoDispatch.PrepareMdlWrite = FsRtlPrepareMdlWriteDev;
     FastIoDispatch.MdlWriteComplete = FsRtlMdlWriteCompleteDev;
 #endif
-    
+
     *fiod = &FastIoDispatch;
 }

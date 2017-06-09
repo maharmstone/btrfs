@@ -1,9 +1,9 @@
-/* 
+/*
  * Adapted from code at http://support.fccps.cz/download/adv/frr/win32_ddk_mingw/win32_ddk_mingw.html - thanks!
- * 
+ *
    File created by Frank Rysanek <rysanek@fccps.cz>
    Source code taken almost verbatim from "Driver Development, Part 1"
-   published by Toby Opferman at CodeProject.com 
+   published by Toby Opferman at CodeProject.com
 */
 
 #include <stdio.h>
@@ -35,9 +35,9 @@ static const char *geterrstr(DWORD errcode)
                          NULL, errcode, 0, errbuffer, sizeof(errbuffer)-1, 0);
    errbuffer[sizeof(errbuffer)-1] = 0;
 
-   if (chars) 
+   if (chars)
    {
-      while (errbuffer[chars-1] == '\r' || errbuffer[chars-1] == '\n') 
+      while (errbuffer[chars-1] == '\r' || errbuffer[chars-1] == '\n')
       {
          errbuffer[--chars] = 0;
       }
@@ -45,7 +45,7 @@ static const char *geterrstr(DWORD errcode)
 
    if (chars && errbuffer[chars-1] == '.') errbuffer[--chars] = 0;
 
-   if (chars >= 2 && errbuffer[0] == '%' 
+   if (chars >= 2 && errbuffer[0] == '%'
        && errbuffer[1] >= '0' && errbuffer[1] <= '9')
    {
       skip = 2;
@@ -59,7 +59,7 @@ static const char *geterrstr(DWORD errcode)
       }
    }
 
-   if (chars > skip && errbuffer[skip] >= 'A' && errbuffer[skip] <= 'Z') 
+   if (chars > skip && errbuffer[skip] >= 'A' && errbuffer[skip] <= 'Z')
    {
       errbuffer[skip] += 'a' - 'A';
    }
@@ -98,12 +98,12 @@ int main(void)
    } /* else our buffer is long enough :-) */
 
    strcat(cwd, "\\");
-      
+
    IsWow64Process(GetCurrentProcess(),&amd64);
    strcat(cwd, amd64 ? "x64" : "x86");
-   
+
    strcat(cwd, "\\");
-   strcat(cwd, MY_DRIVER_FILENAME); 
+   strcat(cwd, MY_DRIVER_FILENAME);
    printf("Driver path+name: %s\n", cwd);
 
 
@@ -121,20 +121,20 @@ int main(void)
    printf("okay.\n");
    printf("Going to create the service... ");
 
-   hService = CreateService(hSCManager, MY_SERVICE_NAME_SHORT, 
-                            MY_SERVICE_NAME_LONG, 
-                            SERVICE_START | DELETE | SERVICE_STOP, 
+   hService = CreateService(hSCManager, MY_SERVICE_NAME_SHORT,
+                            MY_SERVICE_NAME_LONG,
+                            SERVICE_START | DELETE | SERVICE_STOP,
                             SERVICE_KERNEL_DRIVER,
-                            SERVICE_DEMAND_START, 
-                            SERVICE_ERROR_IGNORE, 
-                            cwd, 
+                            SERVICE_DEMAND_START,
+                            SERVICE_ERROR_IGNORE,
+                            cwd,
                             NULL, NULL, NULL, NULL, NULL);
 
    if(!hService)
    {
       process_error();
       printf("\n already exists? Trying to open it... ");
-      hService = OpenService(hSCManager, MY_SERVICE_NAME_SHORT, 
+      hService = OpenService(hSCManager, MY_SERVICE_NAME_SHORT,
                              SERVICE_START | DELETE | SERVICE_STOP);
    }
 
@@ -158,10 +158,10 @@ int main(void)
    }
 
    printf("okay.\n");
-   
+
 //    TCHAR VolumeName[] = _T("Z:");
 // TCHAR DeviceName[] = _T("\\Device\\VDisk1");
- 
+
 //    printf("Mounting volume... ");
 //     if (!DefineDosDeviceA(DDD_RAW_TARGET_PATH, "T:", "\\Device\\HarddiskVolume3"))
 //     {
@@ -170,17 +170,17 @@ int main(void)
 //     } else {
 //         printf("okay.\n");
 //     }
-   
+
 //     if (!SetVolumeMountPointA("T:\\", "\\\\?\\Volume{9bd714c3-4379-11e5-b26c-806e6f6e6963}\\")) {
 //         printf("Uh oh:\n");
 //         process_error();
 //     } else {
 //         printf("okay.\n");
 //     }
-   
+
    printf("\n >>> Press Enter to continue <<<\n");
    getchar();
-   
+
 //    printf("Unmounting volume... ");
 //     if (!DefineDosDeviceA(DDD_REMOVE_DEFINITION, "T:", NULL))
 //     {

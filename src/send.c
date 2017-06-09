@@ -1,17 +1,17 @@
 /* Copyright (c) Mark Harmstone 2017
- * 
+ *
  * This file is part of WinBtrfs.
- * 
+ *
  * WinBtrfs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public Licence as published by
  * the Free Software Foundation, either version 3 of the Licence, or
  * (at your option) any later version.
- * 
+ *
  * WinBtrfs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public Licence for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
@@ -114,7 +114,7 @@ static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, travers
 
 static void send_command(send_context* context, UINT16 cmd) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
-    
+
     bsc->cmd = cmd;
     bsc->csum = 0;
 
@@ -123,7 +123,7 @@ static void send_command(send_context* context, UINT16 cmd) {
 
 static void send_command_finish(send_context* context, ULONG pos) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[pos];
-    
+
     bsc->length = context->datalen - pos - sizeof(btrfs_send_command);
     bsc->csum = calc_crc32c(0, (UINT8*)bsc, context->datalen - pos);
 }
@@ -142,19 +142,19 @@ static void send_add_tlv(send_context* context, UINT16 type, void* data, UINT16 
 
 static char* uint64_to_char(UINT64 num, char* buf) {
     char *tmp, tmp2[20];
-    
+
     if (num == 0) {
         buf[0] = '0';
         return buf + 1;
     }
-    
+
     tmp = &tmp2[20];
     while (num > 0) {
         tmp--;
         *tmp = (num % 10) + '0';
         num /= 10;
     }
-    
+
     RtlCopyMemory(buf, tmp, tmp2 + sizeof(tmp2) - tmp);
 
     return &buf[tmp2 + sizeof(tmp2) - tmp];
@@ -422,7 +422,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             cmd = BTRFS_SEND_CMD_MKFILE;
             context->lastinode.file = TRUE;
         }
-        
+
         send_command(context, cmd);
 
         Status = get_orphan_name(context, tp->item->key.obj_id, ii->generation, name);
@@ -433,7 +433,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
 
         send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
         send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.obj_id, sizeof(UINT64));
-        
+
         if (cmd == BTRFS_SEND_CMD_MKNOD || cmd == BTRFS_SEND_CMD_MKFIFO || cmd == BTRFS_SEND_CMD_MKSOCK) {
             UINT64 rdev = makedev((ii->st_rdev & 0xFFFFFFFFFFF) >> 20, ii->st_rdev & 0xFFFFF), mode = ii->st_mode;
 
@@ -967,9 +967,9 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL 
 
 static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
     ULONG pos = context->datalen;
-    
+
     send_command(context, context->parent ? BTRFS_SEND_CMD_SNAPSHOT : BTRFS_SEND_CMD_SUBVOL);
-    
+
     send_add_tlv(context, BTRFS_SEND_TLV_PATH, fr->dc->utf8.Buffer, fr->dc->utf8.Length);
 
     send_add_tlv(context, BTRFS_SEND_TLV_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, sizeof(BTRFS_UUID));
