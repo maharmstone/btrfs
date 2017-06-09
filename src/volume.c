@@ -859,7 +859,7 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
 }
 
 static __inline WCHAR hex_digit(UINT8 n) {
-    if (n >= 0 && n <= 9)
+    if (n <= 9)
         return n + '0';
     else
         return n - 0xa + 'a';
