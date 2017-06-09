@@ -2465,7 +2465,8 @@ static NTSTATUS add_root(device_extension* Vcb, UINT64 id, UINT64 addr, UINT64 g
         RtlCopyMemory(&r->root_item, tp->item->data, min(sizeof(ROOT_ITEM), tp->item->size));
         if (tp->item->size < sizeof(ROOT_ITEM))
             RtlZeroMemory(((UINT8*)&r->root_item) + tp->item->size, sizeof(ROOT_ITEM) - tp->item->size);
-    }
+    } else
+        RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
 
     if (!Vcb->readonly && (r->id == BTRFS_ROOT_ROOT || r->id == BTRFS_ROOT_FSTREE || (r->id >= 0x100 && !(r->id & 0xf000000000000000)))) { // FS tree root
         // FIXME - don't call this if subvol is readonly (though we will have to if we ever toggle this flag)

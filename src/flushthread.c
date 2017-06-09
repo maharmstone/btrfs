@@ -6625,6 +6625,155 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS test_not_full(device_extension* Vcb) {
+    UINT64 reserve, could_alloc, free_space;
+    LIST_ENTRY* le;
+
+    // This function ensures we drop into readonly mode if we're about to leave very little
+    // space for metadata - this is similar to the "global reserve" of the Linux driver.
+    // Otherwise we might completely fill our space, at which point due to COW we can't
+    // delete anything in order to fix this.
+
+    reserve = Vcb->extent_root->root_item.bytes_used;
+    reserve += Vcb->root_root->root_item.bytes_used;
+    if (Vcb->checksum_root) reserve += Vcb->checksum_root->root_item.bytes_used;
+
+    reserve = max(reserve, 0x1000000); // 16 M
+    reserve = min(reserve, 0x20000000); // 512 M
+
+    // Find out how much space would be available for new metadata chunks
+
+    could_alloc = 0;
+
+    if (Vcb->metadata_flags & BLOCK_FLAG_RAID5) {
+        UINT64 s1 = 0, s2 = 0, s3 = 0;
+
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                UINT64 space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+
+                if (space >= s1) {
+                    s3 = s2;
+                    s2 = s1;
+                    s1 = space;
+                } else if (space >= s2) {
+                    s3 = s2;
+                    s2 = space;
+                } else if (space >= s3)
+                    s3 = space;
+            }
+
+            le = le->Flink;
+        }
+
+        could_alloc = s3 * 2;
+    } else if (Vcb->metadata_flags & (BLOCK_FLAG_RAID10 | BLOCK_FLAG_RAID6)) {
+        UINT64 s1 = 0, s2 = 0, s3 = 0, s4 = 0;
+
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                UINT64 space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+
+                if (space >= s1) {
+                    s4 = s3;
+                    s3 = s2;
+                    s2 = s1;
+                    s1 = space;
+                } else if (space >= s2) {
+                    s4 = s3;
+                    s3 = s2;
+                    s2 = space;
+                } else if (space >= s3) {
+                    s4 = s3;
+                    s3 = space;
+                } else if (space >= s4)
+                    s4 = space;
+            }
+
+            le = le->Flink;
+        }
+
+        could_alloc = s4 * 2;
+    } else if (Vcb->metadata_flags & (BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1)) {
+        UINT64 s1 = 0, s2 = 0;
+
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                UINT64 space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+
+                if (space >= s1) {
+                    s2 = s1;
+                    s1 = space;
+                } else if (space >= s2)
+                    s2 = space;
+            }
+
+            le = le->Flink;
+        }
+
+        if (Vcb->metadata_flags & BLOCK_FLAG_RAID1)
+            could_alloc = s2;
+        else // RAID0
+            could_alloc = s2 * 2;
+    } else if (Vcb->metadata_flags & BLOCK_FLAG_DUPLICATE) {
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                UINT64 space = (dev->devitem.num_bytes - dev->devitem.bytes_used) / 2;
+
+                could_alloc = max(could_alloc, space);
+            }
+
+            le = le->Flink;
+        }
+    } else { // SINGLE
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                UINT64 space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+
+                could_alloc = max(could_alloc, space);
+            }
+
+            le = le->Flink;
+        }
+    }
+
+    if (could_alloc >= reserve)
+        return STATUS_SUCCESS;
+
+    free_space = 0;
+
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+
+        if (!c->reloc && !c->readonly && c->chunk_item->type & BLOCK_FLAG_METADATA) {
+            free_space += c->chunk_item->size - c->used;
+
+            if (free_space + could_alloc >= reserve)
+                return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
+    }
+
+    return STATUS_DISK_FULL;
+}
+
 static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
@@ -6889,6 +7038,12 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     Status = write_trees(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("write_trees returned %08x\n", Status);
+        goto end;
+    }
+
+    Status = test_not_full(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("test_not_full returned %08x\n", Status);
         goto end;
     }
 
