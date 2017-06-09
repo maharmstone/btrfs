@@ -4511,6 +4511,115 @@ end:
     return Status;
 }
 
+static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP Irp) {
+    btrfs_resize* br = (btrfs_resize*)data;
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    device* dev = NULL;
+
+    TRACE("(%p, %p, %u)\n", Vcb, data, len);
+
+    if (!data || len < sizeof(btrfs_resize) || (br->size % Vcb->superblock.sector_size) != 0)
+        return STATUS_INVALID_PARAMETER;
+
+    // FIXME - require privilege
+
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+    le = Vcb->devices.Flink;
+    while (le != &Vcb->devices) {
+        device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+
+        if (dev2->devitem.dev_id == br->device) {
+            dev = dev2;
+            break;
+        }
+
+        le = le->Flink;
+    }
+
+    if (!dev) {
+        ERR("could not find device %llx\n", br->device);
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (!dev->devobj) {
+        ERR("trying to resize missing device\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (br->size > 0 && dev->devitem.num_bytes == br->size) {
+        TRACE("size unchanged, returning STATUS_SUCCESS\n");
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+
+    if (br->size > 0 && dev->devitem.num_bytes > br->size) {
+        FIXME("FIXME - allow reducing device size\n"); // FIXME
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    } else {
+        GET_LENGTH_INFORMATION gli;
+        UINT64 old_size, delta;
+
+        Status = dev_ioctl(dev->devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                           &gli, sizeof(gli), TRUE, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08x\n", Status);
+            goto end;
+        }
+
+        if (br->size == 0) {
+            br->size = gli.Length.QuadPart;
+
+            if (dev->devitem.num_bytes == br->size) {
+                TRACE("size unchanged, returning STATUS_SUCCESS\n");
+                Status = STATUS_SUCCESS;
+                goto end;
+            }
+
+            if (br->size == 0) {
+                ERR("IOCTL_DISK_GET_LENGTH_INFO returned 0 length\n");
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+        } else if (gli.Length.QuadPart < br->size) {
+            ERR("device was %llx bytes, trying to extend to %llx\n", gli.Length.QuadPart, br->size);
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        delta = br->size - dev->devitem.num_bytes;
+
+        old_size = dev->devitem.num_bytes;
+        dev->devitem.num_bytes = br->size;
+
+        Status = update_dev_item(Vcb, dev, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("update_dev_item returned %08x\n", Status);
+            dev->devitem.num_bytes = old_size;
+            goto end;
+        }
+
+        space_list_add2(&dev->space, NULL, dev->devitem.num_bytes, delta, NULL, NULL);
+
+        Vcb->superblock.total_bytes += delta;
+    }
+
+    Status = STATUS_SUCCESS;
+    Vcb->need_write = TRUE;
+
+end:
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    if (NT_SUCCESS(Status))
+        FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
+
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
@@ -5121,7 +5230,12 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
         case FSCTL_BTRFS_READ_SEND_BUFFER:
             Status = read_send_buffer(DeviceObject->DeviceExtension, IrpSp->FileObject, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength,
                                       &Irp->IoStatus.Information, Irp->RequestorMode);
-        break;
+            break;
+
+        case FSCTL_BTRFS_RESIZE:
+            Status = resize_device(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer,
+                                   IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
+            break;
 
         default:
             WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",

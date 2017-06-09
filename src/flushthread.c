@@ -3842,7 +3842,7 @@ static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
+NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
