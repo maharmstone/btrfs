@@ -2994,7 +2994,6 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
 
         if (!NT_SUCCESS(Status)) {
             ERR("alloc_chunk returned %08x\n", Status);
-            ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
             goto end;
         }
 
