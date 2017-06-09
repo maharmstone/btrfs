@@ -867,14 +867,14 @@ static __inline UINT64 make_file_id(root* r, UINT64 inode) {
     ((key1.offset > key2.offset) ? 1 :\
     0))))))
 
-static UINT64 __inline sector_align(UINT64 n, UINT64 a) {
+__inline static UINT64 sector_align(UINT64 n, UINT64 a) {
     if (n & (a - 1))
         n = (n + a) & ~(a - 1);
 
     return n;
 }
 
-static BOOL __inline is_subvol_readonly(root* r, PIRP Irp) {
+__inline static BOOL is_subvol_readonly(root* r, PIRP Irp) {
     if (!(r->root_item.flags & BTRFS_SUBVOL_READONLY))
         return FALSE;
 
@@ -884,7 +884,7 @@ static BOOL __inline is_subvol_readonly(root* r, PIRP Irp) {
     return (!Irp || Irp->RequestorMode == UserMode) && PsGetCurrentProcess() != r->reserved ? TRUE : FALSE;
 }
 
-static __inline ULONG get_extent_data_len(UINT8 type) {
+__inline static ULONG get_extent_data_len(UINT8 type) {
     switch (type) {
         case TYPE_TREE_BLOCK_REF:
             return sizeof(TREE_BLOCK_REF);
@@ -906,7 +906,7 @@ static __inline ULONG get_extent_data_len(UINT8 type) {
     }
 }
 
-static __inline UINT64 get_extent_data_refcount(UINT8 type, void* data) {
+__inline static UINT64 get_extent_data_refcount(UINT8 type, void* data) {
     switch (type) {
         case TYPE_TREE_BLOCK_REF:
             return 1;

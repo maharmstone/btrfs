@@ -95,12 +95,12 @@ UINT8 gdiv(UINT8 a, UINT8 b) {
 // https://www.kernel.org/pub/linux/kernel/people/hpa/raid6.pdf
 
 #ifdef _AMD64_
-static UINT64 __inline galois_double_mask64(UINT64 v) {
+__inline static UINT64 galois_double_mask64(UINT64 v) {
     v &= 0x8080808080808080;
     return (v << 1) - (v >> 7);
 }
 #else
-static UINT32 __inline galois_double_mask32(UINT32 v) {
+__inline static UINT32 galois_double_mask32(UINT32 v) {
     v &= 0x80808080;
     return (v << 1) - (v >> 7);
 }
