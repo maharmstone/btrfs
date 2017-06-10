@@ -851,7 +851,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, UINT64 address, tree* 
 
             c->used -= Vcb->superblock.node_size;
 
-            space_list_add(c, TRUE, address, Vcb->superblock.node_size, rollback);
+            space_list_add(c, address, Vcb->superblock.node_size, rollback);
 
             ExReleaseResourceLite(&c->lock);
         } else
@@ -2411,7 +2411,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
 end:
     if (ce->count == 0 && !ce->superseded) {
         c->used -= ce->size;
-        space_list_add(c, TRUE, ce->address, ce->size, rollback);
+        space_list_add(c, ce->address, ce->size, rollback);
     }
 
     RemoveEntryList(&ce->list_entry);
@@ -4396,7 +4396,7 @@ cont:
 
                 er->chunk->used -= er->skip_start;
 
-                space_list_add(er->chunk, TRUE, er->address, er->skip_start, NULL);
+                space_list_add(er->chunk, er->address, er->skip_start, NULL);
 
                 ExReleaseResourceLite(&er->chunk->lock);
 
@@ -4450,7 +4450,7 @@ cont:
 
                 er->chunk->used -= er->skip_end;
 
-                space_list_add(er->chunk, TRUE, er->address + er->length - er->skip_end, er->skip_end, NULL);
+                space_list_add(er->chunk, er->address + er->length - er->skip_end, er->skip_end, NULL);
 
                 ExReleaseResourceLite(&er->chunk->lock);
 

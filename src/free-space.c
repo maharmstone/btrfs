@@ -1924,17 +1924,13 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-void space_list_add(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
-    LIST_ENTRY* list;
-
-    TRACE("(%p, %u, %llx, %llx, %p)\n", c, deleting, address, length, rollback);
-
-    list = deleting ? &c->deleting : &c->space;
+void space_list_add(chunk* c, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+    TRACE("(%p, %llx, %llx, %p)\n", c, address, length, rollback);
 
     c->changed = TRUE;
     c->space_changed = TRUE;
 
-    space_list_add2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
+    space_list_add2(&c->deleting, NULL, address, length, c, rollback);
 }
 
 void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback) {

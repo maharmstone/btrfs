@@ -108,7 +108,7 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
 
         c->used -= Vcb->superblock.node_size;
 
-        space_list_add(c, TRUE, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
+        space_list_add(c, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
 
         ExReleaseResourceLite(&c->lock);
     }
@@ -1337,7 +1337,7 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
 
         c->used -= tp->item->key.offset;
 
-        space_list_add(c, TRUE, tp->item->key.obj_id, tp->item->key.offset, rollback);
+        space_list_add(c, tp->item->key.obj_id, tp->item->key.offset, rollback);
 
         ExReleaseResourceLite(&c->lock);
     }
