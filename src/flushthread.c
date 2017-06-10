@@ -7099,16 +7099,6 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         goto end;
     }
 
-    le = Vcb->chunks.Flink;
-    while (le != &Vcb->chunks) {
-        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
-
-        c->changed = FALSE;
-        c->space_changed = FALSE;
-
-        le = le->Flink;
-    }
-
     vde = Vcb->vde;
 
     if (vde) {
@@ -7127,6 +7117,16 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     }
 
     clean_space_cache(Vcb);
+
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+
+        c->changed = FALSE;
+        c->space_changed = FALSE;
+
+        le = le->Flink;
+    }
 
     Vcb->superblock.generation++;
 
