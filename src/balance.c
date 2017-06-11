@@ -1807,6 +1807,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
 
                 if (!find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                     ExReleaseResourceLite(&newchunk->lock);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
                     ERR("could not find address in new chunk\n");
                     Status = STATUS_DISK_FULL;
                     goto end;
