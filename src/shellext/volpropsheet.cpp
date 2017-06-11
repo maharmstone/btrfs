@@ -28,6 +28,7 @@
 #include <uxtheme.h>
 
 #include "volpropsheet.h"
+#include "devices.h"
 #include "resource.h"
 
 HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
@@ -1241,6 +1242,36 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             return TRUE;
                         }
+
+                        case IDC_DEVICE_RESIZE:
+                        {
+                            HWND devlist;
+                            int index;
+                            LVITEMW lvi;
+                            WCHAR sel[100];
+                            BtrfsDeviceResize* bdr;
+
+                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+
+                            index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+
+                            if (index == -1)
+                                return TRUE;
+
+                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                            lvi.mask = LVIF_TEXT;
+                            lvi.iItem = index;
+                            lvi.iSubItem = 0;
+                            lvi.pszText = sel;
+                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+
+                            bdr = new BtrfsDeviceResize;
+                            bdr->ShowDialog(hwndDlg, _wtoi(sel));
+                            delete bdr;
+
+                            // FIXME - refresh dev list afterwards
+                        }
                     }
                 break;
             }
@@ -1253,6 +1284,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     NMLISTVIEW* nmv = (NMLISTVIEW*)lParam;
 
                     EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_SHOW_STATS), nmv->uNewState & LVIS_SELECTED);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), nmv->uNewState & LVIS_SELECTED);
                     break;
                 }
             }

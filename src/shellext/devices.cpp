@@ -708,6 +708,48 @@ BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
     sel = NULL;
 }
 
+INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    switch (uMsg) {
+        case WM_COMMAND:
+            switch (HIWORD(wParam)) {
+                case BN_CLICKED:
+                    switch (LOWORD(wParam)) {
+                        case IDOK:
+                            return TRUE;
+
+                        case IDCANCEL:
+                            EndDialog(hwndDlg, 0);
+                            return TRUE;
+                    }
+                break;
+            }
+        break;
+    }
+
+    return FALSE;
+}
+
+static INT_PTR CALLBACK stub_DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsDeviceResize* bdr;
+
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bdr = (BtrfsDeviceResize*)lParam;
+    } else
+        bdr = (BtrfsDeviceResize*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+
+    if (bdr)
+        return bdr->DeviceResizeDlgProc(hwndDlg, uMsg, wParam, lParam);
+    else
+        return FALSE;
+}
+
+void BtrfsDeviceResize::ShowDialog(HWND hwnd, UINT64 dev_id) {
+    this->dev_id = dev_id;
+
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RESIZE), hwnd, stub_DeviceResizeDlgProc, (LPARAM)this);
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif

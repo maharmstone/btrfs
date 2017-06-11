@@ -140,3 +140,12 @@ private:
     device* sel;
     std::vector<device> device_list;
 };
+
+class BtrfsDeviceResize {
+public:
+    INT_PTR CALLBACK DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+    void ShowDialog(HWND hwnd, UINT64 dev_id);
+
+private:
+    UINT64 dev_id;
+};

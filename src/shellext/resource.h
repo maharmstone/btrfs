@@ -87,6 +87,7 @@
 #define IDS_BALANCE_PAUSED_REMOVAL      171
 #define IDD_SEND_SUBVOL                 171
 #define IDS_BALANCE_CANCELLED_REMOVAL   172
+#define IDD_RESIZE                      172
 #define IDS_BALANCE_COMPLETE_REMOVAL    173
 #define IDS_PARTITION                   174
 #define IDS_WHOLE_DISK                  175
@@ -271,6 +272,7 @@
 #define IDC_CLONE_REMOVE                1047
 #define IDC_LIMIT_END_SPINNER           1048
 #define IDC_START_BALANCE               1048
+#define IDC_DEVICE_RESIZE               1048
 #define IDC_LIMIT_END                   1049
 #define IDC_PAUSE_BALANCE               1049
 #define IDC_STRIPES                     1050
@@ -307,14 +309,18 @@
 #define IDC_GENERATION_ERRS             1068
 #define IDC_PARENT_SUBVOL               1068
 #define IDC_CLONE_LIST                  1069
+#define IDC_RESIZE_DEVICE_ID            1070
+#define IDC_RESIZE_CURSIZE              1071
+#define IDC_RESIZE_SLIDER               1072
+#define IDC_RESIZE_NEWSIZE              1073
 
 // Next default values for new objects
-//
+// 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        172
+#define _APS_NEXT_RESOURCE_VALUE        173
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1070
+#define _APS_NEXT_CONTROL_VALUE         1073
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
