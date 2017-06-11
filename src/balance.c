@@ -797,6 +797,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
 
                         if (!find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                             ExReleaseResourceLite(&newchunk->lock);
+                            ExReleaseResourceLite(&Vcb->chunk_lock);
                             ERR("could not find address in new chunk\n");
                             Status = STATUS_DISK_FULL;
                             goto end;
