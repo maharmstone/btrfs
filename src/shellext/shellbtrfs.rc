@@ -357,7 +357,7 @@ BEGIN
     PUSHBUTTON      "Cancel",IDCANCEL,148,112,50,14
     LTEXT           "Device %llx:",IDC_RESIZE_DEVICE_ID,18,21,238,8
     LTEXT           "Current size: %s",IDC_RESIZE_CURSIZE,18,37,238,8
-    CONTROL         "",IDC_RESIZE_SLIDER,"msctls_trackbar32",TBS_AUTOTICKS | TBS_BOTH | WS_TABSTOP,7,74,265,24
+    CONTROL         "",IDC_RESIZE_SLIDER,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,7,74,265,24
     LTEXT           "New size: %s",IDC_RESIZE_NEWSIZE,18,53,238,8
 END
 

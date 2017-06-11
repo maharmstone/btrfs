@@ -710,6 +710,93 @@ BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
 
 INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+        case WM_INITDIALOG:
+        {
+            HANDLE h;
+            WCHAR s[255], t[255], u[255];
+
+            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+
+            GetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
+            StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id);
+            SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t);
+
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+            if (h != INVALID_HANDLE_VALUE) {
+                NTSTATUS Status;
+                IO_STATUS_BLOCK iosb;
+                btrfs_device *devices, *bd;
+                ULONG devsize;
+                BOOL found = FALSE;
+                HWND slider;
+
+                devsize = 1024;
+                devices = (btrfs_device*)malloc(devsize);
+
+                while (TRUE) {
+                    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+                    if (Status == STATUS_BUFFER_OVERFLOW) {
+                        devsize += 1024;
+
+                        free(devices);
+                        devices = (btrfs_device*)malloc(devsize);
+                    } else
+                        break;
+                }
+
+                if (!NT_SUCCESS(Status)) {
+                    free(devices);
+                    CloseHandle(h);
+                    return FALSE;
+                }
+
+                bd = devices;
+
+                while (TRUE) {
+                    if (bd->dev_id == dev_id) {
+                        memcpy(&dev_info, bd, sizeof(btrfs_device));
+                        found = TRUE;
+                        break;
+                    }
+
+                    if (bd->next_entry > 0)
+                        bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                    else
+                        break;
+                }
+
+                if (!found) {
+                    free(devices);
+                    CloseHandle(h);
+                    return FALSE;
+                }
+
+                free(devices);
+                CloseHandle(h);
+
+                GetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, s, sizeof(s) / sizeof(WCHAR));
+                format_size(dev_info.size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+                StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, u);
+                SetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, t);
+
+                new_size = dev_info.size;
+
+                GetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, new_size_text, sizeof(new_size_text) / sizeof(WCHAR));
+                StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), new_size_text, u);
+                SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
+
+                slider = GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER);
+                SendMessageW(slider, TBM_SETRANGEMIN, FALSE, 0);
+                SendMessageW(slider, TBM_SETRANGEMAX, FALSE, dev_info.max_size / 1048576);
+                SendMessageW(slider, TBM_SETPOS, TRUE, new_size / 1048576);
+            } else
+                return FALSE;
+
+            break;
+        }
+
         case WM_COMMAND:
             switch (HIWORD(wParam)) {
                 case BN_CLICKED:
@@ -724,6 +811,19 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 break;
             }
         break;
+
+        case WM_HSCROLL:
+        {
+            WCHAR t[255], u[255];
+
+            new_size = UInt32x32To64(SendMessageW(GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER), TBM_GETPOS, 0, 0), 1048576);
+
+            format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+            StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), new_size_text, u);
+            SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
+
+            break;
+        }
     }
 
     return FALSE;
@@ -744,8 +844,9 @@ static INT_PTR CALLBACK stub_DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         return FALSE;
 }
 
-void BtrfsDeviceResize::ShowDialog(HWND hwnd, UINT64 dev_id) {
+void BtrfsDeviceResize::ShowDialog(HWND hwnd, WCHAR* fn, UINT64 dev_id) {
     this->dev_id = dev_id;
+    wcscpy(this->fn, fn);
 
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RESIZE), hwnd, stub_DeviceResizeDlgProc, (LPARAM)this);
 }

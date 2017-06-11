@@ -144,8 +144,10 @@ private:
 class BtrfsDeviceResize {
 public:
     INT_PTR CALLBACK DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void ShowDialog(HWND hwnd, UINT64 dev_id);
+    void ShowDialog(HWND hwnd, WCHAR* fn, UINT64 dev_id);
 
 private:
-    UINT64 dev_id;
+    UINT64 dev_id, new_size;
+    WCHAR fn[MAX_PATH], new_size_text[255];
+    btrfs_device dev_info;
 };

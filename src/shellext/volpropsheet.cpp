@@ -1267,10 +1267,10 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
 
                             bdr = new BtrfsDeviceResize;
-                            bdr->ShowDialog(hwndDlg, _wtoi(sel));
+                            bdr->ShowDialog(hwndDlg, fn, _wtoi(sel));
                             delete bdr;
 
-                            // FIXME - refresh dev list afterwards
+                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
                         }
                     }
                 break;
