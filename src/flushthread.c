@@ -5185,7 +5185,11 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
                     c->devices[i]->devitem.bytes_used -= de->length;
 
-                    space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, NULL, rollback);
+                    if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.dev_id) {
+                        if (cis[i].offset < Vcb->balance.opts[0].drange_start && cis[i].offset + de->length > Vcb->balance.opts[0].drange_start)
+                            space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, Vcb->balance.opts[0].drange_start - cis[i].offset, NULL, rollback);
+                    } else
+                        space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, NULL, rollback);
                 }
             } else
                 WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
@@ -5193,7 +5197,12 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             UINT64 len = c->chunk_item->size / factor;
 
             c->devices[i]->devitem.bytes_used -= len;
-            space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, len, NULL, rollback);
+
+            if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.dev_id) {
+                if (cis[i].offset < Vcb->balance.opts[0].drange_start && cis[i].offset + len > Vcb->balance.opts[0].drange_start)
+                    space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, Vcb->balance.opts[0].drange_start - cis[i].offset, NULL, rollback);
+            } else
+                space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, len, NULL, rollback);
         }
     }
 

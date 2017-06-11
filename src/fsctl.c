@@ -4581,13 +4581,41 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             le = le->Flink;
         }
 
+        delta = dev->devitem.num_bytes - br->size;
+
         if (need_balance) {
-            FIXME("FIXME - do balance\n"); // FIXME
-            Status = STATUS_NOT_IMPLEMENTED;
+            int i;
+
+            if (Vcb->balance.thread) {
+                WARN("balance already running\n");
+                Status = STATUS_DEVICE_NOT_READY;
+                goto end;
+            }
+
+            RtlZeroMemory(Vcb->balance.opts, sizeof(btrfs_balance_opts) * 3);
+
+            for (i = 0; i < 3; i++) {
+                Vcb->balance.opts[i].flags = BTRFS_BALANCE_OPTS_ENABLED | BTRFS_BALANCE_OPTS_DEVID | BTRFS_BALANCE_OPTS_DRANGE;
+                Vcb->balance.opts[i].devid = dev->devitem.dev_id;
+                Vcb->balance.opts[i].drange_start = br->size;
+                Vcb->balance.opts[i].drange_end = dev->devitem.num_bytes;
+            }
+
+            Vcb->balance.paused = FALSE;
+            Vcb->balance.shrinking = TRUE;
+            Vcb->balance.status = STATUS_SUCCESS;
+            KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+
+            space_list_subtract2(&dev->space, NULL, br->size, delta, NULL, NULL);
+
+            Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
+            if (!NT_SUCCESS(Status)) {
+                ERR("PsCreateSystemThread returned %08x\n", Status);
+                goto end;
+            }
+
             goto end;
         }
-
-        delta = dev->devitem.num_bytes - br->size;
 
         old_size = dev->devitem.num_bytes;
         dev->devitem.num_bytes = br->size;

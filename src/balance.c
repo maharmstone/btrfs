@@ -2256,7 +2256,8 @@ static BOOL should_balance_chunk(device_extension* Vcb, UINT8 sort, chunk* c) {
         physsize = c->chunk_item->size / factor;
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (cis[i].offset >= opts->drange_start && cis[i].offset + physsize < opts->drange_end) {
+            if (cis[i].offset < opts->drange_end && cis[i].offset + physsize >= opts->drange_start &&
+                (!(opts->flags & BTRFS_BALANCE_OPTS_DEVID) || cis[i].dev_id == opts->devid)) {
                 b = TRUE;
                 break;
             }
@@ -2976,7 +2977,57 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
     }
 }
 
-static void balance_thread(void* context) {
+static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
+    LIST_ENTRY* le;
+
+    while (!IsListEmpty(&dev->space)) {
+        space* s = CONTAINING_RECORD(RemoveHeadList(&dev->space), space, list_entry);
+
+        ExFreePool(s);
+    }
+
+    // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
+
+    space_list_add2(&dev->space, NULL, 0x100000, dev->devitem.num_bytes - 0x100000, NULL, NULL);
+
+    le = Vcb->chunks.Flink;
+    while (le != &Vcb->chunks) {
+        UINT16 n;
+        chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+
+        for (n = 0; n < c->chunk_item->num_stripes; n++) {
+            UINT64 stripe_size = 0;
+
+            if (cis[n].dev_id == dev->devitem.dev_id) {
+                if (stripe_size == 0) {
+                    UINT16 factor;
+
+                    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+                        factor = c->chunk_item->num_stripes;
+                    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+                        factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+                    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+                        factor = c->chunk_item->num_stripes - 1;
+                    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+                        factor = c->chunk_item->num_stripes - 2;
+                    else // SINGLE, DUP, RAID1
+                        factor = 1;
+
+                    stripe_size = c->chunk_item->size / factor;
+                }
+
+                space_list_subtract2(&dev->space, NULL, cis[n].offset, stripe_size, NULL, NULL);
+            }
+        }
+
+        le = le->Flink;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+void balance_thread(void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
     LIST_ENTRY* le;
@@ -3021,7 +3072,7 @@ static void balance_thread(void* context) {
     // FIXME - what are we supposed to do with limit_start?
 
     if (!Vcb->readonly) {
-        if (!Vcb->balance.removing) {
+        if (!Vcb->balance.removing && !Vcb->balance.shrinking) {
             Status = add_balance_item(Vcb);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_balance_item returned %08x\n", Status);
@@ -3331,16 +3382,7 @@ end:
                 Vcb->system_flags = old_system_flags;
         }
 
-        if (!Vcb->balance.removing) {
-            FsRtlEnterFileSystem();
-            Status = remove_balance_item(Vcb);
-            FsRtlExitFileSystem();
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("remove_balance_item returned %08x\n", Status);
-                goto end;
-            }
-        } else {
+        if (Vcb->balance.removing) {
             device* dev = NULL;
 
             FsRtlEnterFileSystem();
@@ -3372,6 +3414,74 @@ end:
 
             ExReleaseResourceLite(&Vcb->tree_lock);
             FsRtlExitFileSystem();
+        } else if (Vcb->balance.shrinking) {
+            device* dev = NULL;
+            LIST_ENTRY* le;
+
+            ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+            le = Vcb->devices.Flink;
+            while (le != &Vcb->devices) {
+                device* dev2 = CONTAINING_RECORD(le, device, list_entry);
+
+                if (dev2->devitem.dev_id == Vcb->balance.opts[0].devid) {
+                    dev = dev2;
+                    break;
+                }
+
+                le = le->Flink;
+            }
+
+            if (!dev) {
+                ERR("could not find device %llx\n", Vcb->balance.opts[0].devid);
+                Vcb->balance.status = STATUS_INTERNAL_ERROR;
+            }
+
+            if (Vcb->balance.stopping || !NT_SUCCESS(Vcb->balance.status)) {
+                if (dev) {
+                    Status = regenerate_space_list(Vcb, dev);
+                    if (!NT_SUCCESS(Status))
+                        WARN("regenerate_space_list returned %08x\n", Status);
+                }
+            } else {
+                UINT64 old_size;
+
+                old_size = dev->devitem.num_bytes;
+                dev->devitem.num_bytes = Vcb->balance.opts[0].drange_start;
+
+                Status = update_dev_item(Vcb, dev, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("update_dev_item returned %08x\n", Status);
+                    dev->devitem.num_bytes = old_size;
+                    Vcb->balance.status = Status;
+
+                    Status = regenerate_space_list(Vcb, dev);
+                    if (!NT_SUCCESS(Status))
+                        WARN("regenerate_space_list returned %08x\n", Status);
+                } else {
+                    Vcb->superblock.total_bytes -= old_size - dev->devitem.num_bytes;
+
+                    Status = do_write(Vcb, NULL);
+                    if (!NT_SUCCESS(Status))
+                        ERR("do_write returned %08x\n", Status);
+
+                    free_trees(Vcb);
+                }
+            }
+
+            ExReleaseResourceLite(&Vcb->tree_lock);
+
+            if (!Vcb->balance.stopping && NT_SUCCESS(Vcb->balance.status))
+                FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
+        } else {
+            FsRtlEnterFileSystem();
+            Status = remove_balance_item(Vcb);
+            FsRtlExitFileSystem();
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("remove_balance_item returned %08x\n", Status);
+                goto end;
+            }
         }
 
         if (Vcb->trim && !Vcb->options.no_trim) {
@@ -3498,6 +3608,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
 
     Vcb->balance.paused = FALSE;
     Vcb->balance.removing = FALSE;
+    Vcb->balance.shrinking = FALSE;
     Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
 
@@ -3580,6 +3691,7 @@ NTSTATUS look_for_balance_item(device_extension* Vcb) {
         Vcb->balance.paused = FALSE;
 
     Vcb->balance.removing = FALSE;
+    Vcb->balance.shrinking = FALSE;
     Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
 
@@ -3613,6 +3725,9 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length) {
 
     if (Vcb->balance.removing)
         bqb->status |= BTRFS_BALANCE_REMOVAL;
+
+    if (Vcb->balance.shrinking)
+        bqb->status |= BTRFS_BALANCE_SHRINKING;
 
     if (!NT_SUCCESS(Vcb->balance.status))
         bqb->status |= BTRFS_BALANCE_ERROR;
@@ -3773,6 +3888,8 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
 
     Vcb->balance.paused = FALSE;
     Vcb->balance.removing = TRUE;
+    Vcb->balance.shrinking = FALSE;
+    Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
 
     Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);

@@ -605,6 +605,7 @@ typedef struct {
     BOOL paused;
     BOOL stopping;
     BOOL removing;
+    BOOL shrinking;
     BOOL dev_readonly;
     ULONG balance_num;
     NTSTATUS status;
@@ -1291,6 +1292,7 @@ NTSTATUS resume_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS look_for_balance_item(device_extension* Vcb);
 NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
+void balance_thread(void* context);
 
 // in volume.c
 NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
