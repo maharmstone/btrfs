@@ -96,6 +96,7 @@ typedef struct {
     UINT32 next_entry;
     UINT64 dev_id;
     UINT64 size;
+    UINT64 max_size;
     BOOL readonly;
     BOOL missing;
     ULONG device_number;

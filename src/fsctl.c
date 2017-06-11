@@ -1433,6 +1433,18 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         dev->device_number = dev2->disk_num;
         dev->partition_number = dev2->part_num;
         dev->size = dev2->devitem.num_bytes;
+
+        if (dev2->devobj) {
+            GET_LENGTH_INFORMATION gli;
+
+            Status = dev_ioctl(dev2->devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), TRUE, NULL);
+            if (!NT_SUCCESS(Status))
+                goto end;
+
+            dev->max_size = gli.Length.QuadPart;
+        } else
+            dev->max_size = dev->size;
+
         RtlCopyMemory(dev->stats, dev2->stats, sizeof(UINT64) * 5);
 
         length -= sizeof(btrfs_device) - sizeof(WCHAR) + dev->namelen;
