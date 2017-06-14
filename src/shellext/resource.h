@@ -190,6 +190,7 @@
 #define IDS_SEND_CANCEL                 272
 #define IDS_SEND_WRITING                273
 #define IDS_MISSING                     274
+#define IDS_RESIZE_SUCCESSFUL           275
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

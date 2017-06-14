@@ -147,6 +147,8 @@ public:
     void ShowDialog(HWND hwnd, WCHAR* fn, UINT64 dev_id);
 
 private:
+    void do_resize(HWND hwndDlg);
+
     UINT64 dev_id, new_size;
     WCHAR fn[MAX_PATH], new_size_text[255];
     btrfs_device dev_info;

@@ -708,6 +708,44 @@ BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
     sel = NULL;
 }
 
+void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
+    HANDLE h;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    btrfs_resize br;
+    WCHAR s[255], t[255], u[255];
+
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+
+    if (h == INVALID_HANDLE_VALUE) {
+        ShowError(hwndDlg, GetLastError());
+        return;
+    }
+
+    // FIXME - if non-trivial shrink, show balance box
+
+    br.device = dev_id;
+    br.size = new_size;
+
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), NULL, 0);
+
+    if (!NT_SUCCESS(Status)) {
+        ShowNtStatusError(hwndDlg, Status);
+        CloseHandle(h);
+        return;
+    }
+
+    CloseHandle(h);
+
+    LoadStringW(module, IDS_RESIZE_SUCCESSFUL, s, sizeof(s) / sizeof(WCHAR));
+    format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+    StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id, u);
+    MessageBoxW(hwndDlg, t, L"", MB_OK);
+
+    EndDialog(hwndDlg, 0);
+}
+
 INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
@@ -802,6 +840,7 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 case BN_CLICKED:
                     switch (LOWORD(wParam)) {
                         case IDOK:
+                            do_resize(hwndDlg);
                             return TRUE;
 
                         case IDCANCEL:
@@ -821,6 +860,8 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
             format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
             StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), new_size_text, u);
             SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
+
+            EnableWindow(GetDlgItem(hwndDlg, IDOK), new_size > 0 ? TRUE : FALSE);
 
             break;
         }

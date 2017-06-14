@@ -738,6 +738,7 @@ BEGIN
     IDS_SEND_CANCEL         "&Cancel"
     IDS_SEND_WRITING        "Writing..."
     IDS_MISSING             "(missing)"
+    IDS_RESIZE_SUCCESSFUL   "Device %llx successfully resized to %s."
 END
 
 #endif    // English (U.K.) resources
