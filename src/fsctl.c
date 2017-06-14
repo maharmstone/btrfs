@@ -4626,6 +4626,8 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
                 goto end;
             }
 
+            Status = STATUS_MORE_PROCESSING_REQUIRED;
+
             goto end;
         }
 
