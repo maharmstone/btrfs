@@ -191,6 +191,11 @@
 #define IDS_SEND_WRITING                273
 #define IDS_MISSING                     274
 #define IDS_RESIZE_SUCCESSFUL           275
+#define IDS_BALANCE_RUNNING_SHRINK      276
+#define IDS_BALANCE_PAUSED_SHRINK       277
+#define IDS_BALANCE_CANCELLED_SHRINK    278
+#define IDS_BALANCE_COMPLETE_SHRINK     279
+#define IDS_BALANCE_FAILED_SHRINK       280
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

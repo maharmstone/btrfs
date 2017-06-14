@@ -713,7 +713,6 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_resize br;
-    WCHAR s[255], t[255], u[255];
 
     h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -730,7 +729,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
 
     Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), NULL, 0);
 
-    if (!NT_SUCCESS(Status)) {
+    if (Status != STATUS_MORE_PROCESSING_REQUIRED && !NT_SUCCESS(Status)) {
         ShowNtStatusError(hwndDlg, Status);
         CloseHandle(h);
         return;
@@ -738,12 +737,28 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
 
     CloseHandle(h);
 
-    LoadStringW(module, IDS_RESIZE_SUCCESSFUL, s, sizeof(s) / sizeof(WCHAR));
-    format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
-    StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id, u);
-    MessageBoxW(hwndDlg, t, L"", MB_OK);
+    if (Status != STATUS_MORE_PROCESSING_REQUIRED) {
+        WCHAR s[255], t[255], u[255];
 
-    EndDialog(hwndDlg, 0);
+        LoadStringW(module, IDS_RESIZE_SUCCESSFUL, s, sizeof(s) / sizeof(WCHAR));
+        format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+        StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id, u);
+        MessageBoxW(hwndDlg, t, L"", MB_OK);
+
+        EndDialog(hwndDlg, 0);
+    } else {
+        BtrfsBalance* bb;
+        HWND par;
+
+        par = GetParent(hwndDlg);
+        EndDialog(hwndDlg, 0);
+
+        bb = new BtrfsBalance(fn, TRUE);
+
+        bb->ShowBalance(par);
+
+        delete bb;
+    }
 }
 
 INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {

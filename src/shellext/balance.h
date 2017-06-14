@@ -20,10 +20,11 @@
 
 class BtrfsBalance {
 public:
-    BtrfsBalance(WCHAR* drive, BOOL RemoveDevice = FALSE) {
+    BtrfsBalance(WCHAR* drive, BOOL RemoveDevice = FALSE, BOOL ShrinkDevice = FALSE) {
         removing = FALSE;
         devices = NULL;
         called_from_RemoveDevice = RemoveDevice;
+        called_from_ShrinkDevice = ShrinkDevice;
         wcscpy(fn, drive);
     }
 
@@ -45,8 +46,9 @@ private:
     btrfs_query_balance bqb;
     BOOL cancelling;
     BOOL removing;
+    BOOL shrinking;
     WCHAR fn[MAX_PATH];
     btrfs_device* devices;
     BOOL readonly;
-    BOOL called_from_RemoveDevice;
+    BOOL called_from_RemoveDevice, called_from_ShrinkDevice;
 };

@@ -739,6 +739,13 @@ BEGIN
     IDS_SEND_WRITING        "Writing..."
     IDS_MISSING             "(missing)"
     IDS_RESIZE_SUCCESSFUL   "Device %llx successfully resized to %s."
+    IDS_BALANCE_RUNNING_SHRINK 
+                            "Currently shrinking device %llu (%llu out of %llu chunks processed, %1.1f%%)"
+    IDS_BALANCE_PAUSED_SHRINK 
+                            "Shrinking of device %llu paused (%llu out of %llu chunks processed, %1.1f%%)"
+    IDS_BALANCE_CANCELLED_SHRINK "Device shrinking cancelled."
+    IDS_BALANCE_COMPLETE_SHRINK "Device successfully shrunk."
+    IDS_BALANCE_FAILED_SHRINK "Device shrinking failed (error %08x, %s)"
 END
 
 #endif    // English (U.K.) resources

@@ -107,6 +107,7 @@ void BtrfsBalance::StartBalance(HWND hwndDlg) {
 
     cancelling = FALSE;
     removing = FALSE;
+    shrinking = FALSE;
     balance_status = BTRFS_BALANCE_RUNNING;
 
     EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_BALANCE), TRUE);
@@ -238,7 +239,14 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_SYSTEM_OPTIONS), IsDlgButtonChecked(hwndDlg, IDC_SYSTEM) == BST_CHECKED ? TRUE : FALSE);
 
             if (bqb.status & BTRFS_BALANCE_ERROR) {
-                if (!LoadStringW(module, balance_status & BTRFS_BALANCE_REMOVAL ? IDS_BALANCE_FAILED_REMOVAL : IDS_BALANCE_FAILED, s, sizeof(s) / sizeof(WCHAR))) {
+                if (removing)
+                    resid = IDS_BALANCE_FAILED_REMOVAL;
+                else if (shrinking)
+                    resid = IDS_BALANCE_FAILED_SHRINK;
+                else
+                    resid = IDS_BALANCE_FAILED;
+
+                if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
                     ShowError(hwndDlg, GetLastError());
                     return;
                 }
@@ -249,9 +257,9 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
                 SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
             } else {
                 if (cancelling)
-                    resid = removing ? IDS_BALANCE_CANCELLED_REMOVAL : IDS_BALANCE_CANCELLED;
+                    resid = removing ? IDS_BALANCE_CANCELLED_REMOVAL : (shrinking ? IDS_BALANCE_CANCELLED_SHRINK : IDS_BALANCE_CANCELLED);
                 else if (balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED))
-                    resid = removing ? IDS_BALANCE_COMPLETE_REMOVAL : IDS_BALANCE_COMPLETE;
+                    resid = removing ? IDS_BALANCE_COMPLETE_REMOVAL : (shrinking ? IDS_BALANCE_COMPLETE_SHRINK : IDS_BALANCE_COMPLETE);
                 else
                     resid = IDS_NO_BALANCE;
 
@@ -313,6 +321,19 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             return;
 
         removing = TRUE;
+        shrinking = FALSE;
+    } else if (bqb.status & BTRFS_BALANCE_SHRINKING) {
+        if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED_SHRINK : IDS_BALANCE_RUNNING_SHRINK, s, sizeof(s) / sizeof(WCHAR))) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+
+        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.data_opts.devid, bqb.total_chunks - bqb.chunks_left,
+            bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
+            return;
+
+        removing = FALSE;
+        shrinking = TRUE;
     } else {
         if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED : IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
             ShowError(hwndDlg, GetLastError());
@@ -324,6 +345,7 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
             return;
 
         removing = FALSE;
+        shrinking = FALSE;
     }
 
     SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
@@ -858,8 +880,9 @@ INT_PTR CALLBACK BtrfsBalance::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wP
             RtlZeroMemory(&metadata_opts, sizeof(btrfs_balance_opts));
             RtlZeroMemory(&system_opts, sizeof(btrfs_balance_opts));
 
-            balance_status = called_from_RemoveDevice ? BTRFS_BALANCE_RUNNING : BTRFS_BALANCE_STOPPED;
             removing = called_from_RemoveDevice;
+            shrinking = called_from_ShrinkDevice;
+            balance_status = (removing || shrinking) ? BTRFS_BALANCE_RUNNING : BTRFS_BALANCE_STOPPED;
             cancelling = FALSE;
             RefreshBalanceDlg(hwndDlg, TRUE);
 
