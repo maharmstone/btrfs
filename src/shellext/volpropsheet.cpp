@@ -1305,7 +1305,44 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     NMLISTVIEW* nmv = (NMLISTVIEW*)lParam;
 
                     EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_SHOW_STATS), nmv->uNewState & LVIS_SELECTED);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), nmv->uNewState & LVIS_SELECTED);
+
+                    if (nmv->uNewState & LVIS_SELECTED && !readonly) {
+                        HWND devlist;
+                        btrfs_device* bd;
+                        BOOL device_readonly = FALSE;
+                        LVITEMW lvi;
+                        WCHAR sel[MAX_PATH];
+                        UINT64 devid;
+
+                        devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+
+                        RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                        lvi.mask = LVIF_TEXT;
+                        lvi.iItem = nmv->iItem;
+                        lvi.iSubItem = 0;
+                        lvi.pszText = sel;
+                        lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                        SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+                        devid = _wtoi(sel);
+
+                        bd = devices;
+
+                        while (TRUE) {
+                            if (bd->dev_id == devid) {
+                                device_readonly = bd->readonly;
+                                break;
+                            }
+
+                            if (bd->next_entry > 0)
+                                bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                            else
+                                break;
+                        }
+
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), !device_readonly);
+                    } else
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), FALSE);
+
                     break;
                 }
             }
