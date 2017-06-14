@@ -1413,7 +1413,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_root_root(device_extension* Vcb, BOOL no_cache, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
 
@@ -1462,7 +1462,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, PIRP Irp, LIST_ENTRY* ro
         le = le->Flink;
     }
 
-    if (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
+    if (!no_cache && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
         ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
         Status = update_chunk_caches(Vcb, Irp, rollback);
         ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -6790,6 +6790,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     LIST_ENTRY *le, batchlist;
     BOOL cache_changed = FALSE;
     volume_device_extension* vde;
+    BOOL no_cache = FALSE;
 #ifdef DEBUG_FLUSH_TIMES
     UINT64 filerefs = 0, fcbs = 0;
     LARGE_INTEGER freq, time1, time2;
@@ -7013,10 +7014,13 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         }
 
         if (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
-            Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("allocate_cache returned %08x\n", Status);
-                goto end;
+            if (!no_cache) {
+                Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    WARN("allocate_cache returned %08x\n", Status);
+                    no_cache = TRUE;
+                    cache_changed = FALSE;
+                }
             }
         } else {
             Status = update_chunk_caches_tree(Vcb, Irp);
@@ -7040,7 +7044,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
     TRACE("trees consistent\n");
 
-    Status = update_root_root(Vcb, Irp, rollback);
+    Status = update_root_root(Vcb, no_cache, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("update_root_root returned %08x\n", Status);
         goto end;
