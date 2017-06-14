@@ -21,4 +21,4 @@ EXPORTS
     StopScrubW			PRIVATE
     SendSubvolW			PRIVATE
     RecvSubvolW			PRIVATE
-
+    ResizeDeviceW		PRIVATE

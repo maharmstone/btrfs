@@ -28,7 +28,6 @@
 #include <uxtheme.h>
 
 #include "volpropsheet.h"
-#include "devices.h"
 #include "resource.h"
 
 HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
@@ -1090,6 +1089,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, TRUE);
             SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_REMOVE), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), BCM_SETSHIELD, 0, TRUE);
 
             RefreshDevList(devlist);
 
@@ -1248,8 +1248,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             HWND devlist;
                             int index;
                             LVITEMW lvi;
-                            WCHAR sel[100];
-                            BtrfsDeviceResize* bdr;
+                            WCHAR sel[100], t[2*MAX_PATH + 100];
+                            SHELLEXECUTEINFOW sei;
 
                             devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
@@ -1266,9 +1266,30 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
                             SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
 
-                            bdr = new BtrfsDeviceResize;
-                            bdr->ShowDialog(hwndDlg, fn, _wtoi(sel));
-                            delete bdr;
+                            t[0] = '"';
+                            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
+                            wcscat(t, L"\",ResizeDevice ");
+                            wcscat(t, fn);
+                            wcscat(t, L"|");
+                            wcscat(t, sel);
+
+                            RtlZeroMemory(&sei, sizeof(sei));
+
+                            sei.cbSize = sizeof(sei);
+                            sei.hwnd = hwndDlg;
+                            sei.lpVerb = L"runas";
+                            sei.lpFile = L"rundll32.exe";
+                            sei.lpParameters = t;
+                            sei.nShow = SW_SHOW;
+                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+                            if (!ShellExecuteExW(&sei)) {
+                                ShowError(hwndDlg, GetLastError());
+                                return TRUE;
+                            }
+
+                            WaitForSingleObject(sei.hProcess, INFINITE);
+                            CloseHandle(sei.hProcess);
 
                             RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
                         }

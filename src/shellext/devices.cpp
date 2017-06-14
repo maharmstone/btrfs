@@ -722,8 +722,6 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
         return;
     }
 
-    // FIXME - if non-trivial shrink, show balance box
-
     br.device = dev_id;
     br.size = new_size;
 
@@ -753,7 +751,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
         par = GetParent(hwndDlg);
         EndDialog(hwndDlg, 0);
 
-        bb = new BtrfsBalance(fn, TRUE);
+        bb = new BtrfsBalance(fn, FALSE, TRUE);
 
         bb->ShowBalance(par);
 
@@ -1016,6 +1014,56 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     bb->ShowBalance(hwnd);
 
     delete bb;
+
+end:
+    CloseHandle(token);
+}
+
+void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    WCHAR *s, *vol, *dev;
+    UINT64 devid;
+    HANDLE token;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    BtrfsDeviceResize* bdr;
+
+    set_dpi_aware();
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        ShowError(hwnd, GetLastError());
+        return;
+    }
+
+    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+        ShowError(hwnd, GetLastError());
+        goto end;
+    }
+
+    s = wcsstr(lpszCmdLine, L"|");
+    if (!s)
+        goto end;
+
+    s[0] = 0;
+
+    vol = lpszCmdLine;
+    dev = &s[1];
+
+    devid = _wtoi(dev);
+    if (devid == 0)
+        goto end;
+
+    bdr = new BtrfsDeviceResize;
+    bdr->ShowDialog(hwnd, vol, devid);
+    delete bdr;
 
 end:
     CloseHandle(token);
