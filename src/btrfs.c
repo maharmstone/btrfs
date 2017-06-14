@@ -3289,7 +3289,7 @@ void protect_superblocks(chunk* c) {
     }
 }
 
-static NTSTATUS find_chunk_usage(device_extension* Vcb, PIRP Irp) {
+NTSTATUS find_chunk_usage(device_extension* Vcb, PIRP Irp) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
     KEY searchkey;
@@ -3326,6 +3326,8 @@ static NTSTATUS find_chunk_usage(device_extension* Vcb, PIRP Irp) {
 
         le = le->Flink;
     }
+
+    Vcb->chunk_usage_found = TRUE;
 
     return STATUS_SUCCESS;
 }

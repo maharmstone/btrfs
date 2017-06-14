@@ -1458,7 +1458,7 @@ end:
     return Status;
 }
 
-static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length) {
+static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length, PIRP Irp) {
     btrfs_usage* usage = (btrfs_usage*)data;
     btrfs_usage* lastbue = NULL;
     NTSTATUS Status;
@@ -1466,6 +1466,22 @@ static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length) {
 
     if (length < sizeof(btrfs_usage))
         return STATUS_BUFFER_OVERFLOW;
+
+    if (!Vcb->chunk_usage_found) {
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+
+        if (!Vcb->chunk_usage_found)
+            Status = find_chunk_usage(Vcb, Irp);
+        else
+            Status = STATUS_SUCCESS;
+
+        ExReleaseResourceLite(&Vcb->tree_lock);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_chunk_usage returned %08x\n", Status);
+            return Status;
+        }
+    }
 
     length -= offsetof(btrfs_usage, devices);
 
@@ -5221,7 +5237,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 
         case FSCTL_BTRFS_GET_USAGE:
-            Status = get_usage(DeviceObject->DeviceExtension, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength);
+            Status = get_usage(DeviceObject->DeviceExtension, map_user_buffer(Irp, NormalPagePriority), IrpSp->Parameters.FileSystemControl.OutputBufferLength, Irp);
             break;
 
         case FSCTL_BTRFS_START_BALANCE:

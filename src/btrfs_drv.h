@@ -701,6 +701,7 @@ typedef struct _device_extension {
     root* data_reloc_root;
     root* space_root;
     BOOL log_to_phys_loaded;
+    BOOL chunk_usage_found;
     LIST_ENTRY sys_chunks;
     LIST_ENTRY chunks;
     LIST_ENTRY trees;
@@ -982,6 +983,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
 NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
 NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 void log_device_error(device_extension* Vcb, device* dev, int error);
+NTSTATUS find_chunk_usage(device_extension* Vcb, PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
