@@ -4534,7 +4534,8 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
     if (!data || len < sizeof(btrfs_resize) || (br->size % Vcb->superblock.sector_size) != 0)
         return STATUS_INVALID_PARAMETER;
 
-    // FIXME - require privilege
+    if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode))
+        return STATUS_PRIVILEGE_NOT_HELD;
 
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
