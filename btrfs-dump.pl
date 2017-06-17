@@ -135,6 +135,27 @@ sub incompat_flags {
     return join(',',@l);
 }
 
+sub compat_ro_flags {
+    my ($f)=@_;
+    my @l;
+
+    if ($f&1) {
+        push @l,"space_tree";
+        $f&=~1;
+    }
+
+    if ($f&2) {
+        push @l,"space_tree_valid";
+        $f&=~2;
+    }
+
+    if ($f!=0 || $#l==-1) {
+        push @l,sprintf("%x",$f);
+    }
+
+    return join(',',@l);
+}
+
 sub read_superblock {
 	my ($f)=@_;
 	my ($sb, @b, @b2, @di);
@@ -145,7 +166,7 @@ sub read_superblock {
 	@b = unpack("Vx28A16QQA8QQQQQQQQQVVVVVQQQQvCCCA98A256QQx240a2048a672",$sb);
     @di = unpack("QQQVVVQQQVCCA16A16",$b[27]);
 
-	printf("superblock csum=%x fsuuid=%s physaddr=%x flags=%x magic=%s gen=%x roottree=%x chunktree=%x logtree=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x n=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%x incompat_flags=%s csum_type=%x root_level=%x chunk_root_level=%x log_root_level=%x (dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s) label=%s cache_gen=%x uuid_tree_gen=%x\n", $b[0], format_uuid($b[1]), $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], $b[21], incompat_flags($b[22]), $b[23], $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30]);
+	printf("superblock csum=%x fsuuid=%s physaddr=%x flags=%x magic=%s gen=%x roottree=%x chunktree=%x logtree=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x n=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%s incompat_flags=%s csum_type=%x root_level=%x chunk_root_level=%x log_root_level=%x (dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s) label=%s cache_gen=%x uuid_tree_gen=%x\n", $b[0], format_uuid($b[1]), $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], compat_ro_flags($b[21]), incompat_flags($b[22]), $b[23], $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30]);
 	my $devid=format_uuid($di[12]);
 
 	$nodesize = $b[15];
