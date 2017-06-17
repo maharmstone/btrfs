@@ -1950,6 +1950,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     CC_FILE_SIZES ccfs;
     LIST_ENTRY rollback;
     BOOL set_size = FALSE;
+    ULONG filter;
 
     if (!fileref) {
         ERR("fileref is NULL\n");
@@ -1976,6 +1977,19 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             ccfs.ValidDataLength = fcb->Header.ValidDataLength;
             set_size = TRUE;
         }
+
+        filter = FILE_NOTIFY_CHANGE_SIZE;
+
+        if (!ccb->user_set_write_time) {
+            KeQuerySystemTime(&time);
+            win_time_to_unix(time, &fileref->parent->fcb->inode_item.st_mtime);
+            filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+
+            fileref->parent->fcb->inode_item_changed = TRUE;
+            mark_fcb_dirty(fileref->parent->fcb);
+        }
+
+        send_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED, &fileref->dc->name);
 
         goto end;
     }
@@ -2026,14 +2040,17 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     ccfs.ValidDataLength = fcb->Header.ValidDataLength;
     set_size = TRUE;
 
+    filter = FILE_NOTIFY_CHANGE_SIZE;
+
     if (!ccb->user_set_write_time) {
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &fcb->inode_item.st_mtime);
+        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
 
     fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, FILE_ACTION_MODIFIED, NULL);
+    send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
