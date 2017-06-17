@@ -1649,8 +1649,10 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
         return STATUS_ACCESS_DENIED;
 
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N returned %08x\n", Status);
         return Status;
+    }
 
     utf8 = ExAllocatePoolWithTag(pool_type, utf8len + 1, ALLOC_TAG);
     if (!utf8) {
@@ -1660,6 +1662,7 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
 
     Status = RtlUnicodeToUTF8N(utf8, utf8len, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
+        ERR("RtlUnicodeToUTF8N returned %08x\n", Status);
         ExFreePool(utf8);
         return Status;
     }
