@@ -2187,6 +2187,8 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
 
     *pfileref = fileref;
 
+    send_notification_fileref(parfileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, &fileref->dc->name);
+
     return STATUS_SUCCESS;
 }
 
