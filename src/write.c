@@ -4441,14 +4441,18 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 filter |= FILE_NOTIFY_CHANGE_SIZE;
             }
 
-            if (!ccb->user_set_write_time) {
-                origii->st_mtime = now;
-                filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
-            }
-
             fcb->inode_item_changed = TRUE;
-        } else
+        } else {
             fileref->parent->fcb->inode_item_changed = TRUE;
+
+            if (changed_length)
+                filter |= FILE_NOTIFY_CHANGE_SIZE;
+        }
+
+        if (!ccb->user_set_write_time) {
+            origii->st_mtime = now;
+            filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+        }
 
         mark_fcb_dirty(fcb->ads ? fileref->parent->fcb : fcb);
     }
