@@ -158,7 +158,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     }
 
     if (filter != 0)
-        send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED);
+        send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -725,7 +725,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         le = le->Flink;
     }
 
-    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
+    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
     // loop through list and create new inodes
 
@@ -1172,9 +1172,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     destdir->fcb->subvol->root_item.ctime = now;
 
     me = CONTAINING_RECORD(move_list.Flink, move_entry, list_entry);
-    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
-    send_notification_fileref(me->dummyfileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
-    send_notification_fileref(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+    send_notification_fileref(me->dummyfileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+    send_notification_fileref(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -1606,7 +1606,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
         related->fcb->inode_item_changed = TRUE;
         mark_fcb_dirty(related->fcb);
-        send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+        send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
         FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&oldfn, name_offset, NULL, NULL,
                                       fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_OLD_NAME, NULL, NULL);
@@ -1623,7 +1623,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // We move files by moving the existing fileref to the new directory, and
     // replacing it with a dummy fileref with the same original values, but marked as deleted.
 
-    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
+    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
     fr2 = create_fileref(Vcb);
 
@@ -1842,9 +1842,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fr2->parent->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fr2->parent->fcb);
 
-    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
-    send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
-    send_notification_fileref(fr2->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+    send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+    send_notification_fileref(fr2->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -2033,7 +2033,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
     fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, FILE_ACTION_MODIFIED);
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -2383,7 +2383,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     parfcb->inode_item_changed = TRUE;
     mark_fcb_dirty(parfcb);
 
-    send_notification_fileref(fr2, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
+    send_notification_fileref(fr2, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -4342,7 +4342,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
 
-    send_notification_fileref(ccb->fileref, FILE_NOTIFY_CHANGE_EA, FILE_ACTION_MODIFIED);
+    send_notification_fileref(ccb->fileref, FILE_NOTIFY_CHANGE_EA, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 

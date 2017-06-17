@@ -1205,7 +1205,7 @@ WCHAR* file_desc(PFILE_OBJECT FileObject) {
         return file_desc_fcb(fcb);
 }
 
-void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action) {
+void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream) {
     UNICODE_STRING fn;
     NTSTATUS Status;
     ULONG reqlen;
@@ -1236,18 +1236,18 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
     }
 
     FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, name_offset,
-                                  NULL, NULL, filter_match, action, NULL, NULL);
+                                  (PSTRING)stream, NULL, filter_match, action, NULL, NULL);
     ExFreePool(fn.Buffer);
 }
 
-void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) {
+void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream) {
     fcb* fcb = fileref->fcb;
     LIST_ENTRY* le;
     NTSTATUS Status;
 
     // no point looking for hardlinks if st_nlink == 1
     if (fileref->fcb->inode_item.st_nlink == 1) {
-        send_notification_fileref(fileref, filter_match, action);
+        send_notification_fileref(fileref, filter_match, action, stream);
         return;
     }
 
@@ -1302,7 +1302,7 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action) 
             fn.Length += hl->name.Length;
 
             FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, pathlen,
-                                          NULL, NULL, filter_match, action, NULL, NULL);
+                                          (PSTRING)stream, NULL, filter_match, action, NULL, NULL);
 
             ExFreePool(fn.Buffer);
 
@@ -1974,7 +1974,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     ExReleaseResourceLite(fileref->parent->fcb->Header.Resource);
 
     if (!fileref->fcb->ads && fileref->parent->dc)
-        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
     mark_fcb_dirty(fileref->parent->fcb);
 
@@ -2072,7 +2072,7 @@ static NTSTATUS drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 InitializeListHead(&rollback);
 
                 if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
-                    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED);
+                    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
                     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
 

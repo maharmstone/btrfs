@@ -394,7 +394,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         mark_fcb_dirty(fcb);
     }
 
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED);
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED, NULL);
 
 end:
     if (NT_SUCCESS(Status))
@@ -589,7 +589,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     Status = STATUS_SUCCESS;
 
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED);
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED, NULL);
 
 end:
     if (NT_SUCCESS(Status))

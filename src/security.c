@@ -744,7 +744,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
 
     mark_fcb_dirty(fcb);
 
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_SECURITY, FILE_ACTION_MODIFIED);
+    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_SECURITY, FILE_ACTION_MODIFIED, NULL);
 
 end:
     ExReleaseResourceLite(fcb->Header.Resource);

@@ -1980,8 +1980,8 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
             return Status;
         }
 
-        send_notification_fileref(newpar, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
-        send_notification_fcb(newpar->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+        send_notification_fileref(newpar, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+        send_notification_fcb(newpar->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
     } else if (!NT_SUCCESS(Status)) {
         ERR("open_fileref returned %08x\n", Status);
         return Status;
@@ -2348,8 +2348,8 @@ static NTSTATUS file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileOb
             goto end;
         }
 
-        send_notification_fileref(fileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED);
-        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED);
+        send_notification_fileref(fileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
     }
 
     FileObject->FsContext = fileref->fcb;
@@ -3261,7 +3261,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
             // FIXME - truncate streams
             // FIXME - do we need to alter parent directory's times?
 
-            send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED);
+            send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
         } else {
             if (options & FILE_NO_EA_KNOWLEDGE && fileref->fcb->ea_xattr.Length > 0) {
                 FILE_FULL_EA_INFORMATION* ffei = (FILE_FULL_EA_INFORMATION*)fileref->fcb->ea_xattr.Buffer;

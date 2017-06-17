@@ -4478,7 +4478,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     Status = STATUS_SUCCESS;
 
     if (filter != 0)
-        send_notification_fcb(fcb->ads ? fileref->parent : fileref, filter, FILE_ACTION_MODIFIED);
+        send_notification_fcb(fcb->ads ? fileref->parent : fileref, filter, FILE_ACTION_MODIFIED, fcb->ads && fileref->dc ? &fileref->dc->name : NULL);
 
 end:
     if (NT_SUCCESS(Status) && FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
