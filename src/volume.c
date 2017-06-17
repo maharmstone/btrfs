@@ -858,13 +858,6 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
     return Status;
 }
 
-static __inline WCHAR hex_digit(UINT8 n) {
-    if (n <= 9)
-        return n + '0';
-    else
-        return n - 0xa + 'a';
-}
-
 NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
     TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = (TARGET_DEVICE_REMOVAL_NOTIFICATION*)NotificationStructure;
     volume_device_extension* vde = (volume_device_extension*)Context;

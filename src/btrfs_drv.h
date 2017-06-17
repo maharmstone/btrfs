@@ -1412,6 +1412,8 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 #define int3 asm("int3;")
 #endif
 
+#define hex_digit(c) ((c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
+
 // FIXME - find a way to catch unfreed trees again
 
 // from sys/stat.h

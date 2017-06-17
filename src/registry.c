@@ -32,8 +32,6 @@ WORK_QUEUE_ITEM wqi;
 
 static WCHAR option_mounted[] = L"Mounted";
 
-#define hex_digit(c) ((c) >= 0 && (c) <= 9) ? ((c) + '0') : ((c) - 10 + 'a')
-
 NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
     mount_options* options = &Vcb->options;

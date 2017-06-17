@@ -29,10 +29,83 @@
 
 extern ERESOURCE volume_list_lock;
 extern LIST_ENTRY volume_list;
+extern UNICODE_STRING registry_path;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 
 extern PDEVICE_OBJECT devobj;
+
+static BOOL fs_ignored(BTRFS_UUID* uuid) {
+    UNICODE_STRING path, ignoreus;
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    KEY_VALUE_FULL_INFORMATION* kvfi;
+    ULONG dispos, retlen, kvfilen, i, j;
+    HANDLE h;
+    BOOL ret = FALSE;
+
+    path.Length = path.MaximumLength = registry_path.Length + (37 * sizeof(WCHAR));
+
+    path.Buffer = ExAllocatePoolWithTag(PagedPool, path.Length, ALLOC_TAG);
+    if (!path.Buffer) {
+        ERR("out of memory\n");
+        return FALSE;
+    }
+
+    RtlCopyMemory(path.Buffer, registry_path.Buffer, registry_path.Length);
+
+    i = registry_path.Length / sizeof(WCHAR);
+
+    path.Buffer[i] = '\\';
+    i++;
+
+    for (j = 0; j < 16; j++) {
+        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+
+        i += 2;
+
+        if (j == 3 || j == 5 || j == 7 || j == 9) {
+            path.Buffer[i] = '-';
+            i++;
+        }
+    }
+
+    InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+
+    if (!NT_SUCCESS(Status)) {
+        TRACE("ZwCreateKey returned %08x\n", Status);
+        ExFreePool(path.Buffer);
+        return FALSE;
+    }
+
+    RtlInitUnicodeString(&ignoreus, L"Ignore");
+
+    kvfilen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + (255 * sizeof(WCHAR));
+    kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+    if (!kvfi) {
+        ERR("out of memory\n");
+        ZwClose(h);
+        ExFreePool(path.Buffer);
+        return FALSE;
+    }
+
+    Status = ZwQueryValueKey(h, &ignoreus, KeyValueFullInformation, kvfi, kvfilen, &retlen);
+    if (NT_SUCCESS(Status)) {
+        if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
+            UINT32* pr = (UINT32*)((UINT8*)kvfi + kvfi->DataOffset);
+
+            ret = *pr;
+        }
+    }
+
+    ZwClose(h);
+    ExFreePool(path.Buffer);
+
+    return ret;
+}
 
 static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
                      DWORD disk_num, DWORD part_num, UINT64 length) {
@@ -114,8 +187,10 @@ static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNIC
                 ExFreePool(sb2);
             }
 
-            DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
-            add_volume_device(sb, mountmgr, devpath, length, disk_num, part_num);
+            if (!fs_ignored(&sb->uuid)) {
+                DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
+                add_volume_device(sb, mountmgr, devpath, length, disk_num, part_num);
+            }
         }
     }
 
