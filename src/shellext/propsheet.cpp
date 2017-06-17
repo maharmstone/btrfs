@@ -997,6 +997,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     if (readonly) {
         EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
         EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE), 0);
     }
 
     if (show_admin_button) {
