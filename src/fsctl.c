@@ -4290,6 +4290,27 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
+    } else if (bsxa->namelen == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(bsxa->data, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION)) == strlen(EA_PROP_COMPRESSION)) {
+        const char lzo[] = "lzo";
+        const char zlib[] = "zlib";
+
+        if (bsxa->valuelen == strlen(lzo) && RtlCompareMemory(bsxa->data + bsxa->namelen, lzo, bsxa->valuelen) == bsxa->valuelen)
+            fcb->prop_compression = PropCompression_LZO;
+        else if (bsxa->valuelen == strlen(zlib) && RtlCompareMemory(bsxa->data + bsxa->namelen, zlib, bsxa->valuelen) == bsxa->valuelen)
+            fcb->prop_compression = PropCompression_Zlib;
+        else
+            fcb->prop_compression = PropCompression_None;
+
+        if (fcb->prop_compression != PropCompression_None) {
+            fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
+            fcb->inode_item_changed = TRUE;
+        }
+
+        fcb->prop_compression_changed = TRUE;
+        mark_fcb_dirty(fcb);
+
+        Status = STATUS_SUCCESS;
+        goto end;
     } else if (bsxa->namelen >= strlen(stream_pref) && RtlCompareMemory(bsxa->data, stream_pref, strlen(stream_pref)) == strlen(stream_pref)) {
         // don't allow xattrs beginning with user., as these appear as streams instead
         Status = STATUS_OBJECT_NAME_INVALID;
