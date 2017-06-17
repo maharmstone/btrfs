@@ -3014,9 +3014,9 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
             }
 
             // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
-            if (is_subvol_readonly(fileref->fcb->subvol, Irp) && granted_access &
-                (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC) &&
-                fileref->fcb->inode != SUBVOL_ROOT_INODE) {
+            if (is_subvol_readonly(fileref->fcb->subvol, Irp) &&
+                ((granted_access & FILE_WRITE_ATTRIBUTES && fileref->fcb->inode != SUBVOL_ROOT_INODE) ||
+                (granted_access & (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | WRITE_OWNER | WRITE_DAC | DELETE)))) {
                 Status = STATUS_ACCESS_DENIED;
 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
