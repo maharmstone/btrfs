@@ -1300,6 +1300,8 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     BTRFS_TIME now;
     LIST_ENTRY rollback, *le;
     hardlink* hl;
+    SECURITY_SUBJECT_CONTEXT subjcont;
+    ACCESS_MASK access;
 
     InitializeListHead(&rollback);
 
@@ -1420,6 +1422,17 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
+
+    SeCaptureSubjectContext(&subjcont);
+
+    if (!SeAccessCheck(related->fcb->sd, &subjcont, FALSE, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
+        IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
+        SeReleaseSubjectContext(&subjcont);
+        TRACE("SeAccessCheck failed, returning %08x\n", Status);
+        goto end;
+    }
+
+    SeReleaseSubjectContext(&subjcont);
 
     if (has_open_children(fileref)) {
         WARN("trying to rename file with open children\n");
