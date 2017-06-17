@@ -1716,6 +1716,11 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     if (!fcb) {
         ERR("out of memory\n");
         ExFreePool(utf8);
+
+        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1792,6 +1797,11 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_new_sd returned %08x\n", Status);
         free_fcb(fcb);
+
+        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
         return Status;
     }
 
@@ -1824,6 +1834,11 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
         if (!fcb->ea_xattr.Buffer) {
             ERR("out of memory\n");
             free_fcb(fcb);
+
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -1837,6 +1852,11 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     if (!fileref) {
         ERR("out of memory\n");
         free_fcb(fcb);
+
+        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1848,8 +1868,44 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
             free_fileref(Vcb, fileref);
+
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
             return Status;
         }
+    }
+
+
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs) {
+            ERR("out of memory\n");
+            free_fileref(Vcb, fileref);
+
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+
+        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs_uc) {
+            ERR("out of memory\n");
+            free_fileref(Vcb, fileref);
+
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
     }
 
     fcb->created = TRUE;
@@ -1880,26 +1936,6 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
 
     increase_fileref_refcount(parfileref);
-
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->hash_ptrs) {
-            ERR("out of memory\n");
-            free_fileref(Vcb, fileref);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
-
-        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->hash_ptrs_uc) {
-            ERR("out of memory\n");
-            free_fileref(Vcb, fileref);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
-    }
 
     InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
