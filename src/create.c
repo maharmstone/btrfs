@@ -3554,9 +3554,6 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level, locked = FALSE;
-    LIST_ENTRY rollback;
-
-    InitializeListHead(&rollback);
 
     FsRtlEnterFileSystem();
 
@@ -3697,7 +3694,10 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Irp->IoStatus.Information = FILE_OPENED;
         Status = STATUS_SUCCESS;
     } else {
+        LIST_ENTRY rollback;
         BOOL skip_lock;
+
+        InitializeListHead(&rollback);
 
         TRACE("file name: %.*S\n", IrpSp->FileObject->FileName.Length / sizeof(WCHAR), IrpSp->FileObject->FileName.Buffer);
 
