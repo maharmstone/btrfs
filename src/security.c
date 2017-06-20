@@ -309,14 +309,13 @@ NTSTATUS uid_to_sid(UINT32 uid, PSID* sid) {
 
 UINT32 sid_to_uid(PSID sid) {
     LIST_ENTRY* le;
-    uid_map* um;
     sid_header* sh = sid;
 
     ExAcquireResourceSharedLite(&mapping_lock, TRUE);
 
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
-        um = CONTAINING_RECORD(le, uid_map, listentry);
+        uid_map* um = CONTAINING_RECORD(le, uid_map, listentry);
 
         if (RtlEqualSid(sid, um->sid)) {
             ExReleaseResourceLite(&mapping_lock);
