@@ -3622,14 +3622,11 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
 }
 
 NTSTATUS look_for_balance_item(device_extension* Vcb) {
-    LIST_ENTRY rollback;
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     BALANCE_ITEM* bi;
     int i;
-
-    InitializeListHead(&rollback);
 
     searchkey.obj_id = BALANCE_ITEM_ID;
     searchkey.obj_type = TYPE_TEMP_ITEM;
