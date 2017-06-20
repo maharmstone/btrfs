@@ -228,7 +228,6 @@ void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 gid) {
 
 NTSTATUS uid_to_sid(UINT32 uid, PSID* sid) {
     LIST_ENTRY* le;
-    uid_map* um;
     sid_header* sh;
     UCHAR els;
 
@@ -236,7 +235,7 @@ NTSTATUS uid_to_sid(UINT32 uid, PSID* sid) {
 
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
-        um = CONTAINING_RECORD(le, uid_map, listentry);
+        uid_map* um = CONTAINING_RECORD(le, uid_map, listentry);
 
         if (um->uid == uid) {
             *sid = ExAllocatePoolWithTag(PagedPool, RtlLengthSid(um->sid), ALLOC_TAG);
