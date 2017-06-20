@@ -2673,6 +2673,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 if (!NT_SUCCESS(Status)) {
                     ERR("flush_fcb returned %08x\n", Status);
                     ExReleaseResourceLite(&c->lock);
+                    clear_batch_list(Vcb, &batchlist);
                     goto end;
                 }
 
