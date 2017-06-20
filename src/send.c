@@ -1803,7 +1803,7 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
                 ERR("divide_ext returned %08x\n", Status);
                 return Status;
             }
-        } else if (len2 > len1) {
+        } else if (len2 < len1) {
             Status = divide_ext(ext1, len2, FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("divide_ext returned %08x\n", Status);
