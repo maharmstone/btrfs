@@ -525,8 +525,6 @@ static void read_mappings(PUNICODE_STRING regpath) {
     OBJECT_ATTRIBUTES oa;
     ULONG dispos;
     NTSTATUS Status;
-    ULONG kvfilen, retlen, i;
-    KEY_VALUE_FULL_INFORMATION* kvfi;
 
     const WCHAR mappings[] = L"\\Mappings";
 
@@ -560,6 +558,9 @@ static void read_mappings(PUNICODE_STRING regpath) {
     }
 
     if (dispos == REG_OPENED_EXISTING_KEY) {
+        KEY_VALUE_FULL_INFORMATION* kvfi;
+        ULONG kvfilen, retlen, i;
+
         kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) + 256;
         kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
 
