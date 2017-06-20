@@ -2314,7 +2314,6 @@ void free_write_data_stripes(write_data_context* wtc) {
         le = le->Flink;
     }
 
-    le = wtc->stripes.Flink;
     while (!IsListEmpty(&wtc->stripes)) {
         write_data_stripe* stripe = CONTAINING_RECORD(RemoveHeadList(&wtc->stripes), write_data_stripe, list_entry);
 
