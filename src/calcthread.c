@@ -98,8 +98,6 @@ void calc_thread(void* context) {
     while (TRUE) {
         KeWaitForSingleObject(&Vcb->calcthreads.event, Executive, KernelMode, FALSE, NULL);
 
-        FsRtlEnterFileSystem();
-
         while (TRUE) {
             calc_job* cj;
             BOOL b;
@@ -123,8 +121,6 @@ void calc_thread(void* context) {
             if (!b)
                 break;
         }
-
-        FsRtlExitFileSystem();
 
         if (thread->quit)
             break;
