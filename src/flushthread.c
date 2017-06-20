@@ -7219,8 +7219,6 @@ static void print_stats(device_extension* Vcb) {
 static void do_flush(device_extension* Vcb) {
     NTSTATUS Status;
 
-    FsRtlEnterFileSystem();
-
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
 #ifdef DEBUG_STATS
@@ -7238,8 +7236,6 @@ static void do_flush(device_extension* Vcb) {
         ERR("do_write returned %08x\n", Status);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
-
-    FsRtlExitFileSystem();
 }
 
 void flush_thread(void* context) {
