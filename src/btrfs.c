@@ -2067,11 +2067,11 @@ static NTSTATUS drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         if (fileref && oc == 0) {
             if (!fcb->Vcb->removing) {
-                LIST_ENTRY rollback;
-
-                InitializeListHead(&rollback);
-
                 if (fileref && fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
+                    LIST_ENTRY rollback;
+
+                    InitializeListHead(&rollback);
+
                     if (!fileref->fcb->ads || fileref->dc) {
                         if (fileref->fcb->ads) {
                             send_notification_fileref(fileref->parent, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
