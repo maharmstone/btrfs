@@ -2855,7 +2855,6 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     NTSTATUS Status;
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
-    IDENTIFY_DEVICE_DATA* idd;
     STORAGE_PROPERTY_QUERY spq;
     DEVICE_TRIM_DESCRIPTOR dtd;
 
@@ -2914,7 +2913,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     if (!NT_SUCCESS(Status))
         TRACE("IOCTL_ATA_PASS_THROUGH returned %08x for IDENTIFY DEVICE\n", Status);
     else {
-        idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
+        IDENTIFY_DEVICE_DATA* idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
 
         if (idd->CommandSetSupport.FlushCache) {
             dev->can_flush = TRUE;
