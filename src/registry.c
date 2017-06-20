@@ -740,18 +740,17 @@ static void get_registry_value(HANDLE h, WCHAR* string, ULONG type, void* val, U
 }
 
 void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
-    UNICODE_STRING us;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     HANDLE h;
     ULONG dispos;
-    ULONG kvfilen, old_debug_log_level = debug_log_level;
-    KEY_VALUE_FULL_INFORMATION* kvfi;
 #ifdef _DEBUG
-    UNICODE_STRING old_log_file, old_log_device;
-#endif
+    KEY_VALUE_FULL_INFORMATION* kvfi;
+    ULONG kvfilen, old_debug_log_level = debug_log_level;
+    UNICODE_STRING us, old_log_file, old_log_device;
 
     static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
+#endif
 
     ExAcquireResourceExclusiveLite(&mapping_lock, TRUE);
 
