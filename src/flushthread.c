@@ -2081,7 +2081,7 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
         RtlCopyMemory(&sb->checksum, &crc32, sizeof(UINT32));
 
         stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_superblocks_stripe), ALLOC_TAG);
-        if (!sb) {
+        if (!stripe) {
             ERR("out of memory\n");
             ExFreePool(sb);
             return STATUS_INSUFFICIENT_RESOURCES;
