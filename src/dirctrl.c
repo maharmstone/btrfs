@@ -909,7 +909,7 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
-    file_ref* fileref = ccb->fileref;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
     NTSTATUS Status;
 
     TRACE("IRP_MN_NOTIFY_CHANGE_DIRECTORY\n");
