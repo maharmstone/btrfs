@@ -745,7 +745,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     NTSTATUS Status;
     HANDLE h;
     ULONG dispos;
-    ULONG kvfilen;
+    ULONG kvfilen, old_debug_log_level = debug_log_level;
     KEY_VALUE_FULL_INFORMATION* kvfi;
 #ifdef _DEBUG
     UNICODE_STRING old_log_file, old_log_device;
@@ -846,7 +846,8 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
     ExAcquireResourceExclusiveLite(&log_lock, TRUE);
 
-    if (refresh && (log_device.Length != old_log_device.Length || RtlCompareMemory(log_device.Buffer, old_log_device.Buffer, log_device.Length) != log_device.Length || (!comfo && log_device.Length > 0))) {
+    if (refresh && (log_device.Length != old_log_device.Length || RtlCompareMemory(log_device.Buffer, old_log_device.Buffer, log_device.Length) != log_device.Length ||
+        (!comfo && log_device.Length > 0) || (old_debug_log_level == 0 && debug_log_level > 0) || (old_debug_log_level > 0 && debug_log_level == 0))) {
         if (comfo)
             ObDereferenceObject(comfo);
 
@@ -858,7 +859,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
         comfo = NULL;
         comdo = NULL;
 
-        if (log_device.Length > 0) {
+        if (log_device.Length > 0 && debug_log_level > 0) {
             Status = IoGetDeviceObjectPointer(&log_device, FILE_WRITE_DATA, &comfo, &comdo);
             if (!NT_SUCCESS(Status))
                 DbgPrint("IoGetDeviceObjectPointer returned %08x\n", Status);
@@ -941,13 +942,14 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
     ExAcquireResourceExclusiveLite(&log_lock, TRUE);
 
-    if ((log_file.Length != old_log_file.Length || RtlCompareMemory(log_file.Buffer, old_log_file.Buffer, log_file.Length) != log_file.Length || (!log_handle && log_file.Length > 0)) && refresh) {
+    if (refresh && (log_file.Length != old_log_file.Length || RtlCompareMemory(log_file.Buffer, old_log_file.Buffer, log_file.Length) != log_file.Length ||
+        (!log_handle && log_file.Length > 0) || (old_debug_log_level == 0 && debug_log_level > 0) || (old_debug_log_level > 0 && debug_log_level == 0))) {
         if (log_handle) {
             ZwClose(log_handle);
             log_handle = NULL;
         }
 
-        if (!comfo && log_file.Length > 0 && refresh) {
+        if (!comfo && log_file.Length > 0 && refresh && debug_log_level > 0) {
             OBJECT_ATTRIBUTES oa;
             IO_STATUS_BLOCK iosb;
 
