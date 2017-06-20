@@ -1688,7 +1688,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 KEY firstitem, searchkey;
                 LIST_ENTRY* le2;
                 traverse_ptr tp;
-                EXTENT_ITEM_TREE* eit;
 
                 if (!t->has_new_address) {
                     ERR("error - tried to write tree with no new address\n");
@@ -1712,6 +1711,8 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 }
 
                 if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
+                    EXTENT_ITEM_TREE* eit;
+
                     searchkey.obj_id = t->new_address;
                     searchkey.obj_type = TYPE_EXTENT_ITEM;
                     searchkey.offset = Vcb->superblock.node_size;
