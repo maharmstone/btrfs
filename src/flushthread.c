@@ -3911,7 +3911,7 @@ static void regen_bootstrap(device_extension* Vcb) {
 }
 
 static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, ULONG size) {
-    sys_chunk *sc, *sc2;
+    sys_chunk* sc;
     LIST_ENTRY* le;
 
     if (Vcb->superblock.n + sizeof(KEY) + size > SYS_CHUNK_ARRAY_SIZE) {
@@ -3940,7 +3940,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj
 
     le = Vcb->sys_chunks.Flink;
     while (le != &Vcb->sys_chunks) {
-        sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
+        sys_chunk* sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
 
         if (keycmp(sc2->key, sc->key) == 1)
             break;
