@@ -1646,7 +1646,6 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
     void* data;
-    FREE_SPACE_ENTRY* fse;
     UINT64 num_entries, num_sectors, *cachegen, i, off;
     UINT32* checksums;
     LIST_ENTRY* le;
@@ -1667,6 +1666,8 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
     le = c->space.Flink;
     while (le != &c->space) {
+        FREE_SPACE_ENTRY* fse;
+
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
         if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
