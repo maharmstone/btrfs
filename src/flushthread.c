@@ -6858,6 +6858,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);
+                clear_batch_list(Vcb, &batchlist);
                 return Status;
             }
 
