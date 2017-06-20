@@ -123,7 +123,7 @@ void _debug_message(const char* func, char* s, ...) {
     NTSTATUS Status;
     PIRP Irp;
     va_list ap;
-    char *buf2 = NULL, *buf;
+    char *buf2, *buf;
     read_context context;
     UINT32 length;
 
