@@ -2926,12 +2926,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
         do {
             changed = FALSE;
 
-            FsRtlEnterFileSystem();
-
             Status = balance_data_chunk(Vcb, rc, &changed);
-
-            FsRtlExitFileSystem();
-
             if (!NT_SUCCESS(Status)) {
                 ERR("balance_data_chunk returned %08x\n", Status);
                 Vcb->balance.status = Status;
