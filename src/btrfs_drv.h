@@ -1087,7 +1087,8 @@ NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, co
 BOOL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp);
 BOOL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
 void free_trees(device_extension* Vcb);
-NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp);
+NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data,
+                          UINT32 size, traverse_ptr* ptp, PIRP Irp);
 NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
 tree* free_tree(tree* t);
 NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp);
