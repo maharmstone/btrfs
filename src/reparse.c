@@ -186,6 +186,11 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, ccb* ccb, REPARSE_DATA_
             return STATUS_INVALID_PARAMETER;
         }
 
+        if (rdb->SymbolicLinkReparseBuffer.SubstituteNameLength < sizeof(WCHAR)) {
+            WARN("rdb->SymbolicLinkReparseBuffer.SubstituteNameLength was too short\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+
         subname.Buffer = &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)];
         subname.MaximumLength = subname.Length = rdb->SymbolicLinkReparseBuffer.SubstituteNameLength;
 
@@ -226,7 +231,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, ccb* ccb, REPARSE_DATA_
             return Status;
         }
 
-        for (i = 0; i < target.Length; i++) {
+        for (i = 0; i < target.MaximumLength; i++) {
             if (target.Buffer[i] == '\\')
                 target.Buffer[i] = '/';
         }
