@@ -1680,6 +1680,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
                                     ERR("out of memory\n");
+                                    ExFreePool(newier);
                                     return STATUS_INSUFFICIENT_RESOURCES;
                                 }
 
@@ -1750,6 +1751,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
                                     ERR("out of memory\n");
+                                    ExFreePool(newdi);
                                     return STATUS_INSUFFICIENT_RESOURCES;
                                 }
 
