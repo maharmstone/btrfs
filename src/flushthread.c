@@ -2529,6 +2529,8 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08x\n", Status);
+            ExFreePool(checksums);
+            ExFreePool(bmparr);
             return;
         }
 
@@ -2546,6 +2548,8 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
                 Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("delete_tree_item returned %08x\n", Status);
+                    ExFreePool(checksums);
+                    ExFreePool(bmparr);
                     return;
                 }
             }
