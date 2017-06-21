@@ -3009,7 +3009,7 @@ static NTSTATUS load_chunk_root(device_extension* Vcb, PIRP Irp) {
                     ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
 
                     if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
-                        LIST_ENTRY* le = vde->children.Flink;
+                        le = vde->children.Flink;
 
                         while (le != &vde->children) {
                             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
