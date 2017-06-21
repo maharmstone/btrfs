@@ -611,7 +611,7 @@ static NTSTATUS query_directory(device_extension* Vcb, PIRP Irp) {
         return STATUS_ACCESS_DENIED;
     }
 
-    if (fileref && fileref->fcb == Vcb->dummy_fcb)
+    if (fileref->fcb == Vcb->dummy_fcb)
         return STATUS_NO_MORE_FILES;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
