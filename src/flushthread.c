@@ -4138,6 +4138,7 @@ static BOOL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* sub
     Status = insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_DeleteXattr);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item_batch returned %08x\n", Status);
+        ExFreePool(xa);
         return Status;
     }
 
