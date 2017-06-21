@@ -2864,7 +2864,6 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     EXTENT_DATA2* ed2;
     chunk* c;
     LIST_ENTRY* le;
-    space* s;
     extent* ext = NULL;
 
     le = fcb->extents.Flink;
@@ -2926,7 +2925,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
 
     le = c->space.Flink;
     while (le != &c->space) {
-        s = CONTAINING_RECORD(le, space, list_entry);
+        space* s = CONTAINING_RECORD(le, space, list_entry);
 
         if (s->address == ed2->address + ed2->size) {
             UINT64 newlen = min(min(s->size, length), MAX_EXTENT_SIZE);
