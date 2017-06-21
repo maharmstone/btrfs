@@ -628,6 +628,10 @@ static BOOL lie_about_fs_type() {
             USHORT i, num_frames;
 
             frames = ExAllocatePoolWithTag(PagedPool, 256 * sizeof(void*), ALLOC_TAG);
+            if (!frames) {
+                ERR("out of memory\n");
+                return FALSE;
+            }
 
             num_frames = RtlWalkFrameChain(frames, 256, 1);
 
