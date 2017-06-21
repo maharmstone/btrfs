@@ -1553,7 +1553,6 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    EXTENT_DATA_REF* edr;
 
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
@@ -1623,7 +1622,7 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
         if (tp.item->size < sizeof(EXTENT_DATA_REF))
             ERR("(%llx,%x,%llx) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
         else {
-            edr = (EXTENT_DATA_REF*)tp.item->data;
+            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
 
             return edr->count;
         }
