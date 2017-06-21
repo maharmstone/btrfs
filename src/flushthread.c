@@ -5858,7 +5858,11 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, ROOT_REF* rr, PIRP Irp) {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(suppress: 28194)
+#endif
+static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ UINT64 subvolid, _In_ UINT64 parsubvolid, _In_ __drv_aliasesMem ROOT_REF* rr, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -5913,6 +5917,9 @@ static NTSTATUS add_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 pars
 
     return STATUS_SUCCESS;
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 static NTSTATUS update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT64 parsubvolid, PIRP Irp) {
     KEY searchkey;
