@@ -2081,6 +2081,10 @@ static NTSTATUS commit_batch_list_root(device_extension* Vcb, batch_root* br, PI
                     Status = handle_batch_collision(Vcb, bi, tp.tree, tp.item, td, &br->items, &ignore);
                     if (!NT_SUCCESS(Status)) {
                         ERR("handle_batch_collision returned %08x\n", Status);
+
+                        if (td)
+                            ExFreeToPagedLookasideList(&Vcb->tree_data_lookaside, td);
+
                         return Status;
                     }
                 }
