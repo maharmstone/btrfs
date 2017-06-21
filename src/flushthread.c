@@ -1893,7 +1893,9 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             tw = ExAllocatePoolWithTag(PagedPool, sizeof(tree_write), ALLOC_TAG);
             if (!tw) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                ExFreePool(data);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
             }
 
             tw->address = t->new_address;
