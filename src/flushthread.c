@@ -4179,8 +4179,12 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, UINT64 sta
     return STATUS_SUCCESS;
 }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(suppress: 28194)
+#endif
 NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                void* data, UINT16 datalen, enum batch_operation operation) {
+                                _In_opt_ _When_(return == 0, __drv_aliasesMem) void* data, UINT16 datalen, enum batch_operation operation) {
     LIST_ENTRY* le;
     batch_root* br = NULL;
     batch_item* bi;
@@ -4238,6 +4242,9 @@ NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, ro
 
     return STATUS_SUCCESS;
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 typedef struct {
     UINT64 address;

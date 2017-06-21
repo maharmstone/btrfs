@@ -1246,7 +1246,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
 BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* address);
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size);
 NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                void* data, UINT16 datalen, enum batch_operation operation);
+                                _In_opt_ _When_(return == 0, __drv_aliasesMem) void* data, UINT16 datalen, enum batch_operation operation);
 NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
 
