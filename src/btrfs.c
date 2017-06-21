@@ -1715,8 +1715,7 @@ void uninit(device_extension* Vcb, BOOL flush) {
     }
 
     while (!IsListEmpty(&Vcb->roots)) {
-        LIST_ENTRY* le = RemoveHeadList(&Vcb->roots);
-        root* r = CONTAINING_RECORD(le, root, list_entry);
+        root* r = CONTAINING_RECORD(RemoveHeadList(&Vcb->roots), root, list_entry);
 
         ExDeleteResourceLite(&r->nonpaged->load_tree_lock);
         ExFreePool(r->nonpaged);
@@ -1724,10 +1723,7 @@ void uninit(device_extension* Vcb, BOOL flush) {
     }
 
     while (!IsListEmpty(&Vcb->chunks)) {
-        chunk* c;
-
-        le = RemoveHeadList(&Vcb->chunks);
-        c = CONTAINING_RECORD(le, chunk, list_entry);
+        chunk* c = CONTAINING_RECORD(RemoveHeadList(&Vcb->chunks), chunk, list_entry);
 
         while (!IsListEmpty(&c->space)) {
             LIST_ENTRY* le2 = RemoveHeadList(&c->space);
@@ -1761,8 +1757,7 @@ void uninit(device_extension* Vcb, BOOL flush) {
     // FIXME - free any open fcbs?
 
     while (!IsListEmpty(&Vcb->devices)) {
-        LIST_ENTRY* le = RemoveHeadList(&Vcb->devices);
-        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        device* dev = CONTAINING_RECORD(RemoveHeadList(&Vcb->devices), device, list_entry);
 
         while (!IsListEmpty(&dev->space)) {
             LIST_ENTRY* le2 = RemoveHeadList(&dev->space);
