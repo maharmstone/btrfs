@@ -86,13 +86,12 @@ BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, 
 
 chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address) {
     LIST_ENTRY* le2;
-    chunk* c;
 
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
 
     le2 = Vcb->chunks.Flink;
     while (le2 != &Vcb->chunks) {
-        c = CONTAINING_RECORD(le2, chunk, list_entry);
+        chunk* c = CONTAINING_RECORD(le2, chunk, list_entry);
 
         if (address >= c->offset && address < c->offset + c->chunk_item->size) {
             ExReleaseResourceLite(&Vcb->chunk_lock);
