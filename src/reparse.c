@@ -358,7 +358,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 ExFreePool(fcb->reparse_xattr.Buffer);
 
             fcb->reparse_xattr = buf;
-            RtlCopyMemory(fcb->reparse_xattr.Buffer, buffer, buflen);
+            RtlCopyMemory(buf.Buffer, buffer, buflen);
 
             fcb->reparse_xattr_changed = TRUE;
 
