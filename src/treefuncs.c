@@ -1201,6 +1201,7 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + delir->n, ALLOC_TAG);
     if (!ier) {
         ERR("out of memory\n");
+        ExFreePool(bi2);
         return;
     }
 
