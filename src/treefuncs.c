@@ -1005,11 +1005,9 @@ NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
 }
 
 void clear_rollback(LIST_ENTRY* rollback) {
-    rollback_item* ri;
-
     while (!IsListEmpty(rollback)) {
         LIST_ENTRY* le = RemoveHeadList(rollback);
-        ri = CONTAINING_RECORD(le, rollback_item, list_entry);
+        rollback_item* ri = CONTAINING_RECORD(le, rollback_item, list_entry);
 
         switch (ri->type) {
             case ROLLBACK_ADD_SPACE:
