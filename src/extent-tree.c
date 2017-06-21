@@ -1000,10 +1000,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             if (type == TYPE_EXTENT_DATA_REF) {
                 EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(UINT8));
                 EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
-                ULONG neweilen;
-                EXTENT_ITEM* newei;
 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
+                    ULONG neweilen;
+                    EXTENT_ITEM* newei;
+
                     if (ei->refcount == edr->count) {
                         Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
@@ -1065,10 +1066,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             } else if (type == TYPE_SHARED_DATA_REF) {
                 SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(UINT8));
                 SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-                ULONG neweilen;
-                EXTENT_ITEM* newei;
 
                 if (sectsdr->offset == sdr->offset) {
+                    EXTENT_ITEM* newei;
+                    ULONG neweilen;
+
                     if (ei->refcount == sectsdr->count) {
                         Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
@@ -1130,10 +1132,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             } else if (type == TYPE_TREE_BLOCK_REF) {
                 TREE_BLOCK_REF* secttbr = (TREE_BLOCK_REF*)(ptr + sizeof(UINT8));
                 TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
-                ULONG neweilen;
-                EXTENT_ITEM* newei;
 
                 if (secttbr->offset == tbr->offset) {
+                    EXTENT_ITEM* newei;
+                    ULONG neweilen;
+
                     if (ei->refcount == 1) {
                         Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
@@ -1176,10 +1179,11 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             } else if (type == TYPE_SHARED_BLOCK_REF) {
                 SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(UINT8));
                 SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
-                ULONG neweilen;
-                EXTENT_ITEM* newei;
 
                 if (sectsbr->offset == sbr->offset) {
+                    EXTENT_ITEM* newei;
+                    ULONG neweilen;
+
                     if (ei->refcount == 1) {
                         Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
@@ -1263,9 +1267,10 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     if (type == TYPE_EXTENT_DATA_REF) {
         EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)tp2.item->data;
         EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
-        EXTENT_ITEM* newei;
 
         if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
+            EXTENT_ITEM* newei;
+
             if (ei->refcount == edr->count) {
                 Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
