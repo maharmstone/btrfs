@@ -2385,6 +2385,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 Status = insert_tree_item(Vcb, Vcb->extent_root, ce->address, TYPE_EXTENT_ITEM, ce->size, data, tp.item->size, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
+                    if (data) ExFreePool(data);
                     return Status;
                 }
 
