@@ -186,8 +186,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
 }
 
 static tree* free_tree2(tree* t) {
-    LIST_ENTRY* le;
-    tree_data* td;
     tree* par;
     root* r = t->root;
 
@@ -202,8 +200,7 @@ static tree* free_tree2(tree* t) {
     }
 
     while (!IsListEmpty(&t->itemlist)) {
-        le = RemoveHeadList(&t->itemlist);
-        td = CONTAINING_RECORD(le, tree_data, list_entry);
+        tree_data* td = CONTAINING_RECORD(RemoveHeadList(&t->itemlist), tree_data, list_entry);
 
         if (t->header.level == 0 && td->data && td->inserted)
             ExFreePool(td->data);
