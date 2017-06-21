@@ -455,7 +455,9 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
 
         vde->removing = TRUE;
 
-        IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
+        Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
+        if (!NT_SUCCESS(Status))
+            WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
 
         IoDetachDevice(vde->pdo);
 
