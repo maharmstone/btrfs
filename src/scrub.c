@@ -281,12 +281,14 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 d
     Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+        ExFreePool(fn.Buffer);
         goto end;
     }
 
     err = ExAllocatePoolWithTag(PagedPool, offsetof(scrub_error, data.filename[0]) + utf16len, ALLOC_TAG);
     if (!err) {
         ERR("out of memory\n");
+        ExFreePool(fn.Buffer);
         goto end;
     }
 
@@ -303,6 +305,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 d
     Status = RtlUTF8ToUnicodeN(err->data.filename, utf16len, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+        ExFreePool(fn.Buffer);
         ExFreePool(err);
         goto end;
     }
