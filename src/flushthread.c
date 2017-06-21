@@ -536,12 +536,14 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                         Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("delete_tree_item returned %08x\n", Status);
+                            ExFreePool(ri);
                             return Status;
                         }
 
                         Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_tree_item returned %08x\n", Status);
+                            ExFreePool(ri);
                             return Status;
                         }
                     }
