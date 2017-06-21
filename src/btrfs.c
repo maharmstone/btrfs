@@ -2638,6 +2638,7 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
         Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
+            ExFreePool(ii);
             return Status;
         }
 
@@ -2656,6 +2657,7 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
         Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
+            ExFreePool(ir);
             return Status;
         }
 
