@@ -4973,12 +4973,12 @@ static void init_logging() {
 
         Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, dateline, strlen(dateline), NULL, NULL);
 
+        ExFreePool(dateline);
+
         if (!NT_SUCCESS(Status)) {
             ERR("ZwWriteFile returned %08x\n", Status);
             goto end;
         }
-
-        ExFreePool(dateline);
     }
 
 end:
