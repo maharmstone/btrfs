@@ -449,7 +449,6 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                 UINT64 sbrrc = find_extent_shared_tree_refcount(Vcb, in[i].address, mr->address, NULL);
 
                 if (sbrrc > 0) {
-                    NTSTATUS Status;
                     SHARED_BLOCK_REF sbr;
 
                     sbr.offset = mr->new_address;
@@ -485,7 +484,6 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                             UINT64 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, mr->address, NULL);
 
                             if (sdrrc > 0) {
-                                NTSTATUS Status;
                                 SHARED_DATA_REF sdr;
                                 chunk* c;
 
@@ -597,7 +595,7 @@ static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, L
             mr->system = TRUE;
 
         if (data_items && mr->data->level == 0) {
-            LIST_ENTRY* le2 = data_items->Flink;
+            le2 = data_items->Flink;
             while (le2 != data_items) {
                 data_reloc* dr = CONTAINING_RECORD(le2, data_reloc, list_entry);
                 leaf_node* ln = (leaf_node*)&mr->data[1];
@@ -1352,7 +1350,6 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
     while (len > 0) {
         UINT8 secttype = *ptr;
         ULONG sectlen = secttype == TYPE_EXTENT_DATA_REF ? sizeof(EXTENT_DATA_REF) : (secttype == TYPE_SHARED_DATA_REF ? sizeof(SHARED_DATA_REF) : 0);
-        NTSTATUS Status;
 
         len--;
 
@@ -1414,8 +1411,6 @@ static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_EN
         traverse_ptr tp2 = *tp, next_tp;
 
         while (find_next_item(Vcb, &tp2, &next_tp, FALSE, NULL)) {
-            NTSTATUS Status;
-
             tp2 = next_tp;
 
             if (tp2.item->key.obj_id == tp->item->key.obj_id) {
@@ -3267,7 +3262,6 @@ void balance_thread(void* context) {
         LIST_ENTRY* le2 = le->Flink;
 
         if (c->chunk_item->type & BLOCK_FLAG_DATA) {
-            NTSTATUS Status;
             BOOL changed;
 
             do {
@@ -3310,7 +3304,6 @@ void balance_thread(void* context) {
     // do metadata chunks
     while (!IsListEmpty(&chunks)) {
         chunk* c;
-        NTSTATUS Status;
         BOOL changed;
 
         le = RemoveHeadList(&chunks);
@@ -3400,7 +3393,6 @@ end:
             ExReleaseResourceLite(&Vcb->tree_lock);
         } else if (Vcb->balance.shrinking) {
             device* dev = NULL;
-            LIST_ENTRY* le;
 
             ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 

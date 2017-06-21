@@ -324,7 +324,6 @@ static void clean_space_cache(device_extension* Vcb) {
 
     if (Vcb->trim && !Vcb->options.no_trim) {
         ioctl_context context;
-        LIST_ENTRY* le;
         ULONG total_num;
 
         context.left = 0;
@@ -1109,8 +1108,6 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
 
                 if (!td->inserted) {
-                    TREE_BLOCK_REF tbr;
-
                     tbr.offset = t->root->id;
 
                     Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF,
@@ -1754,9 +1751,9 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     le = Vcb->trees.Flink;
     while (le != &Vcb->trees) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
+        LIST_ENTRY* le2;
 #ifdef DEBUG_PARANOID
         UINT32 num_items = 0, size = 0;
-        LIST_ENTRY* le2;
         BOOL crash = FALSE;
 #endif
 
@@ -1850,7 +1847,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             if (t->header.level == 0) {
                 leaf_node* itemptr = (leaf_node*)body;
                 int i = 0;
-                LIST_ENTRY* le2;
                 UINT8* dataptr = data + Vcb->superblock.node_size;
 
                 le2 = t->itemlist.Flink;
@@ -1873,7 +1869,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             } else {
                 internal_node* itemptr = (internal_node*)body;
                 int i = 0;
-                LIST_ENTRY* le2;
 
                 le2 = t->itemlist.Flink;
                 while (le2 != &t->itemlist) {
@@ -1907,7 +1902,6 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             if (IsListEmpty(&tree_writes))
                 InsertTailList(&tree_writes, &tw->list_entry);
             else {
-                LIST_ENTRY* le2;
                 BOOL inserted = FALSE;
 
                 le2 = tree_writes.Flink;
@@ -2427,7 +2421,6 @@ end:
 void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
-    UINT32* data;
     NTSTATUS Status;
     UINT64 startaddr, endaddr;
     ULONG len;
@@ -2575,6 +2568,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
             do {
                 ULONG rl;
                 UINT64 off;
+                UINT32* data;
 
                 if (runlength * sizeof(UINT32) > MAX_CSUM_SIZE)
                     rl = MAX_CSUM_SIZE / sizeof(UINT32);
@@ -7163,8 +7157,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     Vcb->need_write = FALSE;
 
     while (!IsListEmpty(&Vcb->drop_roots)) {
-        LIST_ENTRY* le = RemoveHeadList(&Vcb->drop_roots);
-        root* r = CONTAINING_RECORD(le, root, list_entry);
+        root* r = CONTAINING_RECORD(RemoveHeadList(&Vcb->drop_roots), root, list_entry);
 
         ExDeleteResourceLite(&r->nonpaged->load_tree_lock);
         ExFreePool(r->nonpaged);

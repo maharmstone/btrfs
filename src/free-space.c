@@ -161,8 +161,6 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
             chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
             if (!c->cache_loaded) {
-                NTSTATUS Status;
-
                 ExAcquireResourceExclusiveLite(&c->lock, TRUE);
 
                 Status = load_cache_chunk(Vcb, c, NULL);

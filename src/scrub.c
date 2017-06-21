@@ -78,8 +78,6 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 d
     dir = inode;
 
     while (TRUE) {
-        NTSTATUS Status;
-
         if (dir == r->root_item.objid) {
             if (r == Vcb->root_fileref->fcb->subvol)
                 break;
@@ -1266,9 +1264,9 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                         if (csum) {
                             for (l = 0; l < readlen; l += Vcb->superblock.sector_size) {
                                 UINT32 crc32 = csum[pos / Vcb->superblock.sector_size];
-                                ULONG goodstripe = 0xffffffff;
                                 BOOL has_error = FALSE;
 
+                                goodstripe = 0xffffffff;
                                 for (k = 0; k < sub_stripes; k++) {
                                     if (c->devices[j + k]->devobj) {
                                         if (context->stripes[j + k].bad_csums[so / Vcb->superblock.sector_size] != crc32)
@@ -1316,7 +1314,8 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
 
                                         if (context->stripes[j + k].bad_csums[so / Vcb->superblock.node_size] != *((UINT32*)th->csum) || th->address != addr) {
                                             ULONG m;
-                                            BOOL recovered = FALSE;
+
+                                            recovered = FALSE;
 
                                             for (m = 0; m < sub_stripes; m++) {
                                                 if (m != k) {

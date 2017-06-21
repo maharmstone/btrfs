@@ -361,12 +361,12 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
                 le = vde->children.Flink;
 
                 while (le != &vde->children) {
-                    volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+                    volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
-                    if (vc->had_drive_letter) { // re-add entry to mountmgr
+                    if (vc2->had_drive_letter) { // re-add entry to mountmgr
                         MOUNTDEV_NAME mdn;
 
-                        Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+                        Status = dev_ioctl(vc2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
                         if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
                             ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                         else {
@@ -377,7 +377,7 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
                             if (!mdn2)
                                 ERR("out of memory\n");
                             else {
-                                Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
+                                Status = dev_ioctl(vc2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
                                 if (!NT_SUCCESS(Status))
                                     ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                                 else {
@@ -402,8 +402,6 @@ void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no
                 ObDereferenceObject(FileObject);
             }
         } else if (!skip_dev) {
-            LIST_ENTRY* le;
-
             ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
             le = Vcb->devices.Flink;

@@ -644,7 +644,6 @@ end:
         if (c) ExFreePool(c);
         if (s) ExFreePool(s);
     } else {
-        LIST_ENTRY* le;
         BOOL done = FALSE;
 
         le = Vcb->chunks.Flink;

@@ -1984,7 +1984,6 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
 
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         UNICODE_STRING fpus2;
-        ACCESS_MASK granted_access;
 
         if (!is_file_name_valid(fpus, FALSE))
             return STATUS_OBJECT_NAME_INVALID;

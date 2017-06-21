@@ -354,8 +354,6 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
-            ULONG i;
-
             for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
                 UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
 
@@ -423,7 +421,6 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-        NTSTATUS Status;
 #ifdef DEBUG_STATS
         LARGE_INTEGER time1, time2;
 
@@ -527,50 +524,50 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             if (context->csum[i] != crc32) {
                 UINT16 j;
                 UINT64 off;
-                UINT16 stripe, badsubstripe = 0;
+                UINT16 stripe2, badsubstripe = 0;
                 BOOL recovered = FALSE;
 
                 get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
-                                 ci->num_stripes / ci->sub_stripes, &off, &stripe);
+                                 ci->num_stripes / ci->sub_stripes, &off, &stripe2);
 
-                stripe *= ci->sub_stripes;
+                stripe2 *= ci->sub_stripes;
 
                 for (j = 0; j < ci->sub_stripes; j++) {
-                    if (context->stripes[stripe + j].status == ReadDataStatus_Success) {
+                    if (context->stripes[stripe2 + j].status == ReadDataStatus_Success) {
                         badsubstripe = j;
                         break;
                     }
                 }
 
-                log_device_error(Vcb, devices[stripe + badsubstripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                log_device_error(Vcb, devices[stripe2 + badsubstripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
                 for (j = 0; j < ci->sub_stripes; j++) {
-                    if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j] && devices[stripe + j]->devobj) {
-                        Status = sync_read_phys(devices[stripe + j]->devobj, cis[stripe + j].offset + off,
+                    if (context->stripes[stripe2 + j].status != ReadDataStatus_Success && devices[stripe2 + j] && devices[stripe2 + j]->devobj) {
+                        Status = sync_read_phys(devices[stripe2 + j]->devobj, cis[stripe2 + j].offset + off,
                                                 Vcb->superblock.sector_size, sector, FALSE);
                         if (!NT_SUCCESS(Status)) {
                             WARN("sync_read_phys returned %08x\n", Status);
-                            log_device_error(Vcb, devices[stripe + j], BTRFS_DEV_STAT_READ_ERRORS);
+                            log_device_error(Vcb, devices[stripe2 + j], BTRFS_DEV_STAT_READ_ERRORS);
                         } else {
                             UINT32 crc32b = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
 
                             if (crc32b == context->csum[i]) {
                                 RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
-                                ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe + j]->devitem.dev_id);
+                                ERR("recovering from checksum error at %llx, device %llx\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe2 + j]->devitem.dev_id);
                                 recovered = TRUE;
 
-                                if (!Vcb->readonly && !devices[stripe + badsubstripe]->readonly && devices[stripe + badsubstripe]->devobj) { // write good data over bad
-                                    Status = write_data_phys(devices[stripe + badsubstripe]->devobj, cis[stripe + badsubstripe].offset + off,
+                                if (!Vcb->readonly && !devices[stripe2 + badsubstripe]->readonly && devices[stripe2 + badsubstripe]->devobj) { // write good data over bad
+                                    Status = write_data_phys(devices[stripe2 + badsubstripe]->devobj, cis[stripe2 + badsubstripe].offset + off,
                                                              sector, Vcb->superblock.sector_size);
                                     if (!NT_SUCCESS(Status)) {
                                         WARN("write_data_phys returned %08x\n", Status);
-                                        log_device_error(Vcb, devices[stripe + badsubstripe], BTRFS_DEV_STAT_READ_ERRORS);
+                                        log_device_error(Vcb, devices[stripe2 + badsubstripe], BTRFS_DEV_STAT_READ_ERRORS);
                                     }
                                 }
 
                                 break;
                             } else
-                                log_device_error(Vcb, devices[stripe + j], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
+                                log_device_error(Vcb, devices[stripe2 + j], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                         }
                     }
                 }
@@ -2027,9 +2024,9 @@ NTSTATUS read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* cs
                     break;
 
                 for (i = 0; i < startoffstripe; i++) {
-                    UINT16 stripe = (parity + i + 1) % ci->num_stripes;
+                    UINT16 stripe2 = (parity + i + 1) % ci->num_stripes;
 
-                    context.stripes[stripe].stripestart = context.stripes[stripe].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+                    context.stripes[stripe2].stripestart = context.stripes[stripe2].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
                 }
 
                 context.stripes[parity].stripestart = context.stripes[parity].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
@@ -2277,9 +2274,9 @@ NTSTATUS read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* cs
                     break;
 
                 for (i = 0; i < startoffstripe; i++) {
-                    UINT16 stripe = (parity1 + i + 2) % ci->num_stripes;
+                    UINT16 stripe2 = (parity1 + i + 2) % ci->num_stripes;
 
-                    context.stripes[stripe].stripestart = context.stripes[stripe].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
+                    context.stripes[stripe2].stripestart = context.stripes[stripe2].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
                 }
 
                 context.stripes[parity1].stripestart = context.stripes[parity1].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;

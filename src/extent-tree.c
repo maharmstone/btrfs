@@ -481,8 +481,6 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
     if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_EXTENT_ITEM && tp.item->key.obj_type != TYPE_METADATA_ITEM)) {
         ULONG eisize;
-        EXTENT_ITEM* ei;
-        UINT8* ptr;
 
         eisize = sizeof(EXTENT_ITEM);
         if (is_tree && !(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) eisize += sizeof(EXTENT_ITEM2);

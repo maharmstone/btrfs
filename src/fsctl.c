@@ -2850,10 +2850,10 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
 
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
-        device* dev = CONTAINING_RECORD(le, device, list_entry);
+        device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev->devitem.dev_id > dev_id)
-            dev_id = dev->devitem.dev_id;
+        if (dev2->devitem.dev_id > dev_id)
+            dev_id = dev2->devitem.dev_id;
 
         le = le->Flink;
     }
@@ -3304,7 +3304,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     make_inline = fcb->ads ? FALSE : (fcb->inode_item.st_size <= Vcb->options.max_inline || fcb_is_inline(fcb));
 
     if (fcb->ads || sourcefcb->ads || make_inline || fcb_is_inline(sourcefcb)) {
-        UINT8* data;
+        UINT8* data2;
         ULONG bytes_read, dataoff, datalen;
 
         if (make_inline) {
@@ -3318,42 +3318,42 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             datalen = sector_align(ded->ByteCount.QuadPart + dataoff, Vcb->superblock.sector_size);
         }
 
-        data = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+        data2 = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
 
         if (dataoff > 0) {
             if (make_inline)
-                Status = read_file(fcb, data, 0, datalen, NULL, Irp);
+                Status = read_file(fcb, data2, 0, datalen, NULL, Irp);
             else
-                Status = read_file(fcb, data, ded->TargetFileOffset.QuadPart - dataoff, dataoff, NULL, Irp);
+                Status = read_file(fcb, data2, ded->TargetFileOffset.QuadPart - dataoff, dataoff, NULL, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);
-                ExFreePool(data);
+                ExFreePool(data2);
                 goto end;
             }
         }
 
         if (sourcefcb->ads) {
-            Status = read_stream(sourcefcb, data + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read);
+            Status = read_stream(sourcefcb, data2 + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_stream returned %08x\n", Status);
-                ExFreePool(data);
+                ExFreePool(data2);
                 goto end;
             }
         } else {
-            Status = read_file(sourcefcb, data + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read, Irp);
+            Status = read_file(sourcefcb, data2 + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);
-                ExFreePool(data);
+                ExFreePool(data2);
                 goto end;
             }
         }
 
         if (dataoff + bytes_read < datalen)
-            RtlZeroMemory(data + dataoff + bytes_read, datalen - bytes_read);
+            RtlZeroMemory(data2 + dataoff + bytes_read, datalen - bytes_read);
 
         if (fcb->ads)
-            RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data, min(ded->ByteCount.QuadPart, fcb->adsdata.Length - ded->TargetFileOffset.QuadPart));
+            RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data2, min(ded->ByteCount.QuadPart, fcb->adsdata.Length - ded->TargetFileOffset.QuadPart));
         else if (make_inline) {
             ULONG edsize;
             EXTENT_DATA* ed;
@@ -3361,7 +3361,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size), Irp, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("excise_extents returned %08x\n", Status);
-                ExFreePool(data);
+                ExFreePool(data2);
                 goto end;
             }
 
@@ -3370,7 +3370,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
             if (!ed) {
                 ERR("out of memory\n");
-                ExFreePool(data);
+                ExFreePool(data2);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
@@ -3382,12 +3382,12 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             ed->encoding = BTRFS_ENCODING_NONE;
             ed->type = EXTENT_TYPE_INLINE;
 
-            RtlCopyMemory(ed->data, data, datalen);
+            RtlCopyMemory(ed->data, data2, datalen);
 
             Status = add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08x\n", Status);
-                ExFreePool(data);
+                ExFreePool(data2);
                 goto end;
             }
 
@@ -3395,15 +3395,15 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         } else {
             UINT64 start = ded->TargetFileOffset.QuadPart - (ded->TargetFileOffset.QuadPart % Vcb->superblock.sector_size);
 
-            Status = do_write_file(fcb, start, start + datalen, data, Irp, FALSE, 0, &rollback);
+            Status = do_write_file(fcb, start, start + datalen, data2, Irp, FALSE, 0, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("do_write_file returned %08x\n", Status);
-                ExFreePool(data);
+                ExFreePool(data2);
                 goto end;
             }
         }
 
-        ExFreePool(data);
+        ExFreePool(data2);
     } else {
         LIST_ENTRY* lastextle;
 
