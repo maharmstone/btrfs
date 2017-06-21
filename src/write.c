@@ -393,6 +393,9 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     } else if (flags & BLOCK_FLAG_SYSTEM) {
         max_stripe_size = 0x2000000; // 32 MB
         max_chunk_size = 2 * max_stripe_size;
+    } else {
+        ERR("unknown chunk type\n");
+        return STATUS_INTERNAL_ERROR;
     }
 
     max_chunk_size = min(max_chunk_size, total_size / 10); // cap at 10%
