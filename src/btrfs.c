@@ -2265,8 +2265,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
 
     if (!Irp) {
         ERR("IoAllocateIrp failed\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto exit;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     Irp->Flags |= IRP_NOCACHE;
