@@ -24,7 +24,6 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     REPARSE_DATA_BUFFER* rdb = buffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
-    char* data;
     NTSTATUS Status;
 
     TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
@@ -52,6 +51,8 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
 
             *retlen = reqlen;
         } else {
+            char* data;
+
             if (fcb->inode_item.st_size == 0) {
                 Status = STATUS_INVALID_PARAMETER;
                 goto end;
@@ -95,6 +96,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 rdb->Reserved = 0;
 
             if (buflen < reqlen) {
+                ExFreePool(data);
                 Status = STATUS_BUFFER_OVERFLOW;
                 *retlen = min(buflen, offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.SubstituteNameOffset));
                 goto end;
