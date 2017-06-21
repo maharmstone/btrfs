@@ -796,7 +796,12 @@ static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN 
 
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-            RtlUTF8ToUnicodeN(NULL, 0, &label_len, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
+            Status = RtlUTF8ToUnicodeN(NULL, 0, &label_len, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                break;
+            }
+
             orig_label_len = label_len;
 
             if (IrpSp->Parameters.QueryVolume.Length < sizeof(FILE_FS_VOLUME_INFORMATION) - sizeof(WCHAR) + label_len) {
@@ -820,7 +825,12 @@ static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN 
             if (label_len > 0) {
                 ULONG bytecount;
 
-                RtlUTF8ToUnicodeN(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
+                Status = RtlUTF8ToUnicodeN(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
+                if (!NT_SUCCESS(Status)) {
+                    ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                    break;
+                }
+
                 TRACE("label = %.*S\n", label_len / sizeof(WCHAR), data->VolumeLabel);
             }
 
