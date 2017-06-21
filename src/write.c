@@ -213,7 +213,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
                         if (dh2)
                             devsize = max(dh1->size / 2, min(dh1->size, dh2->size));
                         else
-                            devsize = min(dh1->size, dh2->size);
+                            devsize = dh1->size / 2;
 
                         if (devsize > size) {
                             dev2 = dev;
