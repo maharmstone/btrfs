@@ -1087,7 +1087,7 @@ NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, co
 BOOL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp);
 BOOL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
 void free_trees(device_extension* Vcb);
-NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, _In_opt_ _When_(return == 0, __drv_aliasesMem) void* data,
+NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data,
                           UINT32 size, traverse_ptr* ptp, PIRP Irp);
 NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
 tree* free_tree(tree* t);
@@ -1246,7 +1246,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
 BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, UINT64* address);
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size);
 NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, UINT64 objid, UINT64 objtype, UINT64 offset,
-                                _In_opt_ _When_(return == 0, __drv_aliasesMem) void* data, UINT16 datalen, enum batch_operation operation);
+                                _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, UINT16 datalen, enum batch_operation operation);
 NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
 

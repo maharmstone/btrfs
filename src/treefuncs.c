@@ -815,7 +815,7 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, _In_opt_ _When_(return == 0, __drv_aliasesMem) void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
+NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
