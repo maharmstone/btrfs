@@ -1343,11 +1343,12 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             return STATUS_INTERNAL_ERROR;
         }
     } else if (type == TYPE_SHARED_DATA_REF) {
-        UINT32* sectsdrcount = (UINT32*)tp2.item->data;
         SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-        EXTENT_ITEM* newei;
 
         if (tp2.item->key.offset == sdr->offset) {
+            UINT32* sectsdrcount = (UINT32*)tp2.item->data;
+            EXTENT_ITEM* newei;
+
             if (ei->refcount == sdr->count) {
                 Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
