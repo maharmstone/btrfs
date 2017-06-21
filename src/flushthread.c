@@ -5821,6 +5821,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                         Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_tree_item returned %08x\n", Status);
+                            ExFreePool(newrr);
                             return Status;
                         }
                     }
