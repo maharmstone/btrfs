@@ -1102,11 +1102,17 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
 
 // in search.c
 NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
+
+_Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
+
 void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
+
+_Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
+
 void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock, BOOL skip_dev);
 
 // in cache.c
@@ -1127,7 +1133,11 @@ NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 le
                     chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority);
 NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority);
 void free_write_data_stripes(write_data_context* wtc);
+
+_Function_class_(IRP_MJ_WRITE)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
                          PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size, BOOL file_write, UINT32 irp_offset);
 NTSTATUS do_write_file(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, PIRP Irp, BOOL file_write, UINT32 irp_offset, LIST_ENTRY* rollback);
@@ -1140,12 +1150,23 @@ NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsiz
 void add_extent(fcb* fcb, LIST_ENTRY* prevextle, extent* newext);
 
 // in dirctrl.c
+
+_Function_class_(IRP_MJ_DIRECTORY_CONTROL)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
 ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp);
 
 // in security.c
+
+_Function_class_(IRP_MJ_QUERY_SECURITY)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
+_Function_class_(IRP_MJ_SET_SECURITY)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
 void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp);
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 uid);
 void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 gid);
@@ -1155,14 +1176,27 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as);
 void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT subjcont);
 
 // in fileinfo.c
+
+_Function_class_(IRP_MJ_SET_INFORMATION)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
+_Function_class_(IRP_MJ_QUERY_INFORMATION)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
+_Function_class_(IRP_MJ_QUERY_EA)
+_Function_class_(DRIVER_DISPATCH)
+NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
+_Function_class_(IRP_MJ_SET_EA)
+_Function_class_(DRIVER_DISPATCH)
+NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
 BOOL has_open_children(file_ref* fileref);
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, BOOL advance_only);
 NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen);
 NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp);
-NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc);
 
@@ -1172,7 +1206,11 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in create.c
+
+_Function_class_(IRP_MJ_CREATE)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+
 NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset,
                       POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
 NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
@@ -1193,7 +1231,10 @@ void flush_subvol_fcbs(root* subvol);
 BOOL fcb_is_inline(fcb* fcb);
 
 // in flushthread.c
+
+_Function_class_(KSTART_ROUTINE)
 void flush_thread(void* context);
+
 NTSTATUS do_write(device_extension* Vcb, PIRP Irp);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp);
@@ -1209,7 +1250,11 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
 NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
 
 // in read.c
+
+_Function_class_(IRP_MJ_READ)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
 NTSTATUS read_data(device_extension* Vcb, UINT64 addr, UINT32 length, UINT32* csum, BOOL is_tree, UINT8* buf, chunk* c, chunk** pc,
                    PIRP Irp, UINT64 generation, BOOL file_read, ULONG priority);
 NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp);
@@ -1219,7 +1264,11 @@ NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* 
 void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT16 missing1, UINT16 missing2, UINT8* out);
 
 // in pnp.c
+
+_Function_class_(IRP_MJ_PNP)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
 NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
@@ -1279,10 +1328,16 @@ UINT8 gmul(UINT8 a, UINT8 b);
 UINT8 gdiv(UINT8 a, UINT8 b);
 
 // in devctrl.c
+
+_Function_class_(IRP_MJ_DEVICE_CONTROL)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 // in calcthread.c
+
+_Function_class_(KSTART_ROUTINE)
 void calc_thread(void* context);
+
 NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum, calc_job** pcj);
 void free_calc_job(calc_job* cj);
 
@@ -1294,6 +1349,8 @@ NTSTATUS resume_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS look_for_balance_item(device_extension* Vcb);
 NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
+
+_Function_class_(KSTART_ROUTINE)
 void balance_thread(void* context);
 
 // in volume.c
@@ -1499,7 +1556,9 @@ typedef BOOLEAN (*tCcCopyWriteEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOf
 typedef BOOLEAN (*tCcCopyReadEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
                                  PVOID Buffer, PIO_STATUS_BLOCK IoStatus, PETHREAD IoIssuerThread);
 
+#ifndef CC_ENABLE_DISK_IO_ACCOUNTING
 #define CC_ENABLE_DISK_IO_ACCOUNTING 0x00000010
+#endif
 
 typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG Flags);
 
@@ -1509,7 +1568,9 @@ typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten
 
 BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);
 
-PEPROCESS PsGetThreadProcess(PETHREAD Thread); // not in mingw
+#ifndef _MSC_VER
+PEPROCESS PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
+#endif
 
 // not in DDK headers - taken from winternl.h
 typedef struct _LDR_DATA_TABLE_ENTRY {

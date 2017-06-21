@@ -92,6 +92,7 @@ typedef struct {
     KEVENT Event;
 } vol_read_context;
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS vol_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     vol_read_context* context = conptr;
 
@@ -654,6 +655,7 @@ static NTSTATUS vol_get_device_number(volume_device_extension* vde, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS vol_ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     KEVENT* event = conptr;
 

@@ -81,6 +81,7 @@ void do_write_job(device_extension* Vcb, PIRP Irp) {
     TRACE("returning %08x\n", Status);
 }
 
+_Function_class_(WORKER_THREAD_ROUTINE)
 static void do_job(void* context) {
     job_info* ji = context;
     PIO_STACK_LOCATION IrpSp = ji->Irp ? IoGetCurrentIrpStackLocation(ji->Irp) : NULL;

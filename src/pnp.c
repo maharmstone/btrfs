@@ -34,6 +34,7 @@ typedef struct {
     pnp_stripe* stripes;
 } pnp_context;
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     pnp_stripe* stripe = conptr;
     pnp_context* context = (pnp_context*)stripe->context;
@@ -276,6 +277,8 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+_Function_class_(IRP_MJ_PNP)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;

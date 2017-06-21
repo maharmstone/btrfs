@@ -48,6 +48,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
 #endif
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
 
@@ -278,6 +279,7 @@ typedef struct {
     ioctl_context_stripe* stripes;
 } ioctl_context;
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     ioctl_context* context = (ioctl_context*)conptr;
     LONG left2 = InterlockedDecrement(&context->left);
@@ -2036,6 +2038,7 @@ typedef struct _write_superblocks_context {
     LONG left;
 } write_superblocks_context;
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_superblocks_stripe* stripe = conptr;
     write_superblocks_context* context = stripe->context;
@@ -7239,6 +7242,7 @@ static void do_flush(device_extension* Vcb) {
     ExReleaseResourceLite(&Vcb->tree_lock);
 }
 
+_Function_class_(KSTART_ROUTINE)
 void flush_thread(void* context) {
     DEVICE_OBJECT* devobj = context;
     device_extension* Vcb = devobj->DeviceExtension;

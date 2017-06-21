@@ -686,6 +686,7 @@ static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING na
     IoQueueWorkItem(work_item, do_pnp_callback, DelayedWorkQueue, context);
 }
 
+_Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
     PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
@@ -698,6 +699,7 @@ NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context) {
     return STATUS_SUCCESS;
 }
 
+_Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
     PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;

@@ -647,6 +647,7 @@ static void log_error(device_extension* Vcb, UINT64 addr, UINT64 devid, BOOL met
     }
 }
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_stripe* stripe = conptr;
     scrub_context* context = (scrub_context*)stripe->context;
@@ -1682,6 +1683,7 @@ typedef struct {
     UINT8* parity_scratch2;
 } scrub_context_raid56;
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_raid56_stripe* stripe = conptr;
     scrub_context_raid56* context = (scrub_context_raid56*)stripe->context;
@@ -3119,6 +3121,7 @@ end:
     return Status;
 }
 
+_Function_class_(KSTART_ROUTINE)
 static void scrub_thread(void* context) {
     device_extension* Vcb = context;
     LIST_ENTRY chunks, *le;

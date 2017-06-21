@@ -3549,6 +3549,8 @@ static BOOL has_manage_volume_privilege(ACCESS_STATE* access_state, KPROCESSOR_M
     return SePrivilegeCheck(&privset, &access_state->SubjectSecurityContext, processor_mode) ? TRUE : FALSE;
 }
 
+_Function_class_(IRP_MJ_CREATE)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;

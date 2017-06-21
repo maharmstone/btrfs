@@ -2224,6 +2224,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, 
     return Status;
 }
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_data_stripe* stripe = conptr;
     write_data_context* context = (write_data_context*)stripe->context;
@@ -4573,6 +4574,8 @@ exit:
     return Status;
 }
 
+_Function_class_(IRP_MJ_WRITE)
+_Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
