@@ -6241,6 +6241,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                         oldcrc32, olddi, sizeof(DIR_ITEM) - 1 + oldutf8->Length, Batch_DeleteDirItem);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08x\n", Status);
+            ExFreePool(olddi);
             return Status;
         }
 
@@ -6284,6 +6285,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                         di, disize, Batch_DirItem);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08x\n", Status);
+            ExFreePool(di2);
+            ExFreePool(di);
             return Status;
         }
 
@@ -6295,6 +6298,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + oldutf8->Length, ALLOC_TAG);
             if (!ir) {
                 ERR("out of memory\n");
+                ExFreePool(di2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -6306,6 +6310,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                             ir, sizeof(INODE_REF) - 1 + ir->n, Batch_DeleteInodeRef);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08x\n", Status);
+                ExFreePool(ir);
+                ExFreePool(di2);
                 return Status;
             }
 
@@ -6314,6 +6320,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             ir2 = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->dc->utf8.Length, ALLOC_TAG);
             if (!ir2) {
                 ERR("out of memory\n");
+                ExFreePool(di2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -6325,6 +6332,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                             ir2, sizeof(INODE_REF) - 1 + ir2->n, Batch_InodeRef);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08x\n", Status);
+                ExFreePool(ir2);
+                ExFreePool(di2);
                 return Status;
             }
         } else if (fileref->fcb != fileref->fcb->Vcb->dummy_fcb) { // subvolume
@@ -6334,6 +6343,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, oldutf8, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_root_ref returned %08x\n", Status);
+                ExFreePool(di2);
+                return Status;
             }
 
             rrlen = sizeof(ROOT_REF) - 1 + fileref->dc->utf8.Length;
@@ -6341,6 +6352,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
             if (!rr) {
                 ERR("out of memory\n");
+                ExFreePool(di2);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -6352,12 +6364,14 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_root_ref returned %08x\n", Status);
+                ExFreePool(di2);
                 return Status;
             }
 
             Status = update_root_backref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("update_root_backref returned %08x\n", Status);
+                ExFreePool(di2);
                 return Status;
             }
         }
@@ -6368,6 +6382,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                         fileref->dc->index, NULL, 0, Batch_Delete);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08x\n", Status);
+            ExFreePool(di2);
             return Status;
         }
 
@@ -6377,6 +6392,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                        fileref->dc->index, di2, disize, Batch_Insert);
        if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08x\n", Status);
+            ExFreePool(di2);
             return Status;
         }
 
