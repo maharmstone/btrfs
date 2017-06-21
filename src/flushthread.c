@@ -93,6 +93,7 @@ NTSTATUS write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT
         Irp->MdlAddress = IoAllocateMdl(data, length, FALSE, FALSE, NULL);
         if (!Irp->MdlAddress) {
             DbgPrint("IoAllocateMdl failed\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
 
