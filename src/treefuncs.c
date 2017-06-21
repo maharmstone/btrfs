@@ -947,21 +947,6 @@ end:
     return Status;
 }
 
-static __inline tree_data* first_valid_item(tree* t) {
-    LIST_ENTRY* le = t->itemlist.Flink;
-
-    while (le != &t->itemlist) {
-        tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
-
-        if (!td->ignore)
-            return td;
-
-        le = le->Flink;
-    }
-
-    return NULL;
-}
-
 NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
     tree* t;
     UINT64 gen;
