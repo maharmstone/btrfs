@@ -1619,7 +1619,6 @@ static NTSTATUS close_file(PFILE_OBJECT FileObject) {
 }
 
 void uninit(device_extension* Vcb, BOOL flush) {
-    space* s;
     UINT64 i;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -1744,14 +1743,14 @@ void uninit(device_extension* Vcb, BOOL flush) {
 
         while (!IsListEmpty(&c->space)) {
             LIST_ENTRY* le2 = RemoveHeadList(&c->space);
-            s = CONTAINING_RECORD(le2, space, list_entry);
+            space* s = CONTAINING_RECORD(le2, space, list_entry);
 
             ExFreePool(s);
         }
 
         while (!IsListEmpty(&c->deleting)) {
             LIST_ENTRY* le2 = RemoveHeadList(&c->deleting);
-            s = CONTAINING_RECORD(le2, space, list_entry);
+            space* s = CONTAINING_RECORD(le2, space, list_entry);
 
             ExFreePool(s);
         }
