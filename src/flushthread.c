@@ -6003,12 +6003,14 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, UINT64 root, PIRP 
         Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08x\n", Status);
+            ExFreePool(ri);
             return Status;
         }
 
         Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
+            ExFreePool(ri);
             return Status;
         }
     } else {
