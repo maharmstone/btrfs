@@ -2605,7 +2605,7 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
 
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08x\n", Status);
-            goto end;
+            return Status;
         }
 
         reloc_root->root_item.inode.generation = 1;
@@ -2620,8 +2620,7 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         KeQuerySystemTime(&time);
@@ -2639,15 +2638,14 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
         Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
-            goto end;
+            return Status;
         }
 
         irlen = offsetof(INODE_REF, name[0]) + 2;
         ir = ExAllocatePoolWithTag(PagedPool, irlen, ALLOC_TAG);
         if (!ir) {
             ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         ir->index = 0;
@@ -2658,17 +2656,14 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
         Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
-            goto end;
+            return Status;
         }
 
         Vcb->data_reloc_root = reloc_root;
         Vcb->need_write = TRUE;
     }
 
-    Status = STATUS_SUCCESS;
-
-end:
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS find_disk_holes(device_extension* Vcb, device* dev, PIRP Irp) {
