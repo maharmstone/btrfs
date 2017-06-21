@@ -1142,6 +1142,7 @@ end:
 
 static WCHAR* file_desc_fcb(fcb* fcb) {
     char s[60];
+    NTSTATUS Status;
     UNICODE_STRING us;
     ANSI_STRING as;
 
@@ -1168,7 +1169,9 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
     us.MaximumLength = 60 * sizeof(WCHAR);
     us.Length = 0;
 
-    RtlAnsiStringToUnicodeString(&us, &as, FALSE);
+    Status = RtlAnsiStringToUnicodeString(&us, &as, FALSE);
+    if (!NT_SUCCESS(Status))
+        return L"(RtlAnsiStringToUnicodeString error)";
 
     us.Buffer[us.Length / sizeof(WCHAR)] = 0;
 
