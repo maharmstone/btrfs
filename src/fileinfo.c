@@ -40,6 +40,11 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         }
     }
 
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
     TRACE("file = %S, attributes = %x\n", file_desc(FileObject), fbi->FileAttributes);
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
@@ -108,7 +113,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         LARGE_INTEGER time;
         BTRFS_TIME now;
 
-        defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.',
+        defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref && fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.',
                                     TRUE, Irp);
 
         if (fcb->type == BTRFS_TYPE_DIRECTORY)
