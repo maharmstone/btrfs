@@ -840,10 +840,9 @@ NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 o
                 BOOL loaded;
 
                 Status = do_load_tree(Vcb, &r->treeholder, r, NULL, NULL, &loaded, Irp);
-
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_load_tree returned %08x\n", Status);
-                    goto end;
+                    return Status;
                 }
             }
 
@@ -852,16 +851,15 @@ NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 o
                 tp.item = NULL;
             } else {
                 ERR("error: unable to load tree for root %llx\n", r->id);
-                Status = STATUS_INTERNAL_ERROR;
-                goto end;
+                return STATUS_INTERNAL_ERROR;
             }
         } else {
             ERR("error: find_item returned %08x\n", Status);
-            goto end;
+            return Status;
         }
     } else if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
-        goto end;
+        return Status;
     }
 
     TRACE("tp.item = %p\n", tp.item);
@@ -872,11 +870,10 @@ NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 o
 
         if (cmp == 0 && !tp.item->ignore) {
             ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
-            Status = STATUS_INTERNAL_ERROR;
 #ifdef DEBUG_PARANOID
             int3;
 #endif
-            goto end;
+            return STATUS_INTERNAL_ERROR;
         }
     } else
         cmp = -1;
@@ -884,8 +881,7 @@ NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 o
     td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
     if (!td) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     td->key = searchkey;
@@ -945,10 +941,7 @@ NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 o
         t = t->parent;
     }
 
-    Status = STATUS_SUCCESS;
-
-end:
-    return Status;
+    return STATUS_SUCCESS;
 }
 #ifdef _MSC_VER
 #pragma warning(pop)
