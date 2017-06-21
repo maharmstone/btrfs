@@ -2049,7 +2049,8 @@ static NTSTATUS drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         IoRemoveShareAccess(FileObject, &fcb->share_access);
 
-        FsRtlNotifyCleanup(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, ccb);
+        if (ccb)
+            FsRtlNotifyCleanup(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, ccb);
 
         if (fileref) {
             oc = InterlockedDecrement(&fileref->open_count);
