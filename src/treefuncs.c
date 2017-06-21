@@ -521,7 +521,7 @@ static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* 
     }
 }
 
-NTSTATUS find_item(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, PIRP Irp) {
+NTSTATUS find_item(_In_ device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp, _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
 
@@ -811,7 +811,11 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     InsertTailList(rollback, &ri->list_entry);
 }
 
-NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(suppress: 28194)
+#endif
+NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, _In_opt_ _When_(return == 0, __drv_aliasesMem) void* data, UINT32 size, traverse_ptr* ptp, PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -946,6 +950,9 @@ NTSTATUS insert_tree_item(device_extension* Vcb, root* r, UINT64 obj_id, UINT8 o
 end:
     return Status;
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
     tree* t;
