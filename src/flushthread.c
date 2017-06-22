@@ -3350,14 +3350,14 @@ static NTSTATUS update_extent_level(device_extension* Vcb, UINT64 address, tree*
             Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08x\n", Status);
-                ExFreePool(eism);
+                if (eism) ExFreePool(eism);
                 return Status;
             }
 
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, tp.item->size, NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
-                ExFreePool(eism);
+                if (eism) ExFreePool(eism);
                 return Status;
             }
 
