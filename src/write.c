@@ -2635,7 +2635,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT
                                 }
 
                                 newext2->csum = ExAllocatePoolWithTag(PagedPool, ed2->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
-                                if (!newext1->csum) {
+                                if (!newext2->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
                                     ExFreePool(newext1->csum);
