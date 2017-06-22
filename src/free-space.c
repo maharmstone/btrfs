@@ -1302,11 +1302,17 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             INODE_ITEM* ii;
 
             ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+            if (!ii) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
             RtlCopyMemory(ii, &c->cache->inode_item, sizeof(INODE_ITEM));
 
             Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
+                ExFreePool(ii);
                 return Status;
             }
 
