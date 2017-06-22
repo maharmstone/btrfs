@@ -134,6 +134,10 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 
 #endif
 
+#ifndef _MSC_VER
+#define __drv_aliasesMem
+#endif
+
 struct _device_extension;
 
 typedef struct _fcb_nonpaged {
