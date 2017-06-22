@@ -1062,7 +1062,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     RtlZeroMemory(fr->fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
 
     fr->fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!fcb->hash_ptrs_uc) {
+    if (!fr->fcb->hash_ptrs_uc) {
         ERR("out of memory\n");
         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
         free_fileref(Vcb, fr);
