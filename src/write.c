@@ -4413,10 +4413,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
     }
 
-    if (!pagefile) {
-        KeQuerySystemTime(&time);
-        win_time_to_unix(time, &now);
+    KeQuerySystemTime(&time);
+    win_time_to_unix(time, &now);
 
+    if (!pagefile) {
         if (fcb->ads) {
             if (fileref && fileref->parent)
                 origii = &fileref->parent->fcb->inode_item;
