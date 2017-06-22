@@ -5640,6 +5640,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
                 Status = write_data_phys(c->devices[parity1]->devobj, cis[parity1].offset + startoff, scratch, c->chunk_item->stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
+                    ExFreePool(scratch);
                     return Status;
                 }
             }
@@ -5648,6 +5649,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
                 Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, scratch + c->chunk_item->stripe_length, c->chunk_item->stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
+                    ExFreePool(scratch);
                     return Status;
                 }
             }
