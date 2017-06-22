@@ -765,6 +765,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             }
 
             data2 = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+            if (!data2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
             RtlCopyMemory(data2, tp2.item->data, tp2.item->size);
 
             if (type == TYPE_EXTENT_DATA_REF) {
@@ -798,6 +803,11 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
             }
 
             newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+            if (!newei) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
             RtlCopyMemory(newei, tp.item->data, tp.item->size);
 
             newei->refcount += get_extent_data_refcount(type, data);
