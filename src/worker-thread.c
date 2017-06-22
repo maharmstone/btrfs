@@ -121,6 +121,7 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
             len = IrpSp->Parameters.Write.Length;
         } else {
             ERR("unexpected major function %u\n", IrpSp->MajorFunction);
+            ExFreePool(ji);
             return FALSE;
         }
 
@@ -128,6 +129,7 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
 
         if (!Mdl) {
             ERR("out of memory\n");
+            ExFreePool(ji);
             return FALSE;
         }
 
@@ -138,6 +140,7 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
 
             IoFreeMdl(Mdl);
             Irp->MdlAddress = NULL;
+            ExFreePool(ji);
 
             return FALSE;
         }
