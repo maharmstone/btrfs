@@ -3319,6 +3319,11 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         }
 
         data2 = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
+        if (!data2) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
 
         if (dataoff > 0) {
             if (make_inline)
