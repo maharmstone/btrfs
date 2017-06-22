@@ -60,7 +60,7 @@ static NTSTATUS write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID co
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS write_data_phys(PDEVICE_OBJECT device, UINT64 address, void* data, UINT32 length) {
+NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ UINT64 address, _In_reads_bytes_(length) void* data, _In_ UINT32 length) {
     NTSTATUS Status;
     LARGE_INTEGER offset;
     PIRP Irp;
