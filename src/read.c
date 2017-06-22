@@ -3245,7 +3245,7 @@ NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    ULONG bytes_read;
+    ULONG bytes_read = 0;
     NTSTATUS Status;
     BOOL top_level;
     fcb* fcb;
@@ -3273,7 +3273,6 @@ NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         Irp->MdlAddress = NULL;
         Status = STATUS_SUCCESS;
-        bytes_read = 0;
 
         goto exit;
     }
