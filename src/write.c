@@ -3712,7 +3712,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         }
 
         newext3 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + ext->datalen, ALLOC_TAG);
-        if (!newext2) {
+        if (!newext3) {
             ERR("out of memory\n");
             ExFreePool(newext1);
             ExFreePool(newext2);
