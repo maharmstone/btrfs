@@ -19,7 +19,7 @@
 #include "btrfs_drv.h"
 #include <ntddstor.h>
 
-extern PDEVICE_OBJECT devobj;
+extern PDEVICE_OBJECT master_devobj;
 
 static WCHAR datastring[] = L"::$DATA";
 
@@ -3563,7 +3563,7 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     top_level = is_top_level(Irp);
 
     /* return success if just called for FS device object */
-    if (DeviceObject == devobj)  {
+    if (DeviceObject == master_devobj)  {
         TRACE("create called for FS device object\n");
 
         Irp->IoStatus.Information = FILE_OPENED;

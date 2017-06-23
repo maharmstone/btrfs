@@ -53,7 +53,7 @@ static WCHAR device_name[] = {'\\','B','t','r','f','s',0};
 static WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e','s','\\','B','t','r','f','s',0};
 
 PDRIVER_OBJECT drvobj;
-PDEVICE_OBJECT devobj;
+PDEVICE_OBJECT master_devobj;
 BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 UINT64 num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
@@ -445,7 +445,7 @@ static NTSTATUS drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     top_level = is_top_level(Irp);
 
-    if (DeviceObject == devobj) {
+    if (DeviceObject == master_devobj) {
         TRACE("Closing file system\n");
         Status = STATUS_SUCCESS;
         goto end;
@@ -2032,7 +2032,7 @@ static NTSTATUS drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_cleanup(DeviceObject, Irp);
         goto exit;
-    } else if (DeviceObject == devobj) {
+    } else if (DeviceObject == master_devobj) {
         TRACE("closing file system\n");
         Status = STATUS_SUCCESS;
         goto exit;
@@ -3796,7 +3796,7 @@ static NTSTATUS mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
-    if (DeviceObject != devobj) {
+    if (DeviceObject != master_devobj) {
         Status = STATUS_INVALID_DEVICE_REQUEST;
         goto exit;
     }
@@ -5152,8 +5152,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
         return Status;
     }
 
-    devobj = DeviceObject;
-    cde = (control_device_extension*)devobj->DeviceExtension;
+    master_devobj = DeviceObject;
+    cde = (control_device_extension*)master_devobj->DeviceExtension;
 
     cde->type = VCB_TYPE_CONTROL;
 

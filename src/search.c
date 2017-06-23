@@ -33,7 +33,7 @@ extern UNICODE_STRING registry_path;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 
-extern PDEVICE_OBJECT devobj;
+extern PDEVICE_OBJECT master_devobj;
 
 static BOOL fs_ignored(BTRFS_UUID* uuid) {
     UNICODE_STRING path, ignoreus;
@@ -652,7 +652,7 @@ static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING na
     PIO_WORKITEM work_item;
     pnp_callback_context* context;
 
-    work_item = IoAllocateWorkItem(devobj);
+    work_item = IoAllocateWorkItem(master_devobj);
 
     context = ExAllocatePoolWithTag(PagedPool, sizeof(pnp_callback_context), ALLOC_TAG);
 
