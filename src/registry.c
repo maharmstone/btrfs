@@ -950,7 +950,6 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
         }
 
         if (!comfo && log_file.Length > 0 && refresh && debug_log_level > 0) {
-            OBJECT_ATTRIBUTES oa;
             IO_STATUS_BLOCK iosb;
 
             InitializeObjectAttributes(&oa, &log_file, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
