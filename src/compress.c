@@ -865,6 +865,10 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
 
     if (!NT_SUCCESS(Status)) {
         ERR("alloc_chunk returned %08x\n", Status);
+
+        if (compression != BTRFS_COMPRESSION_NONE)
+            ExFreePool(comp_data);
+
         return Status;
     }
 
@@ -884,6 +888,9 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     }
 
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
+
+    if (compression != BTRFS_COMPRESSION_NONE)
+        ExFreePool(comp_data);
 
     return STATUS_DISK_FULL;
 }
