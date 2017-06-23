@@ -31,6 +31,9 @@
 #pragma warning(disable:4163)
 #pragma warning(disable:4311)
 #pragma warning(disable:4312)
+#else
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
 #include <ntifs.h>
@@ -41,6 +44,8 @@
 
 #ifdef _MSC_VER
 #pragma warning(pop)
+#else
+#pragma GCC diagnostic pop
 #endif
 
 #include <stdio.h>
