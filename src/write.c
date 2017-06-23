@@ -1030,7 +1030,7 @@ typedef struct {
 static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
                                     UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
-    UINT16 startoffstripe, endoffstripe, parity;
+    UINT16 startoffstripe, endoffstripe, parity, num_data_stripes = c->chunk_item->num_stripes - 1;
     UINT64 pos, parity_pos, *stripeoff = NULL;
     UINT32 i;
     BOOL file_write = Irp && Irp->MdlAddress && (Irp->MdlAddress->ByteOffset == 0);
@@ -1039,8 +1039,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     PFN_NUMBER *pfns, *parity_pfns;
     log_stripe* log_stripes = NULL;
 
-    if ((address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
-        UINT64 delta = (address + length - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length);
+    if ((address + length - c->offset) % (num_data_stripes * c->chunk_item->stripe_length) > 0) {
+        UINT64 delta = (address + length - c->offset) % (num_data_stripes * c->chunk_item->stripe_length);
 
         delta = min(irp_offset + length, delta);
         Status = add_partial_stripe(Vcb, c, address + length - delta, delta, (UINT8*)data + irp_offset + length - delta);
@@ -1052,8 +1052,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         length -= delta;
     }
 
-    if (length > 0 && (address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) > 0) {
-        UINT64 delta = ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) - ((address - c->offset) % ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length));
+    if (length > 0 && (address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length) > 0) {
+        UINT64 delta = (num_data_stripes * c->chunk_item->stripe_length) - ((address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length));
 
         Status = add_partial_stripe(Vcb, c, address, delta, (UINT8*)data + irp_offset);
         if (!NT_SUCCESS(Status)) {
@@ -1071,12 +1071,12 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         goto exit;
     }
 
-    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &startoff, &startoffstripe);
-    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes - 1, &endoff, &endoffstripe);
+    get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, num_data_stripes, &startoff, &startoffstripe);
+    get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, num_data_stripes, &endoff, &endoffstripe);
 
     pos = 0;
     while (pos < length) {
-        parity = (((address - c->offset + pos) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+        parity = (((address - c->offset + pos) / (num_data_stripes * c->chunk_item->stripe_length)) + num_data_stripes) % c->chunk_item->num_stripes;
 
         if (pos == 0) {
             UINT16 stripe = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
@@ -1121,21 +1121,21 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
 
             stripes[parity].start = stripes[parity].end = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
 
-            if (length - pos > c->chunk_item->num_stripes * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) {
-                skip = ((length - pos) / (c->chunk_item->num_stripes * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) - 1;
+            if (length - pos > c->chunk_item->num_stripes * num_data_stripes * c->chunk_item->stripe_length) {
+                skip = ((length - pos) / (c->chunk_item->num_stripes * num_data_stripes * c->chunk_item->stripe_length)) - 1;
 
                 for (i = 0; i < c->chunk_item->num_stripes; i++) {
                     stripes[i].end += skip * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
                 }
 
-                pos += skip * (c->chunk_item->num_stripes - 1) * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
+                pos += skip * num_data_stripes * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
             }
-        } else if (length - pos >= c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
+        } else if (length - pos >= c->chunk_item->stripe_length * num_data_stripes) {
             for (i = 0; i < c->chunk_item->num_stripes; i++) {
                 stripes[i].end += c->chunk_item->stripe_length;
             }
 
-            pos += c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1);
+            pos += c->chunk_item->stripe_length * num_data_stripes;
         } else {
             UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
 
@@ -1170,22 +1170,22 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         goto exit;
     }
 
-    parity = (((address - c->offset) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+    parity = (((address - c->offset) / (num_data_stripes * c->chunk_item->stripe_length)) + num_data_stripes) % c->chunk_item->num_stripes;
     stripes[parity].start = parity_start;
 
-    parity = (((address - c->offset + length - 1) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+    parity = (((address - c->offset + length - 1) / (num_data_stripes * c->chunk_item->stripe_length)) + num_data_stripes) % c->chunk_item->num_stripes;
     stripes[parity].end = parity_end;
 
-    log_stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(log_stripe) * (c->chunk_item->num_stripes - 1), ALLOC_TAG);
+    log_stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(log_stripe) * num_data_stripes, ALLOC_TAG);
     if (!log_stripes) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto exit;
     }
 
-    RtlZeroMemory(log_stripes, sizeof(log_stripe) * (c->chunk_item->num_stripes - 1));
+    RtlZeroMemory(log_stripes, sizeof(log_stripe) * num_data_stripes);
 
-    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+    for (i = 0; i < num_data_stripes; i++) {
         log_stripes[i].mdl = IoAllocateMdl(NULL, parity_end - parity_start, FALSE, FALSE, NULL);
         if (!log_stripes[i].mdl) {
             ERR("out of memory\n");
@@ -1291,7 +1291,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
     while (pos < length) {
         PFN_NUMBER* stripe_pfns;
 
-        parity = (((address - c->offset + pos) / ((c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length)) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
+        parity = (((address - c->offset + pos) / (num_data_stripes * c->chunk_item->stripe_length)) + num_data_stripes) % c->chunk_item->num_stripes;
 
         if (pos == 0) {
             UINT16 stripe = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
@@ -1339,7 +1339,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
             RtlCopyMemory(stripe_pfns, parity_pfns, maxwritelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
             stripeoff[parity] = maxwritelen;
             parity_pos = maxwritelen;
-        } else if (length - pos >= c->chunk_item->stripe_length * (c->chunk_item->num_stripes - 1)) {
+        } else if (length - pos >= c->chunk_item->stripe_length * num_data_stripes) {
             UINT16 stripe = (parity + 1) % c->chunk_item->num_stripes;
 
             i = 0;
@@ -1396,7 +1396,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
         }
     }
 
-    for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+    for (i = 0; i < num_data_stripes; i++) {
         UINT8* ss = MmGetSystemAddressForMdlSafe(log_stripes[i].mdl, priority);
 
         if (i == 0)
@@ -1409,7 +1409,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
 
 exit:
     if (log_stripes) {
-        for (i = 0; i < c->chunk_item->num_stripes - 1; i++) {
+        for (i = 0; i < num_data_stripes; i++) {
             if (log_stripes[i].mdl)
                 IoFreeMdl(log_stripes[i].mdl);
         }
