@@ -4364,9 +4364,9 @@ exit2:
 
             if (Vcb->devices.Flink) {
                 while (!IsListEmpty(&Vcb->devices)) {
-                    device* dev = CONTAINING_RECORD(RemoveHeadList(&Vcb->devices), device, list_entry);
+                    device* dev2 = CONTAINING_RECORD(RemoveHeadList(&Vcb->devices), device, list_entry);
 
-                    ExFreePool(dev);
+                    ExFreePool(dev2);
                 }
             }
         }
