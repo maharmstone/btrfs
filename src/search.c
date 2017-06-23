@@ -102,6 +102,7 @@ static BOOL fs_ignored(BTRFS_UUID* uuid) {
     }
 
     ZwClose(h);
+    ExFreePool(kvfi);
     ExFreePool(path.Buffer);
 
     return ret;
