@@ -1446,9 +1446,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     if (oldfileref) {
-        ACCESS_MASK access;
-        SECURITY_SUBJECT_CONTEXT subjcont;
-
         SeCaptureSubjectContext(&subjcont);
 
         if (!SeAccessCheck(oldfileref->fcb->sd, &subjcont, FALSE, DELETE, 0, NULL,
