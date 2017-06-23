@@ -636,6 +636,7 @@ typedef struct {
     PIO_WORKITEM work_item;
 } pnp_callback_context;
 
+_Function_class_(IO_WORKITEM_ROUTINE)
 static void do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     pnp_callback_context* context = con;
 
