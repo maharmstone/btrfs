@@ -2226,8 +2226,7 @@ static NTSTATUS commit_batch_list_root(device_extension* Vcb, batch_root* br, PI
 
     // FIXME - remove as we are going along
     while (!IsListEmpty(&br->items)) {
-        LIST_ENTRY* le = RemoveHeadList(&br->items);
-        batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
+        batch_item* bi = CONTAINING_RECORD(RemoveHeadList(&br->items), batch_item, list_entry);
 
         if ((bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
             bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) && bi->data)
