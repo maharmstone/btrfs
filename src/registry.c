@@ -459,8 +459,8 @@ static void reset_subkeys(HANDLE h, PUNICODE_STRING reg_path) {
                     goto end;
                 }
 
-                kn->name.Length = kn->name.MaximumLength = kbi->NameLength;
-                kn->name.Buffer = ExAllocatePoolWithTag(PagedPool, kn->name.Length, ALLOC_TAG);
+                kn->name.Length = kn->name.MaximumLength = (USHORT)min(0xffff, kbi->NameLength);
+                kn->name.Buffer = ExAllocatePoolWithTag(PagedPool, kn->name.MaximumLength, ALLOC_TAG);
 
                 if (!kn->name.Buffer) {
                     ERR("out of memory\n");
@@ -468,7 +468,7 @@ static void reset_subkeys(HANDLE h, PUNICODE_STRING reg_path) {
                     goto end;
                 }
 
-                RtlCopyMemory(kn->name.Buffer, kbi->Name, kbi->NameLength);
+                RtlCopyMemory(kn->name.Buffer, kbi->Name, kn->name.Length);
 
                 InsertTailList(&key_names, &kn->list_entry);
             }
