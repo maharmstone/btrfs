@@ -1703,7 +1703,7 @@ static NTSTATUS scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP I
 
 static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start,
                                UINT64 num, UINT16 missing_devices) {
-    ULONG sectors_per_stripe = c->chunk_item->stripe_length / Vcb->superblock.sector_size, i;
+    ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size), i;
     UINT16 stripe, parity = (bit_start + num + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     UINT64 off, stripeoff;
 
@@ -1712,7 +1712,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     stripeoff = num * sectors_per_stripe;
 
     if (missing_devices == 0)
-        RtlCopyMemory(context->parity_scratch, &context->stripes[parity].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+        RtlCopyMemory(context->parity_scratch, &context->stripes[parity].buf[num * c->chunk_item->stripe_length], (ULONG)c->chunk_item->stripe_length);
 
     while (stripe != parity) {
         RtlClearAllBits(&context->stripes[stripe].error);
@@ -1758,7 +1758,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         }
 
         if (missing_devices == 0)
-            do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+            do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], (ULONG)c->chunk_item->stripe_length);
 
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
         stripeoff = num * sectors_per_stripe;
