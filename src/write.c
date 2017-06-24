@@ -960,10 +960,10 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 addre
             // update existing entry
 
             RtlCopyMemory(ps->data + address - stripe_addr, data, length);
-            RtlClearBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
+            RtlClearBits(&ps->bmp, (ULONG)((address - stripe_addr) / Vcb->superblock.sector_size), length / Vcb->superblock.sector_size);
 
             // if now filled, flush
-            if (RtlAreBitsClear(&ps->bmp, 0, (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size)) {
+            if (RtlAreBitsClear(&ps->bmp, 0, (ULONG)((num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size))) {
                 Status = flush_partial_stripe(Vcb, c, ps);
                 if (!NT_SUCCESS(Status)) {
                     ERR("flush_partial_stripe returned %08x\n", Status);
@@ -988,14 +988,14 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 addre
 
     // add new entry
 
-    ps = ExAllocatePoolWithTag(NonPagedPool, offsetof(partial_stripe, data[0]) + (num_data_stripes * c->chunk_item->stripe_length), ALLOC_TAG);
+    ps = ExAllocatePoolWithTag(NonPagedPool, offsetof(partial_stripe, data[0]) + (ULONG)(num_data_stripes * c->chunk_item->stripe_length), ALLOC_TAG);
     if (!ps) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
-    bmplen = sector_align(((num_data_stripes * c->chunk_item->stripe_length) / (8 * Vcb->superblock.sector_size) + 1), sizeof(ULONG));
+    bmplen = (ULONG)sector_align(((num_data_stripes * c->chunk_item->stripe_length) / (8 * Vcb->superblock.sector_size) + 1), sizeof(ULONG));
 
     ps->address = stripe_addr;
     ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, bmplen, ALLOC_TAG);
@@ -1006,11 +1006,11 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, UINT64 addre
         goto end;
     }
 
-    RtlInitializeBitMap(&ps->bmp, ps->bmparr, (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size);
+    RtlInitializeBitMap(&ps->bmp, ps->bmparr, (ULONG)((num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size));
     RtlSetAllBits(&ps->bmp);
 
     RtlCopyMemory(ps->data + address - stripe_addr, data, length);
-    RtlClearBits(&ps->bmp, (address - stripe_addr) / Vcb->superblock.sector_size, length / Vcb->superblock.sector_size);
+    RtlClearBits(&ps->bmp, (ULONG)((address - stripe_addr) / Vcb->superblock.sector_size), length / Vcb->superblock.sector_size);
 
     InsertHeadList(le->Blink, &ps->list_entry);
 
