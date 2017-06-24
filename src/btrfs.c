@@ -3680,7 +3680,7 @@ static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject, BOOL* no_pnp) {
     UNICODE_STRING pnp_name;
     const GUID* guid;
 
-    to_read = DeviceObject->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), DeviceObject->SectorSize);
+    to_read = DeviceObject->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), DeviceObject->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
