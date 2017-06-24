@@ -25,7 +25,7 @@ typedef struct {
     struct _scrub_context* context;
     PIRP Irp;
     UINT64 start;
-    UINT64 length;
+    UINT32 length;
     IO_STATUS_BLOCK iosb;
     UINT8* buf;
     BOOL csum_error;
@@ -1382,7 +1382,7 @@ end:
     return Status;
 }
 
-static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT64 size, UINT32* csum) {
+static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64 offset, UINT32 size, UINT32* csum) {
     ULONG i;
     scrub_context context;
     CHUNK_ITEM_STRIPE* cis;
@@ -1420,11 +1420,11 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
                 context.stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
 
             if (endoffstripe > i)
-                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context.stripes[i].start;
+                context.stripes[i].length = (UINT32)(endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context.stripes[i].start);
             else if (endoffstripe == i)
-                context.stripes[i].length = endoff + 1 - context.stripes[i].start;
+                context.stripes[i].length = (UINT32)(endoff + 1 - context.stripes[i].start);
             else
-                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start;
+                context.stripes[i].length = (UINT32)(endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start);
         }
 
         allowed_missing = 0;
@@ -1453,11 +1453,11 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
                 context.stripes[i].start = startoff - (startoff % c->chunk_item->stripe_length);
 
             if (endoffstripe > i)
-                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context.stripes[i].start;
+                context.stripes[i].length = (UINT32)(endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length - context.stripes[i].start);
             else if (endoffstripe == i)
-                context.stripes[i].length = endoff + 1 - context.stripes[i].start;
+                context.stripes[i].length = (UINT32)(endoff + 1 - context.stripes[i].start);
             else
-                context.stripes[i].length = endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start;
+                context.stripes[i].length = (UINT32)(endoff - (endoff % c->chunk_item->stripe_length) - context.stripes[i].start);
 
             for (j = 1; j < sub_stripes; j++) {
                 context.stripes[i+j].start = context.stripes[i].start;
@@ -3059,7 +3059,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
 
             if (tree_run) {
                 if (!is_tree || tp.item->key.obj_id > tree_run_end) {
-                    Status = scrub_extent(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start, NULL);
+                    Status = scrub_extent(Vcb, c, type, tree_run_start, (UINT32)(tree_run_end - tree_run_start), NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("scrub_extent returned %08x\n", Status);
                         goto end;
@@ -3110,7 +3110,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
     } while (b);
 
     if (tree_run) {
-        Status = scrub_extent(Vcb, c, type, tree_run_start, tree_run_end - tree_run_start, NULL);
+        Status = scrub_extent(Vcb, c, type, tree_run_start, (UINT32)(tree_run_end - tree_run_start), NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent returned %08x\n", Status);
             goto end;
