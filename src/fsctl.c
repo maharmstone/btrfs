@@ -1993,7 +1993,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         }
     }
 
-    CcPurgeCacheSection(&fcb->nonpaged->segment_object, &fzdi->FileOffset, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, FALSE);
+    CcPurgeCacheSection(&fcb->nonpaged->segment_object, &fzdi->FileOffset, (ULONG)(fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart), FALSE);
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
