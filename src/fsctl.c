@@ -3710,7 +3710,12 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         return STATUS_INTERNAL_ERROR;
     }
 
-    utf8.MaximumLength = utf8.Length = len;
+    if (len > 0xffff) {
+        ERR("len was too long (%x)\n", len);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    utf8.MaximumLength = utf8.Length = (USHORT)len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
 
     if (!utf8.Buffer) {
