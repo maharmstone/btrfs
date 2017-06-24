@@ -1202,13 +1202,16 @@ WCHAR* file_desc_fileref(file_ref* fileref) {
     if (Status != STATUS_BUFFER_OVERFLOW)
         return L"ERROR";
 
+    if (reqlen > 0xffff - sizeof(WCHAR))
+        return L"(too long)";
+
     fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, reqlen + sizeof(WCHAR), ALLOC_TAG);
     if (!fileref->debug_desc)
         return L"(memory error)";
 
     fn.Buffer = fileref->debug_desc;
     fn.Length = 0;
-    fn.MaximumLength = reqlen + sizeof(WCHAR);
+    fn.MaximumLength = (USHORT)(reqlen + sizeof(WCHAR));
 
     Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (!NT_SUCCESS(Status)) {
