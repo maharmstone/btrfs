@@ -1923,7 +1923,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
 
-    if (fzdi->FileOffset.QuadPart >= fcb->inode_item.st_size) {
+    if ((UINT64)fzdi->FileOffset.QuadPart >= fcb->inode_item.st_size) {
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -1955,7 +1955,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     } else {
         start = sector_align(fzdi->FileOffset.QuadPart, Vcb->superblock.sector_size);
 
-        if (fzdi->BeyondFinalZero.QuadPart > fcb->inode_item.st_size)
+        if ((UINT64)fzdi->BeyondFinalZero.QuadPart > fcb->inode_item.st_size)
             end = sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size);
         else
             end = (fzdi->BeyondFinalZero.QuadPart / Vcb->superblock.sector_size) * Vcb->superblock.sector_size;
@@ -1967,7 +1967,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
                 goto end;
             }
         } else {
-            if (start > fzdi->FileOffset.QuadPart) {
+            if (start > (UINT64)fzdi->FileOffset.QuadPart) {
                 Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, start - fzdi->FileOffset.QuadPart, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
@@ -1975,7 +1975,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
                 }
             }
 
-            if (end < fzdi->BeyondFinalZero.QuadPart) {
+            if (end < (UINT64)fzdi->BeyondFinalZero.QuadPart) {
                 Status = zero_data(Vcb, fcb, end, fzdi->BeyondFinalZero.QuadPart - end, Irp, &rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zero_data returned %08x\n", Status);
