@@ -1023,10 +1023,10 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
         UINT32 readlen;
 
         if (pos == 0)
-            readlen = min(context->stripes[stripe * sub_stripes].length,
-                          c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
+            readlen = (UINT32)min(context->stripes[stripe * sub_stripes].length,
+                                  c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
         else
-            readlen = min(length - pos, c->chunk_item->stripe_length);
+            readlen = min(length - pos, (UINT32)c->chunk_item->stripe_length);
 
         if (csum) {
             ULONG good_stripe = 0xffffffff;
@@ -1141,10 +1141,10 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                             UINT32 readlen;
 
                             if (pos == 0)
-                                readlen = min(context->stripes[stripe * sub_stripes].length,
+                                readlen = (UINT32)min(context->stripes[stripe * sub_stripes].length,
                                               c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
                             else
-                                readlen = min(length - pos, c->chunk_item->stripe_length);
+                                readlen = min(length - pos, (UINT32)c->chunk_item->stripe_length);
 
                             if (stripe == j / sub_stripes) {
                                 if (csum) {
@@ -1256,10 +1256,10 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, UINT64 offs
                     UINT32 readlen;
 
                     if (pos == 0)
-                        readlen = min(context->stripes[stripe * sub_stripes].length,
-                                        c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
+                        readlen = (UINT32)min(context->stripes[stripe * sub_stripes].length,
+                                      c->chunk_item->stripe_length - (context->stripes[stripe * sub_stripes].start % c->chunk_item->stripe_length));
                     else
-                        readlen = min(length - pos, c->chunk_item->stripe_length);
+                        readlen = min(length - pos, (UINT32)c->chunk_item->stripe_length);
 
                     if (stripe == j / sub_stripes) {
                         ULONG l;
