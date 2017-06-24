@@ -259,7 +259,7 @@ NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
     }
 
     mountedus.Buffer = option_mounted;
-    mountedus.Length = mountedus.MaximumLength = wcslen(option_mounted) * sizeof(WCHAR);
+    mountedus.Length = mountedus.MaximumLength = (USHORT)wcslen(option_mounted) * sizeof(WCHAR);
 
     data = 1;
 
