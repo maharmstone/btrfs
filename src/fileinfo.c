@@ -2016,7 +2016,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
     TRACE("setting new end to %llx bytes (currently %llx)\n", feofi->EndOfFile.QuadPart, fcb->inode_item.st_size);
 
-    if (feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
+    if ((UINT64)feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
         if (advance_only) {
             Status = STATUS_SUCCESS;
             goto end;
@@ -2034,7 +2034,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             ERR("error - truncate_file failed\n");
             goto end;
         }
-    } else if (feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
+    } else if ((UINT64)feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
         if (Irp->Flags & IRP_PAGING_IO) {
             TRACE("paging IO tried to extend file size\n");
             Status = STATUS_SUCCESS;
