@@ -3111,7 +3111,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         return STATUS_SUCCESS;
     }
 
-    if (start >= fcb->Header.FileSize.QuadPart) {
+    if (start >= (UINT64)fcb->Header.FileSize.QuadPart) {
         TRACE("tried to read with offset after file end (%llx >= %llx)\n", start, fcb->Header.FileSize.QuadPart);
         return STATUS_END_OF_FILE;
     }
@@ -3126,14 +3126,14 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        if (start >= fcb->Header.ValidDataLength.QuadPart) {
+        if (start >= (UINT64)fcb->Header.ValidDataLength.QuadPart) {
             length = min(length, min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
             RtlZeroMemory(data, length);
             Irp->IoStatus.Information = *bytes_read = length;
             return STATUS_SUCCESS;
         }
 
-        if (length + start > fcb->Header.ValidDataLength.QuadPart) {
+        if (length + start > (UINT64)fcb->Header.ValidDataLength.QuadPart) {
             addon = min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart;
             RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), addon);
             length = fcb->Header.ValidDataLength.QuadPart - start;
