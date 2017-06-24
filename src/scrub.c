@@ -960,9 +960,9 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, UINT64 offse
         UINT32 readlen;
 
         if (pos == 0)
-            readlen = min(context->stripes[stripe].length, c->chunk_item->stripe_length - (context->stripes[stripe].start % c->chunk_item->stripe_length));
+            readlen = (UINT32)min(context->stripes[stripe].length, c->chunk_item->stripe_length - (context->stripes[stripe].start % c->chunk_item->stripe_length));
         else
-            readlen = min(length - pos, c->chunk_item->stripe_length);
+            readlen = min(length - pos, (UINT32)c->chunk_item->stripe_length);
 
         if (csum) {
             for (j = 0; j < readlen; j += Vcb->superblock.sector_size) {
