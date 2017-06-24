@@ -591,7 +591,7 @@ static void send_add_tlv_path(send_context* context, UINT16 type, send_dir* pare
         find_path((char*)&context->data[context->datalen - len], parent, name, namelen);
 }
 
-static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, ULONG namelen) {
+static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, UINT16 namelen) {
     ULONG pos = context->datalen;
 
     if (context->lastinode.o) {
@@ -607,13 +607,13 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
 
         send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, parent, name, namelen);
 
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
 
         send_command_finish(context, pos);
     }
 
     if (context->lastinode.o) {
-        ULONG pathlen;
+        UINT16 pathlen;
 
         if (context->lastinode.o->sd) {
             if (context->lastinode.o->sd->name)
