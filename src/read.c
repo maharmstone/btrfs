@@ -3086,9 +3086,9 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
     UINT8* data;
-    ULONG length, addon = 0;
+    ULONG length = IrpSp->Parameters.Read.Length, addon = 0;
     UINT64 start = IrpSp->Parameters.Read.ByteOffset.QuadPart;
-    length = IrpSp->Parameters.Read.Length;
+
     *bytes_read = 0;
 
     if (!fcb || !fcb->Vcb || !fcb->subvol)
@@ -3127,16 +3127,16 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         }
 
         if (start >= (UINT64)fcb->Header.ValidDataLength.QuadPart) {
-            length = min(length, min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
+            length = (ULONG)min(length, min(start + length, (UINT64)fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
             RtlZeroMemory(data, length);
             Irp->IoStatus.Information = *bytes_read = length;
             return STATUS_SUCCESS;
         }
 
         if (length + start > (UINT64)fcb->Header.ValidDataLength.QuadPart) {
-            addon = min(start + length, fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart;
+            addon = (ULONG)(min(start + length, (UINT64)fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
             RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), addon);
-            length = fcb->Header.ValidDataLength.QuadPart - start;
+            length = (ULONG)(fcb->Header.ValidDataLength.QuadPart - start);
         }
     }
 
