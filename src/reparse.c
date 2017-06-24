@@ -352,7 +352,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
-            buf.Length = buf.MaximumLength = buflen;
+            buf.Length = buf.MaximumLength = (UINT16)buflen;
 
             if (fcb->reparse_xattr.Buffer)
                 ExFreePool(fcb->reparse_xattr.Buffer);
