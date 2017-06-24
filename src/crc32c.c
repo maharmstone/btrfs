@@ -65,7 +65,7 @@ static const UINT32 crctable[] = {
     }                                                                   \
   } while(0)
 
-static UINT32 crc32c_hw(const void *input, int len, UINT32 crc) {
+static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
     const char* buf = (const char*)input;
 
     for (; (len > 0) && ((size_t)buf & ALIGN_MASK); len--, buf++) {
