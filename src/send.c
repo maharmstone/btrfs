@@ -25,7 +25,7 @@ typedef struct send_dir {
     BTRFS_TIME mtime;
     BTRFS_TIME ctime;
     struct send_dir* parent;
-    ULONG namelen;
+    UINT16 namelen;
     char* name;
     LIST_ENTRY deleted_children;
 } send_dir;
@@ -1048,7 +1048,7 @@ static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, ULO
     return STATUS_SUCCESS;
 }
 
-static void send_rmdir_command(send_context* context, ULONG pathlen, char* path) {
+static void send_rmdir_command(send_context* context, UINT16 pathlen, char* path) {
     ULONG pos = context->datalen;
 
     send_command(context, BTRFS_SEND_CMD_RMDIR);
@@ -1235,7 +1235,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
         if (sd->name)
             ExFreePool(sd->name);
 
-        sd->namelen = strlen(name);
+        sd->namelen = (UINT16)strlen(name);
         sd->name = ExAllocatePoolWithTag(PagedPool, sd->namelen, ALLOC_TAG);
         if (!sd->name) {
             ERR("out of memory\n");
@@ -1384,7 +1384,7 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
             }
 
             if (last_inode <= context->lastinode.inode) {
-                send_rmdir_command(context, strlen(context->lastinode.path), context->lastinode.path);
+                send_rmdir_command(context, (UINT16)strlen(context->lastinode.path), context->lastinode.path);
 
                 if (!or->sd->dummy)
                     send_utimes_command_dir(context, or->sd, &or->sd->atime, &or->sd->mtime, &or->sd->ctime);
@@ -1413,7 +1413,7 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
                 }
 
                 RtlCopyMemory(context->lastinode.sd->name, name, strlen(name));
-                context->lastinode.sd->namelen = strlen(name);
+                context->lastinode.sd->namelen = (UINT16)strlen(name);
                 context->lastinode.sd->dummy = TRUE;
                 context->lastinode.sd->parent = NULL;
 
