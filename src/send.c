@@ -47,7 +47,7 @@ typedef struct {
 typedef struct {
     LIST_ENTRY list_entry;
     send_dir* sd;
-    ULONG namelen;
+    UINT16 namelen;
     char name[1];
 } ref;
 
@@ -556,8 +556,8 @@ static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* pare
     return STATUS_SUCCESS;
 }
 
-static __inline ULONG find_path_len(send_dir* parent, ULONG namelen) {
-    ULONG len = namelen;
+static __inline UINT16 find_path_len(send_dir* parent, UINT16 namelen) {
+    UINT16 len = namelen;
 
     while (parent && parent->namelen > 0) {
         len += parent->namelen + 1;
@@ -1033,8 +1033,9 @@ static void send_truncate_command(send_context* context, char* path, UINT64 size
     send_command_finish(context, pos);
 }
 
-static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, ULONG namelen, char* name) {
-    ULONG pos = context->datalen, pathlen;
+static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, UINT16 namelen, char* name) {
+    ULONG pos = context->datalen;
+    UINT16 pathlen;
 
     send_command(context, BTRFS_SEND_CMD_UNLINK);
 
@@ -1573,7 +1574,7 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
             }
 
             if (or == nameref && nameref2) {
-                ULONG len = find_path_len(nameref2->sd, nameref2->namelen);
+                UINT16 len = find_path_len(nameref2->sd, nameref2->namelen);
 
                 if (context->lastinode.path)
                     ExFreePool(context->lastinode.path);
