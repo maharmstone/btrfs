@@ -989,7 +989,7 @@ static void send_chown_command(send_context* context, char* path, UINT64 uid, UI
 
     send_command(context, BTRFS_SEND_CMD_CHOWN);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (UINT16)strlen(path) : 0);
     send_add_tlv(context, BTRFS_SEND_TLV_UID, &uid, sizeof(UINT64));
     send_add_tlv(context, BTRFS_SEND_TLV_GID, &gid, sizeof(UINT64));
 
