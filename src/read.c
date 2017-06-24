@@ -591,16 +591,16 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-    UINT16 stripe;
+    UINT16 j, stripe;
     BOOL no_success = TRUE;
 
-    for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_Error) {
-            WARN("stripe %u returned error %08x\n", i, context->stripes[i].iosb.Status);
-            log_device_error(Vcb, devices[i], BTRFS_DEV_STAT_READ_ERRORS);
-            return context->stripes[i].iosb.Status;
-        } else if (context->stripes[i].status == ReadDataStatus_Success) {
-            stripe = i;
+    for (j = 0; j < ci->num_stripes; j++) {
+        if (context->stripes[j].status == ReadDataStatus_Error) {
+            WARN("stripe %u returned error %08x\n", j, context->stripes[j].iosb.Status);
+            log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
+            return context->stripes[j].iosb.Status;
+        } else if (context->stripes[j].status == ReadDataStatus_Success) {
+            stripe = j;
             no_success = FALSE;
         }
     }
@@ -627,7 +627,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
                     UINT64 end = min(runend, addr + length);
 
                     if (end > start)
-                        RtlCopyMemory(buf + start - addr, &ps->data[start - ps->address], end - start);
+                        RtlCopyMemory(buf + start - addr, &ps->data[start - ps->address], (ULONG)(end - start));
 
                     runlength = RtlFindNextForwardRunClear(&ps->bmp, index + runlength, &index);
                 }
