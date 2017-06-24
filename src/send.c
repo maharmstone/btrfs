@@ -2986,7 +2986,8 @@ static void send_thread(void* ctx) {
 
     ExConvertExclusiveToSharedLite(&context->Vcb->tree_lock);
 
-    searchkey.obj_id = searchkey.obj_type = searchkey.offset = 0;
+    searchkey.obj_id = searchkey.offset = 0;
+    searchkey.obj_type = 0;
 
     Status = find_item(context->Vcb, context->root, &tp, &searchkey, FALSE, NULL);
     if (!NT_SUCCESS(Status)) {
