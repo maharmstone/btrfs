@@ -673,7 +673,7 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
         // BUILTIN\Users to gid 100, which ought to correspond to the "users" group on Linux.
 
         us2.Buffer = builtin_users;
-        us2.Length = us2.MaximumLength = wcslen(builtin_users) * sizeof(WCHAR);
+        us2.Length = us2.MaximumLength = (USHORT)wcslen(builtin_users) * sizeof(WCHAR);
 
         val = 100;
         Status = ZwSetValueKey(h, &us2, 0, REG_DWORD, &val, sizeof(DWORD));
