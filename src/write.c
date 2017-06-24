@@ -4142,7 +4142,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
 
-            *length = newlength - off64;
+            *length = (ULONG)(newlength - off64);
         } else {
             newlength = off64 + *length;
             changed_length = TRUE;
@@ -4243,7 +4243,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
 
-            data2 = ExAllocatePoolWithTag(PagedPool, newlength, ALLOC_TAG);
+            data2 = ExAllocatePoolWithTag(PagedPool, (ULONG)newlength, ALLOC_TAG);
             if (!data2) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -4256,11 +4256,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             }
 
             if (newlength > fcb->adsdata.Length)
-                RtlZeroMemory(&data2[fcb->adsdata.Length], newlength - fcb->adsdata.Length);
+                RtlZeroMemory(&data2[fcb->adsdata.Length], (ULONG)(newlength - fcb->adsdata.Length));
 
 
             fcb->adsdata.Buffer = data2;
-            fcb->adsdata.Length = fcb->adsdata.MaximumLength = newlength;
+            fcb->adsdata.Length = fcb->adsdata.MaximumLength = (USHORT)newlength;
 
             fcb->Header.AllocationSize.QuadPart = newlength;
             fcb->Header.FileSize.QuadPart = newlength;
@@ -4304,14 +4304,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             data = buf;
             no_buf = TRUE;
         } else {
-            data = ExAllocatePoolWithTag(PagedPool, end_data - start_data + bufhead, ALLOC_TAG);
+            data = ExAllocatePoolWithTag(PagedPool, (ULONG)(end_data - start_data + bufhead), ALLOC_TAG);
             if (!data) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
 
-            RtlZeroMemory(data + bufhead, end_data - start_data);
+            RtlZeroMemory(data + bufhead, (ULONG)(end_data - start_data));
 
             TRACE("start_data = %llx\n", start_data);
             TRACE("end_data = %llx\n", end_data);
@@ -4351,7 +4351,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed2, sizeof(EXTENT_DATA) - 1 + newlength, FALSE, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed2, offsetof(EXTENT_DATA, data[0]) + (ULONG)newlength, FALSE, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08x\n", Status);
                 ExFreePool(data);
