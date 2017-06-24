@@ -1027,7 +1027,7 @@ static void send_truncate_command(send_context* context, char* path, UINT64 size
 
     send_command(context, BTRFS_SEND_CMD_TRUNCATE);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (UINT16)strlen(path) : 0);
     send_add_tlv(context, BTRFS_SEND_TLV_SIZE, &size, sizeof(UINT64));
 
     send_command_finish(context, pos);
