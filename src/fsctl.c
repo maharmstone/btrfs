@@ -3262,7 +3262,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
     sourcelen = sourcefcb->ads ? sourcefcb->adsdata.Length : sourcefcb->inode_item.st_size;
 
-    if (sector_align(sourcelen, Vcb->superblock.sector_size) < ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart) {
+    if (sector_align(sourcelen, Vcb->superblock.sector_size) < (UINT64)ded->SourceFileOffset.QuadPart + (UINT64)ded->ByteCount.QuadPart) {
         ObDereferenceObject(sourcefo);
         return STATUS_NOT_SUPPORTED;
     }
@@ -3417,7 +3417,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
             if (!ext->ignore) {
-                if (ext->offset >= ded->SourceFileOffset.QuadPart + ded->ByteCount.QuadPart)
+                if (ext->offset >= (UINT64)ded->SourceFileOffset.QuadPart + (UINT64)ded->ByteCount.QuadPart)
                     break;
 
                 if (ext->extent_data.type != EXTENT_TYPE_INLINE) {
@@ -3428,7 +3428,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
                     ed2s = (EXTENT_DATA2*)ext->extent_data.data;
 
-                    if (ext->offset + ed2s->num_bytes <= ded->SourceFileOffset.QuadPart) {
+                    if (ext->offset + ed2s->num_bytes <= (UINT64)ded->SourceFileOffset.QuadPart) {
                         le = le->Flink;
                         continue;
                     }
@@ -3440,7 +3440,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                         goto end;
                     }
 
-                    if (ext->offset < ded->SourceFileOffset.QuadPart)
+                    if (ext->offset < (UINT64)ded->SourceFileOffset.QuadPart)
                         ext2->offset = ded->TargetFileOffset.QuadPart;
                     else
                         ext2->offset = ext->offset - ded->SourceFileOffset.QuadPart + ded->TargetFileOffset.QuadPart;
@@ -3462,7 +3462,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                     ed2d->address = ed2s->address;
                     ed2d->size = ed2s->size;
 
-                    if (ext->offset < ded->SourceFileOffset.QuadPart) {
+                    if (ext->offset < (UINT64)ded->SourceFileOffset.QuadPart) {
                         ed2d->offset = ed2s->offset + ded->SourceFileOffset.QuadPart - ext->offset;
                         ed2d->num_bytes = min(ded->ByteCount.QuadPart, ed2s->num_bytes + ext->offset - ded->SourceFileOffset.QuadPart);
                     } else {
