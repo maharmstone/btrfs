@@ -477,7 +477,7 @@ typedef struct {
     UINT32 size;
     UINT64 offset;
     UINT64 used;
-    UINT32 oldused;
+    UINT64 oldused;
     device** devices;
     fcb* cache;
     fcb* old_cache;
