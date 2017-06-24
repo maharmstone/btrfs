@@ -1003,7 +1003,7 @@ static void send_chmod_command(send_context* context, char* path, UINT64 mode) {
 
     mode &= 07777;
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (UINT16)strlen(path) : 0);
     send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(UINT64));
 
     send_command_finish(context, pos);
