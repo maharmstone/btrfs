@@ -2776,7 +2776,7 @@ NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* c
 }
 
 BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
-                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size, BOOL file_write, UINT32 irp_offset) {
+                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size, BOOL file_write, UINT64 irp_offset) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_DATA* ed;
@@ -2860,7 +2860,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
 }
 
 static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                            PIRP Irp, UINT64* written, BOOL file_write, UINT32 irp_offset, LIST_ENTRY* rollback) {
+                            PIRP Irp, UINT64* written, BOOL file_write, UINT64 irp_offset, LIST_ENTRY* rollback) {
     BOOL success = FALSE;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
