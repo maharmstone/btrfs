@@ -3609,7 +3609,7 @@ static NTSTATUS get_device_pnp_name_guid(PDEVICE_OBJECT DeviceObject, PUNICODE_S
         PDEVICE_OBJECT devobj;
         UNICODE_STRING name;
 
-        name.Length = name.MaximumLength = wcslen(s) * sizeof(WCHAR);
+        name.Length = name.MaximumLength = (USHORT)wcslen(s) * sizeof(WCHAR);
         name.Buffer = s;
 
         if (NT_SUCCESS(IoGetDeviceObjectPointer(&name, FILE_READ_ATTRIBUTES, &FileObject, &devobj))) {
