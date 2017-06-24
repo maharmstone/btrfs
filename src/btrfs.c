@@ -3373,7 +3373,7 @@ static NTSTATUS load_sys_chunks(device_extension* Vcb) {
 
         if (key.obj_type == TYPE_CHUNK_ITEM) {
             CHUNK_ITEM* ci;
-            ULONG cisize;
+            USHORT cisize;
             sys_chunk* sc;
 
             if (n < sizeof(CHUNK_ITEM))
