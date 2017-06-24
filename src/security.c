@@ -194,11 +194,11 @@ void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, UINT32 gid) {
         TRACE("val = %u, i = %u, ssl = %u\n", (UINT32)val, i, sidstringlength);
 
         if (np == 0) {
-            sid->auth[0] = (val & 0xff0000000000) >> 40;
-            sid->auth[1] = (val & 0xff00000000) >> 32;
-            sid->auth[2] = (val & 0xff000000) >> 24;
-            sid->auth[3] = (val & 0xff0000) >> 16;
-            sid->auth[4] = (val & 0xff00) >> 8;
+            sid->auth[0] = (UINT8)((val & 0xff0000000000) >> 40);
+            sid->auth[1] = (UINT8)((val & 0xff00000000) >> 32);
+            sid->auth[2] = (UINT8)((val & 0xff000000) >> 24);
+            sid->auth[3] = (UINT8)((val & 0xff0000) >> 16);
+            sid->auth[4] = (UINT8)((val & 0xff00) >> 8);
             sid->auth[5] = val & 0xff;
         } else
             sid->nums[np-1] = (UINT32)val;
