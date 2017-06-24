@@ -63,7 +63,7 @@ static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
 
     pos = InterlockedIncrement(&cj->pos) - 1;
 
-    if (pos * SECTOR_BLOCK >= cj->sectors)
+    if ((UINT32)pos * SECTOR_BLOCK >= cj->sectors)
         return FALSE;
 
     csum = &cj->csum[pos * SECTOR_BLOCK];
@@ -78,7 +78,7 @@ static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
 
     done = InterlockedIncrement(&cj->done);
 
-    if (done * SECTOR_BLOCK >= cj->sectors) {
+    if ((UINT32)done * SECTOR_BLOCK >= cj->sectors) {
         ExAcquireResourceExclusiveLite(&Vcb->calcthreads.lock, TRUE);
         RemoveEntryList(&cj->list_entry);
         ExReleaseResourceLite(&Vcb->calcthreads.lock);
