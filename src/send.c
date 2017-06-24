@@ -231,7 +231,7 @@ static void add_orphan(send_context* context, orphan* o) {
     InsertTailList(&context->orphans, &o->list_entry);
 }
 
-static NTSTATUS send_read_symlink(send_context* context, UINT64 inode, char** link, ULONG* linklen) {
+static NTSTATUS send_read_symlink(send_context* context, UINT64 inode, char** link, UINT16* linklen) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -274,7 +274,7 @@ static NTSTATUS send_read_symlink(send_context* context, UINT64 inode, char** li
     }
 
     *link = (char*)ed->data;
-    *linklen = ed->decoded_size;
+    *linklen = (UINT16)ed->decoded_size;
 
     return STATUS_SUCCESS;
 }
@@ -431,7 +431,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             return Status;
         }
 
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, strlen(name));
+        send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, (UINT16)strlen(name));
         send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.obj_id, sizeof(UINT64));
 
         if (cmd == BTRFS_SEND_CMD_MKNOD || cmd == BTRFS_SEND_CMD_MKFIFO || cmd == BTRFS_SEND_CMD_MKSOCK) {
@@ -441,7 +441,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(UINT64));
         } else if (cmd == BTRFS_SEND_CMD_SYMLINK && ii->st_size > 0) {
             char* link;
-            ULONG linklen;
+            UINT16 linklen;
 
             Status = send_read_symlink(context, tp->item->key.obj_id, &link, &linklen);
             if (!NT_SUCCESS(Status)) {
