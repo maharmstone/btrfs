@@ -3746,7 +3746,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
         lastle = parfcb->subvol->fcbs.Blink;
     } else {
-        if (bmn->inode > parfcb->subvol->lastinode) {
+        if (bmn->inode > (UINT64)parfcb->subvol->lastinode) {
             inode = parfcb->subvol->lastinode = bmn->inode;
             lastle = parfcb->subvol->fcbs.Blink;
         } else {
