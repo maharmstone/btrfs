@@ -530,7 +530,7 @@ end:
     return Status;
 }
 
-static void calculate_total_space(device_extension* Vcb, LONGLONG* totalsize, LONGLONG* freespace) {
+static void calculate_total_space(device_extension* Vcb, UINT64* totalsize, UINT64* freespace) {
     UINT16 nfactor, dfactor;
     UINT64 sectors_used;
 
@@ -750,7 +750,7 @@ static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN 
 
             TRACE("FileFsFullSizeInformation\n");
 
-            calculate_total_space(Vcb, &ffsi->TotalAllocationUnits.QuadPart, &ffsi->ActualAvailableAllocationUnits.QuadPart);
+            calculate_total_space(Vcb, (UINT64*)&ffsi->TotalAllocationUnits.QuadPart, (UINT64*)&ffsi->ActualAvailableAllocationUnits.QuadPart);
             ffsi->CallerAvailableAllocationUnits.QuadPart = ffsi->ActualAvailableAllocationUnits.QuadPart;
             ffsi->SectorsPerAllocationUnit = 1;
             ffsi->BytesPerSector = Vcb->superblock.sector_size;
@@ -782,7 +782,7 @@ static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN 
 
             TRACE("FileFsSizeInformation\n");
 
-            calculate_total_space(Vcb, &ffsi->TotalAllocationUnits.QuadPart, &ffsi->AvailableAllocationUnits.QuadPart);
+            calculate_total_space(Vcb, (UINT64*)&ffsi->TotalAllocationUnits.QuadPart, (UINT64*)&ffsi->AvailableAllocationUnits.QuadPart);
             ffsi->SectorsPerAllocationUnit = 1;
             ffsi->BytesPerSector = Vcb->superblock.sector_size;
 
