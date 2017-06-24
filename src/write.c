@@ -1931,7 +1931,7 @@ NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 le
             if (c->devices[i]->devobj) {
                 if (file_write) {
                     UINT8* va;
-                    ULONG writelen = stripes[i].end - stripes[i].start;
+                    ULONG writelen = (ULONG)(stripes[i].end - stripes[i].start);
 
                     va = (UINT8*)MmGetMdlVirtualAddress(Irp->MdlAddress) + stripes[i].irp_offset;
 
@@ -1944,7 +1944,7 @@ NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 le
 
                     IoBuildPartialMdl(Irp->MdlAddress, stripes[i].mdl, va, writelen);
                 } else {
-                    stripes[i].mdl = IoAllocateMdl(stripes[i].data, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
+                    stripes[i].mdl = IoAllocateMdl(stripes[i].data, (ULONG)(stripes[i].end - stripes[i].start), FALSE, FALSE, NULL);
                     if (!stripes[i].mdl) {
                         ERR("IoAllocateMdl failed\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2044,7 +2044,7 @@ NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 le
             }
 #endif
 
-            IrpSp->Parameters.Write.Length = stripes[i].end - stripes[i].start;
+            IrpSp->Parameters.Write.Length = (ULONG)(stripes[i].end - stripes[i].start);
             IrpSp->Parameters.Write.ByteOffset.QuadPart = stripes[i].start + cis[i].offset;
 
             total_writing += IrpSp->Parameters.Write.Length;
