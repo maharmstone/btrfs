@@ -145,7 +145,7 @@ static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNIC
         }
     }
 
-    toread = sector_align(sizeof(superblock), sector_size);
+    toread = (ULONG)sector_align(sizeof(superblock), sector_size);
     data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
