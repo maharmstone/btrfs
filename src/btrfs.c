@@ -1174,7 +1174,7 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
     sprintf(s, "subvol %x, inode %x", (UINT32)fcb->subvol->id, (UINT32)fcb->inode);
 
     as.Buffer = s;
-    as.Length = as.MaximumLength = strlen(s);
+    as.Length = as.MaximumLength = (USHORT)strlen(s);
 
     us.Buffer = fcb->debug_desc;
     us.MaximumLength = 60 * sizeof(WCHAR);
