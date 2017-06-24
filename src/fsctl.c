@@ -609,7 +609,12 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_INTERNAL_ERROR;
     }
 
-    utf8.MaximumLength = utf8.Length = len;
+    if (len > 0xffff) {
+        ERR("len was too long\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    utf8.MaximumLength = utf8.Length = (USHORT)len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.Length, ALLOC_TAG);
 
     if (!utf8.Buffer) {
