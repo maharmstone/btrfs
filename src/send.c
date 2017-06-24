@@ -1714,7 +1714,7 @@ static NTSTATUS divide_ext(send_ext* ext, UINT64 len, BOOL trunc) {
 
     if (ext->data.type == EXTENT_TYPE_INLINE) {
         if (!trunc) {
-            ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + ext->data.decoded_size - len, ALLOC_TAG);
+            ext2 = ExAllocatePoolWithTag(PagedPool, (ULONG)(offsetof(send_ext, data.data) + ext->data.decoded_size - len), ALLOC_TAG);
 
             if (!ext2) {
                 ERR("out of memory\n");
@@ -1722,13 +1722,13 @@ static NTSTATUS divide_ext(send_ext* ext, UINT64 len, BOOL trunc) {
             }
 
             ext2->offset = ext->offset + len;
-            ext2->datalen = ext->data.decoded_size - len;
+            ext2->datalen = (ULONG)(ext->data.decoded_size - len);
             ext2->data.decoded_size = ext->data.decoded_size - len;
             ext2->data.compression = ext->data.compression;
             ext2->data.encryption = ext->data.encryption;
             ext2->data.encoding = ext->data.encoding;
             ext2->data.type = ext->data.type;
-            RtlCopyMemory(ext2->data.data, ext->data.data + len, ext->data.decoded_size - len);
+            RtlCopyMemory(ext2->data.data, ext->data.data + len, (ULONG)(ext->data.decoded_size - len));
 
             InsertHeadList(&ext->list_entry, &ext2->list_entry);
         }
