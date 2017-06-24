@@ -2156,7 +2156,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
         if (se2) {
             if (se->data.type == EXTENT_TYPE_INLINE && se2->data.type == EXTENT_TYPE_INLINE &&
-                RtlCompareMemory(se->data.data, se2->data.data, se->data.decoded_size) == se->data.decoded_size) {
+                RtlCompareMemory(se->data.data, se2->data.data, (ULONG)se->data.decoded_size) == (ULONG)se->data.decoded_size) {
                 ExFreePool(se);
                 ExFreePool(se2);
                 continue;
@@ -2181,14 +2181,14 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
             send_command(context, BTRFS_SEND_CMD_WRITE);
 
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
             send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &se->offset, sizeof(UINT64));
 
             if (se->data.compression == BTRFS_COMPRESSION_NONE)
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, se->data.data, se->data.decoded_size);
+                send_add_tlv(context, BTRFS_SEND_TLV_DATA, se->data.data, (UINT16)se->data.decoded_size);
             else if (se->data.compression == BTRFS_COMPRESSION_ZLIB || se->data.compression == BTRFS_COMPRESSION_LZO) {
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, se->data.decoded_size);
-                RtlZeroMemory(&context->data[context->datalen - se->data.decoded_size], se->data.decoded_size);
+                send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, (UINT16)se->data.decoded_size);
+                RtlZeroMemory(&context->data[context->datalen - se->data.decoded_size], (ULONG)se->data.decoded_size);
 
                 if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
                     Status = zlib_decompress(se->data.data, se->datalen - offsetof(EXTENT_DATA, data[0]), &context->data[context->datalen - se->data.decoded_size], se->data.decoded_size);
@@ -2245,7 +2245,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             UINT64 off, offset;
 
             for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                ULONG length = min(min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE), context->lastinode.size - se->offset - off);
+                UINT16 length = (UINT16)min(min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE), context->lastinode.size - se->offset - off);
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
                     Status = wait_for_flush(context, tp1, tp2);
@@ -2267,7 +2267,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_command(context, BTRFS_SEND_CMD_WRITE);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
 
                 offset = se->offset + off;
                 send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
@@ -2290,7 +2290,8 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             }
 
             for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE), skip_start;
+                UINT16 length = (UINT16)min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
+                ULONG skip_start;
                 UINT64 addr = ed2->address + off;
                 UINT32* csum;
 
@@ -2318,9 +2319,9 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 if (context->lastinode.flags & BTRFS_INODE_NODATASUM)
                     csum = NULL;
                 else {
-                    UINT64 len;
+                    UINT32 len;
 
-                    len = sector_align(length + skip_start, context->Vcb->superblock.sector_size) / context->Vcb->superblock.sector_size;
+                    len = (UINT32)sector_align(length + skip_start, context->Vcb->superblock.sector_size) / context->Vcb->superblock.sector_size;
 
                     csum = ExAllocatePoolWithTag(PagedPool, len * sizeof(UINT32), ALLOC_TAG);
                     if (!csum) {
@@ -2342,7 +2343,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     }
                 }
 
-                Status = read_data(context->Vcb, addr, sector_align(length + skip_start, context->Vcb->superblock.sector_size),
+                Status = read_data(context->Vcb, addr, (UINT32)sector_align(length + skip_start, context->Vcb->superblock.sector_size),
                                    csum, FALSE, buf, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08x\n", Status);
@@ -2360,12 +2361,12 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_command(context, BTRFS_SEND_CMD_WRITE);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
 
                 offset = se->offset + off;
                 send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
 
-                length = min(context->lastinode.size - se->offset - off, length);
+                length = min((UINT16)(context->lastinode.size - se->offset - off), length);
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, buf + skip_start, length);
 
                 send_command_finish(context, pos);
@@ -2377,7 +2378,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             UINT64 off;
             UINT32* csum;
 
-            buf = ExAllocatePoolWithTag(PagedPool, se->data.decoded_size, ALLOC_TAG);
+            buf = ExAllocatePoolWithTag(PagedPool, (ULONG)se->data.decoded_size, ALLOC_TAG);
             if (!buf) {
                 ERR("out of memory\n");
                 ExFreePool(se);
@@ -2385,7 +2386,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            compbuf = ExAllocatePoolWithTag(PagedPool, ed2->size, ALLOC_TAG);
+            compbuf = ExAllocatePoolWithTag(PagedPool, (ULONG)ed2->size, ALLOC_TAG);
             if (!compbuf) {
                 ERR("out of memory\n");
                 ExFreePool(buf);
@@ -2397,9 +2398,9 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             if (context->lastinode.flags & BTRFS_INODE_NODATASUM)
                 csum = NULL;
             else {
-                UINT64 len;
+                UINT32 len;
 
-                len = ed2->size / context->Vcb->superblock.sector_size;
+                len = (UINT32)(ed2->size / context->Vcb->superblock.sector_size);
 
                 csum = ExAllocatePoolWithTag(PagedPool, len * sizeof(UINT32), ALLOC_TAG);
                 if (!csum) {
@@ -2423,7 +2424,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 }
             }
 
-            Status = read_data(context->Vcb, ed2->address, ed2->size, csum, FALSE, compbuf, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
+            Status = read_data(context->Vcb, ed2->address, (UINT32)ed2->size, csum, FALSE, compbuf, NULL, NULL, NULL, 0, FALSE, NormalPagePriority);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08x\n", Status);
                 ExFreePool(compbuf);
@@ -2462,7 +2463,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             ExFreePool(compbuf);
 
             for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                ULONG length = min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
+                UINT16 length = (UINT16)min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
                 UINT64 offset;
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
@@ -2487,12 +2488,12 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_command(context, BTRFS_SEND_CMD_WRITE);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
 
                 offset = se->offset + off;
                 send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
 
-                length = min(context->lastinode.size - se->offset - off, length);
+                length = min((UINT16)(context->lastinode.size - se->offset - off), length);
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, &buf[off], length);
 
                 send_command_finish(context, pos);
