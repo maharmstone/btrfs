@@ -3261,7 +3261,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
 
                 length = sector_align(origlength, fcb->Vcb->superblock.sector_size);
 
-                data = ExAllocatePoolWithTag(PagedPool, length, ALLOC_TAG);
+                data = ExAllocatePoolWithTag(PagedPool, (ULONG)length, ALLOC_TAG);
                 if (!data) {
                     ERR("could not allocate %llx bytes for data\n", length);
                     return STATUS_INSUFFICIENT_RESOURCES;
@@ -3274,7 +3274,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     return Status;
                 }
 
-                RtlZeroMemory(data + origlength, length - origlength);
+                RtlZeroMemory(data + origlength, (ULONG)(length - origlength));
 
                 Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
@@ -3299,7 +3299,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 ULONG edsize;
 
                 if (end > oldalloc) {
-                    edsize = offsetof(EXTENT_DATA, data[0]) + end - ext->offset;
+                    edsize = (ULONG)(offsetof(EXTENT_DATA, data[0]) + end - ext->offset);
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
                     if (!ed) {
@@ -3321,7 +3321,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                         return Status;
                     }
 
-                    RtlZeroMemory(ed->data + oldalloc - ext->offset, end - oldalloc);
+                    RtlZeroMemory(ed->data + oldalloc - ext->offset, (ULONG)(end - oldalloc));
 
                     remove_fcb_extent(fcb, ext, rollback);
 
@@ -3401,7 +3401,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 EXTENT_DATA* ed;
                 ULONG edsize;
 
-                edsize = sizeof(EXTENT_DATA) - 1 + end;
+                edsize = offsetof(EXTENT_DATA, data[0]) + (ULONG)end;
                 ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
                 if (!ed) {
@@ -3416,7 +3416,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 ed->encoding = BTRFS_ENCODING_NONE;
                 ed->type = EXTENT_TYPE_INLINE;
 
-                RtlZeroMemory(ed->data, end);
+                RtlZeroMemory(ed->data, (ULONG)end);
 
                 Status = add_extent_to_fcb(fcb, 0, ed, edsize, FALSE, NULL, rollback);
                 if (!NT_SUCCESS(Status)) {
