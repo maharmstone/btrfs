@@ -2832,7 +2832,7 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
         USHORT movelen;
 
         if (!overflow) {
-            if (fr->dc->name.Length + sizeof(WCHAR) > fn->MaximumLength - fn->Length)
+            if (fr->dc->name.Length + sizeof(WCHAR) + fn->Length > fn->MaximumLength)
                 overflow = TRUE;
         }
 
