@@ -2354,10 +2354,10 @@ exit:
 static NTSTATUS read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 length) {
     NTSTATUS Status;
     superblock* sb;
-    unsigned int i, to_read;
+    ULONG i, to_read;
     UINT8 valid_superblocks;
 
-    to_read = device->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), device->SectorSize);
+    to_read = device->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), device->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
