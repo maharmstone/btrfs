@@ -359,8 +359,8 @@ static BOOL find_new_stripe(device_extension* Vcb, stripe* stripes, UINT16 i, UI
 NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_size) {
     NTSTATUS Status;
     UINT64 max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
-    UINT64 total_size = 0, i, logaddr;
-    UINT16 type, num_stripes, sub_stripes, max_stripes, min_stripes, allowed_missing;
+    UINT64 total_size = 0, logaddr;
+    UINT16 i, type, num_stripes, sub_stripes, max_stripes, min_stripes, allowed_missing;
     stripe* stripes = NULL;
     ULONG cisize;
     CHUNK_ITEM_STRIPE* cis;
@@ -410,7 +410,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
         allowed_missing = 0;
     } else if (flags & BLOCK_FLAG_RAID0) {
         min_stripes = 2;
-        max_stripes = Vcb->superblock.num_devices;
+        max_stripes = (UINT16)min(0xffff, Vcb->superblock.num_devices);
         sub_stripes = 0;
         type = BLOCK_FLAG_RAID0;
         allowed_missing = 0;
@@ -422,13 +422,13 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
         allowed_missing = 1;
     } else if (flags & BLOCK_FLAG_RAID10) {
         min_stripes = 4;
-        max_stripes = Vcb->superblock.num_devices;
+        max_stripes = (UINT16)min(0xffff, Vcb->superblock.num_devices);
         sub_stripes = 2;
         type = BLOCK_FLAG_RAID10;
         allowed_missing = 1;
     } else if (flags & BLOCK_FLAG_RAID5) {
         min_stripes = 3;
-        max_stripes = Vcb->superblock.num_devices;
+        max_stripes = (UINT16)min(0xffff, Vcb->superblock.num_devices);
         sub_stripes = 1;
         type = BLOCK_FLAG_RAID5;
         allowed_missing = 1;
@@ -551,8 +551,8 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     c->chunk_item->root_id = Vcb->extent_root->id;
     c->chunk_item->stripe_length = stripe_length;
     c->chunk_item->type = flags;
-    c->chunk_item->opt_io_alignment = c->chunk_item->stripe_length;
-    c->chunk_item->opt_io_width = c->chunk_item->stripe_length;
+    c->chunk_item->opt_io_alignment = (UINT32)c->chunk_item->stripe_length;
+    c->chunk_item->opt_io_width = (UINT32)c->chunk_item->stripe_length;
     c->chunk_item->sector_size = stripes[0].device->devitem.minimal_io_size;
     c->chunk_item->num_stripes = num_stripes;
     c->chunk_item->sub_stripes = sub_stripes;
