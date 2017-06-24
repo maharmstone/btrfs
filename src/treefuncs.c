@@ -1267,19 +1267,18 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             }
 
                             pos = (UINT8*)xa - td->data;
-                            if (pos + oldxasize < td->size) { // copy after changed xattr
-                                RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, td->size - pos - oldxasize);
-                            }
+                            if (pos + oldxasize < td->size) // copy after changed xattr
+                                RtlCopyMemory(newdata + pos + bi->datalen, td->data + pos + oldxasize, (ULONG)(td->size - pos - oldxasize));
 
                             if (pos > 0) { // copy before changed xattr
-                                RtlCopyMemory(newdata, td->data, pos);
+                                RtlCopyMemory(newdata, td->data, (ULONG)pos);
                                 xa = (DIR_ITEM*)(newdata + pos);
                             } else
                                 xa = (DIR_ITEM*)newdata;
 
                             RtlCopyMemory(xa, bi->data, bi->datalen);
 
-                            bi->datalen = min(td->size + bi->datalen - oldxasize, maxlen);
+                            bi->datalen = (UINT16)min(td->size + bi->datalen - oldxasize, maxlen);
 
                             ExFreePool(bi->data);
                             bi->data = newdata;
@@ -1352,14 +1351,14 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
                         INODE_REF* ir = (INODE_REF*)bi->data;
                         INODE_EXTREF* ier;
-                        ULONG ierlen;
+                        UINT16 ierlen;
                         batch_item* bi2;
                         LIST_ENTRY* le;
                         BOOL inserted = FALSE;
 
                         TRACE("INODE_REF would be too long, adding INODE_EXTREF instead\n");
 
-                        ierlen = sizeof(INODE_EXTREF) - 1 + ir->n;
+                        ierlen = (UINT16)(offsetof(INODE_EXTREF, name[0]) + ir->n);
 
                         ier = ExAllocatePoolWithTag(PagedPool, ierlen, ALLOC_TAG);
                         if (!ier) {
@@ -1489,7 +1488,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                     dioff = newdi;
                                 }
 
-                                if ((UINT8*)&di->name[di->n + di->m] - td->data < td->size)
+                                if ((UINT8*)&di->name[di->n + di->m] < td->data + td->size)
                                     RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((UINT8*)&di->name[di->n + di->m] - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1575,7 +1574,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                     iroff = newir;
                                 }
 
-                                if ((UINT8*)&ir->name[ir->n] - td->data < td->size)
+                                if ((UINT8*)&ir->name[ir->n] < td->data + td->size)
                                     RtlCopyMemory(iroff, &ir->name[ir->n], td->size - ((UINT8*)&ir->name[ir->n] - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1668,7 +1667,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                     ieroff = newier;
                                 }
 
-                                if ((UINT8*)&ier->name[ier->n] - td->data < td->size)
+                                if ((UINT8*)&ier->name[ier->n] < td->data + td->size)
                                     RtlCopyMemory(ieroff, &ier->name[ier->n], td->size - ((UINT8*)&ier->name[ier->n] - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
@@ -1739,7 +1738,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                 } else
                                     dioff = newdi;
 
-                                if ((UINT8*)&di->name[di->n + di->m] - td->data < td->size)
+                                if ((UINT8*)&di->name[di->n + di->m] < td->data + td->size)
                                     RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((UINT8*)&di->name[di->n + di->m] - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
