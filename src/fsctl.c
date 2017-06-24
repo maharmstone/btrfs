@@ -1528,7 +1528,7 @@ static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length, PIRP 
 
                 length -= offsetof(btrfs_usage, devices);
 
-                lastbue->next_entry = offsetof(btrfs_usage, devices) + (lastbue->num_devices * sizeof(btrfs_usage_device));
+                lastbue->next_entry = offsetof(btrfs_usage, devices) + (ULONG)(lastbue->num_devices * sizeof(btrfs_usage_device));
 
                 bue = (btrfs_usage*)((UINT8*)lastbue + lastbue->next_entry);
             }
