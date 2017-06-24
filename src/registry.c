@@ -309,7 +309,7 @@ static NTSTATUS registry_mark_volume_unmounted_path(PUNICODE_STRING path) {
     index = 0;
 
     mountedus.Buffer = option_mounted;
-    mountedus.Length = mountedus.MaximumLength = wcslen(option_mounted) * sizeof(WCHAR);
+    mountedus.Length = mountedus.MaximumLength = (USHORT)wcslen(option_mounted) * sizeof(WCHAR);
 
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueBasicInformation, kvbi, kvbilen, &retlen);
@@ -319,7 +319,7 @@ static NTSTATUS registry_mark_volume_unmounted_path(PUNICODE_STRING path) {
         if (NT_SUCCESS(Status)) {
             UNICODE_STRING us;
 
-            us.Length = us.MaximumLength = kvbi->NameLength;
+            us.Length = us.MaximumLength = (USHORT)kvbi->NameLength;
             us.Buffer = kvbi->Name;
 
             if (!FsRtlAreNamesEqual(&mountedus, &us, TRUE, NULL)) {
