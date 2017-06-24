@@ -989,7 +989,7 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
 void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
 void init_device(device_extension* Vcb, device* dev, BOOL get_nums);
 void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
-NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
+NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, UINT64 StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
 NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
 NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 void log_device_error(device_extension* Vcb, device* dev, int error);

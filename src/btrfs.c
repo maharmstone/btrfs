@@ -2260,7 +2260,7 @@ ULONG get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 ty
     return att;
 }
 
-NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
+NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, UINT64 StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
     IO_STATUS_BLOCK IoStatus;
     LARGE_INTEGER Offset;
     PIRP Irp;
@@ -2273,7 +2273,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, LONGLONG StartingOffset, UL
     RtlZeroMemory(&context, sizeof(read_context));
     KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
 
-    Offset.QuadPart = StartingOffset;
+    Offset.QuadPart = (LONGLONG)StartingOffset;
 
     Irp = IoAllocateIrp(DeviceObject->StackSize, FALSE);
 
@@ -4439,7 +4439,7 @@ static NTSTATUS verify_device(device_extension* Vcb, device* dev) {
         dev->change_count = cc;
     }
 
-    to_read = dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize);
+    to_read = dev->devobj->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), dev->devobj->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
