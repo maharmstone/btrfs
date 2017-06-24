@@ -2735,11 +2735,11 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 }
 
 typedef struct {
-    ULONG namelen;
+    UINT16 namelen;
     char* name;
-    ULONG value1len;
+    UINT16 value1len;
     char* value1;
-    ULONG value2len;
+    UINT16 value2len;
     char* value2;
     LIST_ENTRY list_entry;
 } xattr_cmp;
@@ -2788,7 +2788,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
             pos = context->datalen;
             send_command(context, BTRFS_SEND_CMD_SET_XATTR);
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
             send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
             send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, &di->name[di->n], di->m);
             send_command_finish(context, pos);
@@ -2813,7 +2813,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
             pos = context->datalen;
             send_command(context, BTRFS_SEND_CMD_REMOVE_XATTR);
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
             send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
             send_command_finish(context, pos);
 
@@ -2924,13 +2924,13 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
                 if (!xa->value1) {
                     pos = context->datalen;
                     send_command(context, BTRFS_SEND_CMD_REMOVE_XATTR);
-                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
                     send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, xa->name, xa->namelen);
                     send_command_finish(context, pos);
                 } else {
                     pos = context->datalen;
                     send_command(context, BTRFS_SEND_CMD_SET_XATTR);
-                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? strlen(context->lastinode.path) : 0);
+                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (UINT16)strlen(context->lastinode.path) : 0);
                     send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, xa->name, xa->namelen);
                     send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, xa->value1, xa->value1len);
                     send_command_finish(context, pos);
