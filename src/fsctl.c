@@ -2567,7 +2567,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
     BTRFS_UUID fsuuid, devuuid;
     LIST_ENTRY* le;
 
-    to_read = devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), devobj->SectorSize);
+    to_read = devobj->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), devobj->SectorSize);
 
     sb = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
     if (!sb) {
