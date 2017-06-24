@@ -1142,7 +1142,7 @@ chunk* get_chunk_from_address(device_extension* Vcb, UINT64 address);
 NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_size);
 NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
                     chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority);
-NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority);
+NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT64 irp_offset, ULONG priority);
 void free_write_data_stripes(write_data_context* wtc);
 
 _Function_class_(IRP_MJ_WRITE)

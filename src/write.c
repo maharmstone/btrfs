@@ -2141,7 +2141,7 @@ void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lock
     *locklen = (endoff - startoff) * datastripes;
 }
 
-NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
+NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT64 irp_offset, ULONG priority) {
     write_data_context wtc;
     NTSTATUS Status;
     UINT64 lockaddr, locklen;
@@ -3024,7 +3024,7 @@ end:
 }
 
 static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data, UINT64 length, void* data,
-                              PIRP Irp, BOOL file_write, UINT32 irp_offset, LIST_ENTRY* rollback) {
+                              PIRP Irp, BOOL file_write, UINT64 irp_offset, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     chunk* c;
@@ -3443,7 +3443,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
 }
 
 static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data, UINT64 end_data, void* data, UINT64* written,
-                                       PIRP Irp, BOOL file_write, UINT32 irp_offset, ULONG priority, LIST_ENTRY* rollback) {
+                                       PIRP Irp, BOOL file_write, UINT64 irp_offset, ULONG priority, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed = &ext->extent_data;
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
     NTSTATUS Status;
@@ -3883,7 +3883,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
 
                     TRACE("doing non-COW write to %llx\n", writeaddr);
 
-                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, write_len, Irp, NULL, file_write, irp_offset + written, priority);
+                    Status = write_data_complete(fcb->Vcb, writeaddr, (UINT8*)data + written, (UINT32)write_len, Irp, NULL, file_write, irp_offset + written, priority);
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_complete returned %08x\n", Status);
                         return Status;
@@ -3895,7 +3895,7 @@ NTSTATUS do_write_file(fcb* fcb, UINT64 start, UINT64 end_data, void* data, PIRP
 
                     // This shouldn't ever get called - nocow files should always also be nosum.
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                        calc_csum(fcb->Vcb, (UINT8*)data + written, write_len / fcb->Vcb->superblock.sector_size,
+                        calc_csum(fcb->Vcb, (UINT8*)data + written, (UINT32)(write_len / fcb->Vcb->superblock.sector_size),
                                   &ext->csum[(start + written - ext->offset) / fcb->Vcb->superblock.sector_size]);
 
                         ext->inserted = TRUE;
