@@ -1483,9 +1483,8 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, BOOL no_
     LIST_ENTRY* le;
     tree_write* tw;
     NTSTATUS Status;
-    ULONG num_bits;
+    ULONG i, num_bits;
     write_data_context* wtc;
-    int i;
     ULONG bit_num = 0;
     BOOL raid56 = FALSE;
 
