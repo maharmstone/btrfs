@@ -531,8 +531,7 @@ end:
 }
 
 static void calculate_total_space(device_extension* Vcb, UINT64* totalsize, UINT64* freespace) {
-    UINT16 nfactor, dfactor;
-    UINT64 sectors_used;
+    UINT64 nfactor, dfactor, sectors_used;
 
     if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10) {
         nfactor = 1;
