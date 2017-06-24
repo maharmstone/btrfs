@@ -1014,7 +1014,7 @@ static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* a
 
     send_command(context, BTRFS_SEND_CMD_UTIMES);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (UINT16)strlen(path) : 0);
     send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(BTRFS_TIME));
     send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(BTRFS_TIME));
     send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(BTRFS_TIME));
