@@ -2642,7 +2642,7 @@ static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INOD
 static NTSTATUS fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMATION* fnoi, fcb* fcb, file_ref* fileref, LONG* length) {
     INODE_ITEM* ii;
 
-    if (*length < sizeof(FILE_NETWORK_OPEN_INFORMATION)) {
+    if (*length < (LONG)sizeof(FILE_NETWORK_OPEN_INFORMATION)) {
         WARN("overflow\n");
         return STATUS_BUFFER_OVERFLOW;
     }
