@@ -3741,7 +3741,7 @@ static BOOL still_has_superblock(PDEVICE_OBJECT device) {
     if (!device)
         return FALSE;
 
-    to_read = device->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), device->SectorSize);
+    to_read = device->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), device->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
