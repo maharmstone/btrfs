@@ -1247,13 +1247,18 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
         return;
     }
 
+    if (reqlen > 0xffff) {
+        WARN("reqlen was too long for FsRtlNotifyFilterReportChange\n");
+        return;
+    }
+
     fn.Buffer = ExAllocatePoolWithTag(PagedPool, reqlen, ALLOC_TAG);
     if (!fn.Buffer) {
         ERR("out of memory\n");
         return;
     }
 
-    fn.MaximumLength = reqlen;
+    fn.MaximumLength = (USHORT)reqlen;
     fn.Length = 0;
 
     Status = fileref_get_filename(fileref, &fn, &name_offset, &reqlen);
