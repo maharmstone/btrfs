@@ -240,8 +240,8 @@ typedef struct {
 } btrfs_received_subvol;
 
 typedef struct {
-    ULONG namelen;
-    ULONG valuelen;
+    USHORT namelen;
+    USHORT valuelen;
     char data[1];
 } btrfs_set_xattr;
 

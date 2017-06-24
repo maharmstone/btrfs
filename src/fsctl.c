@@ -4122,7 +4122,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (datalen < offsetof(btrfs_set_xattr, data[0]) + bsxa->namelen + bsxa->valuelen)
         return STATUS_INVALID_PARAMETER;
 
-    if (bsxa->namelen + bsxa->valuelen > Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - offsetof(DIR_ITEM, name[0]))
+    if (bsxa->namelen + bsxa->valuelen + sizeof(tree_header) + sizeof(leaf_node) + offsetof(DIR_ITEM, name[0]) > Vcb->superblock.node_size)
         return STATUS_INVALID_PARAMETER;
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)

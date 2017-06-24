@@ -203,8 +203,8 @@ enum prop_compression_type {
 
 typedef struct {
     LIST_ENTRY list_entry;
-    ULONG namelen;
-    ULONG valuelen;
+    USHORT namelen;
+    USHORT valuelen;
     BOOL dirty;
     char data[1];
 } xattr;
