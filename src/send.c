@@ -493,7 +493,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* parent, char* name, ULONG namelen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd) {
+static NTSTATUS send_add_dir(send_context* context, UINT64 inode, send_dir* parent, char* name, UINT16 namelen, BOOL dummy, LIST_ENTRY* lastentry, send_dir** psd) {
     LIST_ENTRY* le;
     send_dir* sd = ExAllocatePoolWithTag(PagedPool, sizeof(send_dir), ALLOC_TAG);
 
@@ -754,7 +754,7 @@ static NTSTATUS find_send_dir(send_context* context, UINT64 dir, UINT64 generati
         return Status;
     }
 
-    Status = send_add_dir(context, dir, NULL, name, strlen(name), TRUE, le, psd);
+    Status = send_add_dir(context, dir, NULL, name, (UINT16)strlen(name), TRUE, le, psd);
     if (!NT_SUCCESS(Status)) {
         ERR("send_add_dir returned %08x\n", Status);
         return Status;
