@@ -127,7 +127,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
         if (NT_SUCCESS(Status)) {
             UNICODE_STRING us;
 
-            us.Length = us.MaximumLength = kvfi->NameLength;
+            us.Length = us.MaximumLength = (USHORT)kvfi->NameLength;
             us.Buffer = kvfi->Name;
 
             if (FsRtlAreNamesEqual(&ignoreus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
@@ -145,7 +145,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
             } else if (FsRtlAreNamesEqual(&compresstypeus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
 
-                options->compress_type = *val > BTRFS_COMPRESSION_LZO ? 0 : *val;
+                options->compress_type = (UINT8)(*val > BTRFS_COMPRESSION_LZO ? 0 : *val);
             } else if (FsRtlAreNamesEqual(&readonlyus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
 
