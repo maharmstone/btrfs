@@ -388,18 +388,18 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr, UINT32 length, read_data_context* context,
                                  CHUNK_ITEM* ci, device** devices, UINT64 generation, UINT64 offset) {
     UINT64 i;
-    UINT16 stripe;
+    UINT16 j, stripe;
     NTSTATUS Status;
     BOOL checksum_error = FALSE;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
-    for (i = 0; i < ci->num_stripes; i++) {
-        if (context->stripes[i].status == ReadDataStatus_Error) {
-            WARN("stripe %llu returned error %08x\n", i, context->stripes[i].iosb.Status);
-            log_device_error(Vcb, devices[i], BTRFS_DEV_STAT_READ_ERRORS);
-            return context->stripes[i].iosb.Status;
-        } else if (context->stripes[i].status == ReadDataStatus_Success)
-            stripe = i;
+    for (j = 0; j < ci->num_stripes; j++) {
+        if (context->stripes[j].status == ReadDataStatus_Error) {
+            WARN("stripe %llu returned error %08x\n", j, context->stripes[j].iosb.Status);
+            log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
+            return context->stripes[j].iosb.Status;
+        } else if (context->stripes[j].status == ReadDataStatus_Success)
+            stripe = j;
     }
 
     if (context->tree) {
