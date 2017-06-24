@@ -2424,7 +2424,8 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     KEY searchkey;
     traverse_ptr tp;
     BOOL b;
-    UINT64 run_start, run_end, num_sectors, full_stripe_len, max_read, stripe;
+    UINT64 run_start, run_end, full_stripe_len, stripe;
+    UINT32 max_read, num_sectors;
     ULONG arrlen, *allocarr, *csumarr, *treearr, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
     scrub_context_raid56 context;
     UINT16 i;
@@ -2446,8 +2447,8 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
         return Status;
     }
 
-    num_sectors = (stripe_end - stripe_start + 1) * full_stripe_len / Vcb->superblock.sector_size;
-    arrlen = sector_align((num_sectors / 8) + 1, sizeof(ULONG));
+    num_sectors = (UINT32)((stripe_end - stripe_start + 1) * full_stripe_len / Vcb->superblock.sector_size);
+    arrlen = (ULONG)sector_align((num_sectors / 8) + 1, sizeof(ULONG));
 
     allocarr = ExAllocatePoolWithTag(PagedPool, arrlen, ALLOC_TAG);
     if (!allocarr) {
@@ -2468,7 +2469,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     RtlInitializeBitMap(&context.is_tree, treearr, num_sectors);
     RtlClearAllBits(&context.is_tree);
 
-    context.parity_scratch = ExAllocatePoolWithTag(PagedPool, c->chunk_item->stripe_length, ALLOC_TAG);
+    context.parity_scratch = ExAllocatePoolWithTag(PagedPool, (ULONG)c->chunk_item->stripe_length, ALLOC_TAG);
     if (!context.parity_scratch) {
         ERR("out of memory\n");
         ExFreePool(allocarr);
@@ -2501,7 +2502,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     }
 
     if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-        context.parity_scratch2 = ExAllocatePoolWithTag(PagedPool, c->chunk_item->stripe_length, ALLOC_TAG);
+        context.parity_scratch2 = ExAllocatePoolWithTag(PagedPool, (ULONG)c->chunk_item->stripe_length, ALLOC_TAG);
         if (!context.parity_scratch2) {
             ERR("out of memory\n");
             ExFreePool(allocarr);
@@ -2531,7 +2532,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                 UINT64 extent_end = min(tp.item->key.obj_id + size, run_end);
                 BOOL extent_is_tree = FALSE;
 
-                RtlSetBits(&context.alloc, (extent_start - run_start) / Vcb->superblock.sector_size, (extent_end - extent_start) / Vcb->superblock.sector_size);
+                RtlSetBits(&context.alloc, (ULONG)((extent_start - run_start) / Vcb->superblock.sector_size), (ULONG)((extent_end - extent_start) / Vcb->superblock.sector_size));
 
                 if (tp.item->key.obj_type == TYPE_METADATA_ITEM)
                     extent_is_tree = TRUE;
@@ -2549,7 +2550,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                 }
 
                 if (extent_is_tree)
-                    RtlSetBits(&context.is_tree, (extent_start - run_start) / Vcb->superblock.sector_size, (extent_end - extent_start) / Vcb->superblock.sector_size);
+                    RtlSetBits(&context.is_tree, (ULONG)((extent_start - run_start) / Vcb->superblock.sector_size), (ULONG)((extent_end - extent_start) / Vcb->superblock.sector_size));
                 else if (c->chunk_item->type & BLOCK_FLAG_DATA) {
                     traverse_ptr tp2;
                     BOOL b2;
@@ -2574,11 +2575,11 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                             UINT64 csum_start = max(extent_start, tp2.item->key.offset);
                             UINT64 csum_end = min(extent_end, tp2.item->key.offset + (tp2.item->size * Vcb->superblock.sector_size / sizeof(UINT32)));
 
-                            RtlSetBits(&context.has_csum, (csum_start - run_start) / Vcb->superblock.sector_size, (csum_end - csum_start) / Vcb->superblock.sector_size);
+                            RtlSetBits(&context.has_csum, (ULONG)((csum_start - run_start) / Vcb->superblock.sector_size), (ULONG)((csum_end - csum_start) / Vcb->superblock.sector_size));
 
                             RtlCopyMemory(&context.csum[(csum_start - run_start) / Vcb->superblock.sector_size],
                                           tp2.item->data + ((csum_start - tp2.item->key.offset) * sizeof(UINT32) / Vcb->superblock.sector_size),
-                                          (csum_end - csum_start) * sizeof(UINT32) / Vcb->superblock.sector_size);
+                                          (ULONG)((csum_end - csum_start) * sizeof(UINT32) / Vcb->superblock.sector_size));
                         }
 
                         b2 = find_next_item(Vcb, &tp2, &next_tp2, FALSE, NULL);
@@ -2603,10 +2604,10 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
         goto end;
     }
 
-    max_read = min(1048576 / c->chunk_item->stripe_length, stripe_end - stripe_start + 1); // only process 1 MB of data at a time
+    max_read = (UINT32)min(1048576 / c->chunk_item->stripe_length, stripe_end - stripe_start + 1); // only process 1 MB of data at a time
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        context.stripes[i].buf = ExAllocatePoolWithTag(PagedPool, max_read * c->chunk_item->stripe_length, ALLOC_TAG);
+        context.stripes[i].buf = ExAllocatePoolWithTag(PagedPool, (ULONG)(max_read * c->chunk_item->stripe_length), ALLOC_TAG);
         if (!context.stripes[i].buf) {
             UINT64 j;
 
@@ -2621,7 +2622,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
             goto end;
         }
 
-        context.stripes[i].errorarr = ExAllocatePoolWithTag(PagedPool, sector_align(((c->chunk_item->stripe_length / Vcb->superblock.sector_size) / 8) + 1, sizeof(ULONG)), ALLOC_TAG);
+        context.stripes[i].errorarr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align(((c->chunk_item->stripe_length / Vcb->superblock.sector_size) / 8) + 1, sizeof(ULONG)), ALLOC_TAG);
         if (!context.stripes[i].errorarr) {
             UINT64 j;
 
@@ -2638,7 +2639,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
             goto end;
         }
 
-        RtlInitializeBitMap(&context.stripes[i].error, context.stripes[i].errorarr, c->chunk_item->stripe_length / Vcb->superblock.sector_size);
+        RtlInitializeBitMap(&context.stripes[i].error, context.stripes[i].errorarr, (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size));
 
         context.stripes[i].context = &context;
         context.stripes[i].rewrite = FALSE;
@@ -2651,13 +2652,14 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     chunk_lock_range(Vcb, c, run_start, run_end - run_start);
 
     do {
-        ULONG read_stripes, missing_devices = 0;
+        ULONG read_stripes;
+        UINT16 missing_devices = 0;
         BOOL need_wait = FALSE;
 
         if (max_read < stripe_end + 1 - stripe)
             read_stripes = max_read;
         else
-            read_stripes = stripe_end + 1 - stripe;
+            read_stripes = (ULONG)(stripe_end + 1 - stripe);
 
         context.stripes_left = c->chunk_item->num_stripes;
 
@@ -2680,7 +2682,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
                 IrpSp->MajorFunction = IRP_MJ_READ;
 
                 if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO) {
-                    context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, read_stripes * c->chunk_item->stripe_length, ALLOC_TAG);
+                    context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(read_stripes * c->chunk_item->stripe_length), ALLOC_TAG);
                     if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2691,7 +2693,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
 
                     context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
                 } else if (c->devices[i]->devobj->Flags & DO_DIRECT_IO) {
-                    context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length, FALSE, FALSE, NULL);
+                    context.stripes[i].Irp->MdlAddress = IoAllocateMdl(context.stripes[i].buf, (ULONG)(read_stripes * c->chunk_item->stripe_length), FALSE, FALSE, NULL);
                     if (!context.stripes[i].Irp->MdlAddress) {
                         ERR("IoAllocateMdl failed\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2716,7 +2718,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
 
                 context.stripes[i].offset = stripe * c->chunk_item->stripe_length;
 
-                IrpSp->Parameters.Read.Length = read_stripes * c->chunk_item->stripe_length;
+                IrpSp->Parameters.Read.Length = (ULONG)(read_stripes * c->chunk_item->stripe_length);
                 IrpSp->Parameters.Read.ByteOffset.QuadPart = cis[i].offset + context.stripes[i].offset;
 
                 context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
@@ -2787,7 +2789,7 @@ end3:
 
                 if (context.stripes[i].rewrite) {
                     Status = write_data_phys(c->devices[i]->devobj, cis[i].offset + context.stripes[i].offset,
-                                             context.stripes[i].buf, read_stripes * c->chunk_item->stripe_length);
+                                             context.stripes[i].buf, (UINT32)(read_stripes * c->chunk_item->stripe_length));
 
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_phys returned %08x\n", Status);
