@@ -582,8 +582,8 @@ static void find_path(char* path, send_dir* parent, char* name, ULONG namelen) {
     }
 }
 
-static void send_add_tlv_path(send_context* context, UINT16 type, send_dir* parent, char* name, ULONG namelen) {
-    ULONG len = find_path_len(parent, namelen);
+static void send_add_tlv_path(send_context* context, UINT16 type, send_dir* parent, char* name, UINT16 namelen) {
+    UINT16 len = find_path_len(parent, namelen);
 
     send_add_tlv(context, type, NULL, len);
 
@@ -597,7 +597,7 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     if (context->lastinode.o) {
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->root_dir, context->lastinode.o->tmpname, strlen(context->lastinode.o->tmpname));
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->root_dir, context->lastinode.o->tmpname, (UINT16)strlen(context->lastinode.o->tmpname));
 
         send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, parent, name, namelen);
 
@@ -1229,7 +1229,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
         send_command(context, BTRFS_SEND_CMD_RENAME);
 
         send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, (UINT16)strlen(name));
 
         send_command_finish(context, pos);
 
@@ -1250,7 +1250,7 @@ static NTSTATUS make_file_orphan(send_context* context, UINT64 inode, BOOL dir, 
 
         send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, strlen(name));
+        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, (UINT16)strlen(name));
 
         send_command_finish(context, pos);
     }
