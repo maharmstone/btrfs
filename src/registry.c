@@ -815,8 +815,8 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
         if (NT_SUCCESS(Status)) {
             if ((kvfi->Type == REG_SZ || kvfi->Type == REG_EXPAND_SZ) && kvfi->DataLength >= sizeof(WCHAR)) {
-                log_device.Length = log_device.MaximumLength = kvfi->DataLength;
-                log_device.Buffer = ExAllocatePoolWithTag(PagedPool, kvfi->DataLength, ALLOC_TAG);
+                log_device.Length = log_device.MaximumLength = (USHORT)min(0xffff, kvfi->DataLength);
+                log_device.Buffer = ExAllocatePoolWithTag(PagedPool, log_device.MaximumLength, ALLOC_TAG);
 
                 if (!log_device.Buffer) {
                     ERR("out of memory\n");
@@ -825,7 +825,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
                     return;
                 }
 
-                RtlCopyMemory(log_device.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, kvfi->DataLength);
+                RtlCopyMemory(log_device.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, log_device.Length);
 
                 if (log_device.Buffer[(log_device.Length / sizeof(WCHAR)) - 1] == 0)
                     log_device.Length -= sizeof(WCHAR);
@@ -892,8 +892,8 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
         if (NT_SUCCESS(Status)) {
             if ((kvfi->Type == REG_SZ || kvfi->Type == REG_EXPAND_SZ) && kvfi->DataLength >= sizeof(WCHAR)) {
-                log_file.Length = log_file.MaximumLength = kvfi->DataLength;
-                log_file.Buffer = ExAllocatePoolWithTag(PagedPool, kvfi->DataLength, ALLOC_TAG);
+                log_file.Length = log_file.MaximumLength = (USHORT)min(0xffff, kvfi->DataLength);
+                log_file.Buffer = ExAllocatePoolWithTag(PagedPool, log_file.MaximumLength, ALLOC_TAG);
 
                 if (!log_file.Buffer) {
                     ERR("out of memory\n");
@@ -902,7 +902,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
                     return;
                 }
 
-                RtlCopyMemory(log_file.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, kvfi->DataLength);
+                RtlCopyMemory(log_file.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, log_file.Length);
 
                 if (log_file.Buffer[(log_file.Length / sizeof(WCHAR)) - 1] == 0)
                     log_file.Length -= sizeof(WCHAR);
@@ -928,7 +928,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     }
 
     if (log_file.Length == 0) {
-        log_file.Length = log_file.MaximumLength = wcslen(def_log_file) * sizeof(WCHAR);
+        log_file.Length = log_file.MaximumLength = (UINT16)wcslen(def_log_file) * sizeof(WCHAR);
         log_file.Buffer = ExAllocatePoolWithTag(PagedPool, log_file.MaximumLength, ALLOC_TAG);
 
         if (!log_file.Buffer) {
