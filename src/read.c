@@ -883,7 +883,7 @@ void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT1
         do_xor(out, sectors + ((num_stripes - 1) * sector_size), sector_size);
 
         if (missing != 0)
-            galois_divpower(out, missing, sector_size);
+            galois_divpower(out, (UINT8)missing, sector_size);
     } else { // reconstruct from p and q
         UINT16 x, y, stripe;
         UINT8 gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
