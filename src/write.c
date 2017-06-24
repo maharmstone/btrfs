@@ -2810,7 +2810,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ed2->num_bytes = decoded_size;
 
     if (!prealloc && data && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-        ULONG sl = length / Vcb->superblock.sector_size;
+        ULONG sl = (ULONG)(length / Vcb->superblock.sector_size);
 
         csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
         if (!csum) {
@@ -2850,7 +2850,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     ExReleaseResourceLite(&c->lock);
 
     if (data) {
-        Status = write_data_complete(Vcb, address, data, length, Irp, NULL, file_write, irp_offset,
+        Status = write_data_complete(Vcb, address, data, (UINT32)length, Irp, NULL, file_write, irp_offset,
                                      fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
         if (!NT_SUCCESS(Status))
             ERR("write_data_complete returned %08x\n", Status);
