@@ -1331,7 +1331,7 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
 
                 send_command(context, BTRFS_SEND_CMD_RENAME);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, (UINT16)strlen(context->lastinode.path));
 
                 send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, r->name, r->namelen);
 
@@ -1399,8 +1399,8 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
                 }
 
                 send_command(context, BTRFS_SEND_CMD_RENAME);
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, strlen(context->lastinode.path));
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, name, strlen(name));
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, (UINT16)strlen(context->lastinode.path));
+                send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, name, (UINT16)strlen(name));
                 send_command_finish(context, pos);
 
                 if (context->lastinode.sd->name)
