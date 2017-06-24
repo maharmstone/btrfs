@@ -4712,7 +4712,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
-        } else if (gli.Length.QuadPart < br->size) {
+        } else if ((UINT64)gli.Length.QuadPart < br->size) {
             ERR("device was %llx bytes, trying to extend to %llx\n", gli.Length.QuadPart, br->size);
             Status = STATUS_INVALID_PARAMETER;
             goto end;
