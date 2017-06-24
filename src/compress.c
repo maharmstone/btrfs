@@ -127,7 +127,7 @@ static void lzo_copy(lzo_stream* stream, int len) {
     } while (len > 0);
 }
 
-static void lzo_copyback(lzo_stream* stream, int back, int len) {
+static void lzo_copyback(lzo_stream* stream, UINT32 back, int len) {
     if (stream->outpos < back) {
         stream->error = TRUE;
         return;
