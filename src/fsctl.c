@@ -1779,13 +1779,13 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
         buf_head = 0;
     }
 
-    data = ExAllocatePoolWithTag(PagedPool, buf_head + end_data - start_data, ALLOC_TAG);
+    data = ExAllocatePoolWithTag(PagedPool, (ULONG)(buf_head + end_data - start_data), ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlZeroMemory(data + buf_head, end_data - start_data);
+    RtlZeroMemory(data + buf_head, (ULONG)(end_data - start_data));
 
     if (start > start_data || start + length < end_data) {
         Status = read_file(fcb, data + buf_head, start_data, end_data - start_data, NULL, Irp);
@@ -1797,7 +1797,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
         }
     }
 
-    RtlZeroMemory(data + buf_head + start - start_data, length);
+    RtlZeroMemory(data + buf_head + start - start_data, (ULONG)length);
 
     if (make_inline) {
         ULONG edsize;
@@ -1810,7 +1810,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
             return Status;
         }
 
-        edsize = offsetof(EXTENT_DATA, data[0]) + end_data;
+        edsize = offsetof(EXTENT_DATA, data[0]) + (ULONG)end_data;
 
         ed->generation = Vcb->superblock.generation;
         ed->decoded_size = end_data;
