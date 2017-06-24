@@ -508,7 +508,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT6
 
             tbr = (TREE_BLOCK_REF*)ptr;
 
-            log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+            log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : (UINT8)tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
 
             rc++;
 
@@ -579,7 +579,7 @@ static void log_unrecoverable_error(device_extension* Vcb, UINT64 address, UINT6
 
             if (tp.item->key.obj_id == address) {
                 if (tp.item->key.obj_type == TYPE_TREE_BLOCK_REF)
-                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : (UINT8)tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
                 else if (tp.item->key.obj_type == TYPE_EXTENT_DATA_REF) {
                     EXTENT_DATA_REF* edr;
 
