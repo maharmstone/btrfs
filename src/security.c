@@ -370,7 +370,7 @@ static void gid_to_sid(UINT32 gid, PSID* sid) {
 }
 
 static ACL* load_default_acl() {
-    ULONG size;
+    UINT16 size;
     ACL* acl;
     ACCESS_ALLOWED_ACE* aaa;
     UINT32 i;
