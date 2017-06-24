@@ -53,12 +53,12 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         } else {
             char* data;
 
-            if (fcb->inode_item.st_size == 0) {
+            if (fcb->inode_item.st_size == 0 || fcb->inode_item.st_size > 0xffff) {
                 Status = STATUS_INVALID_PARAMETER;
                 goto end;
             }
 
-            data = ExAllocatePoolWithTag(PagedPool, fcb->inode_item.st_size, ALLOC_TAG);
+            data = ExAllocatePoolWithTag(PagedPool, (ULONG)fcb->inode_item.st_size, ALLOC_TAG);
             if (!data) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -74,15 +74,15 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 goto end;
             }
 
-            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, fcb->inode_item.st_size);
+            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, (ULONG)fcb->inode_item.st_size);
             if (!NT_SUCCESS(Status)) {
                 ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                 ExFreePool(data);
                 goto end;
             }
 
-            subnamelen = stringlen;
-            printnamelen = stringlen;
+            subnamelen = (UINT16)stringlen;
+            printnamelen = (UINT16)stringlen;
 
             reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
 
@@ -90,7 +90,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
 
             if (buflen >= offsetof(REPARSE_DATA_BUFFER, Reserved))
-                rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+                rdb->ReparseDataLength = (USHORT)(reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer));
 
             if (buflen >= offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.SubstituteNameOffset))
                 rdb->Reserved = 0;
@@ -109,7 +109,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
 
             Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                                    stringlen, &stringlen, data, fcb->inode_item.st_size);
+                                       stringlen, &stringlen, data, (ULONG)fcb->inode_item.st_size);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
