@@ -573,11 +573,11 @@ static BOOL lie_about_fs_type() {
     UNICODE_STRING mprus, cmdus, fsutilus;
 
     mprus.Buffer = mpr;
-    mprus.Length = mprus.MaximumLength = wcslen(mpr) * sizeof(WCHAR);
+    mprus.Length = mprus.MaximumLength = (USHORT)(wcslen(mpr) * sizeof(WCHAR));
     cmdus.Buffer = cmd;
-    cmdus.Length = cmdus.MaximumLength = wcslen(cmd) * sizeof(WCHAR);
+    cmdus.Length = cmdus.MaximumLength = (USHORT)(wcslen(cmd) * sizeof(WCHAR));
     fsutilus.Buffer = fsutil;
-    fsutilus.Length = fsutilus.MaximumLength = wcslen(fsutil) * sizeof(WCHAR);
+    fsutilus.Length = fsutilus.MaximumLength = (USHORT)(wcslen(fsutil) * sizeof(WCHAR));
 
     if (!PsGetCurrentProcess())
         return FALSE;
@@ -631,7 +631,7 @@ static BOOL lie_about_fs_type() {
 
         if (blacklist) {
             void** frames;
-            USHORT i, num_frames;
+            ULONG i, num_frames;
 
             frames = ExAllocatePoolWithTag(PagedPool, 256 * sizeof(void*), ALLOC_TAG);
             if (!frames) {
