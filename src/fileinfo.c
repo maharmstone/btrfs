@@ -3358,7 +3358,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_ref* fileref, PIRP Irp, LONG* length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    ULONG bytes_needed;
+    LONG bytes_needed;
     FILE_LINK_ENTRY_INFORMATION* feli;
     BOOL overflow = FALSE;
     fcb* fcb = fileref->fcb;
@@ -3367,7 +3367,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
     if (fcb->ads)
         return STATUS_INVALID_PARAMETER;
 
-    if (*length < offsetof(FILE_LINKS_INFORMATION, Entry))
+    if (*length < (LONG)offsetof(FILE_LINKS_INFORMATION, Entry))
         return STATUS_INVALID_PARAMETER;
 
     RtlZeroMemory(fli, *length);
