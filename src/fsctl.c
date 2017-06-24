@@ -822,7 +822,12 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         return STATUS_INTERNAL_ERROR;
     }
 
-    utf8.MaximumLength = utf8.Length = len;
+    if (len > 0xffff) {
+        ERR("len was too long\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    utf8.MaximumLength = utf8.Length = (USHORT)len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.Length, ALLOC_TAG);
 
     if (!utf8.Buffer) {
@@ -1013,7 +1018,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
 
     ir->index = 0;
-    ir->n = strlen(DOTDOT);
+    ir->n = (USHORT)strlen(DOTDOT);
     RtlCopyMemory(ir->name, DOTDOT, ir->n);
 
     Status = insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_REF, r->root_item.objid, ir, irsize, NULL, Irp);
