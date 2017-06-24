@@ -1895,7 +1895,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
 
 static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start,
                                UINT64 num, UINT16 missing_devices) {
-    ULONG sectors_per_stripe = c->chunk_item->stripe_length / Vcb->superblock.sector_size, i;
+    ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size), i;
     UINT16 stripe, parity1 = (bit_start + num + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
     UINT16 parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
     UINT64 off, stripeoff;
@@ -1905,10 +1905,10 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     stripeoff = num * sectors_per_stripe;
 
     if (c->devices[parity1]->devobj)
-        RtlCopyMemory(context->parity_scratch, &context->stripes[parity1].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+        RtlCopyMemory(context->parity_scratch, &context->stripes[parity1].buf[num * c->chunk_item->stripe_length], (ULONG)c->chunk_item->stripe_length);
 
     if (c->devices[parity2]->devobj)
-        RtlZeroMemory(context->parity_scratch2, c->chunk_item->stripe_length);
+        RtlZeroMemory(context->parity_scratch2, (ULONG)c->chunk_item->stripe_length);
 
     while (stripe != parity1) {
         RtlClearAllBits(&context->stripes[stripe].error);
@@ -1953,7 +1953,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         }
 
         if (c->devices[parity1]->devobj)
-            do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+            do_xor(context->parity_scratch, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], (UINT32)c->chunk_item->stripe_length);
 
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
         stripeoff = num * sectors_per_stripe;
@@ -1986,8 +1986,8 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         stripe = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
 
         while (stripe != parity2) {
-            galois_double(context->parity_scratch2, c->chunk_item->stripe_length);
-            do_xor(context->parity_scratch2, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], c->chunk_item->stripe_length);
+            galois_double(context->parity_scratch2, (UINT32)c->chunk_item->stripe_length);
+            do_xor(context->parity_scratch2, &context->stripes[stripe].buf[num * c->chunk_item->stripe_length], (UINT32)c->chunk_item->stripe_length);
 
             stripe = stripe == 0 ? (c->chunk_item->num_stripes - 1) : (stripe - 1);
         }
