@@ -300,7 +300,7 @@ static void log_file_checksum_error(device_extension* Vcb, UINT64 addr, UINT64 d
 
     err->data.subvol = not_in_tree ? subvol : 0;
     err->data.offset = offset;
-    err->data.filename_length = utf16len;
+    err->data.filename_length = (UINT16)utf16len;
 
     Status = RtlUTF8ToUnicodeN(err->data.filename, utf16len, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
