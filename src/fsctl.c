@@ -4425,7 +4425,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
 
     us.Buffer = out;
     us.Length = 0;
-    us.MaximumLength = outlen - sizeof(WCHAR);
+    us.MaximumLength = (USHORT)min(0xffff, outlen) - sizeof(WCHAR);
 
     Status = fileref_get_filename(fr, &us, NULL, NULL);
 
