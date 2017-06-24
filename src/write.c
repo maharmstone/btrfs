@@ -758,7 +758,7 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
             stripes[i].end = endoff - (endoff % c->chunk_item->stripe_length);
 
         if (stripes[i].start != stripes[i].end) {
-            stripes[i].mdl = IoAllocateMdl(NULL, stripes[i].end - stripes[i].start, FALSE, FALSE, NULL);
+            stripes[i].mdl = IoAllocateMdl(NULL, (ULONG)(stripes[i].end - stripes[i].start), FALSE, FALSE, NULL);
             if (!stripes[i].mdl) {
                 ERR("IoAllocateMdl failed\n");
                 ExFreePool(stripeoff);
@@ -776,18 +776,18 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
         PFN_NUMBER* stripe_pfns = (PFN_NUMBER*)(stripes[stripenum].mdl + 1);
 
         if (pos == 0) {
-            UINT32 writelen = min(stripes[stripenum].end - stripes[stripenum].start,
-                                    c->chunk_item->stripe_length - (stripes[stripenum].start % c->chunk_item->stripe_length));
+            UINT32 writelen = (UINT32)min(stripes[stripenum].end - stripes[stripenum].start,
+                                          c->chunk_item->stripe_length - (stripes[stripenum].start % c->chunk_item->stripe_length));
 
             RtlCopyMemory(stripe_pfns, pfns, writelen * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
 
             stripeoff[stripenum] += writelen;
             pos += writelen;
         } else if (length - pos < c->chunk_item->stripe_length) {
-            RtlCopyMemory(&stripe_pfns[stripeoff[stripenum] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], (length - pos) * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+            RtlCopyMemory(&stripe_pfns[stripeoff[stripenum] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], (ULONG)((length - pos) * sizeof(PFN_NUMBER) >> PAGE_SHIFT));
             break;
         } else {
-            RtlCopyMemory(&stripe_pfns[stripeoff[stripenum] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], c->chunk_item->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT);
+            RtlCopyMemory(&stripe_pfns[stripeoff[stripenum] >> PAGE_SHIFT], &pfns[pos >> PAGE_SHIFT], (ULONG)(c->chunk_item->stripe_length * sizeof(PFN_NUMBER) >> PAGE_SHIFT));
 
             stripeoff[stripenum] += c->chunk_item->stripe_length;
             pos += c->chunk_item->stripe_length;
