@@ -3142,7 +3142,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
         UINT8* buf;
         BOOL make_inline = end <= fcb->Vcb->options.max_inline;
 
-        buf = ExAllocatePoolWithTag(PagedPool, make_inline ? (offsetof(EXTENT_DATA, data[0]) + end) : sector_align(end, fcb->Vcb->superblock.sector_size), ALLOC_TAG);
+        buf = ExAllocatePoolWithTag(PagedPool, (ULONG)(make_inline ? (offsetof(EXTENT_DATA, data[0]) + end) : sector_align(end, fcb->Vcb->superblock.sector_size)), ALLOC_TAG);
         if (!buf) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -3163,7 +3163,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
         }
 
         if (!make_inline) {
-            RtlZeroMemory(buf + end, sector_align(end, fcb->Vcb->superblock.sector_size) - end);
+            RtlZeroMemory(buf + end, (ULONG)(sector_align(end, fcb->Vcb->superblock.sector_size) - end));
 
             Status = do_write_file(fcb, 0, sector_align(end, fcb->Vcb->superblock.sector_size), buf, Irp, FALSE, 0, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -3181,7 +3181,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
             ed->encoding = BTRFS_ENCODING_NONE;
             ed->type = EXTENT_TYPE_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed, offsetof(EXTENT_DATA, data[0]) + end, FALSE, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed, offsetof(EXTENT_DATA, data[0]) + (ULONG)end, FALSE, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08x\n", Status);
                 ExFreePool(buf);
