@@ -2707,7 +2707,7 @@ NTSTATUS read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, ULONG* p
 NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
-    UINT64 bytes_read = 0;
+    UINT32 bytes_read = 0;
     UINT64 last_end;
     LIST_ENTRY* le;
 #ifdef DEBUG_STATS
@@ -2751,7 +2751,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
             }
 
             if (ext->offset > last_end && ext->offset > start + bytes_read) {
-                UINT32 read = min(length, ext->offset - max(start, last_end));
+                UINT32 read = (UINT32)min(length, ext->offset - max(start, last_end));
 
                 RtlZeroMemory(data + bytes_read, read);
                 bytes_read += read;
@@ -2777,20 +2777,26 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                 case EXTENT_TYPE_INLINE:
                 {
                     UINT64 off = start + bytes_read - ext->offset;
-                    UINT64 read;
+                    UINT32 read;
 
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                        read = min(min(len, ext->datalen) - off, length);
+                        read = (UINT32)min(min(len, ext->datalen) - off, length);
 
                         RtlCopyMemory(data + bytes_read, &ed->data[off], read);
                     } else if (ed->compression == BTRFS_COMPRESSION_ZLIB || ed->compression == BTRFS_COMPRESSION_LZO) {
                         UINT8* decomp;
                         BOOL decomp_alloc;
 
-                        read = min(ed->decoded_size - off, length);
+                        if (ed->decoded_size == 0 || ed->decoded_size > 0xffffffff) {
+                            ERR("ed->decoded_size was invalid (%llx)\n", ed->decoded_size);
+                            Status = STATUS_INTERNAL_ERROR;
+                            goto exit;
+                        }
+
+                        read = (UINT32)min(ed->decoded_size - off, length);
 
                         if (off > 0) {
-                            decomp = ExAllocatePoolWithTag(NonPagedPool, ed->decoded_size, ALLOC_TAG);
+                            decomp = ExAllocatePoolWithTag(NonPagedPool, (UINT32)ed->decoded_size, ALLOC_TAG);
                             if (!decomp) {
                                 ERR("out of memory\n");
                                 Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2856,21 +2862,21 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                     UINT64 addr;
                     chunk* c;
 
-                    read = len - off;
-                    if (read > length) read = length;
+                    read = (UINT32)(len - off);
+                    if (read > length) read = (UINT32)length;
 
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
                         addr = ed2->address + ed2->offset + off;
-                        to_read = sector_align(read, fcb->Vcb->superblock.sector_size);
+                        to_read = (UINT32)sector_align(read, fcb->Vcb->superblock.sector_size);
 
                         if (addr % fcb->Vcb->superblock.sector_size > 0) {
                             bumpoff = addr % fcb->Vcb->superblock.sector_size;
                             addr -= bumpoff;
-                            to_read = sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
+                            to_read = (UINT32)sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
                         }
                     } else {
                         addr = ed2->address;
-                        to_read = sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
+                        to_read = (UINT32)sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
                     }
 
                     if (ed->compression == BTRFS_COMPRESSION_NONE && start % fcb->Vcb->superblock.sector_size == 0 &&
@@ -2928,9 +2934,9 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                         ULONG outlen, inlen, off2;
                         UINT32 inpageoff = 0;
 
-                        off2 = ed2->offset + off;
+                        off2 = (ULONG)(ed2->offset + off);
                         buf2 = buf;
-                        inlen = ed2->size;
+                        inlen = (ULONG)ed2->size;
 
                         if (ed->compression == BTRFS_COMPRESSION_LZO) {
                             ULONG inoff = sizeof(UINT32);
@@ -2962,7 +2968,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                         }
 
                         if (off2 != 0) {
-                            outlen = off2 + min(read, ed2->num_bytes - off);
+                            outlen = off2 + min(read, (UINT32)(ed2->num_bytes - off));
 
                             decomp = ExAllocatePoolWithTag(PagedPool, outlen, ALLOC_TAG);
                             if (!decomp) {
@@ -2972,7 +2978,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                                 goto exit;
                             }
                         } else
-                            outlen = min(read, ed2->num_bytes - off);
+                            outlen = min(read, (UINT32)(ed2->num_bytes - off));
 
                         if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
                             Status = zlib_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen);
@@ -3011,7 +3017,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                         }
 
                         if (decomp) {
-                            RtlCopyMemory(data + bytes_read, decomp + off2, min(read, ed2->num_bytes - off));
+                            RtlCopyMemory(data + bytes_read, decomp + off2, (size_t)min(read, ed2->num_bytes - off));
                             ExFreePool(decomp);
                         }
                     }
@@ -3028,9 +3034,9 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                 case EXTENT_TYPE_PREALLOC:
                 {
                     UINT64 off = start + bytes_read - ext->offset;
-                    UINT32 read = len - off;
+                    UINT32 read = (UINT32)(len - off);
 
-                    if (read > length) read = length;
+                    if (read > length) read = (UINT32)length;
 
                     RtlZeroMemory(data + bytes_read, read);
 
@@ -3057,7 +3063,7 @@ nextitem:
     }
 
     if (length > 0 && start + bytes_read < fcb->inode_item.st_size) {
-        UINT32 read = min(fcb->inode_item.st_size - start - bytes_read, length);
+        UINT32 read = (UINT32)min(fcb->inode_item.st_size - start - bytes_read, length);
 
         RtlZeroMemory(data + bytes_read, read);
 
