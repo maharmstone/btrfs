@@ -120,7 +120,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP 
 
 static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
-    UINT32 needed;
+    LONG needed;
     UINT64 inode;
     INODE_ITEM ii;
     NTSTATUS Status;
