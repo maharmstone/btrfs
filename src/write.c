@@ -22,7 +22,7 @@ typedef struct {
     UINT64 end;
     UINT8* data;
     PMDL mdl;
-    UINT32 irp_offset;
+    UINT64 irp_offset;
 } write_stripe;
 
 static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
@@ -673,7 +673,7 @@ end:
     return Status;
 }
 
-static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset, write_data_context* wtc) {
+static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT64 irp_offset, write_data_context* wtc) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, stripenum;
     UINT64 pos, *stripeoff;
@@ -801,7 +801,7 @@ static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT32 irp_offset, write_data_context* wtc) {
+static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT64 irp_offset, write_data_context* wtc) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, stripenum;
     UINT64 pos, *stripeoff;
@@ -1028,7 +1028,7 @@ typedef struct {
 } log_stripe;
 
 static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
-                                    UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
+                                    UINT64 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity, num_data_stripes = c->chunk_item->num_stripes - 1;
     UINT64 pos, parity_pos, *stripeoff = NULL;
@@ -1424,7 +1424,7 @@ exit:
 }
 
 static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp,
-                                    UINT32 irp_offset, ULONG priority, write_data_context* wtc) {
+                                    UINT64 irp_offset, ULONG priority, write_data_context* wtc) {
     UINT64 startoff, endoff, parity_start, parity_end;
     UINT16 startoffstripe, endoffstripe, parity1, num_data_stripes = c->chunk_item->num_stripes - 2;
     UINT64 pos, parity_pos, *stripeoff = NULL;
@@ -1860,7 +1860,7 @@ exit:
 }
 
 NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
-                    chunk* c, BOOL file_write, UINT32 irp_offset, ULONG priority) {
+                    chunk* c, BOOL file_write, UINT64 irp_offset, ULONG priority) {
     NTSTATUS Status;
     UINT32 i;
     CHUNK_ITEM_STRIPE* cis;
