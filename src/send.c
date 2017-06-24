@@ -1840,7 +1840,7 @@ static BOOL send_add_tlv_clone_path(send_context* context, root* r, UINT64 inode
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    ULONG len = 0;
+    UINT16 len = 0;
     UINT64 num;
     UINT8* ptr;
 
