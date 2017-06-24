@@ -53,14 +53,14 @@ static NTSTATUS pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conp
 
 static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
     pnp_context context;
-    UINT64 num_devices, i;
+    ULONG num_devices, i;
     NTSTATUS Status;
     LIST_ENTRY* le;
 
     RtlZeroMemory(&context, sizeof(pnp_context));
     KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
 
-    num_devices = Vcb->superblock.num_devices;
+    num_devices = (ULONG)min(0xffffffff, Vcb->superblock.num_devices);
 
     context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(pnp_stripe) * num_devices, ALLOC_TAG);
     if (!context.stripes) {
