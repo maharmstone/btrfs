@@ -2995,14 +2995,14 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
             if (!is_tree) {
                 traverse_ptr tp2;
 
-                csum = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * size / Vcb->superblock.sector_size, ALLOC_TAG);
+                csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(sizeof(UINT32) * size / Vcb->superblock.sector_size), ALLOC_TAG);
                 if (!csum) {
                     ERR("out of memory\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
 
-                bmparr = ExAllocatePoolWithTag(PagedPool, sector_align(((size / Vcb->superblock.sector_size) >> 3) + 1, sizeof(ULONG)), ALLOC_TAG);
+                bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)(sector_align(((size / Vcb->superblock.sector_size) >> 3) + 1, sizeof(ULONG))), ALLOC_TAG);
                 if (!bmparr) {
                     ERR("out of memory\n");
                     ExFreePool(csum);
@@ -3010,7 +3010,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
                     goto end;
                 }
 
-                RtlInitializeBitMap(&bmp, bmparr, size / Vcb->superblock.sector_size);
+                RtlInitializeBitMap(&bmp, bmparr, (ULONG)(size / Vcb->superblock.sector_size));
                 RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
                 searchkey.obj_id = EXTENT_CSUM_ID;
@@ -3038,9 +3038,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
 
                                 RtlCopyMemory(csum + ((cs - tp.item->key.obj_id) / Vcb->superblock.sector_size),
                                               tp2.item->data + ((cs - tp2.item->key.offset) * sizeof(UINT32) / Vcb->superblock.sector_size),
-                                              (ce - cs) * sizeof(UINT32) / Vcb->superblock.sector_size);
+                                              (ULONG)((ce - cs) * sizeof(UINT32) / Vcb->superblock.sector_size));
 
-                                RtlClearBits(&bmp, (cs - tp.item->key.obj_id) / Vcb->superblock.sector_size, (ce - cs) / Vcb->superblock.sector_size);
+                                RtlClearBits(&bmp, (ULONG)((cs - tp.item->key.obj_id) / Vcb->superblock.sector_size), (ULONG)((ce - cs) / Vcb->superblock.sector_size));
 
                                 if (ce == tp.item->key.obj_id + size)
                                     break;
