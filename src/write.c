@@ -3462,7 +3462,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
 
         newext->extent_data.type = EXTENT_TYPE_REGULAR;
 
-        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, ed2->num_bytes, Irp,
+        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, (UINT32)ed2->num_bytes, Irp,
                                      NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
@@ -3470,7 +3470,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = ed2->num_bytes / fcb->Vcb->superblock.sector_size;
+            ULONG sl = (ULONG)(ed2->num_bytes / fcb->Vcb->superblock.sector_size);
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
 
             if (!csum) {
@@ -3532,7 +3532,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += end_data - ext->offset;
         ned2->num_bytes -= end_data - ext->offset;
 
-        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, end_data - ext->offset,
+        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (UINT8*)data + ext->offset - start_data, (UINT32)(end_data - ext->offset),
                                      Irp, NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
@@ -3540,7 +3540,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (end_data - ext->offset) / fcb->Vcb->superblock.sector_size;
+            ULONG sl = (ULONG)((end_data - ext->offset) / fcb->Vcb->superblock.sector_size);
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
 
             if (!csum) {
@@ -3628,14 +3628,14 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->offset += start_data - ext->offset;
         ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
 
-        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, ned2->num_bytes, Irp, NULL, file_write, irp_offset, priority);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (UINT32)ned2->num_bytes, Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
             return Status;
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = ned2->num_bytes / fcb->Vcb->superblock.sector_size;
+            ULONG sl = (ULONG)(ned2->num_bytes / fcb->Vcb->superblock.sector_size);
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
 
             if (!csum) {
@@ -3736,14 +3736,14 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         ned2->num_bytes -= end_data - ext->offset;
 
         ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
-        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, end_data - start_data, Irp, NULL, file_write, irp_offset, priority);
+        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (UINT32)(end_data - start_data), Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
             return Status;
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (end_data - start_data) / fcb->Vcb->superblock.sector_size;
+            ULONG sl = (ULONG)((end_data - start_data) / fcb->Vcb->superblock.sector_size);
             UINT32* csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
 
             if (!csum) {
