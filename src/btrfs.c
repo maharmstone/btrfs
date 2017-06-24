@@ -1305,7 +1305,13 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, 
             if (parfr != fcb->Vcb->root_fileref)
                 pathlen += sizeof(WCHAR);
 
-            fn.MaximumLength = pathlen + hl->name.Length;
+            if (pathlen + hl->name.Length > 0xffff) {
+                WARN("pathlen + hl->name.Length was too long for FsRtlNotifyFilterReportChange\n");
+                free_fileref(fcb->Vcb, parfr);
+                break;
+            }
+
+            fn.MaximumLength = (USHORT)(pathlen + hl->name.Length);
             fn.Buffer = ExAllocatePoolWithTag(PagedPool, fn.MaximumLength, ALLOC_TAG);
             if (!fn.Buffer) {
                 ERR("out of memory\n");
@@ -1329,7 +1335,7 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, 
             RtlCopyMemory(&fn.Buffer[pathlen / sizeof(WCHAR)], hl->name.Buffer, hl->name.Length);
             fn.Length += hl->name.Length;
 
-            FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, pathlen,
+            FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&fn, (USHORT)pathlen,
                                           (PSTRING)stream, NULL, filter_match, action, NULL, NULL);
 
             ExFreePool(fn.Buffer);
