@@ -996,7 +996,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             goto fail;
         }
 
-        volname.Length = volname.MaximumLength = (wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR);
+        volname.Length = volname.MaximumLength = (USHORT)((wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR));
         volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
 
         if (!volname.Buffer) {
