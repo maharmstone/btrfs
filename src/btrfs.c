@@ -3232,7 +3232,7 @@ void protect_superblocks(chunk* c) {
 
         if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
-                ULONG sub_stripes = max(ci->sub_stripes, 1);
+                UINT16 sub_stripes = max(ci->sub_stripes, 1);
 
                 if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
 #ifdef _DEBUG
