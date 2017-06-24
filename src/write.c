@@ -4023,7 +4023,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     EXTENT_DATA* ed2;
-    UINT64 newlength, start_data, end_data;
+    UINT64 off64, newlength, start_data, end_data;
     UINT32 bufhead;
     BOOL make_inline;
     UINT8* data;
@@ -4061,6 +4061,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
     if (offset.LowPart == FILE_WRITE_TO_END_OF_FILE && offset.HighPart == -1)
         offset = fcb->Header.FileSize;
+
+    off64 = offset.QuadPart;
 
     TRACE("fcb->Header.Flags = %x\n", fcb->Header.Flags);
 
@@ -4129,10 +4131,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
     TRACE("newlength = %llx\n", newlength);
 
-    if (offset.QuadPart + *length > newlength) {
+    if (off64 + *length > newlength) {
         if (paging_io) {
-            if (offset.QuadPart >= newlength) {
-                TRACE("paging IO tried to write beyond end of file (file size = %llx, offset = %llx, length = %x)\n", newlength, offset.QuadPart, *length);
+            if (off64 >= newlength) {
+                TRACE("paging IO tried to write beyond end of file (file size = %llx, offset = %llx, length = %x)\n", newlength, off64, *length);
                 TRACE("filename %S\n", file_desc(FileObject));
                 TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
@@ -4140,9 +4142,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
 
-            *length = newlength - offset.QuadPart;
+            *length = newlength - off64;
         } else {
-            newlength = offset.QuadPart + *length;
+            newlength = off64 + *length;
             changed_length = TRUE;
 
             TRACE("extending length to %llx\n", newlength);
@@ -4157,7 +4159,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         make_inline = newlength <= fcb->Vcb->options.max_inline;
 
     if (changed_length) {
-        if (newlength > fcb->Header.AllocationSize.QuadPart) {
+        if (newlength > (UINT64)fcb->Header.AllocationSize.QuadPart) {
             if (!tree_lock) {
                 // We need to acquire the tree lock if we don't have it already -
                 // we can't give an inline file proper extents at the same time as we're
@@ -4209,14 +4211,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             } else {
                 if (CcCopyWriteEx) {
-                    TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, offset.QuadPart, *length, wait, buf, Irp->Tail.Overlay.Thread);
+                    TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
                     if (!CcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
                         Status = STATUS_PENDING;
                         goto end;
                     }
                     TRACE("CcCopyWriteEx finished\n");
                 } else {
-                    TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, offset.QuadPart, *length, wait, buf);
+                    TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, off64, *length, wait, buf);
                     if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
                         Status = STATUS_PENDING;
                         goto end;
@@ -4266,7 +4268,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
 
         if (*length > 0)
-            RtlCopyMemory(&fcb->adsdata.Buffer[offset.QuadPart], buf, *length);
+            RtlCopyMemory(&fcb->adsdata.Buffer[off64], buf, *length);
 
         fcb->Header.ValidDataLength.QuadPart = newlength;
 
@@ -4282,13 +4284,13 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             end_data = sector_align(newlength, fcb->Vcb->superblock.sector_size);
             bufhead = sizeof(EXTENT_DATA) - 1;
         } else if (compress) {
-            start_data = offset.QuadPart & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
-            end_data = min(sector_align(offset.QuadPart + *length, COMPRESSED_EXTENT_SIZE),
+            start_data = off64 & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
+            end_data = min(sector_align(off64 + *length, COMPRESSED_EXTENT_SIZE),
                            sector_align(newlength, fcb->Vcb->superblock.sector_size));
             bufhead = 0;
         } else {
-            start_data = offset.QuadPart & ~(UINT64)(fcb->Vcb->superblock.sector_size - 1);
-            end_data = sector_align(offset.QuadPart + *length, fcb->Vcb->superblock.sector_size);
+            start_data = off64 & ~(UINT64)(fcb->Vcb->superblock.sector_size - 1);
+            end_data = sector_align(off64 + *length, fcb->Vcb->superblock.sector_size);
             bufhead = 0;
         }
 
@@ -4298,7 +4300,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         fcb->Header.ValidDataLength.QuadPart = newlength;
         TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
 
-        if (!make_inline && !compress && offset.QuadPart == start_data && offset.QuadPart + *length == end_data) {
+        if (!make_inline && !compress && off64 == start_data && off64 + *length == end_data) {
             data = buf;
             no_buf = TRUE;
         } else {
@@ -4314,7 +4316,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             TRACE("start_data = %llx\n", start_data);
             TRACE("end_data = %llx\n", end_data);
 
-            if (offset.QuadPart > start_data || offset.QuadPart + *length < end_data) {
+            if (off64 > start_data || off64 + *length < end_data) {
                 if (changed_length) {
                     if (fcb->inode_item.st_size > start_data)
                         Status = read_file(fcb, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL, Irp);
@@ -4330,7 +4332,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 }
             }
 
-            RtlCopyMemory(data + bufhead + offset.QuadPart - start_data, buf, *length);
+            RtlCopyMemory(data + bufhead + off64 - start_data, buf, *length);
         }
 
         if (make_inline) {
