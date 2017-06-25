@@ -2338,8 +2338,8 @@ static void copy_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
     if (opts->flags & BTRFS_BALANCE_OPTS_LIMIT) {
         if (args->limit_start == 0) {
             args->flags |= BALANCE_ARGS_FLAGS_LIMIT_RANGE;
-            args->limit_start = opts->limit_start;
-            args->limit_end = opts->limit_end;
+            args->limit_start = (UINT32)opts->limit_start;
+            args->limit_end = (UINT32)opts->limit_end;
         } else {
             args->flags |= BALANCE_ARGS_FLAGS_LIMIT;
             args->limit = opts->limit_end;
