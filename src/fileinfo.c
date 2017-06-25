@@ -1885,7 +1885,7 @@ end:
     return Status;
 }
 
-NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT64 end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
+NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT16 end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
@@ -1984,7 +1984,13 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     }
 
     if (fcb->ads) {
-        Status = stream_set_end_of_file_information(Vcb, feofi->EndOfFile.QuadPart, fcb, fileref, advance_only);
+        if (feofi->EndOfFile.QuadPart > 0xffff)
+            return STATUS_DISK_FULL;
+
+        if (feofi->EndOfFile.QuadPart < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        Status = stream_set_end_of_file_information(Vcb, (UINT16)feofi->EndOfFile.QuadPart, fcb, fileref, advance_only);
 
         if (NT_SUCCESS(Status)) {
             ccfs.AllocationSize = fcb->Header.AllocationSize;
