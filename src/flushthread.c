@@ -2508,7 +2508,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
         TRACE("startaddr = %llx\n", startaddr);
         TRACE("endaddr = %llx\n", endaddr);
 
-        len = (endaddr - startaddr) / Vcb->superblock.sector_size;
+        len = (ULONG)((endaddr - startaddr) / Vcb->superblock.sector_size);
 
         checksums = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * len, ALLOC_TAG);
         if (!checksums) {
@@ -2543,10 +2543,10 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
         while (tp.item->key.offset < endaddr) {
             if (tp.item->key.offset >= startaddr) {
                 if (tp.item->size > 0) {
-                    ULONG itemlen = min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * sizeof(UINT32), tp.item->size);
+                    ULONG itemlen = (ULONG)min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * sizeof(UINT32), tp.item->size);
 
                     RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, itemlen);
-                    RtlClearBits(&bmp, (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size, itemlen / sizeof(UINT32));
+                    RtlClearBits(&bmp, (ULONG)((tp.item->key.offset - startaddr) / Vcb->superblock.sector_size), itemlen / sizeof(UINT32));
                 }
 
                 Status = delete_tree_item(Vcb, &tp);
@@ -2565,10 +2565,10 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
         }
 
         if (!csum) { // deleted
-            RtlSetBits(&bmp, (address - startaddr) / Vcb->superblock.sector_size, length);
+            RtlSetBits(&bmp, (ULONG)((address - startaddr) / Vcb->superblock.sector_size), length);
         } else {
             RtlCopyMemory(&checksums[(address - startaddr) / Vcb->superblock.sector_size], csum, length * sizeof(UINT32));
-            RtlClearBits(&bmp, (address - startaddr) / Vcb->superblock.sector_size, length);
+            RtlClearBits(&bmp, (ULONG)((address - startaddr) / Vcb->superblock.sector_size), length);
         }
 
         runlength = RtlFindFirstRunClear(&bmp, &index);
