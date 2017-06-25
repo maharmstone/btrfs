@@ -1157,7 +1157,7 @@ BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, 
 void get_raid56_lock_range(chunk* c, UINT64 address, UINT64 length, UINT64* lockaddr, UINT64* locklen);
 NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum);
 void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext);
-NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback);
+NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, UINT16 edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback);
 void add_extent(fcb* fcb, LIST_ENTRY* prevextle, extent* newext);
 
 // in dirctrl.c

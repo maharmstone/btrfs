@@ -2688,7 +2688,7 @@ void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
 }
 
-NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, ULONG edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
+NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, UINT16 edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
 
@@ -2781,7 +2781,7 @@ BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start
     NTSTATUS Status;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
-    ULONG edsize = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+    UINT16 edsize = (UINT16)(offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
     UINT32* csum = NULL;
 
     TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
@@ -3181,7 +3181,7 @@ NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback) {
             ed->encoding = BTRFS_ENCODING_NONE;
             ed->type = EXTENT_TYPE_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed, offsetof(EXTENT_DATA, data[0]) + (ULONG)end, FALSE, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed, (UINT16)(offsetof(EXTENT_DATA, data[0]) + end), FALSE, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08x\n", Status);
                 ExFreePool(buf);
@@ -3299,10 +3299,10 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
             }
 
             if (cur_inline) {
-                ULONG edsize;
+                UINT16 edsize;
 
                 if (end > oldalloc) {
-                    edsize = (ULONG)(offsetof(EXTENT_DATA, data[0]) + end - ext->offset);
+                    edsize = (UINT16)(offsetof(EXTENT_DATA, data[0]) + end - ext->offset);
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
                     if (!ed) {
@@ -3402,9 +3402,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                 fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             } else {
                 EXTENT_DATA* ed;
-                ULONG edsize;
+                UINT16 edsize;
 
-                edsize = offsetof(EXTENT_DATA, data[0]) + (ULONG)end;
+                edsize = (UINT16)(offsetof(EXTENT_DATA, data[0]) + end);
                 ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
                 if (!ed) {
@@ -4354,7 +4354,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed2, offsetof(EXTENT_DATA, data[0]) + (ULONG)newlength, FALSE, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed2, (UINT16)(offsetof(EXTENT_DATA, data[0]) + newlength), FALSE, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08x\n", Status);
                 ExFreePool(data);
