@@ -2819,12 +2819,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
         goto exit;
     }
 
-    if (Vcb->readonly && Stack->Parameters.Create.SecurityContext->DesiredAccess &
-        (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | DELETE | WRITE_OWNER | WRITE_DAC)) {
-        Status = STATUS_MEDIA_WRITE_PROTECTED;
-        goto exit;
-    }
-
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
 
     if (options & FILE_OPEN_BY_FILE_ID) {
@@ -3011,19 +3005,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
 
                 SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
             }
-
-            // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
-            if (is_subvol_readonly(fileref->fcb->subvol, Irp) &&
-                ((granted_access & FILE_WRITE_ATTRIBUTES && fileref->fcb->inode != SUBVOL_ROOT_INODE) ||
-                (granted_access & (FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | WRITE_OWNER | WRITE_DAC | DELETE)))) {
-                Status = STATUS_ACCESS_DENIED;
-
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(Vcb, fileref);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
-
-                goto exit;
-            }
         } else {
             granted_access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
 
@@ -3048,7 +3029,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
             sf = sf->parent;
         }
 
-        readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) || (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY);
+        readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) || (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) ||
+                   is_subvol_readonly(fileref->fcb->subvol, Irp) || Vcb->readonly;
 
         if (readonly) {
             ACCESS_MASK allowed = DELETE | READ_CONTROL | WRITE_OWNER | WRITE_DAC |
@@ -3060,8 +3042,15 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
             if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
                 allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
 
-            if (granted_access & ~allowed) {
-                Status = STATUS_ACCESS_DENIED;
+            // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
+            if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp))
+                allowed |= FILE_WRITE_ATTRIBUTES;
+
+            if (Stack->Parameters.Create.SecurityContext->DesiredAccess & MAXIMUM_ALLOWED) {
+                granted_access &= allowed;
+                Stack->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess &= allowed;
+            } else if (granted_access & ~allowed) {
+                Status = Vcb->readonly ? STATUS_MEDIA_WRITE_PROTECTED : STATUS_ACCESS_DENIED;
 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(Vcb, fileref);
@@ -3458,6 +3447,9 @@ exit:
 
     if (Status == STATUS_SUCCESS) {
         fcb* fcb2;
+
+        Stack->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess |= granted_access;
+        Stack->Parameters.Create.SecurityContext->AccessState->RemainingDesiredAccess &= ~(granted_access | MAXIMUM_ALLOWED);
 
         if (!FileObject->Vpb)
             FileObject->Vpb = DeviceObject->Vpb;
