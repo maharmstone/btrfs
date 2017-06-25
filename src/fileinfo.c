@@ -3807,8 +3807,10 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             Status = STATUS_INVALID_PARAMETER;
             goto exit;
 
+#ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch"
+#endif
         case FileIdInformation:
         {
             FILE_ID_INFORMATION* fii = Irp->AssociatedIrp.SystemBuffer;
@@ -3825,7 +3827,9 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
 
             break;
         }
+#ifndef _MSC_VER
 #pragma GCC diagnostic pop
+#endif
 
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.QueryFile.FileInformationClass);
