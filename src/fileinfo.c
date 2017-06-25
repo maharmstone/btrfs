@@ -2887,7 +2887,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
     UNICODE_STRING fn;
     NTSTATUS Status;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
-    ULONG datasuflen = wcslen(datasuf) * sizeof(WCHAR);
+    UINT16 datasuflen = (UINT16)wcslen(datasuf) * sizeof(WCHAR);
 
     if (!fileref) {
         ERR("called without fileref\n");
@@ -2903,7 +2903,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
 
     fn.Buffer = fni->FileName;
     fn.Length = 0;
-    fn.MaximumLength = *length;
+    fn.MaximumLength = (UINT16)*length;
 
     Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
