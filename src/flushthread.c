@@ -4122,14 +4122,14 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
 }
 
 static BOOL delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name,
-                         ULONG namelen, UINT32 crc32) {
+                         UINT16 namelen, UINT32 crc32) {
     NTSTATUS Status;
-    ULONG xasize;
+    UINT16 xasize;
     DIR_ITEM* xa;
 
     TRACE("(%p, %llx, %llx, %.*s, %08x)\n", Vcb, subvol->id, inode, namelen, name, crc32);
 
-    xasize = sizeof(DIR_ITEM) - 1 + namelen;
+    xasize = (UINT16)offsetof(DIR_ITEM, name[0]) + namelen;
 
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
@@ -4914,7 +4914,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, strlen(EA_NTACL), EA_NTACL_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, (UINT16)strlen(EA_NTACL), EA_NTACL_HASH);
 
         fcb->sd_deleted = FALSE;
         fcb->sd_dirty = FALSE;
@@ -4951,7 +4951,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, strlen(EA_DOSATTRIB), EA_DOSATTRIB_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, (UINT16)strlen(EA_DOSATTRIB), EA_DOSATTRIB_HASH);
 
         fcb->atts_changed = FALSE;
         fcb->atts_deleted = FALSE;
@@ -4966,7 +4966,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, strlen(EA_REPARSE), EA_REPARSE_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, (UINT16)strlen(EA_REPARSE), EA_REPARSE_HASH);
 
         fcb->reparse_xattr_changed = FALSE;
     }
@@ -4980,14 +4980,14 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, strlen(EA_EA), EA_EA_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, (UINT16)strlen(EA_EA), EA_EA_HASH);
 
         fcb->ea_changed = FALSE;
     }
 
     if (fcb->prop_compression_changed) {
         if (fcb->prop_compression == PropCompression_None)
-            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION), EA_PROP_COMPRESSION_HASH);
+            delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, (UINT16)strlen(EA_PROP_COMPRESSION), EA_PROP_COMPRESSION_HASH);
         else if (fcb->prop_compression == PropCompression_Zlib) {
             const char zlib[] = "zlib";
 
