@@ -498,7 +498,7 @@ NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
 
         RtlCopyMemory(dc->utf8.Buffer, di->name, di->n);
 
-        dc->name.MaximumLength = dc->name.Length = utf16len;
+        dc->name.MaximumLength = dc->name.Length = (UINT16)utf16len;
         dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
         if (!dc->name.Buffer) {
             ERR("out of memory\n");
