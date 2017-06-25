@@ -794,6 +794,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         return STATUS_ACCESS_DENIED;
     }
 
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+
     if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
