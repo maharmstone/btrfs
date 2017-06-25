@@ -2710,7 +2710,7 @@ static void fcb_load_csums(fcb* fcb, PIRP Irp) {
 
             len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / fcb->Vcb->superblock.sector_size;
 
-            ext->csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
+            ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * sizeof(UINT32)), ALLOC_TAG);
             if (!ext->csum) {
                 ERR("out of memory\n");
                 goto end;
