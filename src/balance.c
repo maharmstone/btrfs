@@ -2829,7 +2829,7 @@ static void trim_unalloc_space(device_extension* Vcb, device* dev) {
     if (dev->num_trim_entries == 0)
         return;
 
-    datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE));
+    datalen = (ULONG)sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE));
 
     dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
     if (!dmdsa) {
@@ -2842,7 +2842,7 @@ static void trim_unalloc_space(device_extension* Vcb, device* dev) {
     dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
     dmdsa->ParameterBlockOffset = 0;
     dmdsa->ParameterBlockLength = 0;
-    dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
+    dmdsa->DataSetRangesOffset = (ULONG)sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
     dmdsa->DataSetRangesLength = dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE);
 
     ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)dmdsa + dmdsa->DataSetRangesOffset);
