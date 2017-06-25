@@ -90,7 +90,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
 
         ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-        bfs->num_devices = Vcb->superblock.num_devices;
+        bfs->num_devices = (UINT32)Vcb->superblock.num_devices;
 
         bfd = NULL;
 
