@@ -6058,13 +6058,13 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     }
 
     if (fileref->created) {
-        ULONG disize;
+        UINT16 disize;
         DIR_ITEM *di, *di2;
         UINT32 crc32;
 
         crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
-        disize = sizeof(DIR_ITEM) - 1 + fileref->dc->utf8.Length;
+        disize = (UINT16)(offsetof(DIR_ITEM, name[0]) + fileref->dc->utf8.Length);
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
@@ -6240,7 +6240,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     } else { // rename or change type
         PANSI_STRING oldutf8 = fileref->oldutf8.Buffer ? &fileref->oldutf8 : &fileref->dc->utf8;
         UINT32 crc32, oldcrc32;
-        ULONG disize;
+        UINT16 disize;
         DIR_ITEM *olddi, *di, *di2;
 
         crc32 = calc_crc32c(0xfffffffe, (UINT8*)fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
@@ -6272,7 +6272,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         // add DIR_ITEM (0x54)
 
-        disize = sizeof(DIR_ITEM) - 1 + fileref->dc->utf8.Length;
+        disize = (UINT16)(offsetof(DIR_ITEM, name[0]) + fileref->dc->utf8.Length);
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
