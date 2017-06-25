@@ -2740,66 +2740,12 @@ static NTSTATUS fill_in_file_ea_information(FILE_EA_INFORMATION* eai, fcb* fcb, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS fill_in_file_access_information(FILE_ACCESS_INFORMATION* fai, LONG* length) {
-    *length -= sizeof(FILE_ACCESS_INFORMATION);
-
-    fai->AccessFlags = GENERIC_READ;
-
-    return STATUS_NOT_IMPLEMENTED; // FIXME
-}
-
 static NTSTATUS fill_in_file_position_information(FILE_POSITION_INFORMATION* fpi, PFILE_OBJECT FileObject, LONG* length) {
     RtlZeroMemory(fpi, sizeof(FILE_POSITION_INFORMATION));
 
     *length -= sizeof(FILE_POSITION_INFORMATION);
 
     fpi->CurrentByteOffset = FileObject->CurrentByteOffset;
-
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS fill_in_file_mode_information(FILE_MODE_INFORMATION* fmi, ccb* ccb, LONG* length) {
-    RtlZeroMemory(fmi, sizeof(FILE_MODE_INFORMATION));
-
-    *length -= sizeof(FILE_MODE_INFORMATION);
-
-    if (ccb->options & FILE_WRITE_THROUGH)
-        fmi->Mode |= FILE_WRITE_THROUGH;
-
-    if (ccb->options & FILE_SEQUENTIAL_ONLY)
-        fmi->Mode |= FILE_SEQUENTIAL_ONLY;
-
-    if (ccb->options & FILE_NO_INTERMEDIATE_BUFFERING)
-        fmi->Mode |= FILE_NO_INTERMEDIATE_BUFFERING;
-
-    if (ccb->options & FILE_SYNCHRONOUS_IO_ALERT)
-        fmi->Mode |= FILE_SYNCHRONOUS_IO_ALERT;
-
-    if (ccb->options & FILE_SYNCHRONOUS_IO_NONALERT)
-        fmi->Mode |= FILE_SYNCHRONOUS_IO_NONALERT;
-
-    if (ccb->options & FILE_DELETE_ON_CLOSE)
-        fmi->Mode |= FILE_DELETE_ON_CLOSE;
-
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS fill_in_file_alignment_information(FILE_ALIGNMENT_INFORMATION* fai, device_extension* Vcb, LONG* length) {
-    LIST_ENTRY* le;
-
-    RtlZeroMemory(fai, sizeof(FILE_ALIGNMENT_INFORMATION));
-
-    *length -= sizeof(FILE_ALIGNMENT_INFORMATION);
-
-    le = Vcb->devices.Flink;
-    while (le != &Vcb->devices) {
-        device* dev = CONTAINING_RECORD(le, device, list_entry);
-
-        if (dev->devobj)
-            fai->AlignmentRequirement = dev->devobj->AlignmentRequirement;
-
-        le = le->Flink;
-    }
 
     return STATUS_SUCCESS;
 }
@@ -3588,6 +3534,8 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             } else
                 ii = &fcb->inode_item;
 
+            // Access, mode, and alignment are all filled in by the kernel
+
             if (length > 0)
                 fill_in_file_basic_information(&fai->BasicInformation, ii, &length, fcb, fileref);
 
@@ -3600,17 +3548,14 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             if (length > 0)
                 fill_in_file_ea_information(&fai->EaInformation, fcb, &length);
 
-            if (length > 0)
-                fill_in_file_access_information(&fai->AccessInformation, &length);
+            length -= sizeof(FILE_ACCESS_INFORMATION);
 
             if (length > 0)
                 fill_in_file_position_information(&fai->PositionInformation, FileObject, &length);
 
-            if (length > 0)
-                fill_in_file_mode_information(&fai->ModeInformation, ccb, &length);
+            length -= sizeof(FILE_MODE_INFORMATION);
 
-            if (length > 0)
-                fill_in_file_alignment_information(&fai->AlignmentInformation, Vcb, &length);
+            length -= sizeof(FILE_ALIGNMENT_INFORMATION);
 
             if (length > 0)
                 fill_in_file_name_information(&fai->NameInformation, fcb, fileref, &length);
