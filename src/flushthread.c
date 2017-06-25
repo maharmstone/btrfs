@@ -5507,10 +5507,11 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     LIST_ENTRY* le;
     UINT16 k, num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
     UINT64 ps_length = num_data_stripes * c->chunk_item->stripe_length;
+    ULONG stripe_length = (ULONG)c->chunk_item->stripe_length;
 
     // FIXME - do writes asynchronously?
 
-    get_raid0_offset(ps->address - c->offset, c->chunk_item->stripe_length, num_data_stripes, &startoff, &startoffstripe);
+    get_raid0_offset(ps->address - c->offset, stripe_length, num_data_stripes, &startoff, &startoffstripe);
 
     parity2 = (((ps->address - c->offset) / ps_length) + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
 
@@ -5534,7 +5535,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     }
 
     if (last1 < ps_length / Vcb->superblock.sector_size) {
-        Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, (ps_length / Vcb->superblock.sector_size) - last1);
+        Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, (ULONG)((ps_length / Vcb->superblock.sector_size) - last1));
         if (!NT_SUCCESS(Status)) {
             ERR("partial_stripe_read returned %08x\n", Status);
             return Status;
@@ -5550,7 +5551,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             UINT64 start = max(ps->address, s->address);
             UINT64 end = min(ps->address + ps_length, s->address + s->size);
 
-            RtlZeroMemory(ps->data + start - ps->address, end - start);
+            RtlZeroMemory(ps->data + start - ps->address, (ULONG)(end - start));
         } else if (s->address >= ps->address + ps_length)
             break;
 
@@ -5565,7 +5566,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             UINT64 start = max(ps->address, s->address);
             UINT64 end = min(ps->address + ps_length, s->address + s->size);
 
-            RtlZeroMemory(ps->data + start - ps->address, end - start);
+            RtlZeroMemory(ps->data + start - ps->address, (ULONG)(end - start));
         } else if (s->address >= ps->address + ps_length)
             break;
 
@@ -5577,14 +5578,14 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     data = ps->data;
     for (k = 0; k < num_data_stripes; k++) {
         if (c->devices[stripe]->devobj) {
-            Status = write_data_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff, data, c->chunk_item->stripe_length);
+            Status = write_data_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff, data, stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08x\n", Status);
                 return Status;
             }
         }
 
-        data += c->chunk_item->stripe_length;
+        data += stripe_length;
         stripe = (stripe + 1) % c->chunk_item->num_stripes;
     }
 
@@ -5594,10 +5595,10 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             UINT16 i;
 
             for (i = 1; i < c->chunk_item->num_stripes - 1; i++) {
-                do_xor(ps->data, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                do_xor(ps->data, ps->data + (i * stripe_length), stripe_length);
             }
 
-            Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, ps->data, c->chunk_item->stripe_length);
+            Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, ps->data, stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08x\n", Status);
                 return Status;
@@ -5610,7 +5611,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             UINT8* scratch;
             UINT16 i;
 
-            scratch = ExAllocatePoolWithTag(NonPagedPool, c->chunk_item->stripe_length * 2, ALLOC_TAG);
+            scratch = ExAllocatePoolWithTag(NonPagedPool, stripe_length * 2, ALLOC_TAG);
             if (!scratch) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -5620,13 +5621,13 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
 
             while (TRUE) {
                 if (i == c->chunk_item->num_stripes - 3) {
-                    RtlCopyMemory(scratch, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
-                    RtlCopyMemory(scratch + c->chunk_item->stripe_length, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                    RtlCopyMemory(scratch, ps->data + (i * stripe_length), stripe_length);
+                    RtlCopyMemory(scratch + stripe_length, ps->data + (i * stripe_length), stripe_length);
                 } else {
-                    do_xor(scratch, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                    do_xor(scratch, ps->data + (i * stripe_length), stripe_length);
 
-                    galois_double(scratch + c->chunk_item->stripe_length, c->chunk_item->stripe_length);
-                    do_xor(scratch + c->chunk_item->stripe_length, ps->data + (i * c->chunk_item->stripe_length), c->chunk_item->stripe_length);
+                    galois_double(scratch + stripe_length, stripe_length);
+                    do_xor(scratch + stripe_length, ps->data + (i * stripe_length), stripe_length);
                 }
 
                 if (i == 0)
@@ -5636,7 +5637,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             }
 
             if (c->devices[parity1]->devobj) {
-                Status = write_data_phys(c->devices[parity1]->devobj, cis[parity1].offset + startoff, scratch, c->chunk_item->stripe_length);
+                Status = write_data_phys(c->devices[parity1]->devobj, cis[parity1].offset + startoff, scratch, stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
                     ExFreePool(scratch);
@@ -5645,7 +5646,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             }
 
             if (c->devices[parity2]->devobj) {
-                Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, scratch + c->chunk_item->stripe_length, c->chunk_item->stripe_length);
+                Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, scratch + stripe_length, stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
                     ExFreePool(scratch);
