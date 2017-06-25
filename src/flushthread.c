@@ -3917,7 +3917,7 @@ static void regen_bootstrap(device_extension* Vcb) {
     }
 }
 
-static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, ULONG size) {
+static NTSTATUS add_to_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT16 size) {
     sys_chunk* sc;
     LIST_ENTRY* le;
 
