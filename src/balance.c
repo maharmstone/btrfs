@@ -1819,14 +1819,14 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
 
         dr->newchunk = newchunk;
 
-        bmparr = ExAllocatePoolWithTag(PagedPool, sector_align((dr->size / Vcb->superblock.sector_size) + 1, sizeof(ULONG)), ALLOC_TAG);
+        bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align((dr->size / Vcb->superblock.sector_size) + 1, sizeof(ULONG)), ALLOC_TAG);
         if (!bmparr) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
 
-        csum = ExAllocatePoolWithTag(PagedPool, dr->size * sizeof(UINT32) / Vcb->superblock.sector_size, ALLOC_TAG);
+        csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(dr->size * sizeof(UINT32) / Vcb->superblock.sector_size), ALLOC_TAG);
         if (!csum) {
             ERR("out of memory\n");
             ExFreePool(bmparr);
@@ -1834,7 +1834,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             goto end;
         }
 
-        RtlInitializeBitMap(&bmp, bmparr, dr->size / Vcb->superblock.sector_size);
+        RtlInitializeBitMap(&bmp, bmparr, (ULONG)(dr->size / Vcb->superblock.sector_size));
         RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
         searchkey.obj_id = EXTENT_CSUM_ID;
@@ -1862,9 +1862,9 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
 
                         RtlCopyMemory(csum + ((cs - dr->address) / Vcb->superblock.sector_size),
                                       tp.item->data + ((cs - tp.item->key.offset) * sizeof(UINT32) / Vcb->superblock.sector_size),
-                                      (ce - cs) * sizeof(UINT32) / Vcb->superblock.sector_size);
+                                      (ULONG)((ce - cs) * sizeof(UINT32) / Vcb->superblock.sector_size));
 
-                        RtlClearBits(&bmp, (cs - dr->address) / Vcb->superblock.sector_size, (ce - cs) / Vcb->superblock.sector_size);
+                        RtlClearBits(&bmp, (ULONG)((cs - dr->address) / Vcb->superblock.sector_size), (ULONG)((ce - cs) / Vcb->superblock.sector_size));
 
                         if (ce == dr->address + dr->size)
                             break;
@@ -1962,7 +1962,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         // handle final nocsum run
         if (lastoff < dr->size / Vcb->superblock.sector_size) {
             ULONG off = lastoff;
-            ULONG size = (dr->size / Vcb->superblock.sector_size) - lastoff;
+            ULONG size = (ULONG)((dr->size / Vcb->superblock.sector_size) - lastoff);
 
             do {
                 ULONG rl;
