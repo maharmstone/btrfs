@@ -929,7 +929,7 @@ __inline static ULONG get_extent_data_len(UINT8 type) {
     }
 }
 
-__inline static UINT64 get_extent_data_refcount(UINT8 type, void* data) {
+__inline static UINT32 get_extent_data_refcount(UINT8 type, void* data) {
     switch (type) {
         case TYPE_TREE_BLOCK_REF:
             return 1;
@@ -1307,7 +1307,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 UINT64 get_extent_flags(device_extension* Vcb, UINT64 address, PIRP Irp);
 void update_extent_flags(device_extension* Vcb, UINT64 address, UINT64 flags, PIRP Irp);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset,
-                                   signed long long count, BOOL no_csum, BOOL superseded, PIRP Irp);
+                                   INT32 count, BOOL no_csum, BOOL superseded, PIRP Irp);
 void add_changed_extent_ref(chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, UINT32 count, BOOL no_csum);
 UINT64 find_extent_shared_tree_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp);
 UINT64 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp);

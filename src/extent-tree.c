@@ -1563,7 +1563,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, UINT64 address, UI
     return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, FALSE, Irp);
 }
 
-static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, PIRP Irp) {
+static UINT32 find_extent_data_refcount(device_extension* Vcb, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1596,7 +1596,7 @@ static UINT64 find_extent_data_refcount(device_extension* Vcb, UINT64 address, U
         while (len > 0) {
             UINT8 secttype = *ptr;
             ULONG sectlen = get_extent_data_len(secttype);
-            UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
+            UINT32 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
 
             len--;
 
@@ -1945,7 +1945,7 @@ static changed_extent* get_changed_extent_item(chunk* c, UINT64 address, UINT64 
     return ce;
 }
 
-NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, signed long long count,
+NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 address, UINT64 size, UINT64 root, UINT64 objid, UINT64 offset, INT32 count,
                                    BOOL no_csum, BOOL superseded, PIRP Irp) {
     LIST_ENTRY* le;
     changed_extent* ce;
@@ -1953,7 +1953,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, UINT64 addre
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    UINT64 old_count;
+    UINT32 old_count;
 
     ExAcquireResourceExclusiveLite(&c->changed_extents_lock, TRUE);
 
