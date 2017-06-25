@@ -2187,7 +2187,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     }
 
     fnus.Buffer = fn;
-    fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
+    fnus.Length = fnus.MaximumLength = (UINT16)(fnlen * sizeof(WCHAR));
 
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
 
@@ -2195,7 +2195,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     if (!NT_SUCCESS(Status))
         goto end;
 
-    utf8.MaximumLength = utf8.Length = utf8len;
+    utf8.MaximumLength = utf8.Length = (UINT16)utf8len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
     if (!utf8.Buffer) {
         ERR("out of memory\n");
