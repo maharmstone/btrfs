@@ -1056,8 +1056,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
 
     new_cache_size = sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_sectors = sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
-    num_sectors = sector_align(num_sectors, CACHE_INCREMENTS);
+    num_sectors = (UINT32)sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+    num_sectors = (UINT32)sector_align(num_sectors, CACHE_INCREMENTS);
 
     // adjust for padding
     // FIXME - there must be a more efficient way of doing this
