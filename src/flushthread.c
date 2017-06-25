@@ -2058,7 +2058,7 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
     // if it thinks a disk is an SSD, but this doesn't seem to be the case!
 
     while (superblock_addrs[i] > 0 && device->devitem.num_bytes >= superblock_addrs[i] + sizeof(superblock)) {
-        ULONG sblen = sector_align(sizeof(superblock), Vcb->superblock.sector_size);
+        ULONG sblen = (ULONG)sector_align(sizeof(superblock), Vcb->superblock.sector_size);
         superblock* sb;
         UINT32 crc32;
         write_superblocks_stripe* stripe;
