@@ -311,7 +311,7 @@ static void zlib_free(void* opaque, void* ptr) {
     ExFreePool(ptr);
 }
 
-NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen) {
+NTSTATUS zlib_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen) {
     z_stream c_stream;
     int ret;
 
