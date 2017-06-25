@@ -4085,7 +4085,7 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
     }
 }
 
-static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, ULONG namelen,
+static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT16 namelen,
                           UINT32 crc32, UINT8* data, UINT16 datalen) {
     NTSTATUS Status;
     ULONG xasize;
@@ -4639,9 +4639,9 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
                 if (ed2->size > 0) { // not sparse
                     if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
-                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, ed2->num_bytes / fcb->Vcb->superblock.sector_size, ext->csum, Irp);
+                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, (ULONG)(ed2->num_bytes / fcb->Vcb->superblock.sector_size), ext->csum, Irp);
                     else
-                        add_checksum_entry(fcb->Vcb, ed2->address, ed2->size / fcb->Vcb->superblock.sector_size, ext->csum, Irp);
+                        add_checksum_entry(fcb->Vcb, ed2->address, (ULONG)(ed2->size / fcb->Vcb->superblock.sector_size), ext->csum, Irp);
                 }
             }
 
@@ -4670,7 +4670,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                             chunk* c;
 
                             if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->csum) {
-                                ULONG len = (ed2->num_bytes + ned2->num_bytes) / fcb->Vcb->superblock.sector_size;
+                                ULONG len = (ULONG)((ed2->num_bytes + ned2->num_bytes) / fcb->Vcb->superblock.sector_size);
                                 UINT32* csum;
 
                                 csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(UINT32), ALLOC_TAG);
@@ -4680,9 +4680,9 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                                     goto end;
                                 }
 
-                                RtlCopyMemory(csum, ext->csum, ed2->num_bytes * sizeof(UINT32) / fcb->Vcb->superblock.sector_size);
+                                RtlCopyMemory(csum, ext->csum, (ULONG)(ed2->num_bytes * sizeof(UINT32) / fcb->Vcb->superblock.sector_size));
                                 RtlCopyMemory(&csum[ed2->num_bytes / fcb->Vcb->superblock.sector_size], nextext->csum,
-                                              ned2->num_bytes * sizeof(UINT32) / fcb->Vcb->superblock.sector_size);
+                                              (ULONG)(ned2->num_bytes * sizeof(UINT32) / fcb->Vcb->superblock.sector_size));
 
                                 ExFreePool(ext->csum);
                                 ext->csum = csum;
@@ -4907,8 +4907,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
     if (fcb->sd_dirty) {
         if (!fcb->sd_deleted) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, strlen(EA_NTACL),
-                            EA_NTACL_HASH, (UINT8*)fcb->sd, RtlLengthSecurityDescriptor(fcb->sd));
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_NTACL, (UINT16)strlen(EA_NTACL),
+                               EA_NTACL_HASH, (UINT8*)fcb->sd, (UINT16)RtlLengthSecurityDescriptor(fcb->sd));
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4944,8 +4944,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             val2--;
             *val2 = '0';
 
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, strlen(EA_DOSATTRIB),
-                               EA_DOSATTRIB_HASH, val2, val + sizeof(val) - val2);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_DOSATTRIB, (UINT16)strlen(EA_DOSATTRIB),
+                               EA_DOSATTRIB_HASH, val2, (UINT16)(val + sizeof(val) - val2));
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4959,8 +4959,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
     if (fcb->reparse_xattr_changed) {
         if (fcb->reparse_xattr.Buffer && fcb->reparse_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, strlen(EA_REPARSE),
-                               EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_REPARSE, (UINT16)strlen(EA_REPARSE),
+                               EA_REPARSE_HASH, (UINT8*)fcb->reparse_xattr.Buffer, (UINT16)fcb->reparse_xattr.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4973,8 +4973,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
     if (fcb->ea_changed) {
         if (fcb->ea_xattr.Buffer && fcb->ea_xattr.Length > 0) {
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, strlen(EA_EA),
-                               EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, fcb->ea_xattr.Length);
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_EA, (UINT16)strlen(EA_EA),
+                               EA_EA_HASH, (UINT8*)fcb->ea_xattr.Buffer, (UINT16)fcb->ea_xattr.Length);
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -4991,8 +4991,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         else if (fcb->prop_compression == PropCompression_Zlib) {
             const char zlib[] = "zlib";
 
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION),
-                               EA_PROP_COMPRESSION_HASH, (UINT8*)zlib, strlen(zlib));
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, (UINT16)strlen(EA_PROP_COMPRESSION),
+                               EA_PROP_COMPRESSION_HASH, (UINT8*)zlib, (UINT16)strlen(zlib));
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
@@ -5000,8 +5000,8 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         } else if (fcb->prop_compression == PropCompression_LZO) {
             const char lzo[] = "lzo";
 
-            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION),
-                               EA_PROP_COMPRESSION_HASH, (UINT8*)lzo, strlen(lzo));
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, (UINT16)strlen(EA_PROP_COMPRESSION),
+                               EA_PROP_COMPRESSION_HASH, (UINT8*)lzo, (UINT16)strlen(lzo));
             if (!NT_SUCCESS(Status)) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;

@@ -158,7 +158,7 @@ struct _root;
 
 typedef struct {
     UINT64 offset;
-    ULONG datalen;
+    UINT16 datalen;
     BOOL unique;
     BOOL ignore;
     BOOL inserted;
