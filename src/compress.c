@@ -757,7 +757,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     LIST_ENTRY* le;
     chunk* c;
 
-    num_pages = (sector_align(end_data - start_data, LINUX_PAGE_SIZE)) / LINUX_PAGE_SIZE;
+    num_pages = (ULONG)((sector_align(end_data - start_data, LINUX_PAGE_SIZE)) / LINUX_PAGE_SIZE);
 
     // Four-byte overall header
     // Another four-byte header page
@@ -795,7 +795,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     for (i = 0; i < num_pages; i++) {
         UINT32* pagelen = (UINT32*)(stream.out - sizeof(UINT32));
 
-        stream.inlen = min(LINUX_PAGE_SIZE, end_data - start_data - (i * LINUX_PAGE_SIZE));
+        stream.inlen = (UINT32)min(LINUX_PAGE_SIZE, end_data - start_data - (i * LINUX_PAGE_SIZE));
 
         Status = lzo1x_1_compress(&stream);
         if (!NT_SUCCESS(Status)) {
@@ -831,7 +831,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         compression = BTRFS_COMPRESSION_LZO;
         comp_length = sector_align(*out_size, fcb->Vcb->superblock.sector_size);
 
-        RtlZeroMemory(comp_data + *out_size, comp_length - *out_size);
+        RtlZeroMemory(comp_data + *out_size, (ULONG)(comp_length - *out_size));
 
         *compressed = TRUE;
     }
