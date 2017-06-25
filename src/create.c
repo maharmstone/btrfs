@@ -1113,7 +1113,7 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, dir_child* dc, fcb* paren
     ANSI_STRING xattr;
     UINT32 crc32;
 
-    xattr.Length = strlen(xapref) + dc->utf8.Length;
+    xattr.Length = (UINT16)strlen(xapref) + dc->utf8.Length;
     xattr.MaximumLength = xattr.Length + 1;
     xattr.Buffer = ExAllocatePoolWithTag(PagedPool, xattr.MaximumLength, ALLOC_TAG);
     if (!xattr.Buffer) {
