@@ -5375,7 +5375,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
 static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_stripe* ps, UINT64 startoff, UINT16 parity, ULONG offset, ULONG len) {
     NTSTATUS Status;
-    ULONG sl = c->chunk_item->stripe_length / Vcb->superblock.sector_size;
+    ULONG sl = (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size);
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 
     while (len > 0) {
