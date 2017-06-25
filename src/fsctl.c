@@ -1810,7 +1810,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
     RtlZeroMemory(data + buf_head + start - start_data, (ULONG)length);
 
     if (make_inline) {
-        ULONG edsize;
+        UINT16 edsize;
         EXTENT_DATA* ed = (EXTENT_DATA*)data;
 
         Status = excise_extents(Vcb, fcb, 0, sector_align(end_data, Vcb->superblock.sector_size), Irp, rollback);
@@ -1820,7 +1820,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
             return Status;
         }
 
-        edsize = offsetof(EXTENT_DATA, data[0]) + (ULONG)end_data;
+        edsize = (UINT16)(offsetof(EXTENT_DATA, data[0]) + end_data);
 
         ed->generation = Vcb->superblock.generation;
         ed->decoded_size = end_data;
