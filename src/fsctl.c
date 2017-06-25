@@ -3370,7 +3370,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         if (fcb->ads)
             RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data2, (USHORT)min(ded->ByteCount.QuadPart, fcb->adsdata.Length - ded->TargetFileOffset.QuadPart));
         else if (make_inline) {
-            ULONG edsize;
+            UINT16 edsize;
             EXTENT_DATA* ed;
 
             Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size), Irp, &rollback);
@@ -3380,7 +3380,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 goto end;
             }
 
-            edsize = offsetof(EXTENT_DATA, data[0]) + datalen2;
+            edsize = (UINT16)(offsetof(EXTENT_DATA, data[0]) + datalen2);
 
             ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
             if (!ed) {
