@@ -360,7 +360,7 @@ NTSTATUS zlib_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outle
 static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UINT8 compression;
-    UINT64 comp_length;
+    UINT32 comp_length;
     UINT8* comp_data;
     UINT32 out_left;
     LIST_ENTRY* le;
@@ -368,7 +368,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     z_stream c_stream;
     int ret;
 
-    comp_data = ExAllocatePoolWithTag(PagedPool, end_data - start_data, ALLOC_TAG);
+    comp_data = ExAllocatePoolWithTag(PagedPool, (UINT32)(end_data - start_data), ALLOC_TAG);
     if (!comp_data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -393,9 +393,9 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         return STATUS_INTERNAL_ERROR;
     }
 
-    c_stream.avail_in = end_data - start_data;
+    c_stream.avail_in = (UINT32)(end_data - start_data);
     c_stream.next_in = data;
-    c_stream.avail_out = end_data - start_data;
+    c_stream.avail_out = (UINT32)(end_data - start_data);
     c_stream.next_out = comp_data;
 
     do {
@@ -421,7 +421,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     if (out_left < fcb->Vcb->superblock.sector_size) { // compressed extent would be larger than or same size as uncompressed extent
         ExFreePool(comp_data);
 
-        comp_length = end_data - start_data;
+        comp_length = (UINT32)(end_data - start_data);
         comp_data = data;
         compression = BTRFS_COMPRESSION_NONE;
 
@@ -430,8 +430,8 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         UINT32 cl;
 
         compression = BTRFS_COMPRESSION_ZLIB;
-        cl = end_data - start_data - out_left;
-        comp_length = sector_align(cl, fcb->Vcb->superblock.sector_size);
+        cl = (UINT32)(end_data - start_data - out_left);
+        comp_length = (UINT32)sector_align(cl, fcb->Vcb->superblock.sector_size);
 
         RtlZeroMemory(comp_data + cl, comp_length - cl);
 
