@@ -3223,9 +3223,12 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
 
     TRACE("(%p, %p, %x, %u)\n", fcb, fileref, end, prealloc);
 
-    if (fcb->ads)
-        return stream_set_end_of_file_information(fcb->Vcb, end, fcb, fileref, FALSE);
-    else {
+    if (fcb->ads) {
+        if (end > 0xffff)
+            return STATUS_DISK_FULL;
+
+        return stream_set_end_of_file_information(fcb->Vcb, (UINT16)end, fcb, fileref, FALSE);
+    } else {
         extent* ext = NULL;
         LIST_ENTRY* le;
 
