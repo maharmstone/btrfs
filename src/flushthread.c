@@ -363,7 +363,7 @@ static void clean_space_cache(device_extension* Vcb) {
                 LIST_ENTRY* le2;
                 ioctl_context_stripe* stripe = &context.stripes[num];
                 DEVICE_DATA_SET_RANGE* ranges;
-                ULONG datalen = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE)), i;
+                ULONG datalen = (ULONG)sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64)) + (dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE)), i;
                 PIO_STACK_LOCATION IrpSp;
 
                 stripe->dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
@@ -377,7 +377,7 @@ static void clean_space_cache(device_extension* Vcb) {
                 stripe->dmdsa->Flags = DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED;
                 stripe->dmdsa->ParameterBlockOffset = 0;
                 stripe->dmdsa->ParameterBlockLength = 0;
-                stripe->dmdsa->DataSetRangesOffset = sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
+                stripe->dmdsa->DataSetRangesOffset = (ULONG)sector_align(sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), sizeof(UINT64));
                 stripe->dmdsa->DataSetRangesLength = dev->num_trim_entries * sizeof(DEVICE_DATA_SET_RANGE);
 
                 ranges = (DEVICE_DATA_SET_RANGE*)((UINT8*)stripe->dmdsa + stripe->dmdsa->DataSetRangesOffset);
