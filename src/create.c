@@ -1637,7 +1637,7 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     BTRFS_TIME now;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
-    ULONG defda;
+    USHORT defda;
     file_ref* fileref;
     dir_child* dc;
     ANSI_STRING utf8as;
@@ -1842,8 +1842,8 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = ealen;
-        RtlCopyMemory(fcb->ea_xattr.Buffer, ea, ealen);
+        fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = (UINT16)ealen;
+        RtlCopyMemory(fcb->ea_xattr.Buffer, ea, fcb->ea_xattr.Length);
 
         fcb->ea_changed = TRUE;
     }
@@ -1920,7 +1920,7 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     fileref->parent = parfileref;
 
     utf8as.Buffer = utf8;
-    utf8as.Length = utf8as.MaximumLength = utf8len;
+    utf8as.Length = utf8as.MaximumLength = (UINT16)utf8len;
 
     Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, &utf8as, fpus, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
