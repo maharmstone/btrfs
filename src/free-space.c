@@ -456,12 +456,12 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     KEY searchkey;
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
-    UINT64 inode, num_sectors, num_valid_sectors, i, *generation;
+    UINT64 inode, *generation;
     UINT8* data;
     NTSTATUS Status;
-    UINT32 *checksums, crc32;
+    UINT32 *checksums, crc32, i, num_sectors, num_valid_sectors, size;
     FREE_SPACE_ENTRY* fse;
-    UINT64 size, num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
+    UINT64 num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
     LIST_ENTRY *le, rollback;
 
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
@@ -520,7 +520,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     if (num_entries == 0 && num_bitmaps == 0)
         return STATUS_SUCCESS;
 
-    size = sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
+    size = (UINT32)sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
 
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
 
@@ -545,7 +545,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     }
 
     if (size > c->cache->inode_item.st_size)
-        RtlZeroMemory(&data[c->cache->inode_item.st_size], size - c->cache->inode_item.st_size);
+        RtlZeroMemory(&data[c->cache->inode_item.st_size], (ULONG)(size - c->cache->inode_item.st_size));
 
     num_sectors = size / Vcb->superblock.sector_size;
 
@@ -558,7 +558,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
 
     extent_length = (num_sectors * sizeof(UINT32)) + sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_valid_sectors = (sector_align(extent_length, Vcb->superblock.sector_size) / Vcb->superblock.sector_size) + num_bitmaps;
+    num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) / Vcb->superblock.sector_size) + num_bitmaps);
 
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %llx was %llx sectors, expected at least %llx\n", c->offset, num_sectors, num_valid_sectors);
