@@ -5073,7 +5073,7 @@ end:
 
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, UINT64 address, UINT64 size) {
     int i;
-    ULONG sblen = sector_align(sizeof(superblock), Vcb->superblock.sector_size);
+    ULONG sblen = (ULONG)sector_align(sizeof(superblock), Vcb->superblock.sector_size);
 
     i = 0;
     while (superblock_addrs[i] != 0) {
