@@ -4088,12 +4088,12 @@ static void remove_from_bootstrap(device_extension* Vcb, UINT64 obj_id, UINT8 ob
 static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, UINT64 inode, char* name, UINT16 namelen,
                           UINT32 crc32, UINT8* data, UINT16 datalen) {
     NTSTATUS Status;
-    ULONG xasize;
+    UINT16 xasize;
     DIR_ITEM* xa;
 
     TRACE("(%p, %llx, %llx, %.*s, %08x, %p, %u)\n", Vcb, subvol->id, inode, namelen, name, crc32, data, datalen);
 
-    xasize = sizeof(DIR_ITEM) - 1 + namelen + datalen;
+    xasize = (UINT16)offsetof(DIR_ITEM, name[0]) + namelen + datalen;
 
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
