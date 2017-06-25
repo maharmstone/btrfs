@@ -392,7 +392,7 @@ NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 len
                 return STATUS_INTERNAL_ERROR;
             }
 
-            readlen = min((tp.item->size / sizeof(UINT32)) - j, length - i);
+            readlen = (ULONG)min((tp.item->size / sizeof(UINT32)) - j, length - i);
             RtlCopyMemory(&csum[i], tp.item->data + (j * sizeof(UINT32)), readlen * sizeof(UINT32));
             i += readlen;
 
