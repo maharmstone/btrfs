@@ -3136,7 +3136,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                     return Status;
                 }
 
-                name.Length = name.MaximumLength = stringlen;
+                name.Length = name.MaximumLength = (UINT16)stringlen;
 
                 if (stringlen == 0)
                     name.Buffer = NULL;
@@ -3174,7 +3174,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                     return Status;
                 }
 
-                name.Length = name.MaximumLength = stringlen;
+                name.Length = name.MaximumLength = (UINT16)stringlen;
 
                 if (stringlen == 0)
                     name.Buffer = NULL;
@@ -3288,7 +3288,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                 return Status;
             }
 
-            name.Length = name.MaximumLength = stringlen;
+            name.Length = name.MaximumLength = (UINT16)stringlen;
 
             if (stringlen == 0)
                 name.Buffer = NULL;
