@@ -2975,7 +2975,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     }
 
     suf.Buffer = datasuf;
-    suf.Length = suf.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
+    suf.Length = suf.MaximumLength = (UINT16)wcslen(datasuf) * sizeof(WCHAR);
 
     if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY)
         reqsize = sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR);
@@ -2989,7 +2989,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
         if (dc->index == 0) {
-            reqsize = sector_align(reqsize, sizeof(LONGLONG));
+            reqsize = (ULONG)sector_align(reqsize, sizeof(LONGLONG));
             reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length;
         } else
             break;
@@ -3018,7 +3018,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         entry->StreamName[0] = ':';
         RtlCopyMemory(&entry->StreamName[1], suf.Buffer, suf.Length);
 
-        off = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR), sizeof(LONGLONG));
+        off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR), sizeof(LONGLONG));
 
         lastentry = entry;
         entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
@@ -3049,7 +3049,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
             if (lastentry)
                 lastentry->NextEntryOffset = (UINT8*)entry - (UINT8*)lastentry;
 
-            off = sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
+            off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
 
             lastentry = entry;
             entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
