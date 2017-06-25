@@ -2581,7 +2581,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
         }
 
         // 0x10007 = 0xffff (maximum length of data buffer) + 8 bytes header
-        size = min(0x10007, fcb->inode_item.st_size);
+        size = (ULONG)min(0x10007, fcb->inode_item.st_size);
 
         if (size == 0)
             return STATUS_INVALID_PARAMETER;
@@ -2600,7 +2600,8 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
         }
 
         if (fcb->type == BTRFS_TYPE_SYMLINK) {
-            ULONG stringlen, subnamelen, printnamelen, reqlen;
+            ULONG stringlen, reqlen;
+            UINT16 subnamelen, printnamelen;
             REPARSE_DATA_BUFFER* rdb;
 
             Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, (char*)*data, bytes_read);
@@ -2610,8 +2611,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
                 return Status;
             }
 
-            subnamelen = stringlen;
-            printnamelen = stringlen;
+            subnamelen = printnamelen = (USHORT)stringlen;
 
             reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
 
@@ -2624,7 +2624,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
             }
 
             rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
-            rdb->ReparseDataLength = reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+            rdb->ReparseDataLength = (USHORT)(reqlen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer));
             rdb->Reserved = 0;
 
             rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
