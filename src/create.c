@@ -310,7 +310,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
         UNICODE_STRING dsus;
 
         dsus.Buffer = datasuf;
-        dsus.Length = dsus.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
+        dsus.Length = dsus.MaximumLength = (UINT16)wcslen(datasuf) * sizeof(WCHAR);
 
         for (i = 0; i < nb->us.Length / sizeof(WCHAR); i++) {
             if (nb->us.Buffer[i] == ':') {
@@ -323,10 +323,10 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
                 }
 
                 nb2->us.Buffer = &nb->us.Buffer[i+1];
-                nb2->us.Length = nb2->us.MaximumLength = nb->us.Length - (i * sizeof(WCHAR)) - sizeof(WCHAR);
+                nb2->us.Length = nb2->us.MaximumLength = (UINT16)(nb->us.Length - (i * sizeof(WCHAR)) - sizeof(WCHAR));
                 InsertTailList(parts, &nb2->list_entry);
 
-                nb->us.Length = i * sizeof(WCHAR);
+                nb->us.Length = (UINT16)i * sizeof(WCHAR);
                 nb->us.MaximumLength = nb->us.Length;
 
                 nb = nb2;
