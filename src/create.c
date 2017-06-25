@@ -698,7 +698,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     return Status;
                 }
 
-                hl->name.Length = hl->name.MaximumLength = stringlen;
+                hl->name.Length = hl->name.MaximumLength = (UINT16)stringlen;
 
                 if (stringlen == 0)
                     hl->name.Buffer = NULL;
@@ -763,7 +763,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     return Status;
                 }
 
-                hl->name.Length = hl->name.MaximumLength = stringlen;
+                hl->name.Length = hl->name.MaximumLength = (UINT16)stringlen;
 
                 if (stringlen == 0)
                     hl->name.Buffer = NULL;
@@ -931,7 +931,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
 
                     RtlZeroMemory(dc, sizeof(dir_child));
 
-                    dc->utf8.MaximumLength = dc->utf8.Length = di->n - strlen(xapref);
+                    dc->utf8.MaximumLength = dc->utf8.Length = di->n - (UINT16)strlen(xapref);
                     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
                     if (!dc->utf8.Buffer) {
                         ERR("out of memory\n");
@@ -942,7 +942,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
 
                     RtlCopyMemory(dc->utf8.Buffer, &di->name[strlen(xapref)], dc->utf8.Length);
 
-                    dc->name.MaximumLength = dc->name.Length = utf16len;
+                    dc->name.MaximumLength = dc->name.Length = (UINT16)utf16len;
                     dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
                     if (!dc->name.Buffer) {
                         ERR("out of memory\n");
