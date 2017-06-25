@@ -1354,7 +1354,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     fnus.Buffer = fn;
-    fnus.Length = fnus.MaximumLength = fnlen * sizeof(WCHAR);
+    fnus.Length = fnus.MaximumLength = (UINT16)(fnlen * sizeof(WCHAR));
 
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
 
@@ -1364,7 +1364,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     if (!NT_SUCCESS(Status))
         goto end;
 
-    utf8.MaximumLength = utf8.Length = utf8len;
+    utf8.MaximumLength = utf8.Length = (UINT16)utf8len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
     if (!utf8.Buffer) {
         ERR("out of memory\n");
@@ -1492,7 +1492,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             goto end;
         }
 
-        oldfn.MaximumLength = reqlen;
+        oldfn.MaximumLength = (UINT16)reqlen;
 
         Status = fileref_get_filename(fileref, &oldfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
@@ -1585,7 +1585,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             goto end;
         }
 
-        newfn.MaximumLength = reqlen;
+        newfn.MaximumLength = (UINT16)reqlen;
 
         Status = fileref_get_filename(fileref, &newfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
