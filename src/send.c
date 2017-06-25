@@ -2192,7 +2192,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 RtlZeroMemory(&context->data[context->datalen - se->data.decoded_size], (ULONG)se->data.decoded_size);
 
                 if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
-                    Status = zlib_decompress(se->data.data, se->datalen - offsetof(EXTENT_DATA, data[0]), &context->data[context->datalen - se->data.decoded_size], se->data.decoded_size);
+                    Status = zlib_decompress(se->data.data, se->datalen - offsetof(EXTENT_DATA, data[0]), &context->data[context->datalen - se->data.decoded_size], (UINT32)se->data.decoded_size);
                     if (!NT_SUCCESS(Status)) {
                         ERR("zlib_decompress returned %08x\n", Status);
                         ExFreePool(se);
@@ -2210,7 +2210,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     } else
                         inlen -= sizeof(UINT32);
 
-                    Status = lzo_decompress(se->data.data + sizeof(UINT32), inlen, &context->data[context->datalen - se->data.decoded_size], se->data.decoded_size, sizeof(UINT32));
+                    Status = lzo_decompress(se->data.data + sizeof(UINT32), inlen, &context->data[context->datalen - se->data.decoded_size], (UINT32)se->data.decoded_size, sizeof(UINT32));
                     if (!NT_SUCCESS(Status)) {
                         ERR("lzo_decompress returned %08x\n", Status);
                         ExFreePool(se);
@@ -2440,7 +2440,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 ExFreePool(csum);
 
             if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
-                Status = zlib_decompress(compbuf, ed2->size, buf, se->data.decoded_size);
+                Status = zlib_decompress(compbuf, (UINT32)ed2->size, buf, (UINT32)se->data.decoded_size);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zlib_decompress returned %08x\n", Status);
                     ExFreePool(compbuf);
@@ -2450,7 +2450,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     return Status;
                 }
             } else if (se->data.compression == BTRFS_COMPRESSION_LZO) {
-                Status = lzo_decompress(&compbuf[sizeof(UINT32)], ed2->size, buf, se->data.decoded_size, sizeof(UINT32));
+                Status = lzo_decompress(&compbuf[sizeof(UINT32)], (UINT32)ed2->size, buf, (UINT32)se->data.decoded_size, sizeof(UINT32));
                 if (!NT_SUCCESS(Status)) {
                     ERR("lzo_decompress returned %08x\n", Status);
                     ExFreePool(compbuf);
