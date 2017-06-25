@@ -32,6 +32,16 @@
 
 #define SUBVOL_ROOT_INODE 0x100
 
+#ifndef __MINGW32__ // in winternl.h in mingw
+
+typedef struct _FILE_ACCESS_INFORMATION {
+    ACCESS_MASK AccessFlags;
+} FILE_ACCESS_INFORMATION, *PFILE_ACCESS_INFORMATION;
+
+#define FileAccessInformation (FILE_INFORMATION_CLASS)8
+
+#endif
+
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
         *ppObj = static_cast<IShellPropSheetExt*>(this);
@@ -142,122 +152,112 @@ HRESULT BtrfsPropSheet::check_file(std::wstring fn, UINT i, UINT num_files, UINT
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
+    FILE_ACCESS_INFORMATION fai;
+    BY_HANDLE_FILE_INFORMATION bhfi;
+    btrfs_inode_info bii2;
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+    h = CreateFileW(fn.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
 
-    if (h != INVALID_HANDLE_VALUE)
+    if (h == INVALID_HANDLE_VALUE)
+        return E_FAIL;
+
+    Status = NtQueryInformationFile(h, &iosb, &fai, sizeof(FILE_ACCESS_INFORMATION), FileAccessInformation);
+    if (!NT_SUCCESS(Status)) {
         CloseHandle(h);
-    else
-        can_change_perms = FALSE;
-
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-    if (h != INVALID_HANDLE_VALUE)
-        CloseHandle(h);
-    else
-        can_change_owner = FALSE;
-
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-    if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
-        h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
-                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-        readonly = TRUE;
+        return E_FAIL;
     }
+
+    if (fai.AccessFlags & FILE_READ_ATTRIBUTES) {
+        can_change_perms = fai.AccessFlags & WRITE_DAC;
+        can_change_owner = fai.AccessFlags & WRITE_OWNER;
+    }
+
+    readonly = !(fai.AccessFlags & FILE_WRITE_ATTRIBUTES);
 
     if (!readonly && num_files == 1 && (!can_change_perms || !can_change_owner))
         show_admin_button = TRUE;
 
-    if (h != INVALID_HANDLE_VALUE) {
-        BY_HANDLE_FILE_INFORMATION bhfi;
-        btrfs_inode_info bii2;
+    if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        add_to_search_list((WCHAR*)fn.c_str());
 
-        if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-            add_to_search_list((WCHAR*)fn.c_str());
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+    if (NT_SUCCESS(Status) && !bii2.top) {
+        int j;
 
-        if (NT_SUCCESS(Status) && !bii2.top) {
-            int j;
+        LARGE_INTEGER filesize;
 
-            LARGE_INTEGER filesize;
-
-            if (i == 0) {
-                subvol = bii2.subvol;
-                inode = bii2.inode;
-                type = bii2.type;
-                uid = bii2.st_uid;
-                gid = bii2.st_gid;
-                rdev = bii2.st_rdev;
-            } else {
-                if (subvol != bii2.subvol)
-                    various_subvols = TRUE;
-
-                if (inode != bii2.inode)
-                    various_inodes = TRUE;
-
-                if (type != bii2.type)
-                    various_types = TRUE;
-
-                if (uid != bii2.st_uid)
-                    various_uids = TRUE;
-
-                if (gid != bii2.st_gid)
-                    various_gids = TRUE;
-            }
-
-            if (bii2.inline_length > 0) {
-                totalsize += bii2.inline_length;
-                sizes[0] += bii2.inline_length;
-            }
-
-            for (j = 0; j < 3; j++) {
-                if (bii2.disk_size[j] > 0) {
-                    totalsize += bii2.disk_size[j];
-                    sizes[j + 1] += bii2.disk_size[j];
-                }
-            }
-
-            min_mode |= ~bii2.st_mode;
-            max_mode |= bii2.st_mode;
-            min_flags |= ~bii2.flags;
-            max_flags |= bii2.flags;
-            min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
-            max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
-
-            if (bii2.inode == SUBVOL_ROOT_INODE) {
-                BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
-
-                has_subvols = TRUE;
-
-                if (*sv == 0)
-                    ro_subvol = ro;
-                else {
-                    if (ro_subvol != ro)
-                        various_ro = TRUE;
-                }
-
-                (*sv)++;
-            }
-
-            ignore = FALSE;
-
-            if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
-                if (filesize.QuadPart != 0)
-                    can_change_nocow = FALSE;
-            }
-
-            CloseHandle(h);
+        if (i == 0) {
+            subvol = bii2.subvol;
+            inode = bii2.inode;
+            type = bii2.type;
+            uid = bii2.st_uid;
+            gid = bii2.st_gid;
+            rdev = bii2.st_rdev;
         } else {
-            CloseHandle(h);
-            return E_FAIL;
+            if (subvol != bii2.subvol)
+                various_subvols = TRUE;
+
+            if (inode != bii2.inode)
+                various_inodes = TRUE;
+
+            if (type != bii2.type)
+                various_types = TRUE;
+
+            if (uid != bii2.st_uid)
+                various_uids = TRUE;
+
+            if (gid != bii2.st_gid)
+                various_gids = TRUE;
         }
-    } else
+
+        if (bii2.inline_length > 0) {
+            totalsize += bii2.inline_length;
+            sizes[0] += bii2.inline_length;
+        }
+
+        for (j = 0; j < 3; j++) {
+            if (bii2.disk_size[j] > 0) {
+                totalsize += bii2.disk_size[j];
+                sizes[j + 1] += bii2.disk_size[j];
+            }
+        }
+
+        min_mode |= ~bii2.st_mode;
+        max_mode |= bii2.st_mode;
+        min_flags |= ~bii2.flags;
+        max_flags |= bii2.flags;
+        min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
+        max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
+
+        if (bii2.inode == SUBVOL_ROOT_INODE) {
+            BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+
+            has_subvols = TRUE;
+
+            if (*sv == 0)
+                ro_subvol = ro;
+            else {
+                if (ro_subvol != ro)
+                    various_ro = TRUE;
+            }
+
+            (*sv)++;
+        }
+
+        ignore = FALSE;
+
+        if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+            if (filesize.QuadPart != 0)
+                can_change_nocow = FALSE;
+        }
+
+        CloseHandle(h);
+    } else {
+        CloseHandle(h);
         return E_FAIL;
+    }
 
     return S_OK;
 }
@@ -350,6 +350,9 @@ void BtrfsPropSheet::set_cmdline(std::wstring cmdline) {
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     UINT sv = 0;
+    BY_HANDLE_FILE_INFORMATION bhfi;
+    btrfs_inode_info bii2;
+    FILE_ACCESS_INFORMATION fai;
 
     min_mode = 0;
     max_mode = 0;
@@ -363,101 +366,88 @@ void BtrfsPropSheet::set_cmdline(std::wstring cmdline) {
     can_change_owner = TRUE;
     can_change_nocow = TRUE;
 
-    h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+    h = CreateFileW(cmdline.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
 
-    if (h != INVALID_HANDLE_VALUE)
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    Status = NtQueryInformationFile(h, &iosb, &fai, sizeof(FILE_ACCESS_INFORMATION), FileAccessInformation);
+    if (!NT_SUCCESS(Status)) {
         CloseHandle(h);
-    else
-        can_change_perms = FALSE;
-
-    h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-    if (h != INVALID_HANDLE_VALUE)
-        CloseHandle(h);
-    else
-        can_change_owner = FALSE;
-
-    h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-    if (h == INVALID_HANDLE_VALUE && (GetLastError() == ERROR_ACCESS_DENIED || GetLastError() == ERROR_WRITE_PROTECT)) {
-        h = CreateFileW(cmdline.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
-                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-
-        readonly = TRUE;
+        return;
     }
 
-    if (h != INVALID_HANDLE_VALUE) {
-        BY_HANDLE_FILE_INFORMATION bhfi;
-        btrfs_inode_info bii2;
+    if (fai.AccessFlags & FILE_READ_ATTRIBUTES) {
+        can_change_perms = fai.AccessFlags & WRITE_DAC;
+        can_change_owner = fai.AccessFlags & WRITE_OWNER;
+    }
 
-        if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-            add_to_search_list((WCHAR*)cmdline.c_str());
+    readonly = !(fai.AccessFlags & FILE_WRITE_ATTRIBUTES);
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+    if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        add_to_search_list((WCHAR*)cmdline.c_str());
 
-        if (NT_SUCCESS(Status) && !bii2.top) {
-            int j;
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
 
-            LARGE_INTEGER filesize;
+    if (NT_SUCCESS(Status) && !bii2.top) {
+        int j;
 
-            subvol = bii2.subvol;
-            inode = bii2.inode;
-            type = bii2.type;
-            uid = bii2.st_uid;
-            gid = bii2.st_gid;
-            rdev = bii2.st_rdev;
+        LARGE_INTEGER filesize;
 
-            if (bii2.inline_length > 0) {
-                totalsize += bii2.inline_length;
-                sizes[0] += bii2.inline_length;
-            }
+        subvol = bii2.subvol;
+        inode = bii2.inode;
+        type = bii2.type;
+        uid = bii2.st_uid;
+        gid = bii2.st_gid;
+        rdev = bii2.st_rdev;
 
-            for (j = 0; j < 3; j++) {
-                if (bii2.disk_size[j] > 0) {
-                    totalsize += bii2.disk_size[j];
-                    sizes[j + 1] += bii2.disk_size[j];
-                }
-            }
-
-            min_mode |= ~bii2.st_mode;
-            max_mode |= bii2.st_mode;
-            min_flags |= ~bii2.flags;
-            max_flags |= bii2.flags;
-            min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
-            max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
-
-            if (bii2.inode == SUBVOL_ROOT_INODE) {
-                BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
-
-                has_subvols = TRUE;
-
-                if (sv == 0)
-                    ro_subvol = ro;
-                else {
-                    if (ro_subvol != ro)
-                        various_ro = TRUE;
-                }
-
-                sv++;
-            }
-
-            ignore = FALSE;
-
-            if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
-                if (filesize.QuadPart != 0)
-                    can_change_nocow = FALSE;
-            }
-
-            CloseHandle(h);
-        } else {
-            CloseHandle(h);
-            return;
+        if (bii2.inline_length > 0) {
+            totalsize += bii2.inline_length;
+            sizes[0] += bii2.inline_length;
         }
-    } else
+
+        for (j = 0; j < 3; j++) {
+            if (bii2.disk_size[j] > 0) {
+                totalsize += bii2.disk_size[j];
+                sizes[j + 1] += bii2.disk_size[j];
+            }
+        }
+
+        min_mode |= ~bii2.st_mode;
+        max_mode |= bii2.st_mode;
+        min_flags |= ~bii2.flags;
+        max_flags |= bii2.flags;
+        min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
+        max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
+
+        if (bii2.inode == SUBVOL_ROOT_INODE) {
+            BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+
+            has_subvols = TRUE;
+
+            if (sv == 0)
+                ro_subvol = ro;
+            else {
+                if (ro_subvol != ro)
+                    various_ro = TRUE;
+            }
+
+            sv++;
+        }
+
+        ignore = FALSE;
+
+        if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+            if (filesize.QuadPart != 0)
+                can_change_nocow = FALSE;
+        }
+
+        CloseHandle(h);
+    } else {
+        CloseHandle(h);
         return;
+    }
 
     min_mode = ~min_mode;
     min_flags = ~min_flags;
