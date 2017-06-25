@@ -2813,7 +2813,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                         }
 
                         if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
-                            Status = zlib_decompress(ed->data, ext->datalen - offsetof(EXTENT_DATA, data[0]), decomp, read + off);
+                            Status = zlib_decompress(ed->data, ext->datalen - offsetof(EXTENT_DATA, data[0]), decomp, (UINT32)(read + off));
                             if (!NT_SUCCESS(Status)) {
                                 ERR("zlib_decompress returned %08x\n", Status);
                                 if (decomp_alloc) ExFreePool(decomp);
@@ -2830,7 +2830,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                             } else
                                 inlen -= sizeof(UINT32);
 
-                            Status = lzo_decompress(ed->data + sizeof(UINT32), inlen, decomp, read + off, sizeof(UINT32));
+                            Status = lzo_decompress(ed->data + sizeof(UINT32), inlen, decomp, (UINT32)(read + off), sizeof(UINT32));
                             if (!NT_SUCCESS(Status)) {
                                 ERR("lzo_decompress returned %08x\n", Status);
                                 if (decomp_alloc) ExFreePool(decomp);
