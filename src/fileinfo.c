@@ -363,9 +363,9 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
                 if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
-                    len = ed2->num_bytes;
+                    len = (ULONG)ed2->num_bytes;
                 else
-                    len = ed2->size;
+                    len = (ULONG)ed2->size;
 
                 len = len * sizeof(UINT32) / Vcb->superblock.sector_size;
 
