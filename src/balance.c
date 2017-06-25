@@ -2478,12 +2478,12 @@ static void load_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
         opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
 
         opts->usage_start = 0;
-        opts->usage_end = args->usage;
+        opts->usage_end = (UINT8)args->usage;
     } else if (args->flags & BALANCE_ARGS_FLAGS_USAGE_RANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
 
-        opts->usage_start = args->usage_start;
-        opts->usage_end = args->usage_end;
+        opts->usage_start = (UINT8)args->usage_start;
+        opts->usage_end = (UINT8)args->usage_end;
     }
 
     if (args->flags & BALANCE_ARGS_FLAGS_DEVID) {
