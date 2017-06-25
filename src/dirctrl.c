@@ -955,7 +955,7 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
                 goto end;
             }
 
-            ccb->filename.MaximumLength = reqlen;
+            ccb->filename.MaximumLength = (UINT16)reqlen;
 
             Status = fileref_get_filename(fileref, &ccb->filename, NULL, &reqlen);
             if (!NT_SUCCESS(Status)) {
