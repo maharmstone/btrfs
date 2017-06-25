@@ -761,7 +761,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             RTL_BITMAP bmp;
             UINT64 lastoff;
 
-            explen = tp.item->key.offset / (Vcb->superblock.sector_size * 8);
+            explen = (ULONG)(tp.item->key.offset / (Vcb->superblock.sector_size * 8));
 
             if (tp.item->size < explen) {
                 WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, explen);
@@ -775,7 +775,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
                 if (bmparr)
                     ExFreePool(bmparr);
 
-                bmplen = sector_align(tp.item->size, sizeof(ULONG));
+                bmplen = (ULONG)sector_align(tp.item->size, sizeof(ULONG));
                 bmparr = ExAllocatePoolWithTag(PagedPool, bmplen, ALLOC_TAG);
                 if (!bmparr) {
                     ERR("out of memory\n");
@@ -786,7 +786,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             // We copy the bitmap because it supposedly has to be ULONG-aligned
             RtlCopyMemory(bmparr, tp.item->data, tp.item->size);
 
-            RtlInitializeBitMap(&bmp, bmparr, tp.item->key.offset / Vcb->superblock.sector_size);
+            RtlInitializeBitMap(&bmp, bmparr, (ULONG)(tp.item->key.offset / Vcb->superblock.sector_size));
 
             lastoff = tp.item->key.obj_id;
 
