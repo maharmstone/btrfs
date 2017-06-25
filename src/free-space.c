@@ -1650,22 +1650,22 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
     void* data;
-    UINT64 num_entries, num_sectors, *cachegen, i, off;
-    UINT32* checksums;
+    UINT64 num_entries, *cachegen, off;
+    UINT32 *checksums, num_sectors, i;
     LIST_ENTRY* le;
 
     space_list_merge(&c->space, &c->space_size, &c->deleting);
 
-    data = ExAllocatePoolWithTag(NonPagedPool, c->cache->inode_item.st_size, ALLOC_TAG);
+    data = ExAllocatePoolWithTag(NonPagedPool, (ULONG)c->cache->inode_item.st_size, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlZeroMemory(data, c->cache->inode_item.st_size);
+    RtlZeroMemory(data, (ULONG)c->cache->inode_item.st_size);
 
     num_entries = 0;
-    num_sectors = c->cache->inode_item.st_size / Vcb->superblock.sector_size;
+    num_sectors = (UINT32)(c->cache->inode_item.st_size / Vcb->superblock.sector_size);
     off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
 
     le = c->space.Flink;
