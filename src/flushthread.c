@@ -2276,7 +2276,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
     le = ce->refs.Flink;
     while (le != &ce->refs) {
         changed_extent_ref* cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
-        UINT64 old_count = 0;
+        UINT32 old_count = 0;
 
         if (cer->type == TYPE_EXTENT_DATA_REF) {
             le2 = ce->old_refs.Flink;
@@ -2323,7 +2323,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
     while (le != &ce->refs) {
         changed_extent_ref* cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
         LIST_ENTRY* le3 = le->Flink;
-        UINT64 old_count = 0;
+        UINT32 old_count = 0;
 
         if (cer->type == TYPE_EXTENT_DATA_REF) {
             le2 = ce->old_refs.Flink;
