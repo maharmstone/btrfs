@@ -4306,7 +4306,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = 0;
         fcb->ea_xattr.Buffer = NULL;
     } else {
-        ULONG size = 0;
+        UINT16 size = 0;
         char *buf, *oldbuf;
 
         le = ealist.Flink;
@@ -4316,7 +4316,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             if (size % 4 > 0)
                 size += 4 - (size % 4);
 
-            size += offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + item->name.Length + 1 + item->value.Length;
+            size += (UINT16)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + item->name.Length + 1 + item->value.Length;
 
             le = le->Flink;
         }
@@ -4352,7 +4352,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
             ea->NextEntryOffset = 0;
             ea->Flags = item->flags;
-            ea->EaNameLength = item->name.Length;
+            ea->EaNameLength = (UCHAR)item->name.Length;
             ea->EaValueLength = item->value.Length;
 
             RtlCopyMemory(ea->EaName, item->name.Buffer, item->name.Length);
