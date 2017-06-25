@@ -156,7 +156,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     if (stream->error) return STATUS_INTERNAL_ERROR;
 
     if (byte > 17) {
-        lzo_copy(stream, min(byte - 17, (UINT32)(stream->outlen - stream->outpos)));
+        lzo_copy(stream, min((UINT8)(byte - 17), (UINT32)(stream->outlen - stream->outpos)));
         if (stream->error) return STATUS_INTERNAL_ERROR;
 
         if (stream->outlen == stream->outpos)
