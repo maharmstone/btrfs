@@ -3180,16 +3180,28 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
                 goto exit;
             }
 
-            // FIXME - make sure not ADS!
-            Status = truncate_file(fileref->fcb, 0, Irp, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("truncate_file returned %08x\n", Status);
+            if (fileref->fcb->ads) {
+                Status = stream_set_end_of_file_information(Vcb, 0, fileref->fcb, fileref, FALSE);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("stream_set_end_of_file_information returned %08x\n", Status);
 
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(Vcb, fileref);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
+                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                    free_fileref(Vcb, fileref);
+                    ExReleaseResourceLite(&Vcb->fcb_lock);
 
-                goto exit;
+                    goto exit;
+                }
+            } else {
+                Status = truncate_file(fileref->fcb, 0, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("truncate_file returned %08x\n", Status);
+
+                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                    free_fileref(Vcb, fileref);
+                    ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                    goto exit;
+                }
             }
 
             if (Irp->Overlay.AllocationSize.QuadPart > 0) {
@@ -3206,102 +3218,109 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
                 }
             }
 
-            if (Irp->AssociatedIrp.SystemBuffer && Stack->Parameters.Create.EaLength > 0) {
-                ULONG offset;
-                FILE_FULL_EA_INFORMATION* eainfo;
+            if (!fileref->fcb->ads) {
+                if (Irp->AssociatedIrp.SystemBuffer && Stack->Parameters.Create.EaLength > 0) {
+                    ULONG offset;
+                    FILE_FULL_EA_INFORMATION* eainfo;
 
-                Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength, &offset);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                    Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength, &offset);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
 
-                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                    free_fileref(Vcb, fileref);
-                    ExReleaseResourceLite(&Vcb->fcb_lock);
+                        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                        free_fileref(Vcb, fileref);
+                        ExReleaseResourceLite(&Vcb->fcb_lock);
 
-                    goto exit;
+                        goto exit;
+                    }
+
+                    fileref->fcb->ealen = 4;
+
+                    // capitalize EA name
+                    eainfo = Irp->AssociatedIrp.SystemBuffer;
+                    do {
+                        STRING s;
+
+                        s.Length = s.MaximumLength = eainfo->EaNameLength;
+                        s.Buffer = eainfo->EaName;
+
+                        RtlUpperString(&s, &s);
+
+                        fileref->fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
+
+                        if (eainfo->NextEntryOffset == 0)
+                            break;
+
+                        eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+                    } while (TRUE);
+
+                    if (fileref->fcb->ea_xattr.Buffer)
+                        ExFreePool(fileref->fcb->ea_xattr.Buffer);
+
+                    fileref->fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, Stack->Parameters.Create.EaLength, ALLOC_TAG);
+                    if (!fileref->fcb->ea_xattr.Buffer) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+
+                        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                        free_fileref(Vcb, fileref);
+                        ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                        goto exit;
+                    }
+
+                    fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = (USHORT)Stack->Parameters.Create.EaLength;
+                    RtlCopyMemory(fileref->fcb->ea_xattr.Buffer, Irp->AssociatedIrp.SystemBuffer, fileref->fcb->ea_xattr.Length);
+                } else {
+                    if (fileref->fcb->ea_xattr.Length > 0) {
+                        ExFreePool(fileref->fcb->ea_xattr.Buffer);
+                        fileref->fcb->ea_xattr.Buffer = NULL;
+                        fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = 0;
+
+                        fileref->fcb->ea_changed = TRUE;
+                        fileref->fcb->ealen = 0;
+                    }
                 }
-
-                fileref->fcb->ealen = 4;
-
-                // capitalize EA name
-                eainfo = Irp->AssociatedIrp.SystemBuffer;
-                do {
-                    STRING s;
-
-                    s.Length = s.MaximumLength = eainfo->EaNameLength;
-                    s.Buffer = eainfo->EaName;
-
-                    RtlUpperString(&s, &s);
-
-                    fileref->fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
-
-                    if (eainfo->NextEntryOffset == 0)
-                        break;
-
-                    eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
-                } while (TRUE);
-
-                if (fileref->fcb->ea_xattr.Buffer)
-                    ExFreePool(fileref->fcb->ea_xattr.Buffer);
-
-                fileref->fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, Stack->Parameters.Create.EaLength, ALLOC_TAG);
-                if (!fileref->fcb->ea_xattr.Buffer) {
-                    ERR("out of memory\n");
-                    Status = STATUS_INSUFFICIENT_RESOURCES;
-
-                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                    free_fileref(Vcb, fileref);
-                    ExReleaseResourceLite(&Vcb->fcb_lock);
-
-                    goto exit;
-                }
-
-                fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = (USHORT)Stack->Parameters.Create.EaLength;
-                RtlCopyMemory(fileref->fcb->ea_xattr.Buffer, Irp->AssociatedIrp.SystemBuffer, fileref->fcb->ea_xattr.Length);
-            } else {
-                if (fileref->fcb->ea_xattr.Length > 0) {
-                    ExFreePool(fileref->fcb->ea_xattr.Buffer);
-                    fileref->fcb->ea_xattr.Buffer = NULL;
-                    fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = 0;
-
-                    fileref->fcb->ea_changed = TRUE;
-                    fileref->fcb->ealen = 0;
-                }
-            }
-
-            filter = FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
-
-            mark_fcb_dirty(fileref->fcb);
-
-            oldatts = fileref->fcb->atts;
-
-            defda = get_file_attributes(Vcb, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
-                                        fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.', TRUE, Irp);
-
-            if (RequestedDisposition == FILE_SUPERSEDE)
-                fileref->fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
-            else
-                fileref->fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
-
-            if (fileref->fcb->atts != oldatts) {
-                fileref->fcb->atts_changed = TRUE;
-                fileref->fcb->atts_deleted = Stack->Parameters.Create.FileAttributes == defda;
-                filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
             }
 
             KeQuerySystemTime(&time);
             win_time_to_unix(time, &now);
 
-            fileref->fcb->inode_item.transid = Vcb->superblock.generation;
-            fileref->fcb->inode_item.sequence++;
-            fileref->fcb->inode_item.st_ctime = now;
-            fileref->fcb->inode_item.st_mtime = now;
-            fileref->fcb->inode_item_changed = TRUE;
+            filter = FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
 
-            // FIXME - truncate streams
-            // FIXME - do we need to alter parent directory's times?
+            if (fileref->fcb->ads) {
+                fileref->parent->fcb->inode_item.st_mtime = now;
+                fileref->parent->fcb->inode_item_changed = TRUE;
+                mark_fcb_dirty(fileref->parent->fcb);
 
-            send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+                send_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED, &fileref->dc->name);
+            } else {
+                mark_fcb_dirty(fileref->fcb);
+
+                oldatts = fileref->fcb->atts;
+
+                defda = get_file_attributes(Vcb, fileref->fcb->subvol, fileref->fcb->inode, fileref->fcb->type,
+                                            fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.', TRUE, Irp);
+
+                if (RequestedDisposition == FILE_SUPERSEDE)
+                    fileref->fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
+                else
+                    fileref->fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
+
+                if (fileref->fcb->atts != oldatts) {
+                    fileref->fcb->atts_changed = TRUE;
+                    fileref->fcb->atts_deleted = Stack->Parameters.Create.FileAttributes == defda;
+                    filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
+                }
+
+                fileref->fcb->inode_item.transid = Vcb->superblock.generation;
+                fileref->fcb->inode_item.sequence++;
+                fileref->fcb->inode_item.st_ctime = now;
+                fileref->fcb->inode_item.st_mtime = now;
+                fileref->fcb->inode_item_changed = TRUE;
+
+                send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+            }
         } else {
             if (options & FILE_NO_EA_KNOWLEDGE && fileref->fcb->ea_xattr.Length > 0) {
                 FILE_FULL_EA_INFORMATION* ffei = (FILE_FULL_EA_INFORMATION*)fileref->fcb->ea_xattr.Buffer;
