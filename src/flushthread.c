@@ -5830,7 +5830,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
                             rroff = newrr;
                         }
 
-                        if ((UINT8*)&rr->name[rr->n] - tp.item->data < tp.item->size)
+                        if ((UINT8*)&rr->name[rr->n] < tp.item->data + tp.item->size)
                             RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((UINT8*)&rr->name[rr->n] - tp.item->data));
 
                         Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, newrr, newlen, NULL, Irp);
