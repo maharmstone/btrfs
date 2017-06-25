@@ -339,7 +339,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
     le = mr->refs.Flink;
     while (le != &mr->refs) {
         metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
-        ULONG extlen = 0;
+        UINT16 extlen = 0;
 
         rc++;
 
@@ -349,7 +349,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
             extlen += sizeof(SHARED_BLOCK_REF);
 
         if (all_inline) {
-            if (inline_len + 1 + extlen > Vcb->superblock.node_size / 4) {
+            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.node_size >> 2)) {
                 all_inline = FALSE;
                 first_noninline = ref;
             } else
@@ -481,7 +481,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
 
                         if (ed2->size > 0) { // not sparse
-                            UINT64 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, mr->address, NULL);
+                            UINT32 sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, mr->address, NULL);
 
                             if (sdrrc > 0) {
                                 SHARED_DATA_REF sdr;

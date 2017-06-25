@@ -2214,7 +2214,7 @@ UINT64 find_extent_shared_tree_refcount(device_extension* Vcb, UINT64 address, U
     return 0;
 }
 
-UINT64 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp) {
+UINT32 find_extent_shared_data_refcount(device_extension* Vcb, UINT64 address, UINT64 parent, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
