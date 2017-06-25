@@ -3033,18 +3033,22 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
                    is_subvol_readonly(fileref->fcb->subvol, Irp) || Vcb->readonly;
 
         if (readonly) {
-            ACCESS_MASK allowed = DELETE | READ_CONTROL | WRITE_OWNER | WRITE_DAC |
-                                    SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
-                                    FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES |
-                                    FILE_WRITE_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
-                                    FILE_TRAVERSE;
+            ACCESS_MASK allowed;
 
-            if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
-                allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
+            allowed = READ_CONTROL | SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
+                      FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
+                      FILE_TRAVERSE;
 
-            // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
-            if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp))
+            if (!is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
+                allowed |= DELETE | WRITE_OWNER | WRITE_DAC | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
+
+                if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
+                    allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
+            } else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
+                // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
+
                 allowed |= FILE_WRITE_ATTRIBUTES;
+            }
 
             if (Stack->Parameters.Create.SecurityContext->DesiredAccess & MAXIMUM_ALLOWED) {
                 granted_access &= allowed;
