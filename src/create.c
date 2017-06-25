@@ -2271,7 +2271,7 @@ static NTSTATUS file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileOb
         return STATUS_MEDIA_WRITE_PROTECTED;
 
     dsus.Buffer = datasuf;
-    dsus.Length = dsus.MaximumLength = wcslen(datasuf) * sizeof(WCHAR);
+    dsus.Length = dsus.MaximumLength = (USHORT)wcslen(datasuf) * sizeof(WCHAR);
     fpus.Buffer = NULL;
 
     if (!loaded_related) {
@@ -2299,7 +2299,7 @@ static NTSTATUS file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileOb
 
     while (i > 0 && fnus->Buffer[i-1] != '\\' && fnus->Buffer[i-1] != '/') { i--; }
 
-    fpus.MaximumLength = (j - i + 2) * sizeof(WCHAR);
+    fpus.MaximumLength = (USHORT)((j - i + 2) * sizeof(WCHAR));
     fpus.Buffer = ExAllocatePoolWithTag(pool_type, fpus.MaximumLength, ALLOC_TAG);
     if (!fpus.Buffer) {
         ERR("out of memory\n");
@@ -2307,7 +2307,7 @@ static NTSTATUS file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileOb
         goto end;
     }
 
-    fpus.Length = (j - i + 1) * sizeof(WCHAR);
+    fpus.Length = (USHORT)((j - i + 1) * sizeof(WCHAR));
 
     RtlCopyMemory(fpus.Buffer, &fnus->Buffer[i], (j - i + 1) * sizeof(WCHAR));
     fpus.Buffer[j - i + 1] = 0;
@@ -2334,12 +2334,12 @@ static NTSTATUS file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileOb
 
     stream.Length = 0;
 
-    for (i = 0; i < fpus.Length/sizeof(WCHAR); i++) {
+    for (i = 0; i < fpus.Length / sizeof(WCHAR); i++) {
         if (fpus.Buffer[i] == ':') {
-            stream.Length = fpus.Length - (i*sizeof(WCHAR)) - sizeof(WCHAR);
+            stream.Length = (USHORT)(fpus.Length - (i * sizeof(WCHAR)) - sizeof(WCHAR));
             stream.Buffer = &fpus.Buffer[i+1];
             fpus.Buffer[i] = 0;
-            fpus.Length = i * sizeof(WCHAR);
+            fpus.Length = (USHORT)(i * sizeof(WCHAR));
             break;
         }
     }
