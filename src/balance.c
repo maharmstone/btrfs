@@ -1544,7 +1544,7 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
     le = dr->refs.Flink;
     while (le != &dr->refs) {
         data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
-        ULONG extlen = 0;
+        UINT16 extlen = 0;
 
         if (ref->type == TYPE_EXTENT_DATA_REF) {
             extlen += sizeof(EXTENT_DATA_REF);
@@ -1555,7 +1555,7 @@ static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr
         }
 
         if (all_inline) {
-            if (inline_len + 1 + extlen > Vcb->superblock.node_size / 4) {
+            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.node_size >> 2)) {
                 all_inline = FALSE;
                 first_noninline = ref;
             } else
