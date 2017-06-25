@@ -1959,10 +1959,10 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     static WCHAR DOSATTRIB[] = L"DOSATTRIB";
     static WCHAR EA[] = L"EA";
     static WCHAR reparse[] = L"reparse";
-    ULONG xapreflen = strlen(xapref), overhead;
+    UINT16 xapreflen = (UINT16)strlen(xapref);
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    ULONG utf8len;
+    ULONG utf8len, overhead;
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -2090,7 +2090,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
         return Status;
     }
 
-    fcb->adsxattr.Length = utf8len + xapreflen;
+    fcb->adsxattr.Length = (UINT16)utf8len + xapreflen;
     fcb->adsxattr.MaximumLength = fcb->adsxattr.Length + 1;
     fcb->adsxattr.Buffer = ExAllocatePoolWithTag(pool_type, fcb->adsxattr.MaximumLength, ALLOC_TAG);
     if (!fcb->adsxattr.Buffer) {
