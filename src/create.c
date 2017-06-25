@@ -2873,10 +2873,10 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
                 if (related->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
                     Status = STATUS_REPARSE;
                     fileref = related;
-                    parsed = fnoff - sizeof(WCHAR);
+                    parsed = (USHORT)fnoff - sizeof(WCHAR);
                 } else {
                     fn.Buffer = &fn.Buffer[fnoff / sizeof(WCHAR)];
-                    fn.Length -= fnoff;
+                    fn.Length -= (USHORT)fnoff;
 
                     Status = open_fileref(Vcb, &fileref, &fn, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
                                           pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
@@ -3256,8 +3256,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rol
                     goto exit;
                 }
 
-                fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = Stack->Parameters.Create.EaLength;
-                RtlCopyMemory(fileref->fcb->ea_xattr.Buffer, Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength);
+                fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = (USHORT)Stack->Parameters.Create.EaLength;
+                RtlCopyMemory(fileref->fcb->ea_xattr.Buffer, Irp->AssociatedIrp.SystemBuffer, fileref->fcb->ea_xattr.Length);
             } else {
                 if (fileref->fcb->ea_xattr.Length > 0) {
                     ExFreePool(fileref->fcb->ea_xattr.Buffer);
