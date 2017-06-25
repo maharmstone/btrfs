@@ -253,7 +253,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS lzo_decompress(UINT8* inbuf, UINT64 inlen, UINT8* outbuf, UINT64 outlen, UINT32 inpageoff) {
+NTSTATUS lzo_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen, UINT32 inpageoff) {
     NTSTATUS Status;
     UINT32 partlen, inoff, outoff;
     lzo_stream stream;
