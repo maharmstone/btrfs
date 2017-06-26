@@ -39,21 +39,28 @@ void do_read_job(PIRP Irp) {
         fcb_lock = TRUE;
     }
 
-    Status = do_read(Irp, TRUE, &bytes_read);
+    try {
+        Status = do_read(Irp, TRUE, &bytes_read);
+    } except (EXCEPTION_EXECUTE_HANDLER) {
+        Status = GetExceptionCode();
+    }
 
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
 
+    if (!NT_SUCCESS(Status))
+        ERR("do_read returned %08x\n", Status);
+
     Irp->IoStatus.Status = Status;
 
-    TRACE("Irp->IoStatus.Status = %08x\n", Irp->IoStatus.Status);
-    TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
-    TRACE("returning %08x\n", Status);
+    TRACE("read %lu bytes\n", Irp->IoStatus.Information);
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     if (top_level)
         IoSetTopLevelIrp(NULL);
+
+    TRACE("returning %08x\n", Status);
 }
 
 void do_write_job(device_extension* Vcb, PIRP Irp) {
