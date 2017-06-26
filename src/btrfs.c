@@ -834,7 +834,7 @@ static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN 
                 ULONG bytecount;
 
                 Status = RtlUTF8ToUnicodeN(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
-                if (!NT_SUCCESS(Status)) {
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
                     ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
                     ExReleaseResourceLite(&Vcb->tree_lock);
                     break;
