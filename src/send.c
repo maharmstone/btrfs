@@ -2795,7 +2795,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, &di->name[di->n], di->m);
             send_command_finish(context, pos);
 
-            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
             di = (DIR_ITEM*)&di->name[di->m + di->n];
         } while (len > 0);
     } else if (!tp && tp2) {
@@ -2819,7 +2819,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
             send_command_finish(context, pos);
 
-            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
             di = (DIR_ITEM*)&di->name[di->m + di->n];
         } while (len > 0);
     } else {
@@ -2860,7 +2860,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
             InsertTailList(&xattrs, &xa->list_entry);
 
-            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
             di = (DIR_ITEM*)&di->name[di->m + di->n];
         } while (len > 0);
 
@@ -2913,7 +2913,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
                 InsertTailList(&xattrs, &xa->list_entry);
             }
 
-            len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
             di = (DIR_ITEM*)&di->name[di->m + di->n];
         } while (len > 0);
 
