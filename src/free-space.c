@@ -1444,7 +1444,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UI
     }
 
     le = list->Flink;
-    while (le != list) {
+    do {
         s2 = CONTAINING_RECORD(le, space, list_entry);
 
         // old entry envelops new one completely
@@ -1596,7 +1596,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UI
         }
 
         le = le->Flink;
-    }
+    } while (le != list);
 
     // check if contiguous with last entry
     if (s2->address + s2->size == address) {
