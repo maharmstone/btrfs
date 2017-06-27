@@ -472,7 +472,7 @@ static NTSTATUS vol_get_disk_extents(volume_device_extension* vde, PIRP Irp) {
         volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
         Status = dev_ioctl(vc->devobj, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0, ext3,
-                            offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (max_extents * sizeof(DISK_EXTENT)), FALSE, NULL);
+                           (ULONG)offsetof(VOLUME_DISK_EXTENTS, Extents[0]) + (max_extents * sizeof(DISK_EXTENT)), FALSE, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS returned %08x\n", Status);
             ExFreePool(ext3);
