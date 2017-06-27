@@ -110,8 +110,8 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
                 goto end;
             }
 
-            itemsize += offsetof(btrfs_filesystem_device, name[0]);
-            length -= offsetof(btrfs_filesystem_device, name[0]);
+            itemsize += (ULONG)offsetof(btrfs_filesystem_device, name[0]);
+            length -= (ULONG)offsetof(btrfs_filesystem_device, name[0]);
 
             RtlCopyMemory(&bfd->uuid, &dev->devitem.device_uuid, sizeof(BTRFS_UUID));
 
@@ -129,7 +129,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
                     goto end;
                 }
 
-                Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &bfd->name_length, offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, TRUE, NULL);
+                Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &bfd->name_length, (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength, TRUE, NULL);
                 if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
                     ExReleaseResourceLite(&Vcb->tree_lock);
                     ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
