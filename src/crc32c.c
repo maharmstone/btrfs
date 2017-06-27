@@ -73,7 +73,14 @@ static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
     }
 
 #ifdef _AMD64_
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4244) // _mm_crc32_u64 wants to return UINT64(!)
+#endif
     CALC_CRC(_mm_crc32_u64, crc, UINT64, buf, len);
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #endif
     CALC_CRC(_mm_crc32_u32, crc, UINT32, buf, len);
     CALC_CRC(_mm_crc32_u16, crc, UINT16, buf, len);
