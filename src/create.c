@@ -1497,7 +1497,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
                 if (has_stream)
                     nb = CONTAINING_RECORD(le->Blink, name_bit, list_entry);
 
-                *fn_offset = nb->us.Buffer - fnus->Buffer;
+                *fn_offset = (ULONG)(nb->us.Buffer - fnus->Buffer);
             }
 
             break;
@@ -1509,7 +1509,7 @@ NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnu
             if (parsed) {
                 name_bit* nb2 = CONTAINING_RECORD(le->Flink, name_bit, list_entry);
 
-                *parsed = (nb2->us.Buffer - fnus->Buffer - 1) * sizeof(WCHAR);
+                *parsed = (USHORT)(nb2->us.Buffer - fnus->Buffer - 1) * sizeof(WCHAR);
             }
 
             break;
