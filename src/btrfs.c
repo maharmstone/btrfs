@@ -4985,7 +4985,7 @@ static void init_logging() {
                 goto end;
             }
 
-            Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, delim, strlen(delim), NULL, NULL);
+            Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, delim, (ULONG)strlen(delim), NULL, NULL);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("ZwWriteFile returned %08x\n", Status);
@@ -5006,7 +5006,7 @@ static void init_logging() {
 
         sprintf(dateline, "Starting logging at %04u-%02u-%02u %02u:%02u:%02u\n", tf.Year, tf.Month, tf.Day, tf.Hour, tf.Minute, tf.Second);
 
-        Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, dateline, strlen(dateline), NULL, NULL);
+        Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, dateline, (ULONG)strlen(dateline), NULL, NULL);
 
         ExFreePool(dateline);
 
