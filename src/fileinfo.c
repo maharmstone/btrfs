@@ -3997,7 +3997,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             // The index is 1-based
             if (IrpSp->Parameters.QueryEa.EaIndex == 0) {
                 Status = STATUS_NONEXISTENT_EA_ENTRY;
-                goto end;
+                goto end2;
             } else
                 index = IrpSp->Parameters.QueryEa.EaIndex - 1;
         } else if (IrpSp->Flags & SL_RESTART_SCAN)
