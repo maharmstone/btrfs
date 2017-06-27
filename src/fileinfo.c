@@ -3166,6 +3166,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     if (parent == 0) {
         ERR("subvol %llx, inode %llx has no hardlinks\n", subvol->id, inode);
         free_fcb(fcb);
+        if (hl_alloc) ExFreePool(name.Buffer);
         return STATUS_INVALID_PARAMETER;
     }
 
