@@ -870,7 +870,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tre
 
 static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL tree2) {
     INODE_EXTREF* ier;
-    ULONG len;
+    UINT16 len;
 
     if (tp->item->size < sizeof(INODE_EXTREF)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -958,7 +958,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, BOOL 
 
         InsertTailList(tree2 ? &context->lastinode.oldrefs : &context->lastinode.refs, &r->list_entry);
 
-        len -= offsetof(INODE_EXTREF, name[0]) + ier->n;
+        len -= (UINT16)offsetof(INODE_EXTREF, name[0]) + ier->n;
         ier = (INODE_EXTREF*)&ier->name[ier->n];
     }
 
