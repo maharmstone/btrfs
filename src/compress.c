@@ -533,7 +533,7 @@ static NTSTATUS lzo_do_compress(const UINT8* in, UINT32 in_len, UINT8* out, UINT
         UPDATE_I(dict, cycle, dindex, ip);
 
         if (!LZO_CHECK_MPOS_NON_DET(m_pos, m_off, in, ip, M4_MAX_OFFSET) && m_pos[0] == ip[0] && m_pos[1] == ip[1] && m_pos[2] == ip[2]) {
-            lit = ip - ii;
+            lit = (UINT32)(ip - ii);
             m_pos += 3;
             if (m_off <= M2_MAX_OFFSET)
                 goto match;
@@ -601,7 +601,7 @@ code_match:
         if (*m_pos++ != *ip++ || *m_pos++ != *ip++ || *m_pos++ != *ip++ ||
             *m_pos++ != *ip++ || *m_pos++ != *ip++ || *m_pos++ != *ip++) {
             --ip;
-            m_len = ip - ii;
+            m_len = (UINT32)(ip - ii);
 
             if (m_len < 3 || m_len > 8)
                 return STATUS_INTERNAL_ERROR;
@@ -628,7 +628,7 @@ code_match:
             end = in_end;
             while (ip < end && *m_pos == *ip)
                 m_pos++, ip++;
-            m_len = (ip - ii);
+            m_len = (UINT32)(ip - ii);
 
             if (m_len < 3)
                 return STATUS_INTERNAL_ERROR;
@@ -679,7 +679,7 @@ m3_m4_offset:
 
     /* store final literal run */
     if (in_end - ii > 0) {
-        UINT32 t = in_end - ii;
+        UINT32 t = (UINT32)(in_end - ii);
 
         if (op == out && t <= 238)
             *op++ = LZO_BYTE(17 + t);
@@ -707,7 +707,7 @@ m3_m4_offset:
         } while (--t > 0);
     }
 
-    *out_len = op - out;
+    *out_len = (UINT32)(op - out);
 
     return STATUS_SUCCESS;
 }
