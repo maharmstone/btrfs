@@ -1230,7 +1230,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
         bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) {
-        UINT16 maxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node);
+        UINT16 maxlen = (UINT16)(Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
 
         switch (bi->operation) {
             case Batch_SetXattr: {
@@ -1717,7 +1717,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                     do {
                         if (di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n) == di->n) {
-                            UINT16 newlen = td->size - (offsetof(DIR_ITEM, name[0]) + di->n + di->m);
+                            UINT16 newlen = td->size - ((UINT16)offsetof(DIR_ITEM, name[0]) + di->n + di->m);
 
                             if (newlen == 0)
                                 TRACE("deleting XATTR_ITEM\n");
