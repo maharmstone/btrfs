@@ -771,7 +771,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tre
     UINT64 inode = tp ? tp->item->key.obj_id : 0, dir = tp ? tp->item->key.offset : 0;
     LIST_ENTRY* le;
     INODE_REF* ir;
-    ULONG len;
+    UINT16 len;
     send_dir* sd = NULL;
     orphan* o2 = NULL;
 
@@ -861,7 +861,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, BOOL tre
 
         InsertTailList(tree2 ? &context->lastinode.oldrefs : &context->lastinode.refs, &r->list_entry);
 
-        len -= offsetof(INODE_REF, name[0]) + ir->n;
+        len -= (UINT16)offsetof(INODE_REF, name[0]) + ir->n;
         ir = (INODE_REF*)&ir->name[ir->n];
     }
 
