@@ -6909,6 +6909,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);
                 clear_batch_list(Vcb, &batchlist);
+                ExReleaseResourceLite(&Vcb->dirty_fcbs_lock);
                 return Status;
             }
 
@@ -6923,6 +6924,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     Status = commit_batch_list(Vcb, &batchlist, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("commit_batch_list returned %08x\n", Status);
+        ExReleaseResourceLite(&Vcb->dirty_fcbs_lock);
         return Status;
     }
 
@@ -6939,6 +6941,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);
+                ExReleaseResourceLite(&Vcb->dirty_fcbs_lock);
                 return Status;
             }
 
