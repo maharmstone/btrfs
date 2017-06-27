@@ -726,7 +726,7 @@ static NTSTATUS lzo1x_1_compress(lzo_stream* stream) {
             *op++ = stream->in[stream->inpos];
             stream->inpos++;
         } while (stream->inlen < stream->inpos);
-        stream->outlen = op - stream->out;
+        stream->outlen = (UINT32)(op - stream->out);
     } else
         Status = lzo_do_compress(stream->in, stream->inlen, stream->out, &stream->outlen, stream->wrkmem);
 
