@@ -142,6 +142,8 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #ifndef _MSC_VER
 #define __drv_aliasesMem
 #define _Requires_lock_held_(a)
+#define _Requires_exclusive_lock_held_(a)
+#define _Releases_lock_(a)
 #endif
 
 struct _device_extension;
@@ -1124,7 +1126,9 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
 
-void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock, BOOL skip_dev);
+_Requires_exclusive_lock_held_(vde->child_lock)
+_Releases_lock_(vde->child_lock)
+void remove_volume_child(_In_ volume_device_extension* vde, _In_ volume_child* vc, _In_ BOOL no_release_lock, _In_ BOOL skip_dev);
 
 // in cache.c
 NTSTATUS init_cache();

@@ -328,7 +328,9 @@ end:
     ObDereferenceObject(mountmgrfo);
 }
 
-void remove_volume_child(volume_device_extension* vde, volume_child* vc, BOOL no_release_lock, BOOL skip_dev) {
+_Requires_exclusive_lock_held_(vde->child_lock)
+_Releases_lock_(vde->child_lock)
+void remove_volume_child(_In_ volume_device_extension* vde, _In_ volume_child* vc, _In_ BOOL no_release_lock, _In_ BOOL skip_dev) {
     NTSTATUS Status;
     device_extension* Vcb = vde->mounted_device ? vde->mounted_device->DeviceExtension : NULL;
 
