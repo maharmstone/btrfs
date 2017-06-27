@@ -111,6 +111,7 @@
 
 #ifndef FILE_SUPPORTS_BLOCK_REFCOUNTING
 #define FILE_SUPPORTS_BLOCK_REFCOUNTING 0x08000000
+#endif
 
 typedef struct _DUPLICATE_EXTENTS_DATA {
     HANDLE FileHandle;
@@ -137,8 +138,6 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 
 #define FSCTL_GET_INTEGRITY_INFORMATION CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 159, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_SET_INTEGRITY_INFORMATION CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 160, METHOD_BUFFERED, FILE_READ_DATA | FILE_WRITE_DATA)
-
-#endif
 
 #ifndef _MSC_VER
 #define __drv_aliasesMem
@@ -1629,5 +1628,16 @@ typedef struct _PEB {
     PVOID Reserved7[1];
     ULONG SessionId;
 } PEB,*PPEB;
+
+#ifdef _MSC_VER
+__kernel_entry
+NTSTATUS NTAPI ZwQueryInformationProcess(
+    IN HANDLE ProcessHandle,
+    IN PROCESSINFOCLASS ProcessInformationClass,
+    OUT PVOID ProcessInformation,
+    IN ULONG ProcessInformationLength,
+    OUT PULONG ReturnLength OPTIONAL
+);
+#endif
 
 #endif
