@@ -3686,6 +3686,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
                 Status = ObReferenceObjectByHandle(h, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&fileobj, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("ObReferenceObjectByHandle returned %08x\n", Status);
+                    ExFreePool(clones);
                     return Status;
                 }
 
