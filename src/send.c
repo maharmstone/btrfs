@@ -183,7 +183,7 @@ static NTSTATUS get_orphan_name(send_context* context, UINT64 inode, UINT64 gene
         ptr = uint64_to_char(index, ptr);
         *ptr = 0;
 
-        searchkey.offset = calc_crc32c(0xfffffffe, (UINT8*)name, ptr - name);
+        searchkey.offset = calc_crc32c(0xfffffffe, (UINT8*)name, (ULONG)(ptr - name));
 
         Status = find_item(context->Vcb, context->root, &tp, &searchkey, FALSE, NULL);
         if (!NT_SUCCESS(Status)) {
