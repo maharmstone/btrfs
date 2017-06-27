@@ -3085,17 +3085,17 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
             le = le->Flink;
         }
 
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        ExReleaseResourceLite(&Vcb->chunk_lock);
 
         if (done) continue;
 
         // Otherwise, see if we can put it in a new chunk.
 
-        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+        ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
         Status = alloc_chunk(Vcb, flags, &c, FALSE);
 
-        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        ExReleaseResourceLite(&Vcb->chunk_lock);
 
         if (!NT_SUCCESS(Status)) {
             ERR("alloc_chunk returned %08x\n", Status);
