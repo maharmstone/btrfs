@@ -3582,7 +3582,7 @@ static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
         return FALSE;
     }
 
-    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
 
     mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
     if (!mdn2) {
