@@ -5030,7 +5030,7 @@ static void degraded_wait_thread(void* context) {
 
     KeInitializeTimer(&timer);
 
-    delay.QuadPart = (UINT64)3 * -10000000; // wait three seconds
+    delay.QuadPart = -30000000; // wait three seconds
     KeSetTimer(&timer, delay, NULL);
     KeWaitForSingleObject(&timer, Executive, KernelMode, FALSE, NULL);
 
