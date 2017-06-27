@@ -4347,7 +4347,8 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + bsxa->namelen + bsxa->valuelen, ALLOC_TAG);
     if (!xa) {
         ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
     }
 
     le = fcb->xattrs.Flink;
