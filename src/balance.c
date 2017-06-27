@@ -3132,6 +3132,7 @@ void balance_thread(void* context) {
                 ERR("load_cache_chunk returned %08x\n", Status);
                 Vcb->balance.status = Status;
                 ExReleaseResourceLite(&c->lock);
+                ExReleaseResourceLite(&Vcb->chunk_lock);
                 goto end;
             }
         }
