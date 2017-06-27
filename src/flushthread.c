@@ -1858,7 +1858,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                         dataptr = dataptr - td->size;
 
                         itemptr[i].key = td->key;
-                        itemptr[i].offset = (UINT8*)dataptr - (UINT8*)body;
+                        itemptr[i].offset = (UINT32)((UINT8*)dataptr - (UINT8*)body);
                         itemptr[i].size = td->size;
                         i++;
 
