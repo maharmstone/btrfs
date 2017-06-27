@@ -144,7 +144,9 @@ NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Irp2->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, IrpSp->Parameters.Read.Length, ALLOC_TAG);
         if (!Irp2->AssociatedIrp.SystemBuffer) {
             ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+            ExReleaseResourceLite(&vde->child_lock);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
 
         Irp2->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
