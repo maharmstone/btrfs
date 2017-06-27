@@ -797,7 +797,11 @@ void free_trees(device_extension* Vcb) {
     }
 }
 
-void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(suppress: 28194)
+#endif
+void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr) {
     rollback_item* ri;
 
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
@@ -810,6 +814,9 @@ void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr) {
     ri->ptr = ptr;
     InsertTailList(rollback, &ri->list_entry);
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(push)

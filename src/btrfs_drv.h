@@ -1108,7 +1108,7 @@ NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, 
 void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
-void add_rollback(LIST_ENTRY* rollback, enum rollback_type type, void* ptr);
+void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr);
 NTSTATUS commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, BOOL* ended1, BOOL* ended2);
