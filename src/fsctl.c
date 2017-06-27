@@ -4450,7 +4450,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
 
     Status = fileref_get_filename(fr, &us, NULL, NULL);
 
-    if (NT_SUCCESS(Status) || STATUS_BUFFER_OVERFLOW)
+    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW)
         out[us.Length / sizeof(WCHAR)] = 0;
     else
         ERR("fileref_get_filename returned %08x\n", Status);
