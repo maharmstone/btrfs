@@ -288,7 +288,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
             }
 
             nb->us.Buffer = buf;
-            nb->us.Length = nb->us.MaximumLength = (&path->Buffer[i] - buf) * sizeof(WCHAR);
+            nb->us.Length = nb->us.MaximumLength = (USHORT)(&path->Buffer[i] - buf) * sizeof(WCHAR);
             InsertTailList(parts, &nb->list_entry);
 
             buf = &path->Buffer[i+1];
@@ -302,7 +302,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     }
 
     nb->us.Buffer = buf;
-    nb->us.Length = nb->us.MaximumLength = (&path->Buffer[i] - buf) * sizeof(WCHAR);
+    nb->us.Length = nb->us.MaximumLength = (USHORT)(&path->Buffer[i] - buf) * sizeof(WCHAR);
     InsertTailList(parts, &nb->list_entry);
 
     if (has_stream) {
