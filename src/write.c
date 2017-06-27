@@ -2775,8 +2775,10 @@ NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* c
     return STATUS_SUCCESS;
 }
 
-BOOL insert_extent_chunk(device_extension* Vcb, fcb* fcb, chunk* c, UINT64 start_data, UINT64 length, BOOL prealloc, void* data,
-                         PIRP Irp, LIST_ENTRY* rollback, UINT8 compression, UINT64 decoded_size, BOOL file_write, UINT64 irp_offset) {
+_Requires_lock_held_(c->lock)
+_When_(return != 0, _Releases_lock_(c->lock))
+BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c, _In_ UINT64 start_data, _In_ UINT64 length, _In_ BOOL prealloc, _In_opt_ void* data,
+                         _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ UINT8 compression, _In_ UINT64 decoded_size, _In_ BOOL file_write, _In_ UINT64 irp_offset) {
     UINT64 address;
     NTSTATUS Status;
     EXTENT_DATA* ed;
