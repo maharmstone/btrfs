@@ -1134,7 +1134,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     KEY searchkey;
     traverse_ptr tp;
     DIR_ITEM* di;
-    ULONG len;
+    UINT16 len;
 
     searchkey.obj_id = sd->inode;
     searchkey.obj_type = TYPE_DIR_ITEM;
@@ -1165,7 +1165,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
         }
 
         di = (DIR_ITEM*)&di->name[di->m + di->n];
-        len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+        len -= (UINT16)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
     } while (len > 0);
 
     return STATUS_SUCCESS;
