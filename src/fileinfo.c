@@ -1984,11 +1984,15 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     }
 
     if (fcb->ads) {
-        if (feofi->EndOfFile.QuadPart > 0xffff)
-            return STATUS_DISK_FULL;
+        if (feofi->EndOfFile.QuadPart > 0xffff) {
+            Status = STATUS_DISK_FULL;
+            goto end;
+        }
 
-        if (feofi->EndOfFile.QuadPart < 0)
-            return STATUS_INVALID_PARAMETER;
+        if (feofi->EndOfFile.QuadPart < 0) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
 
         Status = stream_set_end_of_file_information(Vcb, (UINT16)feofi->EndOfFile.QuadPart, fcb, fileref, advance_only);
 
