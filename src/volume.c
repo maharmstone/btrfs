@@ -911,7 +911,7 @@ static BOOL allow_degraded_mount(BTRFS_UUID* uuid) {
 
     InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
-    kvfilen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + (255 * sizeof(WCHAR));
+    kvfilen = (ULONG)offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + (255 * sizeof(WCHAR));
     kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
     if (!kvfi) {
         ERR("out of memory\n");
