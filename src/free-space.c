@@ -352,7 +352,7 @@ static NTSTATUS get_superblock_size(chunk* c, UINT64* size) {
     NTSTATUS Status;
     CHUNK_ITEM* ci = c->chunk_item;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-    UINT64 off_start, off_end, space;
+    UINT64 off_start, off_end, space = 0;
     UINT16 i = 0, j;
     LIST_ENTRY stripes;
 
@@ -431,8 +431,6 @@ static NTSTATUS get_superblock_size(chunk* c, UINT64* size) {
 
         i++;
     }
-
-    space = 0;
 
     Status = STATUS_SUCCESS;
 
