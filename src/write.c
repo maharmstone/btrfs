@@ -2938,6 +2938,8 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
 
             if (success)
                 *written += newlen;
+            else
+                ExReleaseResourceLite(&c->lock);
 
             return success;
         } else if (s->address > ed2->address + ed2->size)
