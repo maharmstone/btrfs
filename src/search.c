@@ -83,7 +83,7 @@ static BOOL fs_ignored(BTRFS_UUID* uuid) {
 
     RtlInitUnicodeString(&ignoreus, L"Ignore");
 
-    kvfilen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + (255 * sizeof(WCHAR));
+    kvfilen = (ULONG)offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + (255 * sizeof(WCHAR));
     kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
     if (!kvfi) {
         ERR("out of memory\n");
