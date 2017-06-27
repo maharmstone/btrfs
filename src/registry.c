@@ -918,7 +918,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
         ExFreePool(kvfi);
     } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-        Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, (wcslen(def_log_file) + 1) * sizeof(WCHAR));
+        Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, (ULONG)(wcslen(def_log_file) + 1) * sizeof(WCHAR));
 
         if (!NT_SUCCESS(Status)) {
             ERR("ZwSetValueKey returned %08x\n", Status);
