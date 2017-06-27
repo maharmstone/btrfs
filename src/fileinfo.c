@@ -3963,7 +3963,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 retlen += padding;
 
                 if (out) {
-                    out->NextEntryOffset = offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
+                    out->NextEntryOffset = (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
                     out = (FILE_FULL_EA_INFORMATION*)(((UINT8*)out) + out->NextEntryOffset);
                 } else
                     out = ffei;
@@ -3974,7 +3974,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 out->EaValueLength = ea->EaValueLength;
                 RtlCopyMemory(out->EaName, ea->EaName, ea->EaNameLength + ea->EaValueLength + 1);
 
-                retlen += offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
+                retlen += (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
 
                 if (IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
                     break;
@@ -4027,7 +4027,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             retlen += padding;
 
             if (out) {
-                out->NextEntryOffset = offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
+                out->NextEntryOffset = (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
                 out = (FILE_FULL_EA_INFORMATION*)(((UINT8*)out) + out->NextEntryOffset);
             } else
                 out = ffei;
@@ -4038,7 +4038,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             out->EaValueLength = ea->EaValueLength;
             RtlCopyMemory(out->EaName, ea->EaName, ea->EaNameLength + ea->EaValueLength + 1);
 
-            retlen += offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
+            retlen += (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
 
             if (!(IrpSp->Flags & SL_INDEX_SPECIFIED))
                 ccb->ea_index++;
