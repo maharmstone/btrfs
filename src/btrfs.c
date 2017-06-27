@@ -2609,7 +2609,7 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
     if (!Vcb->readonly && !Vcb->data_reloc_root) {
         root* reloc_root;
         INODE_ITEM* ii;
-        ULONG irlen;
+        UINT16 irlen;
         INODE_REF* ir;
         LARGE_INTEGER time;
         BTRFS_TIME now;
@@ -2657,7 +2657,7 @@ static NTSTATUS look_for_roots(device_extension* Vcb, PIRP Irp) {
             return Status;
         }
 
-        irlen = offsetof(INODE_REF, name[0]) + 2;
+        irlen = (UINT16)offsetof(INODE_REF, name[0]) + 2;
         ir = ExAllocatePoolWithTag(PagedPool, irlen, ALLOC_TAG);
         if (!ir) {
             ERR("out of memory\n");
