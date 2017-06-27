@@ -3195,7 +3195,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
         if (NT_SUCCESS(Status)) {
             Status = Irp->IoStatus.Status;
             Irp->IoStatus.Information += addon;
-            *bytes_read = Irp->IoStatus.Information;
+            *bytes_read = (ULONG)Irp->IoStatus.Information;
         } else
             ERR("EXCEPTION - %08x\n", Status);
 
