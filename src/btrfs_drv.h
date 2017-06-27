@@ -1574,11 +1574,12 @@ typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG
 
 typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten);
 
+#ifndef _MSC_VER
+
 #undef RtlIsNtDdiVersionAvailable
 
 BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);
 
-#ifndef _MSC_VER
 PEPROCESS PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
 #endif
 
