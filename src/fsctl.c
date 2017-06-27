@@ -1783,7 +1783,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, UINT64 start, UINT64 
     if (make_inline) {
         start_data = 0;
         end_data = fcb->inode_item.st_size;
-        buf_head = offsetof(EXTENT_DATA, data[0]);
+        buf_head = (ULONG)offsetof(EXTENT_DATA, data[0]);
     } else if (compress) {
         start_data = start & ~(UINT64)(COMPRESSED_EXTENT_SIZE - 1);
         end_data = min(sector_align(start + length, COMPRESSED_EXTENT_SIZE),
