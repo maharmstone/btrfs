@@ -4061,7 +4061,7 @@ end:
 static NTSTATUS fsctl_get_xattrs(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, KPROCESSOR_MODE processor_mode) {
     LIST_ENTRY* le;
     btrfs_set_xattr* bsxa;
-    ULONG reqlen = offsetof(btrfs_set_xattr, data[0]);
+    ULONG reqlen = (ULONG)offsetof(btrfs_set_xattr, data[0]);
     fcb* fcb;
     ccb* ccb;
 
@@ -4086,7 +4086,7 @@ static NTSTATUS fsctl_get_xattrs(device_extension* Vcb, PFILE_OBJECT FileObject,
         xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
 
         if (xa->valuelen > 0)
-            reqlen += offsetof(btrfs_set_xattr, data[0]) + xa->namelen + xa->valuelen;
+            reqlen += (ULONG)offsetof(btrfs_set_xattr, data[0]) + xa->namelen + xa->valuelen;
 
         le = le->Flink;
     }
