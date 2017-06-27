@@ -1215,7 +1215,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
 
             if (!ext->ignore) {
                 if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
-                    bii->inline_length += ext->datalen - offsetof(EXTENT_DATA, data[0]);
+                    bii->inline_length += ext->datalen - (UINT16)offsetof(EXTENT_DATA, data[0]);
                 } else {
                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
