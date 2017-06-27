@@ -1699,7 +1699,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     Status = flush_fcb(c->cache, TRUE, batchlist, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("flush_fcb returned %08x\n", Status);
-        return Status;
+        goto end;
     }
 
     // update free_space item
@@ -1711,17 +1711,19 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        return Status;
+        goto end;
     }
 
     if (keycmp(searchkey, tp.item->key)) {
         ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return STATUS_INTERNAL_ERROR;
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
         ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
-        return STATUS_INTERNAL_ERROR;
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
     }
 
     fsi = (FREE_SPACE_ITEM*)tp.item->data;
@@ -1760,9 +1762,12 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
         // we can still flush on a degraded mount if metadata is RAID1 but data is RAID0.
     }
 
+    Status = STATUS_SUCCESS;
+
+end:
     ExFreePool(data);
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist) {
