@@ -2999,7 +2999,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
             RtlCopyMemory(&entry->StreamName[1 + (dc->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
 
             if (lastentry)
-                lastentry->NextEntryOffset = (UINT8*)entry - (UINT8*)lastentry;
+                lastentry->NextEntryOffset = (UINT32)((UINT8*)entry - (UINT8*)lastentry);
 
             off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
 
