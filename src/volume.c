@@ -838,7 +838,7 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
     MOUNTMGR_DRIVE_LETTER_TARGET* mmdlt;
     MOUNTMGR_DRIVE_LETTER_INFORMATION mmdli;
 
-    mmdltsize = offsetof(MOUNTMGR_DRIVE_LETTER_TARGET, DeviceName[0]) + devpath->Length;
+    mmdltsize = (ULONG)offsetof(MOUNTMGR_DRIVE_LETTER_TARGET, DeviceName[0]) + devpath->Length;
 
     mmdlt = ExAllocatePoolWithTag(NonPagedPool, mmdltsize, ALLOC_TAG);
     if (!mmdlt) {
