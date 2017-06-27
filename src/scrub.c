@@ -3147,6 +3147,7 @@ static void scrub_thread(void* context) {
     free_trees(Vcb);
 
     if (!NT_SUCCESS(Status)) {
+        ExReleaseResourceLite(&Vcb->tree_lock);
         ERR("do_write returned %08x\n", Status);
         Vcb->scrub.error = Status;
         goto end;
