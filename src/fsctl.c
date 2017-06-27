@@ -750,7 +750,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     root* r = NULL;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    ULONG len, irsize;
+    ULONG len;
+    UINT16 irsize;
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
     INODE_REF* ir;
@@ -1020,7 +1021,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     // add INODE_REF
 
-    irsize = sizeof(INODE_REF) - 1 + strlen(DOTDOT);
+    irsize = (UINT16)(offsetof(INODE_REF, name[0]) + strlen(DOTDOT));
     ir = ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
     if (!ir) {
         ERR("out of memory\n");
