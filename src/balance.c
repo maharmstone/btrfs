@@ -2678,7 +2678,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
                             ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                         else {
                             MOUNTDEV_NAME* mdn2;
-                            ULONG mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+                            ULONG mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
 
                             mdn2 = ExAllocatePoolWithTag(PagedPool, mdnsize, ALLOC_TAG);
                             if (!mdn2)
