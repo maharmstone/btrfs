@@ -458,8 +458,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     if (!fileref) {
         ERR("fileref was NULL\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto end;
+        return STATUS_INVALID_PARAMETER;
     }
 
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
