@@ -2188,11 +2188,13 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             if (se->data.compression == BTRFS_COMPRESSION_NONE)
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, se->data.data, (UINT16)se->data.decoded_size);
             else if (se->data.compression == BTRFS_COMPRESSION_ZLIB || se->data.compression == BTRFS_COMPRESSION_LZO) {
+                ULONG inlen = se->datalen - (ULONG)offsetof(EXTENT_DATA, data[0]);
+
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, (UINT16)se->data.decoded_size);
                 RtlZeroMemory(&context->data[context->datalen - se->data.decoded_size], (ULONG)se->data.decoded_size);
 
                 if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
-                    Status = zlib_decompress(se->data.data, se->datalen - offsetof(EXTENT_DATA, data[0]), &context->data[context->datalen - se->data.decoded_size], (UINT32)se->data.decoded_size);
+                    Status = zlib_decompress(se->data.data, inlen, &context->data[context->datalen - se->data.decoded_size], (UINT32)se->data.decoded_size);
                     if (!NT_SUCCESS(Status)) {
                         ERR("zlib_decompress returned %08x\n", Status);
                         ExFreePool(se);
@@ -2200,8 +2202,6 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                         return Status;
                     }
                 } else if (se->data.compression == BTRFS_COMPRESSION_LZO) {
-                    ULONG inlen = se->datalen - offsetof(EXTENT_DATA, data[0]);
-
                     if (inlen < sizeof(UINT32)) {
                         ERR("extent data was truncated\n");
                         ExFreePool(se);
