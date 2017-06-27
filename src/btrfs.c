@@ -3413,6 +3413,7 @@ static NTSTATUS load_sys_chunks(device_extension* Vcb) {
 
             if (!sc->data) {
                 ERR("out of memory\n");
+                ExFreePool(sc);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
