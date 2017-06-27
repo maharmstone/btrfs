@@ -124,7 +124,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
     UINT64 inode;
     INODE_ITEM ii;
     NTSTATUS Status;
-    ULONG atts, ealen;
+    ULONG atts = 0, ealen = 0;
     file_ref* fileref = ccb->fileref;
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -246,10 +246,10 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                 }
                 break;
         }
-    }
 
-    if (atts == 0)
-        atts = FILE_ATTRIBUTE_NORMAL;
+        if (atts == 0)
+            atts = FILE_ATTRIBUTE_NORMAL;
+    }
 
     switch (IrpSp->Parameters.QueryDirectory.FileInformationClass) {
         case FileBothDirectoryInformation:
