@@ -689,7 +689,7 @@ static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN 
             FILE_FS_ATTRIBUTE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
             BOOL overflow = FALSE;
             WCHAR* fs_name = (Irp->RequestorMode == UserMode && lie_about_fs_type()) ? L"NTFS" : L"Btrfs";
-            ULONG fs_name_len = wcslen(fs_name) * sizeof(WCHAR);
+            ULONG fs_name_len = (ULONG)wcslen(fs_name) * sizeof(WCHAR);
             ULONG orig_fs_name_len = fs_name_len;
 
             TRACE("FileFsAttributeInformation\n");
