@@ -171,7 +171,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, re
 
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
-        Status = check_csum(Vcb, buf, context->stripes[stripe].Irp->IoStatus.Information / context->sector_size, context->csum);
+        Status = check_csum(Vcb, buf, (ULONG)context->stripes[stripe].Irp->IoStatus.Information / context->sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
             checksum_error = TRUE;
@@ -244,7 +244,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, re
 
         ExFreePool(t2);
     } else {
-        ULONG sectors = context->stripes[stripe].Irp->IoStatus.Information / Vcb->superblock.sector_size;
+        ULONG sectors = (ULONG)context->stripes[stripe].Irp->IoStatus.Information / Vcb->superblock.sector_size;
         UINT8* sector;
 
         sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size, ALLOC_TAG);
