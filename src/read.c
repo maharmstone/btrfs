@@ -2789,6 +2789,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                     } else if (ed->compression == BTRFS_COMPRESSION_ZLIB || ed->compression == BTRFS_COMPRESSION_LZO) {
                         UINT8* decomp;
                         BOOL decomp_alloc;
+                        UINT16 inlen = ext->datalen - (UINT16)offsetof(EXTENT_DATA, data[0]);
 
                         if (ed->decoded_size == 0 || ed->decoded_size > 0xffffffff) {
                             ERR("ed->decoded_size was invalid (%llx)\n", ed->decoded_size);
@@ -2813,15 +2814,13 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                         }
 
                         if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
-                            Status = zlib_decompress(ed->data, ext->datalen - offsetof(EXTENT_DATA, data[0]), decomp, (UINT32)(read + off));
+                            Status = zlib_decompress(ed->data, inlen, decomp, (UINT32)(read + off));
                             if (!NT_SUCCESS(Status)) {
                                 ERR("zlib_decompress returned %08x\n", Status);
                                 if (decomp_alloc) ExFreePool(decomp);
                                 goto exit;
                             }
                         } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
-                            ULONG inlen = ext->datalen - offsetof(EXTENT_DATA, data[0]);
-
                             if (inlen < sizeof(UINT32)) {
                                 ERR("extent data was truncated\n");
                                 Status = STATUS_INTERNAL_ERROR;
