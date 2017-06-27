@@ -1703,12 +1703,12 @@ static NTSTATUS scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP I
 
 static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, UINT64 stripe_start, UINT64 bit_start,
                                UINT64 num, UINT16 missing_devices) {
-    ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size), i;
+    ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size), i, off;
     UINT16 stripe, parity = (bit_start + num + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
-    UINT64 off, stripeoff;
+    UINT64 stripeoff;
 
     stripe = (parity + 1) % c->chunk_item->num_stripes;
-    off = (bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1);
+    off = (ULONG)(bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1);
     stripeoff = num * sectors_per_stripe;
 
     if (missing_devices == 0)
@@ -1789,12 +1789,12 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         return;
 
     for (i = 0; i < sectors_per_stripe; i++) {
-        ULONG num_errors = 0;
-        UINT64 bad_stripe, bad_off;
+        ULONG num_errors = 0, bad_off;
+        UINT64 bad_stripe;
         BOOL alloc = FALSE;
 
         stripe = (parity + 1) % c->chunk_item->num_stripes;
-        off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
+        off = (ULONG)((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
 
         while (stripe != parity) {
             if (RtlCheckBit(&context->alloc, off)) {
@@ -1824,7 +1824,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                    &context->parity_scratch[i * Vcb->superblock.sector_size],
                    Vcb->superblock.sector_size);
 
-            bad_off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
+            bad_off = (ULONG)((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
             addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off * Vcb->superblock.sector_size);
 
             context->stripes[parity].rewrite = TRUE;
@@ -1875,7 +1875,7 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             }
         } else {
             stripe = (parity + 1) % c->chunk_item->num_stripes;
-            off = ((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
+            off = (ULONG)((bit_start + num - stripe_start) * sectors_per_stripe * (c->chunk_item->num_stripes - 1)) + i;
 
             while (stripe != parity) {
                 if (RtlCheckBit(&context->alloc, off)) {
