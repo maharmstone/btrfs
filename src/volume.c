@@ -954,7 +954,6 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     UNICODE_STRING volname;
     PDEVICE_OBJECT voldev, DeviceObject;
     volume_device_extension* vde = NULL;
-    int i, j;
     BOOL new_vde = FALSE;
     volume_child* vc;
     PFILE_OBJECT FileObject;
@@ -987,6 +986,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
     if (!vde) {
         PDEVICE_OBJECT pdo = NULL;
+        ULONG i, j;
 
         Status = IoReportDetectedDevice(drvobj, InterfaceTypeUndefined, 0xFFFFFFFF, 0xFFFFFFFF,
                                         NULL, NULL, 0, &pdo);
@@ -1007,7 +1007,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
         RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
 
-        j = wcslen(BTRFS_VOLUME_PREFIX);
+        j = (ULONG)wcslen(BTRFS_VOLUME_PREFIX);
         for (i = 0; i < 16; i++) {
             volname.Buffer[j] = hex_digit(sb->uuid.uuid[i] >> 4); j++;
             volname.Buffer[j] = hex_digit(sb->uuid.uuid[i] & 0xf); j++;
