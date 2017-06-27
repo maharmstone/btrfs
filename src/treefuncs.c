@@ -1466,7 +1466,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                     do {
                         if (di->m == deldi->m && di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n + di->m) == di->n + di->m) {
-                            ULONG newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
+                            UINT16 newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
 
                             if (newlen == 0) {
                                 TRACE("deleting DIR_ITEM\n");
@@ -1540,17 +1540,17 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                     len = td->size;
 
                     do {
-                        ULONG itemlen;
+                        UINT16 itemlen;
 
-                        if (len < sizeof(INODE_REF) || len < sizeof(INODE_REF) - 1 + ir->n) {
+                        if (len < sizeof(INODE_REF) || len < offsetof(INODE_REF, name[0]) + ir->n) {
                             ERR("INODE_REF was truncated\n");
                             break;
                         }
 
-                        itemlen = sizeof(INODE_REF) - sizeof(char) + ir->n;
+                        itemlen = (UINT16)offsetof(INODE_REF, name[0]) + ir->n;
 
                         if (ir->n == delir->n && RtlCompareMemory(ir->name, delir->name, ir->n) == ir->n) {
-                            ULONG newlen = td->size - itemlen;
+                            UINT16 newlen = td->size - itemlen;
 
                             changed = TRUE;
 
@@ -1635,17 +1635,17 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                     len = td->size;
 
                     do {
-                        ULONG itemlen;
+                        UINT16 itemlen;
 
-                        if (len < sizeof(INODE_EXTREF) || len < sizeof(INODE_EXTREF) - 1 + ier->n) {
+                        if (len < sizeof(INODE_EXTREF) || len < offsetof(INODE_EXTREF, name[0]) + ier->n) {
                             ERR("INODE_REF was truncated\n");
                             break;
                         }
 
-                        itemlen = sizeof(INODE_EXTREF) - sizeof(char) + ier->n;
+                        itemlen = (UINT16)offsetof(INODE_EXTREF, name[0]) + ier->n;
 
                         if (ier->dir == delier->dir && ier->n == delier->n && RtlCompareMemory(ier->name, delier->name, ier->n) == ier->n) {
-                            ULONG newlen = td->size - itemlen;
+                            UINT16 newlen = td->size - itemlen;
 
                             if (newlen == 0)
                                 TRACE("deleting INODE_EXTREF\n");
@@ -1717,7 +1717,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                     do {
                         if (di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n) == di->n) {
-                            ULONG newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
+                            UINT16 newlen = td->size - (offsetof(DIR_ITEM, name[0]) + di->n + di->m);
 
                             if (newlen == 0)
                                 TRACE("deleting XATTR_ITEM\n");

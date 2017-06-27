@@ -342,7 +342,7 @@ typedef struct _tree_data {
         tree_holder treeholder;
 
         struct {
-            UINT32 size;
+            UINT16 size;
             UINT8* data;
         };
     };
