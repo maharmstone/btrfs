@@ -915,7 +915,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     dir_child* dc;
                     ULONG utf16len;
 
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[strlen(xapref)], di->n - strlen(xapref));
+                    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[strlen(xapref)], di->n - (ULONG)strlen(xapref));
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                         free_fcb(fcb);
@@ -993,7 +993,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     InsertTailList(&fcb->xattrs, &xa->list_entry);
                 }
 
-                len -= offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+                len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
 
                 if (len < offsetof(DIR_ITEM, name[0]))
                     break;
