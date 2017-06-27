@@ -2448,7 +2448,7 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
             UINT32* data = csum;
 
             do {
-                ULONG il = min(length2, MAX_CSUM_SIZE / sizeof(UINT32));
+                UINT16 il = (UINT16)min(length2, MAX_CSUM_SIZE / sizeof(UINT32));
 
                 checksums = ExAllocatePoolWithTag(PagedPool, il * sizeof(UINT32), ALLOC_TAG);
                 if (!checksums) {
@@ -2575,14 +2575,14 @@ void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UIN
 
         while (runlength != 0) {
             do {
-                ULONG rl;
+                UINT16 rl;
                 UINT64 off;
                 UINT32* data;
 
                 if (runlength * sizeof(UINT32) > MAX_CSUM_SIZE)
                     rl = MAX_CSUM_SIZE / sizeof(UINT32);
                 else
-                    rl = runlength;
+                    rl = (UINT16)runlength;
 
                 data = ExAllocatePoolWithTag(PagedPool, sizeof(UINT32) * rl, ALLOC_TAG);
                 if (!data) {
@@ -5794,17 +5794,17 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, UINT64 subvolid, UINT64 p
             len = tp.item->size;
 
             do {
-                ULONG itemlen;
+                UINT16 itemlen;
 
-                if (len < sizeof(ROOT_REF) || len < sizeof(ROOT_REF) - 1 + rr->n) {
+                if (len < sizeof(ROOT_REF) || len < offsetof(ROOT_REF, name[0]) + rr->n) {
                     ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     break;
                 }
 
-                itemlen = sizeof(ROOT_REF) - sizeof(char) + rr->n;
+                itemlen = (UINT16)offsetof(ROOT_REF, name[0]) + rr->n;
 
                 if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
-                    ULONG newlen = tp.item->size - itemlen;
+                    UINT16 newlen = tp.item->size - itemlen;
 
                     Status = delete_tree_item(Vcb, &tp);
                     if (!NT_SUCCESS(Status)) {
@@ -5880,7 +5880,7 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ UINT64 subvolid, _
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        ULONG rrsize = tp.item->size + sizeof(ROOT_REF) - 1 + rr->n;
+        UINT16 rrsize = tp.item->size + (UINT16)offsetof(ROOT_REF, name[0]) + rr->n;
         UINT8* rr2;
 
         rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
@@ -5892,7 +5892,7 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ UINT64 subvolid, _
         if (tp.item->size > 0)
             RtlCopyMemory(rr2, tp.item->data, tp.item->size);
 
-        RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(ROOT_REF) - 1 + rr->n);
+        RtlCopyMemory(rr2 + tp.item->size, rr, offsetof(ROOT_REF, name[0]) + rr->n);
         ExFreePool(rr);
 
         Status = delete_tree_item(Vcb, &tp);
@@ -5909,7 +5909,7 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ UINT64 subvolid, _
             return Status;
         }
     } else {
-        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, sizeof(ROOT_REF) - 1 + rr->n, NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, rr, (UINT16)offsetof(ROOT_REF, name[0]) + rr->n, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08x\n", Status);
             ExFreePool(rr);
@@ -5927,7 +5927,7 @@ static NTSTATUS update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT
     KEY searchkey;
     traverse_ptr tp;
     UINT8* data;
-    ULONG datalen;
+    UINT16 datalen;
     NTSTATUS Status;
 
     searchkey.obj_id = parsubvolid;
@@ -6520,7 +6520,7 @@ static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    ULONG statslen;
+    UINT16 statslen;
     UINT64* stats;
 
     searchkey.obj_id = 0;

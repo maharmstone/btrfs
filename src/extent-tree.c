@@ -211,7 +211,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
     NTSTATUS Status;
     LIST_ENTRY *le, *next_le;
     UINT64 refcount;
-    ULONG inline_len;
+    UINT16 inline_len;
     BOOL all_inline = TRUE;
     extent_ref* first_noninline;
     EXTENT_ITEM* ei;
@@ -244,14 +244,14 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
 
             ExFreePool(er);
         } else {
-            ULONG extlen = get_extent_data_len(er->type);
+            UINT16 extlen = get_extent_data_len(er->type);
 
             refcount += rc;
 
             er->hash = get_extent_hash(er->type, &er->edr);
 
             if (all_inline) {
-                if (inline_len + 1 + extlen > Vcb->superblock.node_size / 4) {
+                if ((UINT16)(inline_len + 1 + extlen) > Vcb->superblock.node_size >> 2) {
                     all_inline = FALSE;
                     first_noninline = er;
                 } else
@@ -324,7 +324,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
 
         while (le != extent_refs) {
             extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-            ULONG len;
+            UINT16 len;
             UINT8* data;
 
             if (er->type == TYPE_EXTENT_DATA_REF) {
@@ -453,7 +453,8 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    ULONG datalen = get_extent_data_len(type), len, max_extent_item_size;
+    ULONG len, max_extent_item_size;
+    UINT16 datalen = get_extent_data_len(type);
     EXTENT_ITEM* ei;
     UINT8* ptr;
     UINT64 inline_rc, offset;
@@ -480,7 +481,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
     // If entry doesn't exist yet, create new inline extent item
 
     if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_EXTENT_ITEM && tp.item->key.obj_type != TYPE_METADATA_ITEM)) {
-        ULONG eisize;
+        UINT16 eisize;
 
         eisize = sizeof(EXTENT_ITEM);
         if (is_tree && !(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) eisize += sizeof(EXTENT_ITEM2);
@@ -989,7 +990,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
     while (len > 0) {
         UINT8 secttype = *ptr;
-        ULONG sectlen = get_extent_data_len(secttype);
+        UINT16 sectlen = get_extent_data_len(secttype);
         UINT64 sectcount = get_extent_data_refcount(secttype, ptr + sizeof(UINT8));
 
         len--;
@@ -1010,7 +1011,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
                 EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
 
                 if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
-                    ULONG neweilen;
+                    UINT16 neweilen;
                     EXTENT_ITEM* newei;
 
                     if (ei->refcount == edr->count) {
@@ -1077,7 +1078,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
                 if (sectsdr->offset == sdr->offset) {
                     EXTENT_ITEM* newei;
-                    ULONG neweilen;
+                    UINT16 neweilen;
 
                     if (ei->refcount == sectsdr->count) {
                         Status = delete_tree_item(Vcb, &tp);
@@ -1143,7 +1144,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
                 if (secttbr->offset == tbr->offset) {
                     EXTENT_ITEM* newei;
-                    ULONG neweilen;
+                    UINT16 neweilen;
 
                     if (ei->refcount == 1) {
                         Status = delete_tree_item(Vcb, &tp);
@@ -1190,7 +1191,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, UINT64 address, UINT64 
 
                 if (sectsbr->offset == sbr->offset) {
                     EXTENT_ITEM* newei;
-                    ULONG neweilen;
+                    UINT16 neweilen;
 
                     if (ei->refcount == 1) {
                         Status = delete_tree_item(Vcb, &tp);

@@ -906,7 +906,7 @@ __inline static BOOL is_subvol_readonly(root* r, PIRP Irp) {
     return (!Irp || Irp->RequestorMode == UserMode) && PsGetCurrentProcess() != r->reserved ? TRUE : FALSE;
 }
 
-__inline static ULONG get_extent_data_len(UINT8 type) {
+__inline static UINT16 get_extent_data_len(UINT8 type) {
     switch (type) {
         case TYPE_TREE_BLOCK_REF:
             return sizeof(TREE_BLOCK_REF);
@@ -1097,7 +1097,7 @@ BOOL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr*
 BOOL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
 void free_trees(device_extension* Vcb);
 NTSTATUS insert_tree_item(_In_ device_extension* Vcb, _In_ root* r, _In_ UINT64 obj_id, _In_ UINT8 obj_type, _In_ UINT64 offset,
-                          _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data, _In_ UINT32 size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp);
+                          _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data, _In_ UINT16 size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp);
 NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
 tree* free_tree(tree* t);
 NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp);
