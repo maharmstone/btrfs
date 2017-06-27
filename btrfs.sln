@@ -1,13 +1,15 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 10.00
-# Visual Studio 2008
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "btrfs", "btrfs.vcproj", "{1CD3D35A-50A8-4CDC-929C-3C026D4AD5D9}"
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "btrfs", "btrfs.vcxproj", "{1CD3D35A-50A8-4CDC-929C-3C026D4AD5D9}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shellbtrfs", "shellbtrfs.vcproj", "{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shellbtrfs", "shellbtrfs.vcxproj", "{9BFADB2C-27EE-4C0D-83C2-B87E72E1CC10}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ubtrfs", "ubtrfs.vcproj", "{9A74844D-FC12-404A-B131-0AF7F3B4EB10}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ubtrfs", "ubtrfs.vcxproj", "{9A74844D-FC12-404A-B131-0AF7F3B4EB10}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mkbtrfs", "mkbtrfs.vcproj", "{2518533B-5F76-4B31-B906-7BFD15C1379A}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mkbtrfs", "mkbtrfs.vcxproj", "{2518533B-5F76-4B31-B906-7BFD15C1379A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
