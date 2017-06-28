@@ -485,6 +485,7 @@ static NTSTATUS vol_get_disk_extents(volume_device_extension* vde, PIRP Irp) {
             Irp->IoStatus.Information = offsetof(VOLUME_DISK_EXTENTS, Extents[0]);
             ext->NumberOfDiskExtents = i + ext3->NumberOfDiskExtents;
             Status = STATUS_BUFFER_OVERFLOW;
+            ExFreePool(ext3);
             goto end;
         }
 
