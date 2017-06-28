@@ -587,6 +587,8 @@ static void read_mappings(PUNICODE_STRING regpath) {
 
             i = i + 1;
         } while (Status != STATUS_NO_MORE_ENTRIES);
+
+        ExFreePool(kvfi);
     }
 
     ZwClose(h);
