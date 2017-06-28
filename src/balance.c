@@ -413,6 +413,7 @@ static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_r
 
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
+        ExFreePool(ei);
         return Status;
     }
 
