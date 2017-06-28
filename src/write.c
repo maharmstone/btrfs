@@ -1859,8 +1859,8 @@ exit:
     return Status;
 }
 
-NTSTATUS write_data(device_extension* Vcb, UINT64 address, void* data, UINT32 length, write_data_context* wtc, PIRP Irp,
-                    chunk* c, BOOL file_write, UINT64 irp_offset, ULONG priority) {
+NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_bytes_(length) void* data, _In_ UINT32 length, _In_ write_data_context* wtc,
+                    _In_opt_ PIRP Irp, _In_opt_ chunk* c, _In_ BOOL file_write, _In_ UINT64 irp_offset, _In_ ULONG priority) {
     NTSTATUS Status;
     UINT32 i;
     CHUNK_ITEM_STRIPE* cis;
