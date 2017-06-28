@@ -144,6 +144,7 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define _Requires_lock_held_(a)
 #define _Requires_exclusive_lock_held_(a)
 #define _Releases_lock_(a)
+#define _Out_writes_bytes_opt_(a)
 #endif
 
 struct _device_extension;
@@ -976,8 +977,8 @@ void protect_superblocks(chunk* c);
 BOOL is_top_level(PIRP Irp);
 NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);
 void uninit(device_extension* Vcb, BOOL flush);
-NTSTATUS dev_ioctl(PDEVICE_OBJECT DeviceObject, ULONG ControlCode, PVOID InputBuffer,
-                   ULONG InputBufferSize, PVOID OutputBuffer, ULONG OutputBufferSize, BOOLEAN Override, IO_STATUS_BLOCK* iosb);
+NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In_reads_bytes_opt_(InputBufferSize) PVOID InputBuffer, _In_ ULONG InputBufferSize,
+                   _Out_writes_bytes_opt_(OutputBufferSize) PVOID OutputBuffer, _In_ ULONG OutputBufferSize, _In_ BOOLEAN Override, _Out_opt_ IO_STATUS_BLOCK* iosb);
 BOOL is_file_name_valid(PUNICODE_STRING us, BOOL posix);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream);
 void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream);
