@@ -2746,7 +2746,8 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
-NTSTATUS calc_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum) {
+NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superblock.sector_size) UINT8* data,
+                   _In_ UINT32 sectors, _Out_writes_bytes_(sectors*sizeof(UINT32)) UINT32* csum) {
     NTSTATUS Status;
     calc_job* cj;
 
