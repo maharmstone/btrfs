@@ -1066,7 +1066,7 @@ void _free_fcb(fcb* fcb, const char* func);
 void init_fast_io_dispatch(FAST_IO_DISPATCH** fiod);
 
 // in crc32c.c
-UINT32 calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen);
+UINT32 calc_crc32c(_In_ UINT32 seed, _In_reads_bytes_(msglen) UINT8* msg, _In_ ULONG msglen);
 
 typedef struct {
     LIST_ENTRY* list;

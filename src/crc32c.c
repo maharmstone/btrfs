@@ -89,7 +89,7 @@ static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
     return crc;
 }
 
-UINT32 calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen) {
+UINT32 calc_crc32c(_In_ UINT32 seed, _In_reads_bytes_(msglen) UINT8* msg, _In_ ULONG msglen) {
     UINT32 rem;
     ULONG i;
 
