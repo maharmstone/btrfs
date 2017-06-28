@@ -113,6 +113,7 @@ NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* 
     Status = add_calc_job(Vcb, data, sectors, csum2, &cj);
     if (!NT_SUCCESS(Status)) {
         ERR("add_calc_job returned %08x\n", Status);
+        ExFreePool(csum2);
         return Status;
     }
 
