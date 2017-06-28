@@ -893,7 +893,8 @@ static __inline UINT64 make_file_id(root* r, UINT64 inode) {
     ((key1.offset > key2.offset) ? 1 :\
     0))))))
 
-__inline static UINT64 sector_align(UINT64 n, UINT64 a) {
+_Post_satisfies_(return>=n)
+__inline static UINT64 sector_align(_In_ UINT64 n, _In_ UINT64 a) {
     if (n & (a - 1))
         n = (n + a) & ~(a - 1);
 
