@@ -3084,11 +3084,11 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, UINT64* offset, BOO
                 Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, type, csum, &bmp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_data_extent returned %08x\n", Status);
+                    ExFreePool(csum);
+                    ExFreePool(bmparr);
                     goto end;
                 }
-            }
 
-            if (!is_tree) {
                 ExFreePool(csum);
                 ExFreePool(bmparr);
             }
