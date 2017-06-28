@@ -357,6 +357,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, er->type, er->hash, data, len, NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08x\n", Status);
+                if (data) ExFreePool(data);
                 return Status;
             }
 
