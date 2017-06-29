@@ -683,7 +683,8 @@ end:
     return Status;
 }
 
-static NTSTATUS prepare_raid0_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT64 irp_offset, write_data_context* wtc) {
+static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stripes>0) _In_ chunk* c, _In_ UINT64 address, _In_reads_bytes_(length) void* data,
+                                    _In_ UINT32 length, _In_ write_stripe* stripes, _In_ PIRP Irp, _In_ UINT64 irp_offset, _In_ write_data_context* wtc) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, stripenum;
     UINT64 pos, *stripeoff;

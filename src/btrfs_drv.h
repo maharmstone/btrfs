@@ -146,6 +146,7 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define _Requires_shared_lock_held_(a)
 #define _Releases_lock_(a)
 #define _Out_writes_bytes_opt_(a)
+#define _Pre_satisfies_(a)
 #define _Post_satisfies_(a)
 #define _Releases_exclusive_lock_(a)
 #endif
