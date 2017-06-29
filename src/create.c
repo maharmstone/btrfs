@@ -1629,8 +1629,9 @@ UINT32 inherit_mode(fcb* parfcb, BOOL is_dir) {
     return mode;
 }
 
-static NTSTATUS file_create2(PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, PUNICODE_STRING fpus,
-                             file_ref* parfileref, ULONG options, FILE_FULL_EA_INFORMATION* ea, ULONG ealen, file_ref** pfr, LIST_ENTRY* rollback) {
+static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _In_ PUNICODE_STRING fpus,
+                             _In_ file_ref* parfileref, _In_ ULONG options, _In_reads_bytes_opt_(ealen) FILE_FULL_EA_INFORMATION* ea, _In_ ULONG ealen,
+                             _Out_ file_ref** pfr, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
