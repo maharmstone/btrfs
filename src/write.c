@@ -3447,6 +3447,8 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, UINT64 end, BOOL prealloc, PIR
                     return Status;
                 }
 
+                ExFreePool(ed);
+
                 fcb->extents_changed = TRUE;
                 fcb->inode_item_changed = TRUE;
                 mark_fcb_dirty(fcb);
