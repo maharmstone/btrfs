@@ -3095,7 +3095,7 @@ NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
-    UINT8* data;
+    UINT8* data = NULL;
     ULONG length = IrpSp->Parameters.Read.Length, addon = 0;
     UINT64 start = IrpSp->Parameters.Read.ByteOffset.QuadPart;
 
