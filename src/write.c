@@ -2826,6 +2826,7 @@ BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
         csum = ExAllocatePoolWithTag(PagedPool, sl * sizeof(UINT32), ALLOC_TAG);
         if (!csum) {
             ERR("out of memory\n");
+            ExFreePool(ed);
             return FALSE;
         }
 
@@ -2833,6 +2834,7 @@ BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
         if (!NT_SUCCESS(Status)) {
             ERR("calc_csum returned %08x\n", Status);
             ExFreePool(csum);
+            ExFreePool(ed);
             return FALSE;
         }
     }
@@ -2840,9 +2842,12 @@ BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     Status = add_extent_to_fcb(fcb, start_data, ed, edsize, TRUE, csum, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_extent_to_fcb returned %08x\n", Status);
+        if (csum) ExFreePool(csum);
         ExFreePool(ed);
         return FALSE;
     }
+
+    ExFreePool(ed);
 
     c->used += length;
     space_list_subtract(c, FALSE, address, length, rollback);
