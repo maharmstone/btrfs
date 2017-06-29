@@ -3761,6 +3761,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (UINT32)(end_data - start_data), Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
+            ExFreePool(newext1);
+            ExFreePool(newext2);
+            ExFreePool(newext3);
             return Status;
         }
 
