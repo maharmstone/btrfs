@@ -3812,7 +3812,7 @@ static NTSTATUS mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ccb* root_ccb = NULL;
     BOOL init_lookaside = FALSE;
     device* dev;
-    volume_device_extension* vde;
+    volume_device_extension* vde = NULL;
     volume_child* vc;
     BOOL no_pnp = FALSE;
     UINT64 readobjsize;
