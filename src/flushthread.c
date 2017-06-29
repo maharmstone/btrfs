@@ -5952,6 +5952,7 @@ static NTSTATUS update_root_backref(device_extension* Vcb, UINT64 subvolid, UINT
         RtlCopyMemory(data, tp.item->data, datalen);
     } else {
         datalen = 0;
+        data = NULL;
     }
 
     searchkey.obj_id = subvolid;
