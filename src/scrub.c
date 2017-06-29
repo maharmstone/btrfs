@@ -2110,7 +2110,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 galois_divpower(scratch, bad_stripe_num, len);
 
             if (RtlCheckBit(&context->is_tree, bad_off1)) {
-                tree_header *th1, *th2;
+                tree_header *th1 = NULL, *th2 = NULL;
 
                 if (c->devices[parity1]->devobj) {
                     th1 = (tree_header*)&context->parity_scratch[i * Vcb->superblock.sector_size];
