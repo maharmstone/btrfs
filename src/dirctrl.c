@@ -76,7 +76,7 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 t
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
-    free_fcb(fcb);
+    free_fcb(Vcb, fcb);
 
     return tag;
 }

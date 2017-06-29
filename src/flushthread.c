@@ -2692,7 +2692,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 }
             }
 
-            free_fcb(c->old_cache);
+            free_fcb(Vcb, c->old_cache);
             c->old_cache = NULL;
         }
 
@@ -5144,7 +5144,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
         Status = flush_fcb(c->cache, TRUE, batchlist, Irp);
 
-        free_fcb(c->cache);
+        free_fcb(Vcb, c->cache);
 
         if (!NT_SUCCESS(Status)) {
             ERR("flush_fcb returned %08x\n", Status);
@@ -6904,7 +6904,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             Status = flush_fcb(fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(fcb->Header.Resource);
 
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);
@@ -6937,7 +6937,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
             Status = flush_fcb(fcb, FALSE, &batchlist, Irp);
             ExReleaseResourceLite(fcb->Header.Resource);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_fcb returned %08x\n", Status);

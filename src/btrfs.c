@@ -1394,9 +1394,9 @@ void mark_fileref_dirty(file_ref* fileref) {
 }
 
 #ifdef DEBUG_FCB_REFCOUNTS
-void _free_fcb(fcb* fcb, const char* func) {
+void _free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb, _In_ const char* func) {
 #else
-void free_fcb(fcb* fcb) {
+void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb) {
 #endif
     LONG rc;
 
@@ -1423,7 +1423,7 @@ void free_fcb(fcb* fcb) {
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
 
-    ExFreeToNPagedLookasideList(&fcb->Vcb->fcb_np_lookaside, fcb->nonpaged);
+    ExFreeToNPagedLookasideList(&Vcb->fcb_np_lookaside, fcb->nonpaged);
 
     if (fcb->sd)
         ExFreePool(fcb->sd);
@@ -1493,7 +1493,7 @@ void free_fcb(fcb* fcb) {
     if (fcb->pool_type == NonPagedPool)
         ExFreePool(fcb);
     else
-        ExFreeToPagedLookasideList(&fcb->Vcb->fcb_lookaside, fcb);
+        ExFreeToPagedLookasideList(&Vcb->fcb_lookaside, fcb);
 
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
@@ -1504,7 +1504,7 @@ void free_fcb(fcb* fcb) {
 #endif
 }
 
-void free_fileref(device_extension* Vcb, file_ref* fr) {
+void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, _Inout_ file_ref* fr) {
     LONG rc;
 
     rc = InterlockedDecrement(&fr->refcount);
@@ -1558,7 +1558,7 @@ void free_fileref(device_extension* Vcb, file_ref* fr) {
         free_fileref(Vcb, fr->parent);
     }
 
-    free_fcb(fr->fcb);
+    free_fcb(Vcb, fr->fcb);
 
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
@@ -1637,7 +1637,7 @@ static NTSTATUS close_file(PFILE_OBJECT FileObject) {
     if (fileref)
         free_fileref(fcb->Vcb, fileref);
     else
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
 
     ExReleaseResourceLite(&Vcb->fcb_lock);
 
@@ -1738,8 +1738,10 @@ void uninit(device_extension* Vcb, BOOL flush) {
     KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
     KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);
 
-    free_fcb(Vcb->volume_fcb);
-    free_fcb(Vcb->dummy_fcb);
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    free_fcb(Vcb, Vcb->volume_fcb);
+    free_fcb(Vcb, Vcb->dummy_fcb);
+    ExReleaseResourceLite(&Vcb->fcb_lock);
 
     if (Vcb->root_file)
         ObDereferenceObject(Vcb->root_file);
@@ -1749,7 +1751,9 @@ void uninit(device_extension* Vcb, BOOL flush) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (c->cache) {
-            free_fcb(c->cache);
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fcb(Vcb, c->cache);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
             c->cache = NULL;
         }
 
@@ -1784,8 +1788,11 @@ void uninit(device_extension* Vcb, BOOL flush) {
         if (c->devices)
             ExFreePool(c->devices);
 
-        if (c->cache)
-            free_fcb(c->cache);
+        if (c->cache) {
+            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+            free_fcb(Vcb, c->cache);
+            ExReleaseResourceLite(&Vcb->fcb_lock);
+        }
 
         ExDeleteResourceLite(&c->range_locks_lock);
         ExDeleteResourceLite(&c->partial_stripes_lock);
@@ -4359,13 +4366,21 @@ exit2:
 
             if (Vcb->root_file)
                 ObDereferenceObject(Vcb->root_file);
-            else if (Vcb->root_fileref)
+            else if (Vcb->root_fileref) {
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(Vcb, Vcb->root_fileref);
-            else if (root_fcb)
-                free_fcb(root_fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+            } else if (root_fcb) {
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fcb(Vcb, root_fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+            }
 
-            if (Vcb->volume_fcb)
-                free_fcb(Vcb->volume_fcb);
+            if (Vcb->volume_fcb) {
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fcb(Vcb, Vcb->volume_fcb);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+            }
 
             ExDeleteResourceLite(&Vcb->tree_lock);
             ExDeleteResourceLite(&Vcb->load_lock);

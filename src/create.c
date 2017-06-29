@@ -549,7 +549,8 @@ cont:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
+NTSTATUS open_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8,
+                  fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -621,13 +622,13 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return Status;
     }
 
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
         WARN("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", inode, subvol->id);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -676,7 +677,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
                 if (!hl) {
                     ERR("out of memory\n");
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
@@ -694,7 +695,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                     ExFreePool(hl);
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return Status;
                 }
 
@@ -708,7 +709,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     if (!hl->name.Buffer) {
                         ERR("out of memory\n");
                         ExFreePool(hl);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -717,7 +718,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
                 }
@@ -741,7 +742,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
                 if (!hl) {
                     ERR("out of memory\n");
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
@@ -759,7 +760,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                     ExFreePool(hl);
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return Status;
                 }
 
@@ -773,7 +774,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     if (!hl->name.Buffer) {
                         ERR("out of memory\n");
                         ExFreePool(hl);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -782,7 +783,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
                 }
@@ -815,7 +816,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->reparse_xattr.Buffer) {
                             ERR("out of memory\n");
-                            free_fcb(fcb);
+                            free_fcb(Vcb, fcb);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
@@ -838,7 +839,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                             fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                             if (!fcb->ea_xattr.Buffer) {
                                 ERR("out of memory\n");
-                                free_fcb(fcb);
+                                free_fcb(Vcb, fcb);
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
 
@@ -886,7 +887,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->sd) {
                             ERR("out of memory\n");
-                            free_fcb(fcb);
+                            free_fcb(Vcb, fcb);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
@@ -918,14 +919,14 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[strlen(xapref)], di->n - (ULONG)strlen(xapref));
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
 
                     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
                     if (!dc) {
                         ERR("out of memory\n");
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -936,7 +937,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     if (!dc->utf8.Buffer) {
                         ERR("out of memory\n");
                         ExFreePool(dc);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -948,7 +949,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         ERR("out of memory\n");
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -958,7 +959,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
                         ExFreePool(dc);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
 
@@ -968,7 +969,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
                         ExFreePool(dc);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
 
@@ -981,7 +982,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + di->m + di->n, ALLOC_TAG);
                     if (!xa) {
                         ERR("out of memory\n");
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -1010,7 +1011,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
 
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -1021,7 +1022,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
                     ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
 
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return STATUS_INTERNAL_ERROR;
                 }
 
@@ -1035,7 +1036,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
             ext = ExAllocatePoolWithTag(pooltype, offsetof(extent, extent_data) + tp.item->size, ALLOC_TAG);
             if (!ext) {
                 ERR("out of memory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -1055,7 +1056,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
         Status = load_dir_children(fcb, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_dir_children returned %08x\n", Status);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return Status;
         }
     }
@@ -1102,7 +1103,7 @@ NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_fcb_stream(device_extension* Vcb, dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
+static NTSTATUS open_fcb_stream(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
     fcb* fcb;
     UINT8* xattrdata;
     UINT16 xattrlen, overhead;
@@ -1138,7 +1139,7 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, dir_child* dc, fcb* paren
 
     if (!get_xattr(Vcb, parent->subvol, parent->inode, xattr.Buffer, crc32, &xattrdata, &xattrlen, Irp)) {
         ERR("get_xattr failed\n");
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         ExFreePool(xattr.Buffer);
         return STATUS_INTERNAL_ERROR;
     }
@@ -1159,19 +1160,19 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, dir_child* dc, fcb* paren
     Status = find_item(Vcb, parent->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return Status;
     }
 
     if (keycmp(tp.item->key, searchkey)) {
         ERR("error - could not find key for xattr\n");
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return STATUS_INTERNAL_ERROR;
     }
 
     if (tp.item->size < xattrlen) {
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, xattrlen);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1198,8 +1199,8 @@ static NTSTATUS open_fcb_stream(device_extension* Vcb, dir_child* dc, fcb* paren
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
-                            POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
+NTSTATUS open_fileref_child(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart,
+                            BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
 
@@ -1267,7 +1268,7 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
         sf2 = create_fileref(Vcb);
         if (!sf2) {
             ERR("out of memory\n");
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -1335,14 +1336,14 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
 
             if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
                 WARN("passed path including file as subdirectory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_OBJECT_PATH_NOT_FOUND;
             }
 
             sf2 = create_fileref(Vcb);
             if (!sf2) {
                 ERR("out of memory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -1369,8 +1370,8 @@ NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset,
-                      POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
+NTSTATUS open_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent,
+                      USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     LIST_ENTRY parts;
@@ -1625,8 +1626,8 @@ UINT32 inherit_mode(fcb* parfcb, BOOL is_dir) {
     return mode;
 }
 
-static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fpus, file_ref* parfileref, ULONG options,
-                             FILE_FULL_EA_INFORMATION* ea, ULONG ealen, file_ref** pfr, LIST_ENTRY* rollback) {
+static NTSTATUS file_create2(PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, PUNICODE_STRING fpus,
+                             file_ref* parfileref, ULONG options, FILE_FULL_EA_INFORMATION* ea, ULONG ealen, file_ref** pfr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
@@ -1796,7 +1797,7 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
 
     if (!NT_SUCCESS(Status)) {
         ERR("fcb_get_new_sd returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
         parfileref->fcb->inode_item.st_size -= utf8len * 2;
@@ -1833,7 +1834,7 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
         fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, ealen, ALLOC_TAG);
         if (!fcb->ea_xattr.Buffer) {
             ERR("out of memory\n");
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
             parfileref->fcb->inode_item.st_size -= utf8len * 2;
@@ -1851,7 +1852,7 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     fileref = create_fileref(Vcb);
     if (!fileref) {
         ERR("out of memory\n");
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
         parfileref->fcb->inode_item.st_size -= utf8len * 2;
@@ -1950,8 +1951,9 @@ static NTSTATUS file_create2(PIRP Irp, device_extension* Vcb, PUNICODE_STRING fp
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream,
-                              PIRP Irp, ULONG options, POOL_TYPE pool_type, BOOL case_sensitive, LIST_ENTRY* rollback) {
+static NTSTATUS create_stream(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfileref,
+                              file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream, PIRP Irp,
+                              ULONG options, POOL_TYPE pool_type, BOOL case_sensitive, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     file_ref *fileref, *newpar, *parfileref;
     fcb* fcb;
@@ -2086,7 +2088,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return Status;
     }
 
@@ -2095,7 +2097,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     fcb->adsxattr.Buffer = ExAllocatePoolWithTag(pool_type, fcb->adsxattr.MaximumLength, ALLOC_TAG);
     if (!fcb->adsxattr.Buffer) {
         ERR("out of memory\n");
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -2104,7 +2106,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[xapreflen], utf8len, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return Status;
     }
 
@@ -2122,7 +2124,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return Status;
     }
 
@@ -2135,7 +2137,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
 
     if (utf8len + xapreflen + overhead > fcb->adsmaxlen) {
         WARN("not enough room for new DIR_ITEM (%u + %u > %u)", utf8len + xapreflen, overhead, fcb->adsmaxlen);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return STATUS_DISK_FULL;
     } else
         fcb->adsmaxlen -= overhead + utf8len + xapreflen;
@@ -2143,7 +2145,7 @@ static NTSTATUS create_stream(device_extension* Vcb, file_ref** pfileref, file_r
     fileref = create_fileref(Vcb);
     if (!fileref) {
         ERR("out of memory\n");
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -2250,8 +2252,8 @@ static __inline BOOL called_from_lxss() {
 #define called_from_lxss() FALSE
 #endif
 
-static NTSTATUS file_create(PIRP Irp, device_extension* Vcb, PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related,
-                            PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
+static NTSTATUS file_create(PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, PFILE_OBJECT FileObject,
+                            file_ref* related, BOOL loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref *fileref, *parfileref = NULL;
     ULONG i, j;

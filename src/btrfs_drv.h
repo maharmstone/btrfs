@@ -145,6 +145,8 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define _Requires_exclusive_lock_held_(a)
 #define _Releases_lock_(a)
 #define _Out_writes_bytes_opt_(a)
+#define _Post_satisfies_(a)
+#define _Releases_exclusive_lock_(a)
 #endif
 
 struct _device_extension;
@@ -970,9 +972,9 @@ BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
 ULONG get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
 BOOL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
 #ifndef DEBUG_FCB_REFCOUNTS
-void free_fcb(fcb* fcb);
+void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb);
 #endif
-void free_fileref(device_extension* Vcb, file_ref* fr);
+void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, _Inout_ file_ref* fr);
 file_ref* create_fileref(device_extension* Vcb);
 void protect_superblocks(chunk* c);
 BOOL is_top_level(PIRP Irp);
@@ -1059,8 +1061,8 @@ void _debug_message(const char* func, char* s, ...);
 #endif
 
 #ifdef DEBUG_FCB_REFCOUNTS
-void _free_fcb(fcb* fcb, const char* func);
-#define free_fcb(fcb) _free_fcb(fcb, funcname)
+void _free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb, _In_ const char* func);
+#define free_fcb(Vcb, fcb) _free_fcb(Vcb, fcb, funcname)
 #endif
 
 // in fastio.c
@@ -1216,7 +1218,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 BOOL has_open_children(file_ref* fileref);
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT16 end, fcb* fcb, file_ref* fileref, BOOL advance_only);
 NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen);
-NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp);
+NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp);
 void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc);
 
@@ -1231,14 +1233,15 @@ _Function_class_(IRP_MJ_CREATE)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-NTSTATUS open_fileref(device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset,
-                      POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
-NTSTATUS open_fcb(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
+NTSTATUS open_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related,
+                      BOOL parent, USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
+NTSTATUS open_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8,
+                  fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
 NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp);
 NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc);
-NTSTATUS open_fileref_child(device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart,
-                            POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
+NTSTATUS open_fileref_child(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart,
+                            BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive);
 UINT32 inherit_mode(fcb* parfcb, BOOL is_dir);

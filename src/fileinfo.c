@@ -295,7 +295,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
             if (!fcb->adsxattr.Buffer) {
                 ERR("out of memory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -309,7 +309,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
             if (!fcb->adsdata.Buffer) {
                 ERR("out of memory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -326,7 +326,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         fcb->sd = ExAllocatePoolWithTag(PagedPool, RtlLengthSecurityDescriptor(oldfcb->sd), ALLOC_TAG);
         if (!fcb->sd) {
             ERR("out of memory\n");
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -344,7 +344,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
             if (!ext2) {
                 ERR("out of memory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -372,7 +372,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
                 ext2->csum = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
                 if (!ext2->csum) {
                     ERR("out of memory\n");
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
@@ -394,7 +394,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
         if (!hl2) {
             ERR("out of memory\n");
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -407,7 +407,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         if (!hl2->name.Buffer) {
             ERR("out of memory\n");
             ExFreePool(hl2);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -420,7 +420,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             ERR("out of memory\n");
             ExFreePool(hl2->name.Buffer);
             ExFreePool(hl2);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -437,7 +437,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->reparse_xattr.MaximumLength, ALLOC_TAG);
         if (!fcb->reparse_xattr.Buffer) {
             ERR("out of memory\n");
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -450,7 +450,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, fcb->ea_xattr.MaximumLength, ALLOC_TAG);
         if (!fcb->ea_xattr.Buffer) {
             ERR("out of memory\n");
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -470,7 +470,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
             if (!xa2) {
                 ERR("out of memory\n");
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -1189,7 +1189,7 @@ end:
         me = CONTAINING_RECORD(le, move_entry, list_entry);
 
         if (me->dummyfcb)
-            free_fcb(me->dummyfcb);
+            free_fcb(fileref->fcb->Vcb, me->dummyfcb);
 
         if (me->dummyfileref)
             free_fileref(fileref->fcb->Vcb, me->dummyfileref);
@@ -3040,7 +3040,8 @@ static NTSTATUS fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORM
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp) {
+NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
+                               root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
     UINT64 parent = 0;
@@ -3072,7 +3073,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08x\n", Status);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             return Status;
         }
 
@@ -3088,7 +3089,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return Status;
                 }
 
@@ -3101,7 +3102,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
                     if (!name.Buffer) {
                         ERR("out of memory\n");
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -3109,7 +3110,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(name.Buffer);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
 
@@ -3126,7 +3127,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return Status;
                 }
 
@@ -3139,7 +3140,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
                     if (!name.Buffer) {
                         ERR("out of memory\n");
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -3147,7 +3148,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(name.Buffer);
-                        free_fcb(fcb);
+                        free_fcb(Vcb, fcb);
                         return Status;
                     }
 
@@ -3165,7 +3166,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
     if (parent == 0) {
         ERR("subvol %llx, inode %llx has no hardlinks\n", subvol->id, inode);
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         if (hl_alloc) ExFreePool(name.Buffer);
         return STATUS_INVALID_PARAMETER;
     }
@@ -3181,7 +3182,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08x\n", Status);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             if (hl_alloc) ExFreePool(name.Buffer);
             return Status;
         }
@@ -3194,14 +3195,14 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
             if (tp.item->size < sizeof(ROOT_REF)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 if (hl_alloc) ExFreePool(name.Buffer);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 if (hl_alloc) ExFreePool(name.Buffer);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -3220,7 +3221,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
             if (!r) {
                 ERR("couldn't find subvol %llx\n", tp.item->key.offset);
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 if (hl_alloc) ExFreePool(name.Buffer);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -3228,7 +3229,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
             Status = open_fileref_by_inode(Vcb, r, rr->dir, &parfr, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("open_fileref_by_inode returned %08x\n", Status);
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 if (hl_alloc) ExFreePool(name.Buffer);
                 return Status;
             }
@@ -3241,7 +3242,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
             Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, rr->name, rr->n);
             if (!NT_SUCCESS(Status)) {
                 ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                free_fcb(fcb);
+                free_fcb(Vcb, fcb);
                 return Status;
             }
 
@@ -3254,7 +3255,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
 
                 if (!name.Buffer) {
                     ERR("out of memory\n");
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
@@ -3262,7 +3263,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
                 if (!NT_SUCCESS(Status)) {
                     ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                     ExFreePool(name.Buffer);
-                    free_fcb(fcb);
+                    free_fcb(Vcb, fcb);
                     return Status;
                 }
 
@@ -3270,7 +3271,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
             }
         } else {
             ERR("couldn't find parent for subvol %llx\n", subvol->id);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
             if (hl_alloc) ExFreePool(name.Buffer);
             return STATUS_INTERNAL_ERROR;
         }
@@ -3278,7 +3279,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         Status = open_fileref_by_inode(Vcb, subvol, parent, &parfr, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref_by_inode returned %08x\n", Status);
-            free_fcb(fcb);
+            free_fcb(Vcb, fcb);
 
             if (hl_alloc)
                 ExFreePool(name.Buffer);
@@ -3295,7 +3296,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
         if (hl_alloc)
             ExFreePool(name.Buffer);
 
-        free_fcb(fcb);
+        free_fcb(Vcb, fcb);
         free_fileref(Vcb, parfr);
 
         return Status;
@@ -3306,7 +3307,7 @@ NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, UINT64 inode
     if (hl_alloc)
         ExFreePool(name.Buffer);
 
-    free_fcb(fcb);
+    free_fcb(Vcb, fcb);
     free_fileref(Vcb, parfr);
 
     return STATUS_SUCCESS;
