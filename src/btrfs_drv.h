@@ -869,7 +869,8 @@ static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
     out->nanoseconds = (l % 10000000) * 100;
 }
 
-static __inline void get_raid0_offset(UINT64 off, UINT64 stripe_length, UINT16 num_stripes, UINT64* stripeoff, UINT16* stripe) {
+_Post_satisfies_(*stripe>=0&&*stripe<num_stripes)
+static __inline void get_raid0_offset(_In_ UINT64 off, _In_ UINT64 stripe_length, _In_ UINT16 num_stripes, _Out_ UINT64* stripeoff, _Out_ UINT16* stripe) {
     UINT64 initoff, startoff;
 
     startoff = off % (num_stripes * stripe_length);

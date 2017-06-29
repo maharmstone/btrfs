@@ -812,7 +812,9 @@ static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stri
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT32 length, write_stripe* stripes, PIRP Irp, UINT64 irp_offset, write_data_context* wtc) {
+static NTSTATUS prepare_raid10_write(_Pre_satisfies_(_Curr_->chunk_item->sub_stripes>0&&_Curr_->chunk_item->num_stripes>=_Curr_->chunk_item->sub_stripes) _In_ chunk* c,
+                                     _In_ UINT64 address, _In_reads_bytes_(length) void* data, _In_ UINT32 length, _In_ write_stripe* stripes,
+                                     _In_ PIRP Irp, _In_ UINT64 irp_offset, _In_ write_data_context* wtc) {
     UINT64 startoff, endoff;
     UINT16 startoffstripe, endoffstripe, stripenum;
     UINT64 pos, *stripeoff;
@@ -821,15 +823,10 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
     PMDL master_mdl;
     PFN_NUMBER* pfns;
 
-    stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes, ALLOC_TAG);
-    if (!stripeoff) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes / c->chunk_item->sub_stripes, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / c->chunk_item->sub_stripes, &endoff, &endoffstripe);
 
+    stripenum = startoffstripe;
     startoffstripe *= c->chunk_item->sub_stripes;
     endoffstripe *= c->chunk_item->sub_stripes;
 
@@ -904,7 +901,6 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
         stripes[i].mdl = IoAllocateMdl(NULL, (ULONG)(stripes[i].end - stripes[i].start), FALSE, FALSE, NULL);
         if (!stripes[i].mdl) {
             ERR("IoAllocateMdl failed\n");
-            ExFreePool(stripeoff);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -917,9 +913,14 @@ static NTSTATUS prepare_raid10_write(chunk* c, UINT64 address, void* data, UINT3
     }
 
     pos = 0;
-    RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes);
 
-    stripenum = startoffstripe / c->chunk_item->sub_stripes;
+    stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(stripeoff, sizeof(UINT64) * c->chunk_item->num_stripes / c->chunk_item->sub_stripes);
 
     while (pos < length) {
         PFN_NUMBER* stripe_pfns = (PFN_NUMBER*)(stripes[stripenum * c->chunk_item->sub_stripes].mdl + 1);
