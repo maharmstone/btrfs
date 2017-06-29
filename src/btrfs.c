@@ -915,7 +915,7 @@ static NTSTATUS read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID con
 NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp) {
     NTSTATUS Status;
     root* r;
-    tree* t;
+    tree* t = NULL;
     ROOT_ITEM* ri;
     traverse_ptr tp;
 
@@ -950,7 +950,7 @@ NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_ex
     if (!ri) {
         ERR("out of memory\n");
 
-        if (!no_tree)
+        if (t)
             ExFreePool(t);
 
         ExFreePool(r->nonpaged);
@@ -961,7 +961,7 @@ NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_ex
     r->id = id;
     r->treeholder.address = 0;
     r->treeholder.generation = Vcb->superblock.generation;
-    r->treeholder.tree = no_tree ? NULL : t;
+    r->treeholder.tree = t;
     r->lastinode = 0;
     r->dirty = FALSE;
     r->received = FALSE;
@@ -982,7 +982,7 @@ NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_ex
         ERR("insert_tree_item returned %08x\n", Status);
         ExFreePool(ri);
 
-        if (!no_tree)
+        if (t)
             ExFreePool(t);
 
         ExFreePool(r->nonpaged);
