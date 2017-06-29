@@ -2688,7 +2688,12 @@ void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
 }
 
-NTSTATUS add_extent_to_fcb(fcb* fcb, UINT64 offset, EXTENT_DATA* ed, UINT16 edsize, BOOL unique, UINT32* csum, LIST_ENTRY* rollback) {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(suppress: 28194)
+#endif
+NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ UINT64 offset, _In_reads_bytes_(edsize) EXTENT_DATA* ed, _In_ UINT16 edsize,
+                           _In_ BOOL unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) UINT32* csum, _In_ LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
 
@@ -2726,6 +2731,9 @@ end:
 
     return STATUS_SUCCESS;
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     if (!ext->ignore) {
