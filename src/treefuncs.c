@@ -569,7 +569,7 @@ NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, co
 
 BOOL find_next_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
     tree* t;
-    tree_data *td, *next;
+    tree_data *td = NULL, *next;
     NTSTATUS Status;
     BOOL loaded;
 
