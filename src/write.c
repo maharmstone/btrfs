@@ -642,8 +642,16 @@ end:
         ExFreePool(stripes);
 
     if (!NT_SUCCESS(Status)) {
-        if (c && c->chunk_item) ExFreePool(c->chunk_item);
-        if (c) ExFreePool(c);
+        if (c) {
+            if (c->devices)
+                ExFreePool(c->devices);
+
+            if (c->chunk_item)
+                ExFreePool(c->chunk_item);
+
+            ExFreePool(c);
+        }
+
         if (s) ExFreePool(s);
     } else {
         BOOL done = FALSE;
