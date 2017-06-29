@@ -213,7 +213,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, UINT64 address, UIN
     UINT64 refcount;
     UINT16 inline_len;
     BOOL all_inline = TRUE;
-    extent_ref* first_noninline;
+    extent_ref* first_noninline = NULL;
     EXTENT_ITEM* ei;
     UINT8* siptr;
 
