@@ -4823,7 +4823,7 @@ exit:
     return Status;
 }
 
-BOOL is_file_name_valid(PUNICODE_STRING us, BOOL posix) {
+BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix) {
     ULONG i;
 
     if (us->Length < sizeof(WCHAR))

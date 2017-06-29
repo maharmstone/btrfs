@@ -984,7 +984,7 @@ NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_ex
 void uninit(device_extension* Vcb, BOOL flush);
 NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In_reads_bytes_opt_(InputBufferSize) PVOID InputBuffer, _In_ ULONG InputBufferSize,
                    _Out_writes_bytes_opt_(OutputBufferSize) PVOID OutputBuffer, _In_ ULONG OutputBufferSize, _In_ BOOLEAN Override, _Out_opt_ IO_STATUS_BLOCK* iosb);
-BOOL is_file_name_valid(PUNICODE_STRING us, BOOL posix);
+BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix);
 void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream);
 void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream);
 WCHAR* file_desc(PFILE_OBJECT FileObject);
