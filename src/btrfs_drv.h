@@ -1174,7 +1174,7 @@ NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->sup
 void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext);
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ UINT64 offset, _In_reads_bytes_(edsize) EXTENT_DATA* ed, _In_ UINT16 edsize,
                            _In_ BOOL unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) UINT32* csum, _In_ LIST_ENTRY* rollback);
-void add_extent(fcb* fcb, LIST_ENTRY* prevextle, extent* newext);
+void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem extent* newext);
 
 // in dirctrl.c
 

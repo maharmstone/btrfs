@@ -2323,7 +2323,7 @@ void free_write_data_stripes(write_data_context* wtc) {
     }
 }
 
-void add_extent(fcb* fcb, LIST_ENTRY* prevextle, extent* newext) {
+void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem extent* newext) {
     LIST_ENTRY* le = prevextle->Flink;
 
     while (le != &fcb->extents) {
