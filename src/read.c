@@ -3338,10 +3338,10 @@ NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     Status = do_read(Irp, wait, &bytes_read);
 
-exit:
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
 
+exit:
     if (FileObject->Flags & FO_SYNCHRONOUS_IO && !(Irp->Flags & IRP_PAGING_IO))
         FileObject->CurrentByteOffset.QuadPart = IrpSp->Parameters.Read.ByteOffset.QuadPart + (NT_SUCCESS(Status) ? bytes_read : 0);
 
