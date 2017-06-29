@@ -3403,7 +3403,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                 } else if (!parfr->deleted) {
                     LIST_ENTRY* le2;
                     BOOL found = FALSE, deleted = FALSE;
-                    UNICODE_STRING* fn;
+                    UNICODE_STRING* fn = NULL;
 
                     le2 = parfr->children.Flink;
                     while (le2 != &parfr->children) {
