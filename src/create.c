@@ -1200,8 +1200,9 @@ static NTSTATUS open_fcb_stream(_Requires_shared_lock_held_(_Curr_->tree_lock) _
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref_child(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf,
-                            PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
+NTSTATUS open_fileref_child(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
+                            _In_ file_ref* sf, _In_ PUNICODE_STRING name, _In_ BOOL case_sensitive, _In_ BOOL lastpart, _In_ BOOL streampart,
+                            _In_ POOL_TYPE pooltype, _Out_ file_ref** psf2, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
 
@@ -1371,8 +1372,9 @@ NTSTATUS open_fileref_child(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requ
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr,
-                      PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
+NTSTATUS open_fileref(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr,
+                      _In_ PUNICODE_STRING fnus, _In_opt_ file_ref* related, _In_ BOOL parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
+                      _In_ BOOL case_sensitive, _In_opt_ PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     LIST_ENTRY parts;
@@ -2735,7 +2737,7 @@ end:
 }
 
 static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
-    PFILE_OBJECT FileObject;
+    PFILE_OBJECT FileObject = NULL;
     ULONG RequestedDisposition;
     ULONG options;
     NTSTATUS Status;
@@ -2743,7 +2745,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_hel
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
     USHORT parsed;
     ULONG fn_offset = 0;
-    file_ref *related, *fileref;
+    file_ref *related, *fileref = NULL;
     POOL_TYPE pool_type = Stack->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     ACCESS_MASK granted_access;
     BOOL loaded_related = FALSE;
@@ -2765,11 +2767,15 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_hel
 
     if (options & FILE_DIRECTORY_FILE && RequestedDisposition == FILE_SUPERSEDE) {
         WARN("error - supersede requested with FILE_DIRECTORY_FILE\n");
-        Status = STATUS_INVALID_PARAMETER;
-        goto exit;
+        return STATUS_INVALID_PARAMETER;
     }
 
     FileObject = Stack->FileObject;
+
+    if (!FileObject) {
+        ERR("FileObject was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
 
     if (FileObject->RelatedFileObject && FileObject->RelatedFileObject->FsContext2) {
         struct _ccb* relatedccb = FileObject->RelatedFileObject->FsContext2;
