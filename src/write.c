@@ -2832,6 +2832,7 @@ BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
         Status = calc_csum(Vcb, data, sl, csum);
         if (!NT_SUCCESS(Status)) {
             ERR("calc_csum returned %08x\n", Status);
+            ExFreePool(csum);
             return FALSE;
         }
     }
