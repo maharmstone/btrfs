@@ -3584,7 +3584,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                 if (t->write && t->header.level == level) {
                     if (!t->parent && t->header.num_items == 1) {
                         LIST_ENTRY* le2 = t->itemlist.Flink;
-                        tree_data* td;
+                        tree_data* td = NULL;
                         tree* child_tree = NULL;
 
                         while (le2 != &t->itemlist) {
