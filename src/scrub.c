@@ -2427,7 +2427,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, U
     BOOL b;
     UINT64 run_start, run_end, full_stripe_len, stripe;
     UINT32 max_read, num_sectors;
-    ULONG arrlen, *allocarr, *csumarr, *treearr, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
+    ULONG arrlen, *allocarr, *csumarr = NULL, *treearr, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
     scrub_context_raid56 context;
     UINT16 i;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
