@@ -2619,7 +2619,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
     if (tp) {
         EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2;
+        EXTENT_DATA2* ed2 = NULL;
 
         if (tp->item->size < sizeof(EXTENT_DATA)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
@@ -2677,7 +2677,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
     if (tp2) {
         EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2;
+        EXTENT_DATA2* ed2 = NULL;
 
         if (tp2->item->size < sizeof(EXTENT_DATA)) {
             ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
