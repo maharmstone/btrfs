@@ -136,7 +136,7 @@ static BOOL find_new_dup_stripes(device_extension* Vcb, stripe* stripes, UINT64 
     UINT64 devusage = 0xffffffffffffffff;
     space *devdh1 = NULL, *devdh2 = NULL;
     LIST_ENTRY* le;
-    device* dev2;
+    device* dev2 = NULL;
 
     le = Vcb->devices.Flink;
 
