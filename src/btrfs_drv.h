@@ -143,6 +143,7 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define __drv_aliasesMem
 #define _Requires_lock_held_(a)
 #define _Requires_exclusive_lock_held_(a)
+#define _Requires_shared_lock_held_(a)
 #define _Releases_lock_(a)
 #define _Out_writes_bytes_opt_(a)
 #define _Post_satisfies_(a)
@@ -970,7 +971,8 @@ __inline static UINT32 get_extent_data_refcount(UINT8 type, void* data) {
 device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
 BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
 ULONG get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp);
-BOOL get_xattr(device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32, UINT8** data, UINT16* datalen, PIRP Irp);
+BOOL get_xattr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32,
+               UINT8** data, UINT16* datalen, PIRP Irp);
 #ifndef DEBUG_FCB_REFCOUNTS
 void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb);
 #endif
@@ -978,7 +980,7 @@ void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extens
 file_ref* create_fileref(device_extension* Vcb);
 void protect_superblocks(chunk* c);
 BOOL is_top_level(PIRP Irp);
-NTSTATUS create_root(device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);
+NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);
 void uninit(device_extension* Vcb, BOOL flush);
 NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In_reads_bytes_opt_(InputBufferSize) PVOID InputBuffer, _In_ ULONG InputBufferSize,
                    _Out_writes_bytes_opt_(OutputBufferSize) PVOID OutputBuffer, _In_ ULONG OutputBufferSize, _In_ BOOLEAN Override, _Out_opt_ IO_STATUS_BLOCK* iosb);
@@ -999,7 +1001,7 @@ NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, UINT64 StartingOffset, ULON
 NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
 NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 void log_device_error(device_extension* Vcb, device* dev, int error);
-NTSTATUS find_chunk_usage(device_extension* Vcb, PIRP Irp);
+NTSTATUS find_chunk_usage(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -1098,14 +1100,16 @@ typedef struct {
 } rollback_item;
 
 // in treefuncs.c
-NTSTATUS find_item(_In_ device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp, _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp);
+NTSTATUS find_item(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
+                   _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp);
 NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, BOOL ignore, UINT8 level, PIRP Irp);
-BOOL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp);
-BOOL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
+BOOL find_next_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp);
+BOOL find_prev_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
 void free_trees(device_extension* Vcb);
-NTSTATUS insert_tree_item(_In_ device_extension* Vcb, _In_ root* r, _In_ UINT64 obj_id, _In_ UINT8 obj_type, _In_ UINT64 offset,
-                          _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data, _In_ UINT16 size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp);
-NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp);
+NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 obj_id,
+                          _In_ UINT8 obj_type, _In_ UINT64 offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
+                          _In_ UINT16 size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp);
+NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _Inout_ traverse_ptr* tp);
 tree* free_tree(tree* t);
 NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp);
 NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp);
@@ -1113,7 +1117,7 @@ void clear_rollback(LIST_ENTRY* rollback);
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
 void free_trees_root(device_extension* Vcb, root* r);
 void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr);
-NTSTATUS commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
+NTSTATUS commit_batch_list(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
 NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, BOOL* ended1, BOOL* ended2);
 
@@ -1233,15 +1237,15 @@ _Function_class_(IRP_MJ_CREATE)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-NTSTATUS open_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related,
-                      BOOL parent, USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
-NTSTATUS open_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8,
-                  fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
-NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
-NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp);
+NTSTATUS open_fileref(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr,
+                      PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp);
+NTSTATUS open_fcb(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
+                  root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
+NTSTATUS load_csum(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp);
+NTSTATUS load_dir_children(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, BOOL ignore_size, PIRP Irp);
 NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc);
-NTSTATUS open_fileref_child(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart,
-                            BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
+NTSTATUS open_fileref_child(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf,
+                            PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive);
 UINT32 inherit_mode(fcb* parfcb, BOOL is_dir);
@@ -1371,7 +1375,7 @@ NTSTATUS query_balance(device_extension* Vcb, void* data, ULONG length);
 NTSTATUS pause_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS resume_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS stop_balance(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
-NTSTATUS look_for_balance_item(device_extension* Vcb);
+NTSTATUS look_for_balance_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb);
 NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
 
 _Function_class_(KSTART_ROUTINE)

@@ -360,7 +360,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     return STATUS_SUCCESS;
 }
 
-NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
+NTSTATUS load_csum(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -414,7 +414,7 @@ NTSTATUS load_csum(device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 len
     return STATUS_SUCCESS;
 }
 
-NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
+NTSTATUS load_dir_children(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, BOOL ignore_size, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -443,14 +443,14 @@ NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
 
-    Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
         return Status;
     }
 
     if (keycmp(tp.item->key, searchkey) == -1) {
-        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp)) {
+        if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
             tp = next_tp;
             TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         }
@@ -535,7 +535,7 @@ NTSTATUS load_dir_children(fcb* fcb, BOOL ignore_size, PIRP Irp) {
         num_children++;
 
 cont:
-        if (find_next_item(fcb->Vcb, &tp, &next_tp, FALSE, Irp))
+        if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp))
             tp = next_tp;
         else
             break;
@@ -549,8 +549,8 @@ cont:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8,
-                  fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
+NTSTATUS open_fcb(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
+                  root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -1053,7 +1053,7 @@ NTSTATUS open_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extens
     }
 
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        Status = load_dir_children(fcb, FALSE, Irp);
+        Status = load_dir_children(Vcb, fcb, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_dir_children returned %08x\n", Status);
             free_fcb(Vcb, fcb);
@@ -1103,7 +1103,8 @@ NTSTATUS open_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extens
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_fcb_stream(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
+static NTSTATUS open_fcb_stream(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
+                                dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
     fcb* fcb;
     UINT8* xattrdata;
     UINT16 xattrlen, overhead;
@@ -1199,8 +1200,8 @@ static NTSTATUS open_fcb_stream(_Requires_exclusive_lock_held_(_Curr_->fcb_lock)
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref_child(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf, PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart,
-                            BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
+NTSTATUS open_fileref_child(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref* sf,
+                            PUNICODE_STRING name, BOOL case_sensitive, BOOL lastpart, BOOL streampart, POOL_TYPE pooltype, file_ref** psf2, PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
 
@@ -1370,8 +1371,8 @@ NTSTATUS open_fileref_child(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) dev
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr, PUNICODE_STRING fnus, file_ref* related, BOOL parent,
-                      USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
+NTSTATUS open_fileref(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfr,
+                      PUNICODE_STRING fnus, file_ref* related, BOOL parent, USHORT* parsed, ULONG* fn_offset, POOL_TYPE pooltype, BOOL case_sensitive, PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     LIST_ENTRY parts;
@@ -1951,8 +1952,8 @@ static NTSTATUS file_create2(PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fc
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_stream(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, file_ref** pfileref,
-                              file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream, PIRP Irp,
+static NTSTATUS create_stream(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
+                              file_ref** pfileref, file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream, PIRP Irp,
                               ULONG options, POOL_TYPE pool_type, BOOL case_sensitive, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     file_ref *fileref, *newpar, *parfileref;
@@ -2252,8 +2253,8 @@ static __inline BOOL called_from_lxss() {
 #define called_from_lxss() FALSE
 #endif
 
-static NTSTATUS file_create(PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, PFILE_OBJECT FileObject,
-                            file_ref* related, BOOL loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
+static NTSTATUS file_create(PIRP Irp, _Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
+                            PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref *fileref, *parfileref = NULL;
     ULONG i, j;
@@ -2692,7 +2693,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
     return STATUS_SUCCESS;
 }
 
-static void fcb_load_csums(fcb* fcb, PIRP Irp) {
+static void fcb_load_csums(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
 
@@ -2710,7 +2711,7 @@ static void fcb_load_csums(fcb* fcb, PIRP Irp) {
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
             UINT64 len;
 
-            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / fcb->Vcb->superblock.sector_size;
+            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / Vcb->superblock.sector_size;
 
             ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * sizeof(UINT32)), ALLOC_TAG);
             if (!ext->csum) {
@@ -2718,7 +2719,7 @@ static void fcb_load_csums(fcb* fcb, PIRP Irp) {
                 goto end;
             }
 
-            Status = load_csum(fcb->Vcb, ext->csum, ed2->address + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
+            Status = load_csum(Vcb, ext->csum, ed2->address + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("load_csum returned %08x\n", Status);
@@ -2733,13 +2734,12 @@ end:
     fcb->csum_loaded = TRUE;
 }
 
-static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     PFILE_OBJECT FileObject;
     ULONG RequestedDisposition;
     ULONG options;
     NTSTATUS Status;
     ccb* ccb;
-    device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
     USHORT parsed;
     ULONG fn_offset = 0;
@@ -3469,7 +3469,7 @@ exit:
         }
 
         ExAcquireResourceExclusiveLite(fcb2->Header.Resource, TRUE);
-        fcb_load_csums(fcb2, Irp);
+        fcb_load_csums(Vcb, fcb2, Irp);
         ExReleaseResourceLite(fcb2->Header.Resource);
     } else if (Status != STATUS_REPARSE && Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
         TRACE("returning %08x\n", Status);
@@ -3728,7 +3728,7 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (!skip_lock)
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-        Status = open_file(DeviceObject, Irp, &rollback);
+        Status = open_file(DeviceObject, Vcb, Irp, &rollback);
 
         if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);

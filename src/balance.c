@@ -73,7 +73,8 @@ typedef struct {
 
 #define BALANCE_UNIT 0x100000 // only read 1 MB at a time
 
-static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp, BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
+static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* items, traverse_ptr* tp,
+                                   BOOL skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     metadata_reloc* mr;
     EXTENT_ITEM* ei;
@@ -225,7 +226,8 @@ static NTSTATUS add_metadata_reloc(device_extension* Vcb, LIST_ENTRY* items, tra
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_metadata_reloc_parent(device_extension* Vcb, LIST_ENTRY* items, UINT64 address, metadata_reloc** mr2, LIST_ENTRY* rollback) {
+static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* items,
+                                          UINT64 address, metadata_reloc** mr2, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     KEY searchkey;
     traverse_ptr tp;
@@ -320,7 +322,7 @@ static void sort_metadata_reloc_refs(metadata_reloc* mr) {
     mr->refs.Blink = newlist.Blink;
 }
 
-static NTSTATUS add_metadata_reloc_extent_item(device_extension* Vcb, metadata_reloc* mr) {
+static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, metadata_reloc* mr) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UINT64 rc = 0;
@@ -1206,7 +1208,8 @@ end:
     return Status;
 }
 
-static NTSTATUS data_reloc_add_tree_edr(device_extension* Vcb, LIST_ENTRY* metadata_items, data_reloc* dr, EXTENT_DATA_REF* edr, LIST_ENTRY* rollback) {
+static NTSTATUS data_reloc_add_tree_edr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* metadata_items,
+                                        data_reloc* dr, EXTENT_DATA_REF* edr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     KEY searchkey;
@@ -1304,7 +1307,8 @@ static NTSTATUS data_reloc_add_tree_edr(device_extension* Vcb, LIST_ENTRY* metad
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_data_reloc(device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* metadata_items, traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
+static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* metadata_items,
+                               traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     data_reloc* dr;
     EXTENT_ITEM* ei;
@@ -1528,7 +1532,7 @@ static void sort_data_reloc_refs(data_reloc* dr) {
     dr->refs.Blink = newlist.Blink;
 }
 
-static NTSTATUS add_data_reloc_extent_item(device_extension* Vcb, data_reloc* dr) {
+static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, data_reloc* dr) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     UINT64 rc = 0;
@@ -2561,7 +2565,7 @@ static NTSTATUS remove_superblocks(device* dev) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
+static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, device* dev) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -2775,7 +2779,7 @@ static NTSTATUS finish_removing_device(device_extension* Vcb, device* dev) {
     return STATUS_SUCCESS;
 }
 
-static void trim_unalloc_space(device_extension* Vcb, device* dev) {
+static void trim_unalloc_space(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, device* dev) {
     DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
     DEVICE_DATA_SET_RANGE* ranges;
     ULONG datalen, i;
@@ -3594,7 +3598,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
     return STATUS_SUCCESS;
 }
 
-NTSTATUS look_for_balance_item(device_extension* Vcb) {
+NTSTATUS look_for_balance_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;

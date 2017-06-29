@@ -521,7 +521,8 @@ static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* 
     }
 }
 
-NTSTATUS find_item(_In_ device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp, _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp) {
+NTSTATUS find_item(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
+                   _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
 
@@ -566,7 +567,7 @@ NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, co
     return Status;
 }
 
-BOOL find_next_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
+BOOL find_next_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
     tree* t;
     tree_data *td, *next;
     NTSTATUS Status;
@@ -669,7 +670,7 @@ static __inline tree_data* last_item(tree* t) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-BOOL find_prev_item(device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
+BOOL find_prev_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
     tree* t;
     tree_data* td;
     NTSTATUS Status;
@@ -822,8 +823,9 @@ void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ 
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-NTSTATUS insert_tree_item(_In_ device_extension* Vcb, _In_ root* r, _In_ UINT64 obj_id, _In_ UINT8 obj_type, _In_ UINT64 offset,
-                          _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data, _In_ UINT16 size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp) {
+NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 obj_id,
+                          _In_ UINT8 obj_type, _In_ UINT64 offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
+                          _In_ UINT16 size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     int cmp;
@@ -955,7 +957,7 @@ NTSTATUS insert_tree_item(_In_ device_extension* Vcb, _In_ root* r, _In_ UINT64 
 #pragma warning(pop)
 #endif
 
-NTSTATUS delete_tree_item(device_extension* Vcb, traverse_ptr* tp) {
+NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _Inout_ traverse_ptr* tp) {
     tree* t;
     UINT64 gen;
 
@@ -1815,7 +1817,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS commit_batch_list_root(device_extension* Vcb, batch_root* br, PIRP Irp) {
+static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, batch_root* br, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
 
@@ -2244,7 +2246,7 @@ static NTSTATUS commit_batch_list_root(device_extension* Vcb, batch_root* br, PI
     return STATUS_SUCCESS;
 }
 
-NTSTATUS commit_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
+NTSTATUS commit_batch_list(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
     NTSTATUS Status;
 
     while (!IsListEmpty(batchlist)) {
