@@ -25,7 +25,9 @@ typedef struct {
     UINT64 irp_offset;
 } write_stripe;
 
+_Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
+
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
 extern tPsUpdateDiskCounters PsUpdateDiskCounters;
