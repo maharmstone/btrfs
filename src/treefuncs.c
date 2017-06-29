@@ -348,12 +348,12 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
     t1 = tp->tree;
     t2 = tp2->tree;
 
-    while (t1 && t2 && t1->header.address == t2->header.address) {
+    do {
         td1 = t1->paritem;
         td2 = t2->paritem;
         t1 = t1->parent;
         t2 = t2->parent;
-    }
+    } while (t1 && t2 && t1->header.address == t2->header.address);
 
     while (TRUE) {
         traverse_ptr tp3, tp4;
