@@ -1084,6 +1084,12 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
     if (!vc) {
         ERR("out of memory\n");
+
+        if (!new_vde) {
+            ExReleaseResourceLite(&vde->child_lock);
+            ExReleaseResourceLite(&volume_list_lock);
+        }
+
         goto fail;
     }
 
@@ -1194,6 +1200,12 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
                 if (!name.Buffer) {
                     ERR("out of memory\n");
+
+                    if (!new_vde) {
+                        ExReleaseResourceLite(&vde->child_lock);
+                        ExReleaseResourceLite(&volume_list_lock);
+                    }
+
                     goto fail;
                 }
 
