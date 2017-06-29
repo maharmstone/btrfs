@@ -1481,7 +1481,7 @@ NTSTATUS open_fileref(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_e
     }
 
     le = parts.Flink;
-    while (le != &parts) {
+    do {
         name_bit* nb = CONTAINING_RECORD(le, name_bit, list_entry);
         BOOL lastpart = le->Flink == &parts || (has_stream && le->Flink->Flink == &parts);
         BOOL streampart = has_stream && le->Flink == &parts;
@@ -1523,7 +1523,7 @@ NTSTATUS open_fileref(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requires_e
         sf = sf2;
 
         le = le->Flink;
-    }
+    } while (le != &parts);
 
     if (Status != STATUS_REPARSE)
         Status = STATUS_SUCCESS;
