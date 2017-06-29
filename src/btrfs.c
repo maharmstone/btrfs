@@ -3849,7 +3849,7 @@ static NTSTATUS mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
 
             if (!still_has_superblock(vc->devobj)) {
-                remove_volume_child(vde, vc, TRUE, FALSE);
+                remove_volume_child(vde, vc, FALSE);
 
                 if (vde->num_children == 0) {
                     ERR("error - number of devices is zero\n");
@@ -3857,10 +3857,8 @@ static NTSTATUS mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
                     goto exit2;
                 }
 
-                if (vde->children_loaded == 0) { // just removed last device
-                    Status = STATUS_DEVICE_NOT_READY;
-                    goto exit2;
-                }
+                Status = STATUS_DEVICE_NOT_READY;
+                goto exit2;
             }
 
             le = le2;
@@ -4431,7 +4429,7 @@ static NTSTATUS verify_device(device_extension* Vcb, device* dev) {
                     if (vc->devobj == dev->devobj) {
                         TRACE("removing device\n");
 
-                        remove_volume_child(Vcb->vde, vc, FALSE, TRUE);
+                        remove_volume_child(Vcb->vde, vc, TRUE);
                         changed = TRUE;
 
                         break;

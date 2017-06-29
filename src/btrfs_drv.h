@@ -1128,9 +1128,8 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
 
-_Requires_exclusive_lock_held_(vde->child_lock)
-_Releases_lock_(vde->child_lock)
-void remove_volume_child(_In_ volume_device_extension* vde, _In_ volume_child* vc, _In_ BOOL no_release_lock, _In_ BOOL skip_dev);
+void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lock) _Releases_exclusive_lock_(_Curr_->child_lock) _In_ volume_device_extension* vde,
+                         _In_ volume_child* vc, _In_ BOOL skip_dev);
 
 // in cache.c
 NTSTATUS init_cache();
