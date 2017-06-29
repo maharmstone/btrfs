@@ -1453,7 +1453,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
     read_data_context context;
     UINT64 type, offset, total_reading = 0;
     NTSTATUS Status;
-    device** devices;
+    device** devices = NULL;
     UINT16 i, startoffstripe, allowed_missing, missing_devices = 0;
     UINT8* dummypage = NULL;
     PMDL dummy_mdl = NULL;
