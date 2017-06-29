@@ -3834,6 +3834,7 @@ static NTSTATUS mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         vde = DeviceToMount->DeviceExtension;
 
         if (!vde || vde->type != VCB_TYPE_VOLUME) {
+            vde = NULL;
             Status = STATUS_UNRECOGNIZED_VOLUME;
             goto exit2;
         }
