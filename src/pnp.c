@@ -167,7 +167,6 @@ static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject) {
         goto end;
     }
 
-    Vcb->removing = FALSE;
 end:
     ExReleaseResourceLite(&Vcb->fcb_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
