@@ -4627,12 +4627,9 @@ static NTSTATUS drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP 
             Status = verify_volume(DeviceObject);
 
             if (!NT_SUCCESS(Status) && Vcb->Vpb->Flags & VPB_MOUNTED) {
-                if (Vcb->open_files > 0) {
-                    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-                    Vcb->removing = TRUE;
-                    ExReleaseResourceLite(&Vcb->tree_lock);
-                } else
-                    uninit(Vcb, FALSE);
+                ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+                Vcb->removing = TRUE;
+                ExReleaseResourceLite(&Vcb->tree_lock);
             }
 
             break;
