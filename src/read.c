@@ -444,7 +444,6 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
 
     if (context->tree) {
         tree_header* t2;
-        UINT16 j;
         UINT64 off;
         UINT16 badsubstripe = 0;
         BOOL recovered = FALSE;
@@ -520,7 +519,6 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, UINT8* buf, UINT64 addr,
             UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
 
             if (context->csum[i] != crc32) {
-                UINT16 j;
                 UINT64 off;
                 UINT16 stripe2, badsubstripe = 0;
                 BOOL recovered = FALSE;
