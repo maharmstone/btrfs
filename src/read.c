@@ -1040,7 +1040,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
 
     if (context->tree) {
         UINT8* sector;
-        UINT16 j, k, physstripe, parity1, parity2, error_stripe;
+        UINT16 k, physstripe, parity1, parity2, error_stripe;
         UINT64 off;
         BOOL recovered = FALSE, failed = FALSE;
         ULONG num_errors = 0;
@@ -1254,7 +1254,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             physstripe = (parity2 + stripe + 1) % ci->num_stripes;
 
             if (!devices[physstripe] || !devices[physstripe]->devobj || (context->csum && context->csum[i] != crc32)) {
-                UINT16 j, k, error_stripe;
+                UINT16 k, error_stripe;
                 BOOL recovered = FALSE, failed = FALSE;
                 ULONG num_errors = 0;
 
