@@ -280,6 +280,8 @@ HRESULT BtrfsPropSheet::load_file_list() {
     can_change_owner = TRUE;
     can_change_nocow = TRUE;
 
+    sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
+
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
             HRESULT hr;
