@@ -97,7 +97,6 @@ public:
         compress_type_changed = FALSE;
         ro_changed = FALSE;
         can_change_perms = FALSE;
-        can_change_owner = FALSE;
         show_admin_button = FALSE;
         thread = NULL;
         mode = mode_set = 0;
@@ -162,7 +161,6 @@ public:
 
     BOOL readonly;
     BOOL can_change_perms;
-    BOOL can_change_owner;
     BOOL can_change_nocow;
     WCHAR size_format[255];
     HANDLE thread;

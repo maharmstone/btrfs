@@ -168,14 +168,12 @@ HRESULT BtrfsPropSheet::check_file(std::wstring fn, UINT i, UINT num_files, UINT
         return E_FAIL;
     }
 
-    if (fai.AccessFlags & FILE_READ_ATTRIBUTES) {
+    if (fai.AccessFlags & FILE_READ_ATTRIBUTES)
         can_change_perms = fai.AccessFlags & WRITE_DAC;
-        can_change_owner = fai.AccessFlags & WRITE_OWNER;
-    }
 
     readonly = !(fai.AccessFlags & FILE_WRITE_ATTRIBUTES);
 
-    if (!readonly && num_files == 1 && (!can_change_perms || !can_change_owner))
+    if (!readonly && num_files == 1 && !can_change_perms)
         show_admin_button = TRUE;
 
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
@@ -277,7 +275,6 @@ HRESULT BtrfsPropSheet::load_file_list() {
     various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
 
     can_change_perms = TRUE;
-    can_change_owner = TRUE;
     can_change_nocow = TRUE;
 
     sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
@@ -365,7 +362,6 @@ void BtrfsPropSheet::set_cmdline(std::wstring cmdline) {
     various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
 
     can_change_perms = TRUE;
-    can_change_owner = TRUE;
     can_change_nocow = TRUE;
 
     h = CreateFileW(cmdline.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
@@ -380,10 +376,8 @@ void BtrfsPropSheet::set_cmdline(std::wstring cmdline) {
         return;
     }
 
-    if (fai.AccessFlags & FILE_READ_ATTRIBUTES) {
+    if (fai.AccessFlags & FILE_READ_ATTRIBUTES)
         can_change_perms = fai.AccessFlags & WRITE_DAC;
-        can_change_owner = fai.AccessFlags & WRITE_OWNER;
-    }
 
     readonly = !(fai.AccessFlags & FILE_WRITE_ATTRIBUTES);
 
@@ -528,11 +522,8 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, std::wstring fn) {
     if (flags_changed || ro_changed)
         perms |= FILE_WRITE_ATTRIBUTES;
 
-    if (perms_changed || gid_changed)
+    if (perms_changed || gid_changed || uid_changed)
         perms |= WRITE_DAC;
-
-    if (uid_changed)
-        perms |= WRITE_OWNER;
 
     if (mode_set & S_ISUID && (((min_mode & S_ISUID) != (max_mode & S_ISUID)) || ((min_mode & S_ISUID) != (mode & S_ISUID))))
         perms |= WRITE_OWNER;
@@ -971,11 +962,6 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     if (!can_change_nocow)
         EnableWindow(GetDlgItem(hwndDlg, IDC_NODATACOW), 0);
 
-    if (!can_change_owner) {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SETUID), 0);
-    }
-
     if (!can_change_perms) {
         i = 0;
         while (perm_controls[i] != 0) {
@@ -983,7 +969,9 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
             i++;
         }
 
+        EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
         EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SETUID), 0);
     }
 
     if (readonly) {
