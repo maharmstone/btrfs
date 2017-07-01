@@ -481,7 +481,7 @@ typedef struct {
 
 typedef struct {
     CHUNK_ITEM* chunk_item;
-    UINT32 size;
+    UINT16 size;
     UINT64 offset;
     UINT64 used;
     UINT64 oldused;
