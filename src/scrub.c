@@ -2070,7 +2070,8 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                 log_device_error(Vcb, c->devices[parity2], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
             }
         } else if (num_errors == 1) {
-            UINT32 crc32a, crc32b, len, stripe_num, bad_stripe_num;
+            UINT32 crc32a, crc32b, len;
+            UINT16 stripe_num, bad_stripe_num;
             UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 * Vcb->superblock.sector_size);
             UINT8* scratch;
 
@@ -2107,7 +2108,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             }
 
             if (bad_stripe_num != 0)
-                galois_divpower(scratch, bad_stripe_num, len);
+                galois_divpower(scratch, (UINT8)bad_stripe_num, len);
 
             if (RtlCheckBit(&context->is_tree, bad_off1)) {
                 tree_header *th1 = NULL, *th2 = NULL;
