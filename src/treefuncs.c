@@ -91,7 +91,13 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
             else
                 td->data = NULL;
 
-            td->size = ln[i].size;
+            if (ln[i].size + sizeof(tree_header) + sizeof(leaf_node) > Vcb->superblock.node_size) {
+                ERR("overlarge item in tree %llx: %u > %u\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
+                ExFreePool(buf);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            td->size = (UINT16)ln[i].size;
             td->ignore = FALSE;
             td->inserted = FALSE;
 
