@@ -1292,7 +1292,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
                    _In_ ULONG priority);
 NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pbr, PIRP Irp);
 NTSTATUS read_stream(fcb* fcb, UINT8* data, UINT64 start, ULONG length, ULONG* pbr);
-NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read);
+NTSTATUS do_read(PIRP Irp, BOOLEAN wait, ULONG* bytes_read);
 NTSTATUS check_csum(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum);
 void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT16 missing1, UINT16 missing2, UINT8* out);
 

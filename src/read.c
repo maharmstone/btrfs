@@ -3086,7 +3086,7 @@ exit:
     return Status;
 }
 
-NTSTATUS do_read(PIRP Irp, BOOL wait, ULONG* bytes_read) {
+NTSTATUS do_read(PIRP Irp, BOOLEAN wait, ULONG* bytes_read) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
