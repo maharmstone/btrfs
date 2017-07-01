@@ -48,7 +48,7 @@ typedef struct {
     HANDLE subvol;
     BOOL readonly;
     BOOL posix;
-    UINT32 namelen;
+    UINT16 namelen;
     WCHAR name[1];
 } btrfs_create_snapshot;
 
@@ -56,7 +56,7 @@ typedef struct {
     void* POINTER_32 subvol;
     BOOL readonly;
     BOOL posix;
-    UINT32 namelen;
+    UINT16 namelen;
     WCHAR name[1];
 } btrfs_create_snapshot32;
 
