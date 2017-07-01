@@ -1285,12 +1285,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
 
-    if ((bsii->mode_changed || bsii->gid_changed) && !(ccb->access & WRITE_DAC)) {
-        WARN("insufficient privileges\n");
-        return STATUS_ACCESS_DENIED;
-    }
-
-    if (bsii->uid_changed && !(ccb->access & WRITE_OWNER)) {
+    if ((bsii->mode_changed || bsii->uid_changed || bsii->gid_changed) && !(ccb->access & WRITE_DAC)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
@@ -1333,46 +1328,10 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     }
 
     if (bsii->uid_changed && fcb->inode_item.st_uid != bsii->st_uid) {
-        PSID sid;
-        SECURITY_INFORMATION secinfo;
-        SECURITY_DESCRIPTOR sd;
-        void* oldsd;
-
         fcb->inode_item.st_uid = bsii->st_uid;
 
-        Status = uid_to_sid(bsii->st_uid, &sid);
-        if (!NT_SUCCESS(Status)) {
-            ERR("uid_to_sid returned %08x\n", Status);
-            goto end;
-        }
-
-        Status = RtlCreateSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlCreateSecurityDescriptor returned %08x\n", Status);
-            goto end;
-        }
-
-        Status = RtlSetOwnerSecurityDescriptor(&sd, sid, FALSE);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
-            goto end;
-        }
-
-        oldsd = fcb->sd;
-
-        secinfo = OWNER_SECURITY_INFORMATION;
-        Status = SeSetSecurityDescriptorInfoEx(NULL, &secinfo, &sd, (void**)&fcb->sd, SEF_AVOID_PRIVILEGE_CHECK, PagedPool, IoGetFileObjectGenericMapping());
-
-        if (!NT_SUCCESS(Status)) {
-            ERR("SeSetSecurityDescriptorInfo returned %08x\n", Status);
-            goto end;
-        }
-
-        ExFreePool(oldsd);
-
         fcb->sd_dirty = TRUE;
-
-        send_notification_fcb(ccb->fileref, FILE_NOTIFY_CHANGE_SECURITY, FILE_ACTION_MODIFIED, NULL);
+        fcb->sd_deleted = FALSE;
     }
 
     if (bsii->gid_changed)
