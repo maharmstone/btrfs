@@ -3364,7 +3364,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_hel
         RtlZeroMemory(ccb, sizeof(*ccb));
 
         ccb->NodeType = BTRFS_NODE_TYPE_CCB;
-        ccb->NodeSize = sizeof(ccb);
+        ccb->NodeSize = sizeof(*ccb);
         ccb->disposition = RequestedDisposition;
         ccb->options = options;
         ccb->query_dir_offset = 0;
