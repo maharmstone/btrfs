@@ -3155,8 +3155,14 @@ static NTSTATUS load_chunk_root(_Requires_shared_lock_held_(_Curr_->tree_lock) d
                 if (c->chunk_item->type & BLOCK_FLAG_SYSTEM && c->chunk_item->type > Vcb->system_flags)
                     Vcb->system_flags = c->chunk_item->type;
 
-                if (c->chunk_item->type & BLOCK_FLAG_RAID10 && c->chunk_item->sub_stripes == 0)
-                    c->chunk_item->sub_stripes = 1; // avoid potential division by zero
+                if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+                    if (c->chunk_item->sub_stripes == 0 || c->chunk_item->sub_stripes > c->chunk_item->num_stripes) {
+                        ERR("chunk %llx: invalid stripes (num_stripes %u, sub_stripes %u)\n", c->offset, c->chunk_item->num_stripes, c->chunk_item->sub_stripes);
+                        ExFreePool(c->chunk_item);
+                        ExFreePool(c);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+                }
 
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
@@ -3185,8 +3191,12 @@ static NTSTATUS load_chunk_root(_Requires_shared_lock_held_(_Curr_->tree_lock) d
                         if (c->devices[i]->readonly)
                             c->readonly = TRUE;
                     }
-                } else
-                    c->devices = NULL;
+                } else {
+                    ERR("chunk %llx: number of stripes is 0\n", c->offset);
+                    ExFreePool(c->chunk_item);
+                    ExFreePool(c);
+                    return STATUS_INTERNAL_ERROR;
+                }
 
                 ExInitializeResourceLite(&c->lock);
                 ExInitializeResourceLite(&c->changed_extents_lock);
