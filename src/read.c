@@ -196,7 +196,6 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, re
 
     if (context->tree) {
         tree_header* t2;
-        UINT16 j;
         BOOL recovered = FALSE;
 
         t2 = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
@@ -258,7 +257,6 @@ static NTSTATUS read_data_dup(device_extension* Vcb, UINT8* buf, UINT64 addr, re
             UINT32 crc32 = ~calc_crc32c(0xffffffff, buf + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
 
             if (context->csum[i] != crc32) {
-                UINT16 j;
                 BOOL recovered = FALSE;
 
                 for (j = 0; j < ci->num_stripes; j++) {
