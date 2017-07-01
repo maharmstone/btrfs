@@ -1145,7 +1145,7 @@ void free_cache();
 extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
 // in write.c
-NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_write);
+NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOLEAN wait, BOOLEAN deferred_write);
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, BOOLEAN paging_io, BOOLEAN no_cache,
                      BOOLEAN wait, BOOLEAN deferred_write, BOOLEAN write_irp, LIST_ENTRY* rollback);
 NTSTATUS truncate_file(fcb* fcb, UINT64 end, PIRP Irp, LIST_ENTRY* rollback);

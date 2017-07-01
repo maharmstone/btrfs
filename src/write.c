@@ -4542,7 +4542,7 @@ end:
     return Status;
 }
 
-NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOL wait, BOOL deferred_write) {
+NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOLEAN wait, BOOLEAN deferred_write) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     void* buf;
     NTSTATUS Status;
@@ -4626,7 +4626,7 @@ NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject ? FileObject->FsContext : NULL;
     ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
-    BOOL wait = FileObject ? IoIsOperationSynchronous(Irp) : TRUE;
+    BOOLEAN wait = FileObject ? IoIsOperationSynchronous(Irp) : TRUE;
 
     FsRtlEnterFileSystem();
 
