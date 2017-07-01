@@ -18,10 +18,6 @@
 #define ISOLATION_AWARE_ENABLED 1
 #define STRSAFE_NO_DEPRECATE
 
-#define NTDDI_VERSION 0x06010000
-#define _WIN32_WINNT 0x0601
-#define WINVER 0x0601
-
 #include <windows.h>
 #include <winternl.h>
 #include <string>
