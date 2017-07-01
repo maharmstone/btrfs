@@ -2523,8 +2523,8 @@ static void load_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
     if (args->flags & BALANCE_ARGS_FLAGS_STRIPES_RANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_STRIPES;
 
-        opts->stripes_start = args->stripes_start;
-        opts->stripes_end = args->stripes_end;
+        opts->stripes_start = (UINT16)args->stripes_start;
+        opts->stripes_end = (UINT16)args->stripes_end;
     }
 
     if (args->flags & BALANCE_ARGS_FLAGS_CONVERT) {
