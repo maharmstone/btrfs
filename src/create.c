@@ -3691,7 +3691,7 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         RtlZeroMemory(ccb, sizeof(*ccb));
 
         ccb->NodeType = BTRFS_NODE_TYPE_CCB;
-        ccb->NodeSize = sizeof(ccb);
+        ccb->NodeSize = sizeof(*ccb);
         ccb->disposition = RequestedDisposition;
         ccb->options = RequestedOptions;
         ccb->access = IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess;
