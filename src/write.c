@@ -364,7 +364,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
     UINT64 total_size = 0, logaddr;
     UINT16 i, type, num_stripes, sub_stripes, max_stripes, min_stripes, allowed_missing;
     stripe* stripes = NULL;
-    ULONG cisize;
+    UINT16 cisize;
     CHUNK_ITEM_STRIPE* cis;
     chunk* c = NULL;
     space* s = NULL;
