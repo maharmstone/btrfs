@@ -76,6 +76,7 @@ static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable:4244) // _mm_crc32_u64 wants to return UINT64(!)
+#pragma warning(disable:4242)
 #endif
     CALC_CRC(_mm_crc32_u64, crc, UINT64, buf, len);
 #ifdef _MSC_VER
