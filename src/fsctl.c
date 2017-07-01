@@ -2962,6 +2962,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     Status = write_data_phys(DeviceObject, 0, mb, 0x100000);
     if (!NT_SUCCESS(Status)) {
         ERR("write_data_phys returned %08x\n", Status);
+        ExFreePool(mb);
         goto end;
     }
 
