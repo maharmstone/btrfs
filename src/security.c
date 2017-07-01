@@ -576,7 +576,7 @@ static NTSTATUS get_file_security(PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* 
     return Status;
 }
 
-_Function_class_(IRP_MJ_QUERY_SECURITY)
+_Dispatch_type_(IRP_MJ_QUERY_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -754,7 +754,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_SET_SECURITY)
+_Dispatch_type_(IRP_MJ_SET_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;

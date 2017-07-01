@@ -149,6 +149,7 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define _Pre_satisfies_(a)
 #define _Post_satisfies_(a)
 #define _Releases_exclusive_lock_(a)
+#define _Dispatch_type_(a)
 #endif
 
 struct _device_extension;
@@ -1158,7 +1159,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
 NTSTATUS write_data_complete(device_extension* Vcb, UINT64 address, void* data, UINT32 length, PIRP Irp, chunk* c, BOOL file_write, UINT64 irp_offset, ULONG priority);
 void free_write_data_stripes(write_data_context* wtc);
 
-_Function_class_(IRP_MJ_WRITE)
+_Dispatch_type_(IRP_MJ_WRITE)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
@@ -1180,7 +1181,7 @@ void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem
 
 // in dirctrl.c
 
-_Function_class_(IRP_MJ_DIRECTORY_CONTROL)
+_Dispatch_type_(IRP_MJ_DIRECTORY_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
@@ -1188,11 +1189,11 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 t
 
 // in security.c
 
-_Function_class_(IRP_MJ_QUERY_SECURITY)
+_Dispatch_type_(IRP_MJ_QUERY_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-_Function_class_(IRP_MJ_SET_SECURITY)
+_Dispatch_type_(IRP_MJ_SET_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
@@ -1206,19 +1207,19 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
 
 // in fileinfo.c
 
-_Function_class_(IRP_MJ_SET_INFORMATION)
+_Dispatch_type_(IRP_MJ_SET_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-_Function_class_(IRP_MJ_QUERY_INFORMATION)
+_Dispatch_type_(IRP_MJ_QUERY_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-_Function_class_(IRP_MJ_QUERY_EA)
+_Dispatch_type_(IRP_MJ_QUERY_EA)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-_Function_class_(IRP_MJ_SET_EA)
+_Dispatch_type_(IRP_MJ_SET_EA)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
@@ -1236,7 +1237,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in create.c
 
-_Function_class_(IRP_MJ_CREATE)
+_Dispatch_type_(IRP_MJ_CREATE)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
@@ -1283,7 +1284,7 @@ NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
 
 // in read.c
 
-_Function_class_(IRP_MJ_READ)
+_Dispatch_type_(IRP_MJ_READ)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
@@ -1298,7 +1299,7 @@ void raid6_recover2(UINT8* sectors, UINT16 num_stripes, ULONG sector_size, UINT1
 
 // in pnp.c
 
-_Function_class_(IRP_MJ_PNP)
+_Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
@@ -1362,7 +1363,7 @@ UINT8 gdiv(UINT8 a, UINT8 b);
 
 // in devctrl.c
 
-_Function_class_(IRP_MJ_DEVICE_CONTROL)
+_Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 

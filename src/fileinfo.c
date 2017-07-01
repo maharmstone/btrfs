@@ -2451,7 +2451,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_SET_INFORMATION)
+_Dispatch_type_(IRP_MJ_SET_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -3801,7 +3801,7 @@ exit:
     return Status;
 }
 
-_Function_class_(IRP_MJ_QUERY_INFORMATION)
+_Dispatch_type_(IRP_MJ_QUERY_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
@@ -3849,7 +3849,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_QUERY_EA)
+_Dispatch_type_(IRP_MJ_QUERY_EA)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -4080,7 +4080,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } ea_item;
 
-_Function_class_(IRP_MJ_SET_EA)
+_Dispatch_type_(IRP_MJ_SET_EA)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;

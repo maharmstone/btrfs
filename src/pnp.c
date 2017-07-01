@@ -275,7 +275,7 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-_Function_class_(IRP_MJ_PNP)
+_Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);

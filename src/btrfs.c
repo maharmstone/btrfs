@@ -432,7 +432,7 @@ BOOL get_xattr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* 
     return extract_xattr(tp.item->data, tp.item->size, name, data, datalen);
 }
 
-_Function_class_(IRP_MJ_CLOSE)
+_Dispatch_type_(IRP_MJ_CLOSE)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -481,7 +481,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_FLUSH_BUFFERS)
+_Dispatch_type_(IRP_MJ_FLUSH_BUFFERS)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -658,7 +658,7 @@ static BOOL lie_about_fs_type() {
     return FALSE;
 }
 
-_Function_class_(IRP_MJ_QUERY_VOLUME_INFORMATION)
+_Dispatch_type_(IRP_MJ_QUERY_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
@@ -1085,7 +1085,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_SET_VOLUME_INFORMATION)
+_Dispatch_type_(IRP_MJ_SET_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_set_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -2036,7 +2036,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
     return STATUS_SUCCESS;
 }
 
-_Function_class_(IRP_MJ_CLEANUP)
+_Dispatch_type_(IRP_MJ_CLEANUP)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -4590,7 +4590,7 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
     return Status;
 }
 
-_Function_class_(IRP_MJ_FILE_SYSTEM_CONTROL)
+_Dispatch_type_(IRP_MJ_FILE_SYSTEM_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
@@ -4667,7 +4667,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_LOCK_CONTROL)
+_Dispatch_type_(IRP_MJ_LOCK_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -4704,7 +4704,7 @@ exit:
     return Status;
 }
 
-_Function_class_(IRP_MJ_SHUTDOWN)
+_Dispatch_type_(IRP_MJ_SHUTDOWN)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -4754,7 +4754,7 @@ end:
     return Status;
 }
 
-_Function_class_(IRP_MJ_POWER)
+_Dispatch_type_(IRP_MJ_POWER)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
@@ -4795,7 +4795,7 @@ exit:
     return Status;
 }
 
-_Function_class_(IRP_MJ_SYSTEM_CONTROL)
+_Dispatch_type_(IRP_MJ_SYSTEM_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
