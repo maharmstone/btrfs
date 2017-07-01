@@ -2411,6 +2411,7 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
     Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08x\n", Status);
+        ExFreePool(bi);
         goto end;
     }
 
