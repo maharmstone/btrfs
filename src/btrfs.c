@@ -2215,7 +2215,8 @@ BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts) {
     return FALSE;
 }
 
-ULONG get_file_attributes(device_extension* Vcb, root* r, UINT64 inode, UINT8 type, BOOL dotfile, BOOL ignore_xa, PIRP Irp) {
+ULONG get_file_attributes(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 inode,
+                          _In_ UINT8 type, _In_ BOOL dotfile, _In_ BOOL ignore_xa, _In_opt_ PIRP Irp) {
     ULONG att;
     char* eaval;
     UINT16 ealen;
