@@ -2424,12 +2424,12 @@ static NTSTATUS read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UI
 
             if (crc32 != *((UINT32*)sb->checksum))
                 WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
-            else if (Vcb->superblock.sector_size == 0)
+            else if (sb->sector_size == 0)
                 WARN("superblock sector size was 0\n");
-            else if (Vcb->superblock.node_size < sizeof(tree_header) + sizeof(internal_node) || Vcb->superblock.node_size > 0x10000)
-                WARN("invalid node size %x\n", Vcb->superblock.node_size);
-            else if ((Vcb->superblock.node_size % Vcb->superblock.sector_size) != 0)
-                WARN("node size %x was not a multiple of sector_size %x\n", Vcb->superblock.node_size, Vcb->superblock.sector_size);
+            else if (sb->node_size < sizeof(tree_header) + sizeof(internal_node) || sb->node_size > 0x10000)
+                WARN("invalid node size %x\n", sb->node_size);
+            else if ((sb->node_size % sb->sector_size) != 0)
+                WARN("node size %x was not a multiple of sector_size %x\n", sb->node_size, sb->sector_size);
             else if (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation) {
                 RtlCopyMemory(&Vcb->superblock, sb, sizeof(superblock));
                 valid_superblocks++;
