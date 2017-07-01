@@ -694,6 +694,9 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
         }
     }
 
+    if (!fcb || !ccb)
+        return STATUS_INVALID_PARAMETER;
+
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
     if (is_subvol_readonly(fcb->subvol, Irp)) {
