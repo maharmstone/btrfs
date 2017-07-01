@@ -3255,7 +3255,7 @@ NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     BOOL top_level;
     fcb* fcb;
     ccb* ccb;
-    BOOL fcb_lock = FALSE, wait;
+    BOOLEAN fcb_lock = FALSE, wait;
 
     FsRtlEnterFileSystem();
 
