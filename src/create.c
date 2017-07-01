@@ -2413,7 +2413,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_shared_lock_held_(_Curr_->tree_l
     ccb->fileref = fileref;
 
     ccb->NodeType = BTRFS_NODE_TYPE_CCB;
-    ccb->NodeSize = sizeof(ccb);
+    ccb->NodeSize = sizeof(*ccb);
     ccb->disposition = disposition;
     ccb->options = options;
     ccb->query_dir_offset = 0;
