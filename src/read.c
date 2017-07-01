@@ -679,7 +679,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
         return STATUS_SUCCESS;
 
     if (context->tree) {
-        UINT16 j, parity;
+        UINT16 parity;
         UINT64 off;
         BOOL recovered = FALSE, first = TRUE, failed = FALSE;
         UINT8* t2;
@@ -782,7 +782,6 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, UINT8* buf, UINT64 addr, 
             stripe = (parity + stripe + 1) % ci->num_stripes;
 
             if (!devices[stripe] || !devices[stripe]->devobj || (context->csum && context->csum[i] != crc32)) {
-                UINT16 j;
                 BOOL recovered = FALSE, first = TRUE, failed = FALSE;
 
                 if (devices[stripe] && devices[stripe]->devobj)
