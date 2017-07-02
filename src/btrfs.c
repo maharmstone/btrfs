@@ -403,7 +403,7 @@ static BOOL extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _
 }
 
 _Success_(return)
-BOOL get_xattr(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ UINT64 inode, _In_z_ char* name, _In_ UINT32 crc32,
+BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ UINT64 inode, _In_z_ char* name, _In_ UINT32 crc32,
                _Out_ UINT8** data, _Out_ UINT16* datalen, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
@@ -2220,7 +2220,7 @@ BOOL get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ UINT16
     return FALSE;
 }
 
-ULONG get_file_attributes(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 inode,
+ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 inode,
                           _In_ UINT8 type, _In_ BOOL dotfile, _In_ BOOL ignore_xa, _In_opt_ PIRP Irp) {
     ULONG att;
     char* eaval;
@@ -2705,7 +2705,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS find_disk_holes(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ device* dev, _In_opt_ PIRP Irp) {
+static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ device* dev, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
@@ -3002,7 +3002,7 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_
     RtlZeroMemory(dev->stats, sizeof(UINT64) * 5);
 }
 
-static NTSTATUS load_chunk_root(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
+static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     BOOL b;
@@ -3363,7 +3363,7 @@ void protect_superblocks(_Inout_ chunk* c) {
     }
 }
 
-NTSTATUS find_chunk_usage(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
+NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
     KEY searchkey;
@@ -3464,7 +3464,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
 }
 
 _Ret_maybenull_
-static root* find_default_subvol(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
+static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
 
     static char fn[] = "default";

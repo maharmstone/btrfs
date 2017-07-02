@@ -1208,7 +1208,7 @@ end:
     return Status;
 }
 
-static NTSTATUS data_reloc_add_tree_edr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* metadata_items,
+static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* metadata_items,
                                         data_reloc* dr, EXTENT_DATA_REF* edr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2780,7 +2780,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
     return STATUS_SUCCESS;
 }
 
-static void trim_unalloc_space(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, device* dev) {
+static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, device* dev) {
     DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
     DEVICE_DATA_SET_RANGE* ranges;
     ULONG datalen, i;
@@ -3599,7 +3599,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
     return STATUS_SUCCESS;
 }
 
-NTSTATUS look_for_balance_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
+NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;

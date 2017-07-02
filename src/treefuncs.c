@@ -527,7 +527,7 @@ static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* 
     }
 }
 
-NTSTATUS find_item(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
+NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
                    _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     BOOL loaded;
@@ -573,7 +573,7 @@ NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, co
     return Status;
 }
 
-BOOL find_next_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
+BOOL find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, BOOL ignore, PIRP Irp) {
     tree* t;
     tree_data *td = NULL, *next;
     NTSTATUS Status;
@@ -676,7 +676,7 @@ static __inline tree_data* last_item(tree* t) {
     return CONTAINING_RECORD(le, tree_data, list_entry);
 }
 
-BOOL find_prev_item(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
+BOOL find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp) {
     tree* t;
     tree_data* td;
     NTSTATUS Status;
