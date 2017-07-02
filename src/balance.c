@@ -566,7 +566,8 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS write_metadata_items(device_extension* Vcb, LIST_ENTRY* items, LIST_ENTRY* data_items, chunk* c, LIST_ENTRY* rollback) {
+static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* items,
+                                     LIST_ENTRY* data_items, chunk* c, LIST_ENTRY* rollback) {
     LIST_ENTRY tree_writes, *le;
     NTSTATUS Status;
     traverse_ptr tp;
