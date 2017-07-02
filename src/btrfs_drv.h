@@ -149,7 +149,14 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define _Post_satisfies_(a)
 #define _Releases_exclusive_lock_(a)
 #define _Dispatch_type_(a)
+#define _Create_lock_level_(a)
+#define _Lock_level_order_(a,b)
+#define _Has_lock_level_(a)
 #endif
+
+_Create_lock_level_(tree_lock)
+_Create_lock_level_(fcb_lock)
+_Lock_level_order_(tree_lock, fcb_lock)
 
 struct _device_extension;
 
@@ -697,9 +704,9 @@ typedef struct _device_extension {
     fcb* dummy_fcb;
     file_ref* root_fileref;
     LONG open_files;
-    ERESOURCE fcb_lock;
+    _Has_lock_level_(fcb_lock) ERESOURCE fcb_lock;
     ERESOURCE load_lock;
-    ERESOURCE tree_lock;
+    _Has_lock_level_(tree_lock) ERESOURCE tree_lock;
     PNOTIFY_SYNC NotifySync;
     LIST_ENTRY DirNotifyList;
     BOOL need_write;
