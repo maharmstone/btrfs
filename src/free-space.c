@@ -971,8 +971,6 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
 
     flags = fcb->Vcb->data_flags;
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
-
     while (le != &fcb->Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
@@ -980,10 +978,8 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
             ExAcquireResourceExclusiveLite(&c->lock, TRUE);
 
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length, FALSE, 0)) {
-                    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, FALSE, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length, FALSE, 0))
                     return STATUS_SUCCESS;
-                }
             }
 
             ExReleaseResourceLite(&c->lock);
@@ -992,13 +988,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
         le = le->Flink;
     }
 
-    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
-
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
-
     Status = alloc_chunk(fcb->Vcb, flags, &c, FALSE);
-
-    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
     if (!NT_SUCCESS(Status)) {
         ERR("alloc_chunk returned %08x\n", Status);
@@ -1361,7 +1351,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
 
     InitializeListHead(&batchlist);
 
-    ExAcquireResourceSharedLite(&Vcb->chunk_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
 
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
