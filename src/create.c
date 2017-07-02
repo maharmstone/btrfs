@@ -2993,32 +2993,25 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_hel
             }
         }
 
-        if (fileref->fcb != Vcb->dummy_fcb) {
-            if (Stack->Parameters.Create.SecurityContext->DesiredAccess != 0) {
-                SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+        if (Stack->Parameters.Create.SecurityContext->DesiredAccess != 0) {
+            SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
-                if (!SeAccessCheck(fileref->fcb->ads ? fileref->parent->fcb->sd : fileref->fcb->sd,
-                                &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
-                                TRUE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
-                                IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
-                                &granted_access, &Status)) {
-                    SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-                    TRACE("SeAccessCheck failed, returning %08x\n", Status);
-
-                    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                    free_fileref(Vcb, fileref);
-                    ExReleaseResourceLite(&Vcb->fcb_lock);
-
-                    goto exit;
-                }
-
+            if (!SeAccessCheck((fileref->fcb->ads || fileref->fcb == Vcb->dummy_fcb) ? fileref->parent->fcb->sd : fileref->fcb->sd,
+                               &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                               TRUE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                               IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                               &granted_access, &Status)) {
                 SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-            }
-        } else {
-            granted_access = Stack->Parameters.Create.SecurityContext->DesiredAccess;
+                TRACE("SeAccessCheck failed, returning %08x\n", Status);
 
-            granted_access &= ~(FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES | WRITE_OWNER | WRITE_DAC |
-                                FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE);
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+                free_fileref(Vcb, fileref);
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                goto exit;
+            }
+
+            SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
         }
 
         TRACE("deleted = %s\n", fileref->deleted ? "TRUE" : "FALSE");
@@ -3039,7 +3032,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_hel
         }
 
         readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) || (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) ||
-                   is_subvol_readonly(fileref->fcb->subvol, Irp) || Vcb->readonly;
+                   is_subvol_readonly(fileref->fcb->subvol, Irp) || fileref->fcb == Vcb->dummy_fcb || Vcb->readonly;
 
         if (readonly) {
             ACCESS_MASK allowed;
@@ -3048,12 +3041,14 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_shared_lock_hel
                       FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
                       FILE_TRAVERSE;
 
-            if (!is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
+            if (fileref->fcb != Vcb->dummy_fcb && !is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
                 allowed |= DELETE | WRITE_OWNER | WRITE_DAC | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
 
                 if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
                     allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
-            } else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
+            } else if (fileref->fcb == Vcb->dummy_fcb && !Vcb->readonly)
+                allowed |= DELETE;
+            else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
                 // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
 
                 allowed |= FILE_WRITE_ATTRIBUTES;
