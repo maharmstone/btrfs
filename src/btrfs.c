@@ -2075,6 +2075,7 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         LONG oc;
         ccb* ccb;
         file_ref* fileref;
+        BOOL locked = TRUE;
 
         fcb = FileObject->FsContext;
         ccb = FileObject->FsContext2;
@@ -2132,6 +2133,10 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                             send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
                     }
 
+                    ExReleaseResourceLite(fcb->Header.Resource);
+                    locked = FALSE;
+
+                    // fcb_lock needs to be acquired before fcb->Header.Resource
                     ExAcquireResourceExclusiveLite(&fcb->Vcb->fcb_lock, TRUE);
 
                     Status = delete_fileref(fileref, FileObject, Irp, &rollback);
@@ -2139,12 +2144,13 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                         ERR("delete_fileref returned %08x\n", Status);
                         do_rollback(fcb->Vcb, &rollback);
                         ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
-                        ExReleaseResourceLite(fcb->Header.Resource);
                         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                         goto exit;
                     }
 
                     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
+
+                    locked = FALSE;
 
                     clear_rollback(&rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
@@ -2171,7 +2177,9 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                 CcUninitializeCacheMap(FileObject, NULL, NULL);
         }
 
-        ExReleaseResourceLite(fcb->Header.Resource);
+        if (locked)
+            ExReleaseResourceLite(fcb->Header.Resource);
+
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
 
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
