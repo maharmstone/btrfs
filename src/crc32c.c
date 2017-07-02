@@ -68,8 +68,16 @@ static const UINT32 crctable[] = {
 static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
     const char* buf = (const char*)input;
 
+    // Annoyingly, the CRC32 intrinsics don't work properly in modern versions of MSVC -
+    // it compiles _mm_crc32_u8 as if it was _mm_crc32_u32. And because we're apparently
+    // not allowed to use inline asm on amd64, there's no easy way to fix this!
+
     for (; (len > 0) && ((size_t)buf & ALIGN_MASK); len--, buf++) {
+#ifdef _MSC_VER
+        crc = crctable[(crc ^ *buf) & 0xff] ^ (crc >> 8);
+#else
         crc = _mm_crc32_u8(crc, *buf);
+#endif
     }
 
 #ifdef _AMD64_
@@ -84,8 +92,15 @@ static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
 #endif
 #endif
     CALC_CRC(_mm_crc32_u32, crc, UINT32, buf, len);
+
+#ifdef _MSC_VER
+    for (; len > 0; len--, buf++) {
+        crc = crctable[(crc ^ *buf) & 0xff] ^ (crc >> 8);
+    }
+#else
     CALC_CRC(_mm_crc32_u16, crc, UINT16, buf, len);
     CALC_CRC(_mm_crc32_u8, crc, UINT8, buf, len);
+#endif
 
     return crc;
 }
