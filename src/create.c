@@ -1796,6 +1796,10 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->subvol = parfileref->fcb->subvol;
     fcb->inode = inode;
     fcb->type = type;
+    fcb->created = TRUE;
+    fcb->deleted = TRUE;
+
+    mark_fcb_dirty(fcb);
 
     Status = fcb_get_new_sd(fcb, parfileref, IrpSp->Parameters.Create.SecurityContext->AccessState);
 
@@ -1882,7 +1886,6 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         }
     }
 
-
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
@@ -1913,8 +1916,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
     }
 
-    fcb->created = TRUE;
-    mark_fcb_dirty(fcb);
+    fcb->deleted = FALSE;
 
     fileref->created = TRUE;
     mark_fileref_dirty(fileref);
