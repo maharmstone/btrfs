@@ -2980,17 +2980,69 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     return FALSE;
 }
 
+static NTSTATUS insert_prealloc_chunk_fragmented(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+    LIST_ENTRY* le;
+    UINT64 flags = fcb->Vcb->data_flags;
+    BOOL page_file = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE;
+    NTSTATUS Status;
+    chunk* c;
+
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
+
+    // first create as many chunks as we can
+    do {
+        Status = alloc_chunk(fcb->Vcb, flags, &c, FALSE);
+    } while (NT_SUCCESS(Status));
+
+    if (Status != STATUS_DISK_FULL) {
+        ERR("alloc_chunk returned %08x\n", Status);
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+        return Status;
+    }
+
+    le = fcb->Vcb->chunks.Flink;
+    while (le != &fcb->Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+
+        if (!c->readonly && !c->reloc) {
+            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+            if (c->chunk_item->type == flags) {
+                while (!IsListEmpty(&c->space_size) && length > 0) {
+                    space* s = CONTAINING_RECORD(c->space_size.Flink, space, list_entry_size);
+                    UINT64 extlen = min(length, s->size);
+
+                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0)) {
+                        start += extlen;
+                        length -= extlen;
+
+                        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+                    }
+                }
+            }
+
+            ExReleaseResourceLite(&c->lock);
+
+            if (length == 0)
+                break;
+        }
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    return length == 0 ? STATUS_SUCCESS : STATUS_DISK_FULL;
+}
+
 static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     chunk* c;
-    UINT64 flags, origlength = length;
+    UINT64 flags;
     NTSTATUS Status;
     BOOL page_file = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE;
 
     flags = fcb->Vcb->data_flags;
-
-    // FIXME - try and maximize contiguous ranges first. If we can't do that,
-    // allocate all the free space we find until it's enough.
 
     do {
         UINT64 extlen = min(MAX_EXTENT_SIZE, length);
@@ -3039,8 +3091,10 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
 
         ExReleaseResourceLite(&c->lock);
 
-        WARN("couldn't find any data chunks with %llx bytes free\n", origlength);
-        Status = STATUS_DISK_FULL;
+        Status = insert_prealloc_chunk_fragmented(fcb, start, length, rollback);
+        if (!NT_SUCCESS(Status))
+            ERR("insert_prealloc_chunk_fragmented returned %08x\n", Status);
+
         goto end;
 
 cont:
