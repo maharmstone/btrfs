@@ -971,41 +971,49 @@ __inline static UINT32 get_extent_data_refcount(UINT8 type, void* data) {
 }
 
 // in btrfs.c
-device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid);
-BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts);
+_Ret_maybenull_
+device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid);
+
+_Success_(return)
+BOOL get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ UINT16 len, _Out_ ULONG* atts);
+
 ULONG get_file_attributes(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 inode,
                           _In_ UINT8 type, _In_ BOOL dotfile, _In_ BOOL ignore_xa, _In_opt_ PIRP Irp);
-BOOL get_xattr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32,
-               UINT8** data, UINT16* datalen, PIRP Irp);
+
+_Success_(return)
+BOOL get_xattr(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ UINT64 inode, _In_z_ char* name, _In_ UINT32 crc32,
+               _Out_ UINT8** data, _Out_ UINT16* datalen, _In_opt_ PIRP Irp);
+
 #ifndef DEBUG_FCB_REFCOUNTS
 void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb);
 #endif
-void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, _Inout_ file_ref* fr);
-file_ref* create_fileref(device_extension* Vcb);
-void protect_superblocks(chunk* c);
-BOOL is_top_level(PIRP Irp);
-NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp);
-void uninit(device_extension* Vcb, BOOL flush);
+void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ file_ref* fr);
+void protect_superblocks(_Inout_ chunk* c);
+BOOL is_top_level(_In_ PIRP Irp);
+NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ UINT64 id,
+                     _Out_ root** rootptr, _In_ BOOL no_tree, _In_ UINT64 offset, _In_opt_ PIRP Irp);
+void uninit(_In_ device_extension* Vcb, _In_ BOOL flush);
 NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In_reads_bytes_opt_(InputBufferSize) PVOID InputBuffer, _In_ ULONG InputBufferSize,
                    _Out_writes_bytes_opt_(OutputBufferSize) PVOID OutputBuffer, _In_ ULONG OutputBufferSize, _In_ BOOLEAN Override, _Out_opt_ IO_STATUS_BLOCK* iosb);
 BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix);
-void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream);
-void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream);
-WCHAR* file_desc(PFILE_OBJECT FileObject);
-WCHAR* file_desc_fileref(file_ref* fileref);
-BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
-void mark_fcb_dirty(fcb* fcb);
-void mark_fileref_dirty(file_ref* fileref);
-NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback);
-void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
-void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length);
-void init_device(device_extension* Vcb, device* dev, BOOL get_nums);
-void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs);
-NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, UINT64 StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override);
-NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid);
-NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
-void log_device_error(device_extension* Vcb, device* dev, int error);
-NTSTATUS find_chunk_usage(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp);
+void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
+void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
+
+_Ret_z_
+WCHAR* file_desc(_In_ PFILE_OBJECT FileObject);
+WCHAR* file_desc_fileref(_In_ file_ref* fileref);
+void mark_fcb_dirty(_In_ fcb* fcb);
+void mark_fileref_dirty(_In_ file_ref* fileref);
+NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_ PFILE_OBJECT FileObject, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback);
+void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length);
+void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length);
+void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_nums);
+void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs);
+NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
+                        _Out_writes_bytes_(Length) PUCHAR Buffer, _In_ BOOL override);
+NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_STRING pnp_name, _Out_ const GUID** guid);
+void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int error);
+NTSTATUS find_chunk_usage(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -1042,7 +1050,7 @@ extern UINT32 debug_log_level;
 #define FIXME(s, ...) MSG(funcname, __FILE__, __LINE__, s, 1, ##__VA_ARGS__)
 #define ERR(s, ...) MSG(funcname, __FILE__, __LINE__, s, 1, ##__VA_ARGS__)
 
-void _debug_message(const char* func, const char* file, unsigned int line, char* s, ...);
+void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned int line, _In_ char* s, ...);
 
 #else
 
@@ -1053,7 +1061,7 @@ void _debug_message(const char* func, const char* file, unsigned int line, char*
 #define FIXME(s, ...) MSG(funcname, s, 1, ##__VA_ARGS__)
 #define ERR(s, ...) MSG(funcname, s, 1, ##__VA_ARGS__)
 
-void _debug_message(const char* func, char* s, ...);
+void _debug_message(_In_ const char* func, _In_ char* s, ...);
 
 #endif
 
@@ -1256,6 +1264,7 @@ NTSTATUS open_fileref_child(_Requires_shared_lock_held_(_Curr_->tree_lock) _Requ
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive);
 UINT32 inherit_mode(fcb* parfcb, BOOL is_dir);
+file_ref* create_fileref(device_extension* Vcb);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type);
@@ -1342,6 +1351,7 @@ UINT64 get_extent_data_ref_hash2(UINT64 root, UINT64 objid, UINT64 offset);
 // in worker-thread.c
 void do_read_job(PIRP Irp);
 void do_write_job(device_extension* Vcb, PIRP Irp);
+BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 
 // in registry.c
 void read_registry(PUNICODE_STRING regpath, BOOL refresh);

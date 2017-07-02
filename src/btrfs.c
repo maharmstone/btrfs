@@ -94,7 +94,7 @@ HANDLE log_handle = NULL;
 ERESOURCE log_lock;
 #endif
 
-static NTSTATUS close_file(PFILE_OBJECT FileObject);
+static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject);
 
 typedef struct {
     KEVENT Event;
@@ -103,7 +103,7 @@ typedef struct {
 
 #ifdef _DEBUG
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS dbg_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
     read_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -115,9 +115,9 @@ static NTSTATUS dbg_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conp
 }
 
 #ifdef DEBUG_LONG_MESSAGES
-void _debug_message(const char* func, const char* file, unsigned int line, char* s, ...) {
+void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned int line, _In_ char* s, ...) {
 #else
-void _debug_message(const char* func, char* s, ...) {
+void _debug_message(_In_ const char* func, _In_ char* s, ...) {
 #endif
     LARGE_INTEGER offset;
     PIO_STACK_LOCATION IrpSp;
@@ -239,7 +239,7 @@ exit2:
 }
 #endif
 
-BOOL is_top_level(PIRP Irp) {
+BOOL is_top_level(_In_ PIRP Irp) {
     if (!IoGetTopLevelIrp()) {
         IoSetTopLevelIrp(Irp);
         return TRUE;
@@ -249,7 +249,7 @@ BOOL is_top_level(PIRP Irp) {
 }
 
 _Function_class_(DRIVER_UNLOAD)
-static void DriverUnload(PDRIVER_OBJECT DriverObject) {
+static void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
     UNICODE_STRING dosdevice_nameW;
 
     ERR("DriverUnload\n");
@@ -317,7 +317,7 @@ static void DriverUnload(PDRIVER_OBJECT DriverObject) {
     ExDeleteResourceLite(&mapping_lock);
 }
 
-static BOOL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
+static BOOL get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, prev_tp;
     NTSTATUS Status;
@@ -358,7 +358,8 @@ static BOOL get_last_inode(device_extension* Vcb, root* r, PIRP Irp) {
     return TRUE;
 }
 
-static BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UINT16* datalen) {
+_Success_(return)
+static BOOL extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _In_z_ char* name, _Out_ UINT8** data, _Out_ UINT16* datalen) {
     DIR_ITEM* xa = (DIR_ITEM*)item;
     USHORT xasize;
 
@@ -401,8 +402,9 @@ static BOOL extract_xattr(void* item, USHORT size, char* name, UINT8** data, UIN
     return FALSE;
 }
 
-BOOL get_xattr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, root* subvol, UINT64 inode, char* name, UINT32 crc32,
-               UINT8** data, UINT16* datalen, PIRP Irp) {
+_Success_(return)
+BOOL get_xattr(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ UINT64 inode, _In_z_ char* name, _In_ UINT32 crc32,
+               _Out_ UINT8** data, _Out_ UINT16* datalen, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -434,7 +436,7 @@ BOOL get_xattr(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* 
 
 _Dispatch_type_(IRP_MJ_CLOSE)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_close(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -483,7 +485,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_FLUSH_BUFFERS)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation( Irp );
     PFILE_OBJECT FileObject = IrpSp->FileObject;
@@ -531,7 +533,7 @@ end:
     return Status;
 }
 
-static void calculate_total_space(device_extension* Vcb, UINT64* totalsize, UINT64* freespace) {
+static void calculate_total_space(_In_ device_extension* Vcb, _Out_ UINT64* totalsize, _Out_ UINT64* freespace) {
     UINT64 nfactor, dfactor, sectors_used;
 
     if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10) {
@@ -660,7 +662,7 @@ static BOOL lie_about_fs_type() {
 
 _Dispatch_type_(IRP_MJ_QUERY_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     ULONG BytesCopied = 0;
@@ -901,7 +903,7 @@ end:
 }
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS read_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
     read_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -912,7 +914,8 @@ static NTSTATUS read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID con
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT64 id, root** rootptr, BOOL no_tree, UINT64 offset, PIRP Irp) {
+NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ UINT64 id,
+                     _Out_ root** rootptr, _In_ BOOL no_tree, _In_ UINT64 offset, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     root* r;
     tree* t = NULL;
@@ -1030,7 +1033,7 @@ NTSTATUS create_root(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_ex
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS set_label(device_extension* Vcb, FILE_FS_LABEL_INFORMATION* ffli) {
+static NTSTATUS set_label(_In_ device_extension* Vcb, _In_ FILE_FS_LABEL_INFORMATION* ffli) {
     ULONG utf8len;
     NTSTATUS Status;
     ULONG vollen, i;
@@ -1087,7 +1090,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_SET_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_set_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_set_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
@@ -1153,7 +1156,7 @@ end:
     return Status;
 }
 
-static WCHAR* file_desc_fcb(fcb* fcb) {
+static WCHAR* file_desc_fcb(_In_ fcb* fcb) {
     char s[60];
     NTSTATUS Status;
     UNICODE_STRING us;
@@ -1191,7 +1194,7 @@ static WCHAR* file_desc_fcb(fcb* fcb) {
     return fcb->debug_desc;
 }
 
-WCHAR* file_desc_fileref(file_ref* fileref) {
+WCHAR* file_desc_fileref(_In_ file_ref* fileref) {
     NTSTATUS Status;
     UNICODE_STRING fn;
     ULONG reqlen;
@@ -1227,7 +1230,8 @@ WCHAR* file_desc_fileref(file_ref* fileref) {
     return fileref->debug_desc;
 }
 
-WCHAR* file_desc(PFILE_OBJECT FileObject) {
+_Ret_z_
+WCHAR* file_desc(_In_ PFILE_OBJECT FileObject) {
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb ? ccb->fileref : NULL;
@@ -1238,7 +1242,7 @@ WCHAR* file_desc(PFILE_OBJECT FileObject) {
         return file_desc_fcb(fcb);
 }
 
-void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream) {
+void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream) {
     UNICODE_STRING fn;
     NTSTATUS Status;
     ULONG reqlen;
@@ -1278,7 +1282,7 @@ void send_notification_fileref(file_ref* fileref, ULONG filter_match, ULONG acti
     ExFreePool(fn.Buffer);
 }
 
-void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, PUNICODE_STRING stream) {
+void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream) {
     fcb* fcb = fileref->fcb;
     LIST_ENTRY* le;
     NTSTATUS Status;
@@ -1359,7 +1363,7 @@ void send_notification_fcb(file_ref* fileref, ULONG filter_match, ULONG action, 
     ExReleaseResourceLite(&fcb->Vcb->fcb_lock);
 }
 
-void mark_fcb_dirty(fcb* fcb) {
+void mark_fcb_dirty(_In_ fcb* fcb) {
     if (!fcb->dirty) {
 #ifdef DEBUG_FCB_REFCOUNTS
         LONG rc;
@@ -1381,7 +1385,7 @@ void mark_fcb_dirty(fcb* fcb) {
     fcb->Vcb->need_write = TRUE;
 }
 
-void mark_fileref_dirty(file_ref* fileref) {
+void mark_fileref_dirty(_In_ file_ref* fileref) {
     if (!fileref->dirty) {
         fileref->dirty = TRUE;
         increase_fileref_refcount(fileref);
@@ -1505,7 +1509,7 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
 #endif
 }
 
-void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, _Inout_ file_ref* fr) {
+void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ file_ref* fr) {
     LONG rc;
 
     rc = InterlockedDecrement(&fr->refcount);
@@ -1564,7 +1568,7 @@ void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extens
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
 
-static NTSTATUS close_file(PFILE_OBJECT FileObject) {
+static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject) {
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref = NULL;
@@ -1645,7 +1649,7 @@ static NTSTATUS close_file(PFILE_OBJECT FileObject) {
     return STATUS_SUCCESS;
 }
 
-void uninit(device_extension* Vcb, BOOL flush) {
+void uninit(_In_ device_extension* Vcb, _In_ BOOL flush) {
     UINT64 i;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -1850,7 +1854,7 @@ void uninit(device_extension* Vcb, BOOL flush) {
     ZwClose(Vcb->flush_thread_handle);
 }
 
-NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_ PFILE_OBJECT FileObject, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LARGE_INTEGER newlength, time;
     BTRFS_TIME now;
     NTSTATUS Status;
@@ -2038,7 +2042,7 @@ NTSTATUS delete_fileref(file_ref* fileref, PFILE_OBJECT FileObject, PIRP Irp, LI
 
 _Dispatch_type_(IRP_MJ_CLEANUP)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_cleanup(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
@@ -2189,7 +2193,8 @@ exit:
     return Status;
 }
 
-BOOL get_file_attributes_from_xattr(char* val, UINT16 len, ULONG* atts) {
+_Success_(return)
+BOOL get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ UINT16 len, _Out_ ULONG* atts) {
     if (len > 2 && val[0] == '0' && val[1] == 'x') {
         int i;
         ULONG dosnum = 0;
@@ -2284,7 +2289,8 @@ ULONG get_file_attributes(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) de
     return att;
 }
 
-NTSTATUS sync_read_phys(PDEVICE_OBJECT DeviceObject, UINT64 StartingOffset, ULONG Length, PUCHAR Buffer, BOOL override) {
+NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
+                        _Out_writes_bytes_(Length) PUCHAR Buffer, _In_ BOOL override) {
     IO_STATUS_BLOCK IoStatus;
     LARGE_INTEGER Offset;
     PIRP Irp;
@@ -2375,7 +2381,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS read_superblock(device_extension* Vcb, PDEVICE_OBJECT device, UINT64 length) {
+static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ UINT64 length) {
     NTSTATUS Status;
     superblock* sb;
     ULONG i, to_read;
@@ -2491,7 +2497,9 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
     return Status;
 }
 
-static NTSTATUS add_root(device_extension* Vcb, UINT64 id, UINT64 addr, UINT64 generation, traverse_ptr* tp) {
+_Requires_exclusive_lock_held_(Vcb->tree_lock)
+static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ UINT64 id, _In_ UINT64 addr,
+                         _In_ UINT64 generation, _In_opt_ traverse_ptr* tp) {
     root* r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
     if (!r) {
         ERR("out of memory\n");
@@ -2574,7 +2582,7 @@ static NTSTATUS add_root(device_extension* Vcb, UINT64 id, UINT64 addr, UINT64 g
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp) {
+static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _In_opt_ PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     BOOL b;
@@ -2697,7 +2705,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS find_disk_holes(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, device* dev, PIRP Irp) {
+static NTSTATUS find_disk_holes(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ device* dev, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
@@ -2769,7 +2777,7 @@ static NTSTATUS find_disk_holes(_Requires_shared_lock_held_(_Curr_->tree_lock) d
     return STATUS_SUCCESS;
 }
 
-static void add_device_to_list(device_extension* Vcb, device* dev) {
+static void add_device_to_list(_In_ device_extension* Vcb, _In_ device* dev) {
     LIST_ENTRY* le;
 
     le = Vcb->devices.Flink;
@@ -2788,7 +2796,8 @@ static void add_device_to_list(device_extension* Vcb, device* dev) {
     InsertTailList(&Vcb->devices, &dev->list_entry);
 }
 
-device* find_device_from_uuid(device_extension* Vcb, BTRFS_UUID* uuid) {
+_Ret_maybenull_
+device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid) {
     volume_device_extension* vde;
     LIST_ENTRY* le;
 
@@ -2867,7 +2876,7 @@ end:
     return NULL;
 }
 
-static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
+static BOOL is_device_removable(_In_ PDEVICE_OBJECT devobj) {
     NTSTATUS Status;
     STORAGE_HOTPLUG_INFO shi;
 
@@ -2881,7 +2890,7 @@ static BOOL is_device_removable(PDEVICE_OBJECT devobj) {
     return shi.MediaRemovable != 0 ? TRUE : FALSE;
 }
 
-static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
+static ULONG get_device_change_count(_In_ PDEVICE_OBJECT devobj) {
     NTSTATUS Status;
     ULONG cc;
     IO_STATUS_BLOCK iosb;
@@ -2901,7 +2910,7 @@ static ULONG get_device_change_count(PDEVICE_OBJECT devobj) {
     return cc;
 }
 
-void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
+void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_nums) {
     NTSTATUS Status;
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
@@ -2993,7 +3002,7 @@ void init_device(device_extension* Vcb, device* dev, BOOL get_nums) {
     RtlZeroMemory(dev->stats, sizeof(UINT64) * 5);
 }
 
-static NTSTATUS load_chunk_root(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp) {
+static NTSTATUS load_chunk_root(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     BOOL b;
@@ -3255,7 +3264,7 @@ static NTSTATUS load_chunk_root(_Requires_shared_lock_held_(_Curr_->tree_lock) d
     return STATUS_SUCCESS;
 }
 
-void protect_superblocks(chunk* c) {
+void protect_superblocks(_Inout_ chunk* c) {
     UINT16 i = 0, j;
     UINT64 off_start, off_end;
 
@@ -3354,7 +3363,7 @@ void protect_superblocks(chunk* c) {
     }
 }
 
-NTSTATUS find_chunk_usage(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp) {
+NTSTATUS find_chunk_usage(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
     KEY searchkey;
@@ -3397,7 +3406,7 @@ NTSTATUS find_chunk_usage(_Requires_shared_lock_held_(_Curr_->tree_lock) device_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS load_sys_chunks(device_extension* Vcb) {
+static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
     KEY key;
     ULONG n = Vcb->superblock.n;
 
@@ -3454,7 +3463,8 @@ static NTSTATUS load_sys_chunks(device_extension* Vcb) {
     return STATUS_SUCCESS;
 }
 
-static root* find_default_subvol(_Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp) {
+_Ret_maybenull_
+static root* find_default_subvol(_In_ _Requires_shared_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
 
     static char fn[] = "default";
@@ -3542,7 +3552,7 @@ end:
     return NULL;
 }
 
-void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs) {
+void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs) {
     TRACE("(%p, %p)\n", FileObject, ccfs);
 
     CcInitializeCacheMap(FileObject, ccfs, FALSE, cache_callbacks, FileObject);
@@ -3553,7 +3563,7 @@ void init_file_cache(PFILE_OBJECT FileObject, CC_FILE_SIZES* ccfs) {
     CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
 }
 
-static NTSTATUS create_calc_threads(PDEVICE_OBJECT DeviceObject) {
+static NTSTATUS create_calc_threads(_In_ PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG i;
 
@@ -3596,7 +3606,7 @@ static NTSTATUS create_calc_threads(PDEVICE_OBJECT DeviceObject) {
     return STATUS_SUCCESS;
 }
 
-static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
+static BOOL is_btrfs_volume(_In_ PDEVICE_OBJECT DeviceObject) {
     NTSTATUS Status;
     MOUNTDEV_NAME mdn, *mdn2;
     ULONG mdnsize;
@@ -3633,7 +3643,7 @@ static BOOL is_btrfs_volume(PDEVICE_OBJECT DeviceObject) {
     return FALSE;
 }
 
-static NTSTATUS get_device_pnp_name_guid(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID* guid) {
+static NTSTATUS get_device_pnp_name_guid(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_STRING pnp_name, _In_ const GUID* guid) {
     NTSTATUS Status;
     WCHAR *list = NULL, *s;
 
@@ -3688,7 +3698,7 @@ end:
     return Status;
 }
 
-NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_name, const GUID** guid) {
+NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_STRING pnp_name, _Out_ const GUID** guid) {
     NTSTATUS Status;
 
     Status = get_device_pnp_name_guid(DeviceObject, pnp_name, &GUID_DEVINTERFACE_VOLUME);
@@ -3712,7 +3722,8 @@ NTSTATUS get_device_pnp_name(PDEVICE_OBJECT DeviceObject, PUNICODE_STRING pnp_na
     return STATUS_NOT_FOUND;
 }
 
-static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject, BOOL* no_pnp) {
+_Success_(return>=0)
+static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ BOOL* no_pnp) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
@@ -3759,8 +3770,10 @@ static NTSTATUS check_mount_device(PDEVICE_OBJECT DeviceObject, BOOL* no_pnp) {
 
     if (pnp_name.Length == 0)
         *no_pnp = TRUE;
-    else
+    else {
+        *no_pnp = FALSE;
         volume_arrival(drvobj, &pnp_name);
+    }
 
     if (pnp_name.Buffer)
         ExFreePool(pnp_name.Buffer);
@@ -3773,7 +3786,7 @@ end:
     return Status;
 }
 
-static BOOL still_has_superblock(PDEVICE_OBJECT device) {
+static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
@@ -3816,7 +3829,7 @@ static BOOL still_has_superblock(PDEVICE_OBJECT device) {
     return TRUE;
 }
 
-static NTSTATUS mount_vol(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
     PDEVICE_OBJECT DeviceToMount, readobj;
@@ -4436,7 +4449,7 @@ exit2:
     return Status;
 }
 
-static NTSTATUS verify_device(device_extension* Vcb, device* dev) {
+static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
     NTSTATUS Status;
     superblock* sb;
     UINT32 crc32;
@@ -4532,7 +4545,7 @@ static NTSTATUS verify_device(device_extension* Vcb, device* dev) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
+static NTSTATUS verify_volume(_In_ PDEVICE_OBJECT devobj) {
     device_extension* Vcb = devobj->DeviceExtension;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -4593,7 +4606,7 @@ static NTSTATUS verify_volume(PDEVICE_OBJECT devobj) {
 
 _Dispatch_type_(IRP_MJ_FILE_SYSTEM_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_file_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -4670,7 +4683,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_LOCK_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_lock_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     fcb* fcb = IrpSp->FileObject->FsContext;
@@ -4707,7 +4720,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_SHUTDOWN)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -4757,7 +4770,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_POWER)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
@@ -4798,7 +4811,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_SYSTEM_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_system_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+static NTSTATUS drv_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
@@ -4859,7 +4872,7 @@ BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix) {
     return TRUE;
 }
 
-void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length) {
+void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length) {
     LIST_ENTRY* le;
     BOOL locked;
     range_lock* rl;
@@ -4906,7 +4919,7 @@ void chunk_lock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 leng
     }
 }
 
-void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 length) {
+void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length) {
     LIST_ENTRY* le;
 
     ExAcquireResourceExclusiveLite(&c->range_locks_lock, TRUE);
@@ -4929,7 +4942,7 @@ void chunk_unlock_range(device_extension* Vcb, chunk* c, UINT64 start, UINT64 le
     ExReleaseResourceLite(&c->range_locks_lock);
 }
 
-void log_device_error(device_extension* Vcb, device* dev, int error) {
+void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int error) {
     dev->stats[error]++;
     dev->stats_changed = TRUE;
     Vcb->stats_changed = TRUE;
@@ -5054,7 +5067,7 @@ end:
 #endif
 
 _Function_class_(KSTART_ROUTINE)
-static void degraded_wait_thread(void* context) {
+static void degraded_wait_thread(_In_ void* context) {
     KTIMER timer;
     LARGE_INTEGER delay;
 
@@ -5076,7 +5089,8 @@ static void degraded_wait_thread(void* context) {
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
-NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
+_Function_class_(DRIVER_INITIALIZE)
+NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath) {
     NTSTATUS Status;
     PDEVICE_OBJECT DeviceObject;
     UNICODE_STRING device_nameW;
