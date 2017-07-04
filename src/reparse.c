@@ -311,6 +311,11 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
 
+    if (fcb->ads) {
+        fileref = fileref->parent;
+        fcb = fileref->fcb;
+    }
+
     TRACE("%S\n", file_desc(FileObject));
 
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
@@ -325,7 +330,6 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     // FIXME - fail if we already have the attribute FILE_ATTRIBUTE_REPARSE_POINT
 
     // FIXME - die if not file or directory
-    // FIXME - die if ADS
 
     if (buflen < sizeof(ULONG)) {
         WARN("buffer was not long enough to hold tag\n");
