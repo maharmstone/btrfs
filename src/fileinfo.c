@@ -3911,6 +3911,9 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
 
+    if (fcb->ads)
+        fcb = ccb->fileref->parent->fcb;
+
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
 
     Status = STATUS_SUCCESS;
