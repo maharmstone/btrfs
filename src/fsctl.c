@@ -1187,6 +1187,9 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
 
+    if (fcb->ads)
+        fcb = ccb->fileref->parent->fcb;
+
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
 
     bii->subvol = fcb->subvol->id;
