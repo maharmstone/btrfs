@@ -1689,6 +1689,11 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
         return STATUS_INVALID_PARAMETER;
     }
 
+    if (fcb->ads) {
+        fileref = fileref->parent;
+        fcb = fileref->fcb;
+    }
+
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
