@@ -1296,6 +1296,9 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESSION_LZO)
         return STATUS_INVALID_PARAMETER;
 
+    if (fcb->ads)
+        fcb = ccb->fileref->parent->fcb;
+
     if (is_subvol_readonly(fcb->subvol, Irp)) {
         WARN("trying to change inode on readonly subvolume\n");
         return STATUS_ACCESS_DENIED;
