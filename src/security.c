@@ -724,21 +724,8 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
 
     fcb->inode_item.sequence++;
 
-    if (flags & OWNER_SECURITY_INFORMATION) {
-        PSID owner;
-        BOOLEAN defaulted;
-
-        Status = RtlGetOwnerSecurityDescriptor(sd, &owner, &defaulted);
-
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlGetOwnerSecurityDescriptor returned %08x\n", Status);
-            goto end;
-        }
-
-        fcb->inode_item.st_uid = sid_to_uid(owner);
-    }
-
     fcb->sd_dirty = TRUE;
+    fcb->sd_deleted = FALSE;
     fcb->inode_item_changed = TRUE;
 
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
