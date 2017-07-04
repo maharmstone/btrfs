@@ -1307,7 +1307,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
             if (dc->fileref) {
                 if (!lastpart && dc->type != BTRFS_TYPE_DIRECTORY) {
-                    WARN("passed path including file as subdirectory\n");
+                    TRACE("passed path including file as subdirectory\n");
                     return STATUS_OBJECT_PATH_NOT_FOUND;
                 }
 
@@ -1337,7 +1337,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             }
 
             if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
-                WARN("passed path including file as subdirectory\n");
+                TRACE("passed path including file as subdirectory\n");
                 free_fcb(Vcb, fcb);
                 return STATUS_OBJECT_PATH_NOT_FOUND;
             }
