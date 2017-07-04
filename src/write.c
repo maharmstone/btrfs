@@ -2980,7 +2980,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     return FALSE;
 }
 
-static NTSTATUS insert_prealloc_chunk_fragmented(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+static NTSTATUS insert_chunk_fragmented(fcb* fcb, UINT64 start, UINT64 length, UINT8* data, BOOL prealloc, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     UINT64 flags = fcb->Vcb->data_flags;
     BOOL page_file = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE;
@@ -3012,9 +3012,10 @@ static NTSTATUS insert_prealloc_chunk_fragmented(fcb* fcb, UINT64 start, UINT64 
                     space* s = CONTAINING_RECORD(c->space_size.Flink, space, list_entry_size);
                     UINT64 extlen = min(length, s->size);
 
-                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0)) {
+                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, prealloc && !page_file, data, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0)) {
                         start += extlen;
                         length -= extlen;
+                        if (data) data += extlen;
 
                         ExAcquireResourceExclusiveLite(&c->lock, TRUE);
                     }
@@ -3091,9 +3092,9 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
 
         ExReleaseResourceLite(&c->lock);
 
-        Status = insert_prealloc_chunk_fragmented(fcb, start, length, rollback);
+        Status = insert_chunk_fragmented(fcb, start, length, NULL, TRUE, rollback);
         if (!NT_SUCCESS(Status))
-            ERR("insert_prealloc_chunk_fragmented returned %08x\n", Status);
+            ERR("insert_chunk_fragmented returned %08x\n", Status);
 
         goto end;
 
@@ -3208,12 +3209,13 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         }
 
         if (!done) {
-            FIXME("FIXME - not enough room to write whole extent part, try to write bits and pieces\n"); // FIXME
-            break;
+            Status = insert_chunk_fragmented(fcb, start_data, length, data, FALSE, rollback);
+            if (!NT_SUCCESS(Status))
+                ERR("insert_chunk_fragmented returned %08x\n", Status);
+
+            return Status;
         }
     }
-
-    WARN("couldn't find any data chunks with %llx bytes free\n", length);
 
     return STATUS_DISK_FULL;
 }
