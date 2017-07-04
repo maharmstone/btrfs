@@ -4090,6 +4090,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb;
     ccb* ccb;
+    file_ref* fileref;
     FILE_FULL_EA_INFORMATION* ffei;
     ULONG offset;
     LIST_ENTRY ealist;
@@ -4158,6 +4159,12 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
+
+    if (fcb->ads) {
+        fileref = ccb->fileref->parent;
+        fcb = fileref->fcb;
+    } else
+        fileref = ccb->fileref;
 
     InitializeListHead(&ealist);
 
@@ -4343,7 +4350,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fcb);
 
-    send_notification_fileref(ccb->fileref, FILE_NOTIFY_CHANGE_EA, FILE_ACTION_MODIFIED, NULL);
+    send_notification_fileref(fileref, FILE_NOTIFY_CHANGE_EA, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
