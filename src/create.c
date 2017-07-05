@@ -3043,14 +3043,15 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                       FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
                       FILE_TRAVERSE;
 
+            if (!Vcb->readonly && (fileref->fcb == Vcb->dummy_fcb || fileref->fcb->inode == SUBVOL_ROOT_INODE))
+                allowed |= DELETE;
+
             if (fileref->fcb != Vcb->dummy_fcb && !is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
-                allowed |= DELETE | WRITE_OWNER | WRITE_DAC | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
+                allowed |= WRITE_OWNER | WRITE_DAC | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
 
                 if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
                     allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
-            } else if (fileref->fcb == Vcb->dummy_fcb && !Vcb->readonly)
-                allowed |= DELETE;
-            else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
+            } else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
                 // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
 
                 allowed |= FILE_WRITE_ATTRIBUTES;
