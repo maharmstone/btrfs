@@ -3658,8 +3658,23 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         TRACE("flags: (none)\n");
     }
 
+    if (!IrpSp->FileObject) {
+        ERR("FileObject was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+
+    if (IrpSp->FileObject->RelatedFileObject) {
+        fcb* relatedfcb = IrpSp->FileObject->RelatedFileObject->FsContext;
+
+        if (relatedfcb && relatedfcb->Vcb != Vcb) {
+            WARN("RelatedFileObject was for different device\n");
+            Status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
+    }
+
     // opening volume
-    // FIXME - also check if RelatedFileObject is Vcb
     if (IrpSp->FileObject->FileName.Length == 0 && !IrpSp->FileObject->RelatedFileObject) {
         ULONG RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
         ULONG RequestedOptions = IrpSp->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
