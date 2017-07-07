@@ -3014,7 +3014,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             }
 
             SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-        }
+        } else
+            granted_access = 0;
 
         TRACE("deleted = %s\n", fileref->deleted ? "TRUE" : "FALSE");
 
