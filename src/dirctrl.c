@@ -573,12 +573,13 @@ next:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS query_directory(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS query_directory(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status, status2;
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
+    device_extension* Vcb;
     void* buf;
     UINT8 *curitem, *lastitem;
     LONG length;
@@ -606,9 +607,21 @@ static NTSTATUS query_directory(device_extension* Vcb, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
 
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
     if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_LIST_DIRECTORY)) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
+    }
+
+    Vcb = fcb->Vcb;
+
+    if (!Vcb) {
+        ERR("Vcb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
     }
 
     if (fileref->fcb == Vcb->dummy_fcb)
@@ -1016,7 +1029,7 @@ NTSTATUS drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             break;
 
         case IRP_MN_QUERY_DIRECTORY:
-            Status = query_directory(Vcb, Irp);
+            Status = query_directory(Irp);
             break;
 
         default:
