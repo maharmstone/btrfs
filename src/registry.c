@@ -676,18 +676,24 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
         // If we're creating the key for the first time, we add a default mapping of
         // BUILTIN\Users to gid 100, which ought to correspond to the "users" group on Linux.
 
-        us2.Buffer = builtin_users;
         us2.Length = us2.MaximumLength = (USHORT)wcslen(builtin_users) * sizeof(WCHAR);
+        us2.Buffer = ExAllocatePoolWithTag(PagedPool, us2.MaximumLength, ALLOC_TAG);
 
-        val = 100;
-        Status = ZwSetValueKey(h, &us2, 0, REG_DWORD, &val, sizeof(DWORD));
-        if (!NT_SUCCESS(Status)) {
-            ERR("ZwSetValueKey returned %08x\n", Status);
-            ZwClose(h);
-            return;
+        if (us2.Buffer) {
+            RtlCopyMemory(us2.Buffer, builtin_users, us2.Length);
+
+            val = 100;
+            Status = ZwSetValueKey(h, &us2, 0, REG_DWORD, &val, sizeof(DWORD));
+            if (!NT_SUCCESS(Status)) {
+                ERR("ZwSetValueKey returned %08x\n", Status);
+                ZwClose(h);
+                return;
+            }
+
+            add_group_mapping(us2.Buffer, us2.Length / sizeof(WCHAR), val);
+
+            ExFreePool(us2.Buffer);
         }
-
-        add_group_mapping(us2.Buffer, us2.Length / sizeof(WCHAR), val);
     }
 
     ZwClose(h);
