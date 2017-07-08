@@ -18,6 +18,9 @@
 #define ISOLATION_AWARE_ENABLED 1
 #define STRSAFE_NO_DEPRECATE
 
+#define WINVER 0x0A00 // Windows 10
+#define _WIN32_WINNT 0x0A00
+
 #include <windows.h>
 #include <winternl.h>
 #include <string>
