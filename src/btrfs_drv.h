@@ -787,7 +787,6 @@ typedef struct {
 
 typedef struct _volume_device_extension {
     UINT32 type;
-    BTRFS_UUID uuid;
     UNICODE_STRING name;
     PDEVICE_OBJECT device;
     PDEVICE_OBJECT mounted_device;
@@ -805,6 +804,7 @@ typedef struct _volume_device_extension {
 
 typedef struct {
     UINT32 type;
+    BTRFS_UUID uuid;
     volume_device_extension* vde;
     PDEVICE_OBJECT pdo;
     LIST_ENTRY list_entry;

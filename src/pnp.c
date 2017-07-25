@@ -377,15 +377,12 @@ static NTSTATUS pdo_query_device_id(pdo_device_extension* pdode, PIRP Irp) {
 
     static WCHAR pref[] = L"Btrfs\\";
 
-    if (!pdode->vde)
-        return STATUS_DEVICE_NOT_READY;
-
     RtlCopyMemory(name, pref, wcslen(pref) * sizeof(WCHAR));
 
     noff = &name[wcslen(pref)];
     for (i = 0; i < 16; i++) {
-        *noff = hex_digit(pdode->vde->uuid.uuid[i] >> 4); noff++;
-        *noff = hex_digit(pdode->vde->uuid.uuid[i] & 0xf); noff++;
+        *noff = hex_digit(pdode->uuid.uuid[i] >> 4); noff++;
+        *noff = hex_digit(pdode->uuid.uuid[i] & 0xf); noff++;
 
         if (i == 3 || i == 5 || i == 7 || i == 9) {
             *noff = '-';

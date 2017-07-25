@@ -358,6 +358,7 @@ static NTSTATUS vol_query_device_name(volume_device_extension* vde, PIRP Irp) {
 static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     MOUNTDEV_UNIQUE_ID* mduid;
+    pdo_device_extension* pdode;
 
     if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_UNIQUE_ID)) {
         Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
@@ -372,7 +373,12 @@ static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
         return STATUS_BUFFER_OVERFLOW;
     }
 
-    RtlCopyMemory(mduid->UniqueId, &vde->uuid, sizeof(BTRFS_UUID));
+    if (!vde->pdo)
+        return STATUS_INVALID_PARAMETER;
+
+    pdode = vde->pdo->DeviceExtension;
+
+    RtlCopyMemory(mduid->UniqueId, &pdode->uuid, sizeof(BTRFS_UUID));
 
     Irp->IoStatus.Information = offsetof(MOUNTDEV_UNIQUE_ID, UniqueId[0]) + mduid->UniqueIdLength;
 
@@ -960,13 +966,13 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     LIST_ENTRY* le;
     UNICODE_STRING volname;
     PDEVICE_OBJECT voldev, DeviceObject;
-    volume_device_extension* vde = NULL;
+//     volume_device_extension* vde = NULL;
     BOOL new_vde = FALSE;
     volume_child* vc;
     PFILE_OBJECT FileObject;
     UNICODE_STRING devpath2;
     BOOL inserted = FALSE;
-    pdo_device_extension* pdode;
+    pdo_device_extension* pdode = NULL;
 
     if (devpath->Length == 0)
         return;
@@ -977,8 +983,8 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     while (le != &pdo_list) {
         pdo_device_extension* pdode2 = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-        if (pdode2->vde && RtlCompareMemory(&pdode2->vde->uuid, &sb->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            vde = pdode2->vde;
+        if (RtlCompareMemory(&pdode2->uuid, &sb->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            pdode = pdode2;
             break;
         }
 
@@ -992,8 +998,9 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         return;
     }
 
-    if (!vde) {
+    if (!pdode) {
         control_device_extension* cde = master_devobj->DeviceExtension;
+        volume_device_extension* vde;
         PDEVICE_OBJECT pdo = NULL;
         ULONG i, j;
 
@@ -1012,6 +1019,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
         pdode->type = VCB_TYPE_PDO;
         pdode->pdo = pdo;
+        pdode->uuid = sb->uuid;
 
         pdo->Flags &= ~DO_DEVICE_INITIALIZING;
 
@@ -1053,7 +1061,6 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
         vde = voldev->DeviceExtension;
         vde->type = VCB_TYPE_VOLUME;
-        vde->uuid = sb->uuid;
         vde->name = volname;
         vde->device = voldev;
         vde->mounted_device = NULL;
@@ -1077,18 +1084,16 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
         pdode->vde = vde;
     } else {
-        pdode = vde->pdo->DeviceExtension;
-
-        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+        ExAcquireResourceExclusiveLite(&pdode->vde->child_lock, TRUE);
         ExConvertExclusiveToSharedLite(&pdo_list_lock);
 
-        le = vde->children.Flink;
-        while (le != &vde->children) {
+        le = pdode->vde->children.Flink;
+        while (le != &pdode->vde->children) {
             volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
             if (RtlCompareMemory(&vc2->uuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 // duplicate, ignore
-                ExReleaseResourceLite(&vde->child_lock);
+                ExReleaseResourceLite(&pdode->vde->child_lock);
                 ExReleaseResourceLite(&pdo_list_lock);
                 goto fail;
             }
@@ -1096,7 +1101,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             le = le->Flink;
         }
 
-        voldev = vde->device;
+        voldev = pdode->vde->device;
     }
 
     vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
@@ -1104,7 +1109,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         ERR("out of memory\n");
 
         if (!new_vde) {
-            ExReleaseResourceLite(&vde->child_lock);
+            ExReleaseResourceLite(&pdode->vde->child_lock);
             ExReleaseResourceLite(&pdo_list_lock);
         }
 
@@ -1117,7 +1122,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     vc->notification_entry = NULL;
 
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
-                                            drvobj, pnp_removal, vde, &vc->notification_entry);
+                                            drvobj, pnp_removal, pdode->vde, &vc->notification_entry);
     if (!NT_SUCCESS(Status))
         WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
 
@@ -1151,13 +1156,13 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     vc->part_num = part_num;
     vc->had_drive_letter = FALSE;
 
-    le = vde->children.Flink;
-    while (le != &vde->children) {
+    le = pdode->vde->children.Flink;
+    while (le != &pdode->vde->children) {
         volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
         if (vc2->generation < vc->generation) {
-            if (le == vde->children.Flink)
-                vde->num_children = sb->num_devices;
+            if (le == pdode->vde->children.Flink)
+                pdode->vde->num_children = sb->num_devices;
 
             InsertHeadList(vc2->list_entry.Blink, &vc->list_entry);
             inserted = TRUE;
@@ -1168,12 +1173,12 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     }
 
     if (!inserted)
-        InsertTailList(&vde->children, &vc->list_entry);
+        InsertTailList(&pdode->vde->children, &vc->list_entry);
 
-    vde->children_loaded++;
+    pdode->vde->children_loaded++;
 
-    if (vde->mounted_device) {
-        device_extension* Vcb = vde->mounted_device->DeviceExtension;
+    if (pdode->vde->mounted_device) {
+        device_extension* Vcb = pdode->vde->mounted_device->DeviceExtension;
 
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
@@ -1198,17 +1203,17 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
     if (DeviceObject->Characteristics & FILE_REMOVABLE_MEDIA)
         voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
 
-    if (vde->num_children == vde->children_loaded || (vde->children_loaded == 1 && allow_degraded_mount(&sb->uuid))) {
-        if (vde->num_children == 1) {
+    if (pdode->vde->num_children == pdode->vde->children_loaded || (pdode->vde->children_loaded == 1 && allow_degraded_mount(&sb->uuid))) {
+        if (pdode->vde->num_children == 1) {
             Status = remove_drive_letter(mountmgr, devpath);
             if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
                 WARN("remove_drive_letter returned %08x\n", Status);
 
             vc->had_drive_letter = NT_SUCCESS(Status);
         } else {
-            le = vde->children.Flink;
+            le = pdode->vde->children.Flink;
 
-            while (le != &vde->children) {
+            while (le != &pdode->vde->children) {
                 UNICODE_STRING name;
 
                 vc = CONTAINING_RECORD(le, volume_child, list_entry);
@@ -1220,7 +1225,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
                     ERR("out of memory\n");
 
                     if (!new_vde) {
-                        ExReleaseResourceLite(&vde->child_lock);
+                        ExReleaseResourceLite(&pdode->vde->child_lock);
                         ExReleaseResourceLite(&pdo_list_lock);
                     }
 
@@ -1243,13 +1248,13 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
             }
         }
 
-        Status = IoSetDeviceInterfaceState(&vde->bus_name, TRUE);
+        Status = IoSetDeviceInterfaceState(&pdode->vde->bus_name, TRUE);
         if (!NT_SUCCESS(Status))
             WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
     }
 
     if (!new_vde) {
-        ExReleaseResourceLite(&vde->child_lock);
+        ExReleaseResourceLite(&pdode->vde->child_lock);
         ExReleaseResourceLite(&pdo_list_lock);
     } else {
         InsertTailList(&pdo_list, &pdode->list_entry);
