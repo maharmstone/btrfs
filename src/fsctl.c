@@ -2474,17 +2474,15 @@ static NTSTATUS get_compression(PIRP Irp) {
 
 static void update_volumes(device_extension* Vcb) {
     LIST_ENTRY* le;
-    volume_device_extension* vde;
-
-    vde = Vcb->vde;
+    volume_device_extension* vde = Vcb->vde;
+    pdo_device_extension* pdode = vde->pdo->DeviceExtension;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-    ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
 
-    le = vde->children.Flink;
-
-    while (le != &vde->children) {
+    le = pdode->children.Flink;
+    while (le != &pdode->children) {
         volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
         vc->generation = Vcb->superblock.generation - 1;
@@ -2492,7 +2490,7 @@ static void update_volumes(device_extension* Vcb) {
         le = le->Flink;
     }
 
-    ExReleaseResourceLite(&vde->child_lock);
+    ExReleaseResourceLite(&pdode->child_lock);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 }
@@ -2668,6 +2666,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     traverse_ptr tp;
     STORAGE_DEVICE_NUMBER sdn;
     volume_device_extension* vde;
+    pdo_device_extension* pdode;
     const GUID* pnp_guid;
     GET_LENGTH_INFORMATION gli;
 
@@ -2939,6 +2938,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     ExFreePool(mb);
 
     vde = Vcb->vde;
+    pdode = vde->pdo->DeviceExtension;
 
     vc = ExAllocatePoolWithTag(NonPagedPool, sizeof(volume_child), ALLOC_TAG);
     if (!vc) {
@@ -2989,11 +2989,11 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     vc->part_num = sdn.PartitionNumber;
     vc->had_drive_letter = FALSE;
 
-    ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
-    InsertTailList(&vde->children, &vc->list_entry);
-    vde->num_children++;
-    vde->children_loaded++;
-    ExReleaseResourceLite(&vde->child_lock);
+    ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
+    InsertTailList(&pdode->children, &vc->list_entry);
+    pdode->num_children++;
+    pdode->children_loaded++;
+    ExReleaseResourceLite(&pdode->child_lock);
 
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);

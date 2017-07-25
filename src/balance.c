@@ -2659,10 +2659,12 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
     vde = Vcb->vde;
 
     if (dev->devobj) {
-        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+        pdo_device_extension* pdode = vde->pdo->DeviceExtension;
 
-        le = vde->children.Flink;
-        while (le != &vde->children) {
+        ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
+
+        le = pdode->children.Flink;
+        while (le != &pdode->children) {
             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
             if (RtlCompareMemory(&dev->devitem.device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
@@ -2670,7 +2672,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
                 PDEVICE_OBJECT mountmgr;
                 UNICODE_STRING mmdevpath;
 
-                vde->children_loaded--;
+                pdode->children_loaded--;
 
                 if (vc->had_drive_letter) { // re-add entry to mountmgr
                     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
@@ -2723,11 +2725,11 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
             le = le->Flink;
         }
 
-        if (vde->children_loaded > 0 && vde->device->Characteristics & FILE_REMOVABLE_MEDIA) {
+        if (pdode->children_loaded > 0 && vde->device->Characteristics & FILE_REMOVABLE_MEDIA) {
             vde->device->Characteristics &= ~FILE_REMOVABLE_MEDIA;
 
-            le = vde->children.Flink;
-            while (le != &vde->children) {
+            le = pdode->children.Flink;
+            while (le != &pdode->children) {
                 volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
                 if (vc->devobj->Characteristics & FILE_REMOVABLE_MEDIA) {
@@ -2739,9 +2741,9 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
             }
         }
 
-        vde->num_children = Vcb->superblock.num_devices;
+        pdode->num_children = Vcb->superblock.num_devices;
 
-        ExReleaseResourceLite(&vde->child_lock);
+        ExReleaseResourceLite(&pdode->child_lock);
 
         // free dev
 

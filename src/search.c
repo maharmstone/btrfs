@@ -331,6 +331,7 @@ end:
 void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lock) _Releases_exclusive_lock_(_Curr_->child_lock) _In_ volume_device_extension* vde,
                          _In_ volume_child* vc, _In_ BOOL skip_dev) {
     NTSTATUS Status;
+    pdo_device_extension* pdode = vde->pdo->DeviceExtension;
     device_extension* Vcb = vde->mounted_device ? vde->mounted_device->DeviceExtension : NULL;
 
     if (vc->notification_entry)
@@ -348,7 +349,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
             WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
     }
 
-    if (vde->children_loaded > 0) {
+    if (pdode->children_loaded > 0) {
         UNICODE_STRING mmdevpath;
         PFILE_OBJECT FileObject;
         PDEVICE_OBJECT mountmgr;
@@ -360,9 +361,9 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
             if (!NT_SUCCESS(Status))
                 ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
             else {
-                le = vde->children.Flink;
+                le = pdode->children.Flink;
 
-                while (le != &vde->children) {
+                while (le != &pdode->children) {
                     volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
                     if (vc2->had_drive_letter) { // re-add entry to mountmgr
@@ -424,8 +425,8 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         if (vde->device->Characteristics & FILE_REMOVABLE_MEDIA) {
             vde->device->Characteristics &= ~FILE_REMOVABLE_MEDIA;
 
-            le = vde->children.Flink;
-            while (le != &vde->children) {
+            le = pdode->children.Flink;
+            while (le != &pdode->children) {
                 volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
                 if (vc2 != vc && vc2->devobj->Characteristics & FILE_REMOVABLE_MEDIA) {
@@ -443,11 +444,10 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
     RemoveEntryList(&vc->list_entry);
     ExFreePool(vc);
 
-    vde->children_loaded--;
+    pdode->children_loaded--;
 
-    if (vde->children_loaded == 0) { // remove volume device
+    if (pdode->children_loaded == 0) { // remove volume device
         BOOL remove = FALSE;
-        pdo_device_extension* pdode = vde->pdo->DeviceExtension;
 
         RemoveEntryList(&pdode->list_entry);
 
@@ -468,20 +468,26 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         if (vde->open_count == 0)
             remove = TRUE;
 
-        ExReleaseResourceLite(&vde->child_lock);
+        ExReleaseResourceLite(&pdode->child_lock);
 
         if (remove) {
+            PDEVICE_OBJECT pdo;
+
             if (vde->name.Buffer)
                 ExFreePool(vde->name.Buffer);
 
             if (Vcb)
                 Vcb->vde = NULL;
 
-            ExDeleteResourceLite(&vde->child_lock);
+            ExDeleteResourceLite(&pdode->child_lock);
+            IoDetachDevice(vde->pdo);
+
+            pdo = vde->pdo;
             IoDeleteDevice(vde->device);
+            IoDeleteDevice(pdo);
         }
     } else
-        ExReleaseResourceLite(&vde->child_lock);
+        ExReleaseResourceLite(&pdode->child_lock);
 }
 
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
@@ -533,10 +539,10 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             BOOL changed = FALSE;
 
             if (pdode->vde) {
-                ExAcquireResourceExclusiveLite(&pdode->vde->child_lock, TRUE);
+                ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
 
-                le2 = pdode->vde->children.Flink;
-                while (le2 != &pdode->vde->children) {
+                le2 = pdode->children.Flink;
+                while (le2 != &pdode->children) {
                     volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
                     LIST_ENTRY* le3 = le2->Flink;
 
@@ -553,7 +559,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                 }
 
                 if (!changed)
-                    ExReleaseResourceLite(&pdode->vde->child_lock);
+                    ExReleaseResourceLite(&pdode->child_lock);
                 else
                     break;
             }
@@ -605,10 +611,10 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         BOOL changed = FALSE;
 
         if (pdode->vde) {
-            ExAcquireResourceExclusiveLite(&pdode->vde->child_lock, TRUE);
+            ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
 
-            le2 = pdode->vde->children.Flink;
-            while (le2 != &pdode->vde->children) {
+            le2 = pdode->children.Flink;
+            while (le2 != &pdode->children) {
                 volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
                 LIST_ENTRY* le3 = le2->Flink;
 
@@ -625,7 +631,7 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
             }
 
             if (!changed)
-                ExReleaseResourceLite(&pdode->vde->child_lock);
+                ExReleaseResourceLite(&pdode->child_lock);
             else
                 break;
         }

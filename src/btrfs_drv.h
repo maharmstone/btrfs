@@ -795,11 +795,6 @@ typedef struct _volume_device_extension {
     PDEVICE_OBJECT attached_device;
     BOOL removing;
     LONG open_count;
-
-    UINT64 num_children;
-    UINT64 children_loaded;
-    ERESOURCE child_lock;
-    LIST_ENTRY children;
 } volume_device_extension;
 
 typedef struct {
@@ -807,6 +802,12 @@ typedef struct {
     BTRFS_UUID uuid;
     volume_device_extension* vde;
     PDEVICE_OBJECT pdo;
+
+    UINT64 num_children;
+    UINT64 children_loaded;
+    ERESOURCE child_lock;
+    LIST_ENTRY children;
+
     LIST_ENTRY list_entry;
 } pdo_device_extension;
 

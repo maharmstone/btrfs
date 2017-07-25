@@ -2809,6 +2809,7 @@ static void add_device_to_list(_In_ device_extension* Vcb, _In_ device* dev) {
 _Ret_maybenull_
 device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid) {
     volume_device_extension* vde;
+    pdo_device_extension* pdode;
     LIST_ENTRY* le;
 
     le = Vcb->devices.Flink;
@@ -2832,12 +2833,14 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
     if (!vde)
         goto end;
 
-    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+    pdode = vde->pdo->DeviceExtension;
+
+    ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
     if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
-        le = vde->children.Flink;
+        le = pdode->children.Flink;
 
-        while (le != &vde->children) {
+        while (le != &pdode->children) {
             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
             if (RtlCompareMemory(uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
@@ -2845,7 +2848,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
 
                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                 if (!dev) {
-                    ExReleaseResourceLite(&vde->child_lock);
+                    ExReleaseResourceLite(&pdode->child_lock);
                     ERR("out of memory\n");
                     return NULL;
                 }
@@ -2867,7 +2870,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
                 add_device_to_list(Vcb, dev);
                 Vcb->devices_loaded++;
 
-                ExReleaseResourceLite(&vde->child_lock);
+                ExReleaseResourceLite(&pdode->child_lock);
 
                 return dev;
             }
@@ -2876,7 +2879,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
         }
     }
 
-    ExReleaseResourceLite(&vde->child_lock);
+    ExReleaseResourceLite(&pdode->child_lock);
 
 end:
     WARN("could not find device with uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
@@ -3063,13 +3066,14 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 if (!done && Vcb->vde) {
                     volume_device_extension* vde = Vcb->vde;
+                    pdo_device_extension* pdode = vde->pdo->DeviceExtension;
 
-                    ExAcquireResourceSharedLite(&vde->child_lock, TRUE);
+                    ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
                     if (Vcb->devices_loaded < Vcb->superblock.num_devices) {
-                        le = vde->children.Flink;
+                        le = pdode->children.Flink;
 
-                        while (le != &vde->children) {
+                        while (le != &pdode->children) {
                             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
                             if (RtlCompareMemory(&di->device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
@@ -3077,7 +3081,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                                 if (!dev) {
-                                    ExReleaseResourceLite(&vde->child_lock);
+                                    ExReleaseResourceLite(&pdode->child_lock);
                                     ERR("out of memory\n");
                                     return STATUS_INSUFFICIENT_RESOURCES;
                                 }
@@ -3118,7 +3122,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
                                 if (!dev) {
-                                    ExReleaseResourceLite(&vde->child_lock);
+                                    ExReleaseResourceLite(&pdode->child_lock);
                                     ERR("out of memory\n");
                                     return STATUS_INSUFFICIENT_RESOURCES;
                                 }
@@ -3136,7 +3140,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                     } else
                         ERR("unexpected device %llx found\n", tp.item->key.offset);
 
-                    ExReleaseResourceLite(&vde->child_lock);
+                    ExReleaseResourceLite(&pdode->child_lock);
                 }
             }
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
@@ -3853,6 +3857,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     BOOL init_lookaside = FALSE;
     device* dev;
     volume_device_extension* vde = NULL;
+    pdo_device_extension* pdode = NULL;
     volume_child* vc;
     BOOL no_pnp = FALSE;
     UINT64 readobjsize;
@@ -3889,18 +3894,20 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     if (vde) {
-        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+        pdode = vde->pdo->DeviceExtension;
 
-        le = vde->children.Flink;
-        while (le != &vde->children) {
+        ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
+
+        le = pdode->children.Flink;
+        while (le != &pdode->children) {
             LIST_ENTRY* le2 = le->Flink;
 
-            vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+            vc = CONTAINING_RECORD(pdode->children.Flink, volume_child, list_entry);
 
             if (!still_has_superblock(vc->devobj)) {
                 remove_volume_child(vde, vc, FALSE);
 
-                if (vde->num_children == 0) {
+                if (pdode->num_children == 0) {
                     ERR("error - number of devices is zero\n");
                     Status = STATUS_INTERNAL_ERROR;
                     goto exit2;
@@ -3913,15 +3920,15 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
             le = le2;
         }
 
-        if (vde->num_children == 0 || vde->children_loaded == 0) {
+        if (pdode->num_children == 0 || pdode->children_loaded == 0) {
             ERR("error - number of devices is zero\n");
             Status = STATUS_INTERNAL_ERROR;
             goto exit;
         }
 
-        ExConvertExclusiveToSharedLite(&vde->child_lock);
+        ExConvertExclusiveToSharedLite(&pdode->child_lock);
 
-        vc = CONTAINING_RECORD(vde->children.Flink, volume_child, list_entry);
+        vc = CONTAINING_RECORD(pdode->children.Flink, volume_child, list_entry);
 
         readobj = vc->devobj;
         readobjsize = vc->size;
@@ -3995,8 +4002,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (vde && vde->children_loaded < vde->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
-        ERR("could not mount as %u device(s) missing\n", vde->num_children - vde->children_loaded);
+    if (pdode && pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
+        ERR("could not mount as %u device(s) missing\n", pdode->num_children - pdode->children_loaded);
         Status = STATUS_DEVICE_NOT_READY;
         goto exit;
     }
@@ -4385,8 +4392,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     ExInitializeResourceLite(&Vcb->send_load_lock);
 
 exit:
-    if (vde)
-        ExReleaseResourceLite(&vde->child_lock);
+    if (pdode)
+        ExReleaseResourceLite(&pdode->child_lock);
 
 exit2:
     if (Vcb) {
@@ -4477,13 +4484,14 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
             ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x (user-induced)\n", Status);
 
             if (Vcb->vde) {
+                pdo_device_extension* pdode = Vcb->vde->pdo->DeviceExtension;
                 LIST_ENTRY* le2;
                 BOOL changed = FALSE;
 
-                ExAcquireResourceExclusiveLite(&Vcb->vde->child_lock, TRUE);
+                ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
 
-                le2 = Vcb->vde->children.Flink;
-                while (le2 != &Vcb->vde->children) {
+                le2 = pdode->children.Flink;
+                while (le2 != &pdode->children) {
                     volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
 
                     if (vc->devobj == dev->devobj) {
@@ -4499,7 +4507,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
                 }
 
                 if (!changed)
-                    ExReleaseResourceLite(&Vcb->vde->child_lock);
+                    ExReleaseResourceLite(&pdode->child_lock);
             }
         } else if (!NT_SUCCESS(Status)) {
             ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x\n", Status);
