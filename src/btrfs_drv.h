@@ -597,6 +597,7 @@ typedef struct {
 #define VCB_TYPE_FS         1
 #define VCB_TYPE_CONTROL    2
 #define VCB_TYPE_VOLUME     3
+#define VCB_TYPE_PDO        4
 
 #ifdef DEBUG_STATS
 typedef struct {
@@ -783,6 +784,10 @@ typedef struct {
     ULONG part_num;
     LIST_ENTRY list_entry;
 } volume_child;
+
+typedef struct {
+    UINT32 type;
+} pdo_device_extension;
 
 typedef struct _volume_device_extension {
     UINT32 type;
