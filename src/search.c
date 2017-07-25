@@ -27,8 +27,8 @@
 #include <initguid.h>
 #include <wdmguid.h>
 
-extern ERESOURCE volume_list_lock;
-extern LIST_ENTRY volume_list;
+extern ERESOURCE pdo_list_lock;
+extern LIST_ENTRY pdo_list;
 extern UNICODE_STRING registry_path;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
@@ -447,7 +447,9 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
 
     if (vde->children_loaded == 0) { // remove volume device
         BOOL remove = FALSE;
-        RemoveEntryList(&vde->list_entry);
+        pdo_device_extension* pdode = vde->pdo->DeviceExtension;
+
+        RemoveEntryList(&pdode->list_entry);
 
         if (Vcb && Vcb->options.allow_degraded) {
             Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
@@ -522,42 +524,44 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     if (sdn.DeviceNumber != 0xffffffff) {
         LIST_ENTRY* le;
 
-        ExAcquireResourceExclusiveLite(&volume_list_lock, TRUE);
+        ExAcquireResourceExclusiveLite(&pdo_list_lock, TRUE);
 
-        le = volume_list.Flink;
-        while (le != &volume_list) {
-            volume_device_extension* vde = CONTAINING_RECORD(le, volume_device_extension, list_entry);
+        le = pdo_list.Flink;
+        while (le != &pdo_list) {
+            pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
             LIST_ENTRY* le2;
             BOOL changed = FALSE;
 
-            ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+            if (pdode->vde) {
+                ExAcquireResourceExclusiveLite(&pdode->vde->child_lock, TRUE);
 
-            le2 = vde->children.Flink;
-            while (le2 != &vde->children) {
-                volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
-                LIST_ENTRY* le3 = le2->Flink;
+                le2 = pdode->vde->children.Flink;
+                while (le2 != &pdode->vde->children) {
+                    volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+                    LIST_ENTRY* le3 = le2->Flink;
 
-                if (vc->disk_num == sdn.DeviceNumber && vc->part_num == 0) {
-                    TRACE("removing device\n");
+                    if (vc->disk_num == sdn.DeviceNumber && vc->part_num == 0) {
+                        TRACE("removing device\n");
 
-                    remove_volume_child(vde, vc, FALSE);
-                    changed = TRUE;
+                        remove_volume_child(pdode->vde, vc, FALSE);
+                        changed = TRUE;
 
-                    break;
+                        break;
+                    }
+
+                    le2 = le3;
                 }
 
-                le2 = le3;
+                if (!changed)
+                    ExReleaseResourceLite(&pdode->vde->child_lock);
+                else
+                    break;
             }
-
-            if (!changed)
-                ExReleaseResourceLite(&vde->child_lock);
-            else
-                break;
 
             le = le->Flink;
         }
 
-        ExReleaseResourceLite(&volume_list_lock);
+        ExReleaseResourceLite(&pdo_list_lock);
     }
 
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
@@ -592,42 +596,44 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         devpath2.MaximumLength -= 3 * sizeof(WCHAR);
     }
 
-    ExAcquireResourceExclusiveLite(&volume_list_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&pdo_list_lock, TRUE);
 
-    le = volume_list.Flink;
-    while (le != &volume_list) {
-        volume_device_extension* vde = CONTAINING_RECORD(le, volume_device_extension, list_entry);
+    le = pdo_list.Flink;
+    while (le != &pdo_list) {
+        pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
         LIST_ENTRY* le2;
         BOOL changed = FALSE;
 
-        ExAcquireResourceExclusiveLite(&vde->child_lock, TRUE);
+        if (pdode->vde) {
+            ExAcquireResourceExclusiveLite(&pdode->vde->child_lock, TRUE);
 
-        le2 = vde->children.Flink;
-        while (le2 != &vde->children) {
-            volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
-            LIST_ENTRY* le3 = le2->Flink;
+            le2 = pdode->vde->children.Flink;
+            while (le2 != &pdode->vde->children) {
+                volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+                LIST_ENTRY* le3 = le2->Flink;
 
-            if (vc->pnp_name.Length == devpath2.Length && RtlCompareMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length) == devpath2.Length) {
-                TRACE("removing device\n");
+                if (vc->pnp_name.Length == devpath2.Length && RtlCompareMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length) == devpath2.Length) {
+                    TRACE("removing device\n");
 
-                remove_volume_child(vde, vc, FALSE);
-                changed = TRUE;
+                    remove_volume_child(pdode->vde, vc, FALSE);
+                    changed = TRUE;
 
-                break;
+                    break;
+                }
+
+                le2 = le3;
             }
 
-            le2 = le3;
+            if (!changed)
+                ExReleaseResourceLite(&pdode->vde->child_lock);
+            else
+                break;
         }
-
-        if (!changed)
-            ExReleaseResourceLite(&vde->child_lock);
-        else
-            break;
 
         le = le->Flink;
     }
 
-    ExReleaseResourceLite(&volume_list_lock);
+    ExReleaseResourceLite(&pdo_list_lock);
 }
 
 typedef struct {

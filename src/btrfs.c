@@ -83,8 +83,8 @@ tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
 tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
-ERESOURCE volume_list_lock, mapping_lock;
-LIST_ENTRY volume_list;
+ERESOURCE pdo_list_lock, mapping_lock;
+LIST_ENTRY pdo_list;
 BOOL finished_probing = FALSE;
 HANDLE degraded_wait_handle = NULL;
 BOOL degraded_wait = TRUE;
@@ -302,7 +302,7 @@ static void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
 #endif
 
     ExDeleteResourceLite(&global_loading_lock);
-    ExDeleteResourceLite(&volume_list_lock);
+    ExDeleteResourceLite(&pdo_list_lock);
 
     if (log_device.Buffer)
         ExFreePool(log_device.Buffer);
@@ -5246,9 +5246,9 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);
-    ExInitializeResourceLite(&volume_list_lock);
+    ExInitializeResourceLite(&pdo_list_lock);
 
-    InitializeListHead(&volume_list);
+    InitializeListHead(&pdo_list);
 
     InitializeObjectAttributes(&oa, RegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     Status = ZwCreateKey(&regh, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS | KEY_NOTIFY, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);

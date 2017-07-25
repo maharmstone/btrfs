@@ -785,10 +785,6 @@ typedef struct {
     LIST_ENTRY list_entry;
 } volume_child;
 
-typedef struct {
-    UINT32 type;
-} pdo_device_extension;
-
 typedef struct _volume_device_extension {
     UINT32 type;
     BTRFS_UUID uuid;
@@ -805,9 +801,13 @@ typedef struct _volume_device_extension {
     UINT64 children_loaded;
     ERESOURCE child_lock;
     LIST_ENTRY children;
-
-    LIST_ENTRY list_entry;
 } volume_device_extension;
+
+typedef struct {
+    UINT32 type;
+    volume_device_extension* vde;
+    LIST_ENTRY list_entry;
+} pdo_device_extension;
 
 typedef struct {
     LIST_ENTRY listentry;
