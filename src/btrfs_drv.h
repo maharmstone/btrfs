@@ -763,6 +763,8 @@ typedef struct _device_extension {
 
 typedef struct {
     UINT32 type;
+    PDEVICE_OBJECT buspdo;
+    UNICODE_STRING bus_name;
 } control_device_extension;
 
 typedef struct {
