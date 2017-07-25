@@ -806,6 +806,7 @@ typedef struct _volume_device_extension {
 typedef struct {
     UINT32 type;
     volume_device_extension* vde;
+    PDEVICE_OBJECT pdo;
     LIST_ENTRY list_entry;
 } pdo_device_extension;
 

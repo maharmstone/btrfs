@@ -1011,6 +1011,7 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
         RtlZeroMemory(pdode, sizeof(pdo_device_extension));
 
         pdode->type = VCB_TYPE_PDO;
+        pdode->pdo = pdo;
 
         pdo->Flags &= ~DO_DEVICE_INITIALIZING;
 

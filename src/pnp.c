@@ -34,6 +34,9 @@ typedef struct {
     pnp_stripe* stripes;
 } pnp_context;
 
+extern ERESOURCE pdo_list_lock;
+extern LIST_ENTRY pdo_list;
+
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     pnp_stripe* stripe = conptr;
@@ -291,6 +294,60 @@ static void bus_query_device_state(PIRP Irp) {
     Irp->IoStatus.Status = STATUS_SUCCESS;
 }
 
+static NTSTATUS bus_query_device_relations(PIRP Irp) {
+    NTSTATUS Status;
+    ULONG num_children;
+    LIST_ENTRY* le;
+    ULONG drsize, i;
+    DEVICE_RELATIONS* dr;
+
+    ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
+
+    num_children = 0;
+
+    le = pdo_list.Flink;
+    while (le != &pdo_list) {
+        num_children++;
+
+        le = le->Flink;
+    }
+
+    drsize = offsetof(DEVICE_RELATIONS, Objects[0]) + (num_children * sizeof(PDEVICE_OBJECT));
+    dr = ExAllocatePoolWithTag(PagedPool, drsize, ALLOC_TAG);
+
+    if (!dr) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    dr->Count = num_children;
+
+    i = 0;
+    le = pdo_list.Flink;
+    while (le != &pdo_list) {
+        pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+
+        ObReferenceObject(pdode->pdo);
+        dr->Objects[i] = pdode->pdo;
+        i++;
+
+        le = le->Flink;
+    }
+
+    Irp->IoStatus.Information = (ULONG_PTR)dr;
+
+    Status = STATUS_SUCCESS;
+
+end:
+    ExReleaseResourceLite(&pdo_list_lock);
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    return Status;
+}
+
 static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -302,6 +359,12 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
         case IRP_MN_QUERY_PNP_DEVICE_STATE:
             bus_query_device_state(Irp);
             break;
+
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+            if (IrpSp->Parameters.QueryDeviceRelations.Type != BusRelations)
+                break;
+
+            return bus_query_device_relations(Irp);
     }
 
     IoSkipCurrentIrpStackLocation(Irp);
