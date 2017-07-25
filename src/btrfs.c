@@ -5099,6 +5099,12 @@ static void degraded_wait_thread(_In_ void* context) {
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
+static NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
+    ERR("(%p, %p)\n", DriverObject, PhysicalDeviceObject);
+
+    return STATUS_NOT_SUPPORTED;
+}
+
 _Function_class_(DRIVER_INITIALIZE)
 NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath) {
     NTSTATUS Status;
@@ -5185,6 +5191,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     drvobj = DriverObject;
 
     DriverObject->DriverUnload = DriverUnload;
+
+    DriverObject->DriverExtension->AddDevice = AddDevice;
 
     DriverObject->MajorFunction[IRP_MJ_CREATE]                   = (PDRIVER_DISPATCH)drv_create;
     DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = (PDRIVER_DISPATCH)drv_close;
