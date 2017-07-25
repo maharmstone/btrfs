@@ -7,8 +7,8 @@
 
 [Version]
 Signature   = "$Windows NT$"
-Class       = "LegacyDriver"
-ClassGuid   = {8ecc055d-047f-11d1-a537-0000f8753ed1}
+Class       = SCSIAdapter
+ClassGuid   = {4d36e97b-e325-11ce-bfc1-08002be10318}
 Provider    = %Me%
 DriverVer   = 02/14/2016,0.1.0.0
 CatalogFile = btrfs.cat
@@ -28,7 +28,21 @@ CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
 RegisterDlls = shellbtrfs
 
 [DefaultInstall.Services]
-AddService  = %ServiceName%,,Btrfs.Service
+AddService  = %ServiceName%,2,Btrfs.Service
+
+[Manufacturer]
+%Me%=Standard,NT
+
+[Standard.NT]
+%VolumeName% = Btrfs_Install, BtrfsVolume
+
+[Btrfs_Install]
+OptionDesc   = %ServiceDescription%
+CopyFiles    = Btrfs.DriverFiles,Btrfs.DllFiles
+RegisterDlls = shellbtrfs
+
+[Btrfs_Install.Services]
+AddService  = %ServiceName%,2,Btrfs.Service
 
 ;;
 ;; Default uninstall sections
@@ -49,7 +63,7 @@ DelService = %ServiceName%,0x200      ;Ensure service is stopped before deleting
 DisplayName      = %ServiceName%
 Description      = %ServiceDescription%
 ServiceBinary    = %12%\%DriverName%.sys    ;%windir%\system32\drivers\
-ServiceType      = 2                        ;SERVICE_FILE_SYSTEM_DRIVER
+ServiceType      = 1
 StartType        = 1                        ;SERVICE_SYSTEM_START
 ErrorControl     = 1
 LoadOrderGroup   = "File System"
@@ -91,3 +105,4 @@ ServiceDescription      = "Btrfs driver"
 ServiceName             = "btrfs"
 DriverName              = "btrfs"
 DiskId1                 = "Btrfs Device Installation Disk"
+VolumeName              = "Btrfs volume"
