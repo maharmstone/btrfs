@@ -275,6 +275,39 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static void bus_query_capabilities(PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PDEVICE_CAPABILITIES dc = IrpSp->Parameters.DeviceCapabilities.Capabilities;
+
+    dc->UniqueID = TRUE;
+    dc->SilentInstall = TRUE;
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+}
+
+static void bus_query_device_state(PIRP Irp) {
+    Irp->IoStatus.Information = PNP_DEVICE_NOT_DISABLEABLE;
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+}
+
+static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    switch (IrpSp->MinorFunction) {
+        case IRP_MN_QUERY_CAPABILITIES:
+            bus_query_capabilities(Irp);
+            break;
+
+        case IRP_MN_QUERY_PNP_DEVICE_STATE:
+            bus_query_device_state(Irp);
+            break;
+    }
+
+    IoSkipCurrentIrpStackLocation(Irp);
+    return IoCallDriver(cde->attached_device, Irp);
+}
+
 _Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -287,7 +320,10 @@ NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     top_level = is_top_level(Irp);
 
-    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+    if (Vcb && Vcb->type == VCB_TYPE_CONTROL) {
+        Status = bus_pnp(DeviceObject->DeviceExtension, Irp);
+        goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         volume_device_extension* vde = DeviceObject->DeviceExtension;
         IoSkipCurrentIrpStackLocation(Irp);
         Status = IoCallDriver(vde->pdo, Irp);

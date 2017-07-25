@@ -5270,7 +5270,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     if (!NT_SUCCESS(Status))
         WARN("IoRegisterDeviceInterface returned %08x\n", Status);
 
-    IoAttachDeviceToDeviceStack(DeviceObject, cde->buspdo);
+    cde->attached_device = IoAttachDeviceToDeviceStack(DeviceObject, cde->buspdo);
 
     Status = IoSetDeviceInterfaceState(&cde->bus_name, TRUE);
     if (!NT_SUCCESS(Status))
