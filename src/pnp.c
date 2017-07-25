@@ -371,6 +371,25 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
     return IoCallDriver(cde->attached_device, Irp);
 }
 
+static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    UNUSED(pdo);
+
+    switch (IrpSp->MinorFunction) {
+        case IRP_MN_START_DEVICE:
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+        case IRP_MN_SURPRISE_REMOVAL:
+        case IRP_MN_REMOVE_DEVICE:
+            return STATUS_SUCCESS;
+
+        case IRP_MN_QUERY_REMOVE_DEVICE:
+            return STATUS_UNSUCCESSFUL;
+    }
+
+    return Irp->IoStatus.Status;
+}
+
 _Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -391,6 +410,9 @@ NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         IoSkipCurrentIrpStackLocation(Irp);
         Status = IoCallDriver(vde->pdo, Irp);
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_PDO) {
+        Status = pdo_pnp(DeviceObject, Irp);
+        goto end;
     } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
         Status = STATUS_INVALID_PARAMETER;
         goto end;
