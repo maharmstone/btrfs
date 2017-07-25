@@ -371,12 +371,87 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
     return IoCallDriver(cde->attached_device, Irp);
 }
 
-static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
+static NTSTATUS pdo_query_device_id(pdo_device_extension* pdode, PIRP Irp) {
+    WCHAR name[100], *noff, *out;
+    int i;
+
+    static WCHAR pref[] = L"Btrfs\\";
+
+    if (!pdode->vde)
+        return STATUS_DEVICE_NOT_READY;
+
+    RtlCopyMemory(name, pref, wcslen(pref) * sizeof(WCHAR));
+
+    noff = &name[wcslen(pref)];
+    for (i = 0; i < 16; i++) {
+        *noff = hex_digit(pdode->vde->uuid.uuid[i] >> 4); noff++;
+        *noff = hex_digit(pdode->vde->uuid.uuid[i] & 0xf); noff++;
+
+        if (i == 3 || i == 5 || i == 7 || i == 9) {
+            *noff = '-';
+            noff++;
+        }
+    }
+    *noff = 0;
+
+    out = ExAllocatePoolWithTag(PagedPool, (wcslen(name) + 1) * sizeof(WCHAR), ALLOC_TAG);
+    if (!out) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(out, name, (wcslen(name) + 1) * sizeof(WCHAR));
+
+    Irp->IoStatus.Information = (ULONG_PTR)out;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS pdo_query_hardware_ids(PIRP Irp) {
+    WCHAR* out;
+
+    static WCHAR ids[] = L"BtrfsVolume\0";
+
+    out = ExAllocatePoolWithTag(PagedPool, sizeof(ids), ALLOC_TAG);
+    if (!out) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(out, ids, sizeof(ids));
+
+    Irp->IoStatus.Information = (ULONG_PTR)out;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS pdo_query_id(pdo_device_extension* pdode, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    UNUSED(pdo);
+    switch (IrpSp->Parameters.QueryId.IdType) {
+        case BusQueryDeviceID:
+            TRACE("BusQueryDeviceID\n");
+            return pdo_query_device_id(pdode, Irp);
+
+        case BusQueryHardwareIDs:
+            TRACE("BusQueryHardwareIDs\n");
+            return pdo_query_hardware_ids(Irp);
+
+        default:
+            break;
+    }
+
+    return Irp->IoStatus.Status;
+}
+
+static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    pdo_device_extension* pdode = pdo->DeviceExtension;
 
     switch (IrpSp->MinorFunction) {
+        case IRP_MN_QUERY_ID:
+            return pdo_query_id(pdode, Irp);
+
         case IRP_MN_START_DEVICE:
         case IRP_MN_CANCEL_REMOVE_DEVICE:
         case IRP_MN_SURPRISE_REMOVAL:
