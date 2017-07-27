@@ -35,6 +35,7 @@ AddService  = %ServiceName%,2,Btrfs.Service
 
 [Standard.NT]
 %VolumeName% = Btrfs_Install, BtrfsVolume
+%ControllerName% = Btrfs_Install, DETECTED\btrfs
 
 [Btrfs_Install]
 OptionDesc   = %ServiceDescription%
@@ -106,3 +107,4 @@ ServiceName             = "btrfs"
 DriverName              = "btrfs"
 DiskId1                 = "Btrfs Device Installation Disk"
 VolumeName              = "Btrfs volume"
+ControllerName          = "Btrfs controller"
