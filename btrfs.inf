@@ -7,8 +7,8 @@
 
 [Version]
 Signature   = "$Windows NT$"
-Class       = SCSIAdapter
-ClassGuid   = {4d36e97b-e325-11ce-bfc1-08002be10318}
+Class       = Volume
+ClassGuid   = {71a27cdd-812a-11d0-bec7-08002be2092f}
 Provider    = %Me%
 DriverVer   = 02/14/2016,0.1.0.0
 CatalogFile = btrfs.cat
