@@ -73,6 +73,7 @@
     <TargetExt>.sys</TargetExt>
     <IncludePath>$(DDK_INC_PATH);$(IncludePath)</IncludePath>
     <LibraryPath>$(DDK_LIB_PATH);$(LibraryPath)</LibraryPath>
+    <EnableInf2cat>false</EnableInf2cat>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>.\Debug\x64\</OutDir>
@@ -299,6 +300,9 @@
     <ClCompile Include="src\zlib\inftrees.c" />
     <ClCompile Include="src\zlib\trees.c" />
     <ClCompile Include="src\zlib\zutil.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="btrfs.inf" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
