@@ -288,12 +288,6 @@ static void bus_query_capabilities(PIRP Irp) {
     Irp->IoStatus.Status = STATUS_SUCCESS;
 }
 
-static void bus_query_device_state(PIRP Irp) {
-    Irp->IoStatus.Information = PNP_DEVICE_NOT_DISABLEABLE;
-
-    Irp->IoStatus.Status = STATUS_SUCCESS;
-}
-
 static NTSTATUS bus_query_device_relations(PIRP Irp) {
     NTSTATUS Status;
     ULONG num_children;
@@ -354,10 +348,6 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
     switch (IrpSp->MinorFunction) {
         case IRP_MN_QUERY_CAPABILITIES:
             bus_query_capabilities(Irp);
-            break;
-
-        case IRP_MN_QUERY_PNP_DEVICE_STATE:
-            bus_query_device_state(Irp);
             break;
 
         case IRP_MN_QUERY_DEVICE_RELATIONS:
