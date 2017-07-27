@@ -2955,7 +2955,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     vc->notification_entry = NULL;
 
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj,
-                                            drvobj, pnp_removal, vde, &vc->notification_entry);
+                                            drvobj, pnp_removal, vde->pdo->DeviceExtension, &vc->notification_entry);
     if (!NT_SUCCESS(Status))
         WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
 

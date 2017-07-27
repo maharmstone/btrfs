@@ -802,6 +802,7 @@ typedef struct {
     BTRFS_UUID uuid;
     volume_device_extension* vde;
     PDEVICE_OBJECT pdo;
+    BOOL removable;
 
     UINT64 num_children;
     UINT64 children_loaded;

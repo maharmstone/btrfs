@@ -5108,9 +5108,109 @@ static void degraded_wait_thread(_In_ void* context) {
 }
 
 static NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
-    ERR("(%p, %p)\n", DriverObject, PhysicalDeviceObject);
+    LIST_ENTRY* le;
+    NTSTATUS Status;
+    BOOL found = FALSE;
+    UNICODE_STRING volname;
+    ULONG i, j;
+    pdo_device_extension* pdode;
+    PDEVICE_OBJECT voldev;
+    volume_device_extension* vde;
 
-    return STATUS_NOT_SUPPORTED;
+    TRACE("(%p, %p)\n", DriverObject, PhysicalDeviceObject);
+
+    ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
+
+    le = pdo_list.Flink;
+    while (le != &pdo_list) {
+        pdo_device_extension* pdode2 = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+
+        if (pdode2->pdo == PhysicalDeviceObject) {
+            found = TRUE;
+            break;
+        }
+
+        le = le->Flink;
+    }
+
+    if (!found) {
+        WARN("unrecognized PDO %p\n", PhysicalDeviceObject);
+        Status = STATUS_NOT_SUPPORTED;
+        goto end;
+    }
+
+    pdode = PhysicalDeviceObject->DeviceExtension;
+
+    ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
+
+    volname.Length = volname.MaximumLength = (USHORT)((wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR));
+    volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
+
+    if (!volname.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end2;
+    }
+
+    RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
+
+    j = (ULONG)wcslen(BTRFS_VOLUME_PREFIX);
+    for (i = 0; i < 16; i++) {
+        volname.Buffer[j] = hex_digit(pdode->uuid.uuid[i] >> 4); j++;
+        volname.Buffer[j] = hex_digit(pdode->uuid.uuid[i] & 0xf); j++;
+
+        if (i == 3 || i == 5 || i == 7 || i == 9) {
+            volname.Buffer[j] = '-';
+            j++;
+        }
+    }
+
+    volname.Buffer[j] = '}';
+
+    Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &voldev);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoCreateDevice returned %08x\n", Status);
+        goto end2;
+    }
+
+    voldev->SectorSize = PhysicalDeviceObject->SectorSize;
+    voldev->Flags |= DO_DIRECT_IO;
+
+    vde = voldev->DeviceExtension;
+    vde->type = VCB_TYPE_VOLUME;
+    vde->name = volname;
+    vde->device = voldev;
+    vde->mounted_device = NULL;
+    vde->pdo = PhysicalDeviceObject;
+    vde->removing = FALSE;
+    vde->open_count = 0;
+
+    Status = IoRegisterDeviceInterface(PhysicalDeviceObject, &GUID_DEVINTERFACE_VOLUME, NULL, &vde->bus_name);
+    if (!NT_SUCCESS(Status))
+        WARN("IoRegisterDeviceInterface returned %08x\n", Status);
+
+    vde->attached_device = IoAttachDeviceToDeviceStack(voldev, PhysicalDeviceObject);
+
+    pdode->vde = vde;
+
+    if (pdode->removable)
+        voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
+
+    voldev->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    Status = IoSetDeviceInterfaceState(&vde->bus_name, TRUE);
+    if (!NT_SUCCESS(Status))
+        WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+
+    Status = STATUS_SUCCESS;
+
+end2:
+    ExReleaseResourceLite(&pdode->child_lock);
+
+end:
+    ExReleaseResourceLite(&pdo_list_lock);
+
+    return Status;
 }
 
 _Function_class_(DRIVER_INITIALIZE)
