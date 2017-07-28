@@ -3881,10 +3881,30 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
             Status = STATUS_UNRECOGNIZED_VOLUME;
             goto exit2;
         }
-
-        vde = NULL;
     } else {
-        vde = DeviceToMount->DeviceExtension;
+        PDEVICE_OBJECT pdo;
+
+        pdo = DeviceToMount;
+
+        while (IoGetLowerDeviceObject(pdo)) {
+            pdo = IoGetLowerDeviceObject(pdo);
+        }
+
+        ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
+
+        le = pdo_list.Flink;
+        while (le != &pdo_list) {
+            pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+
+            if (pdode->pdo == pdo) {
+                vde = pdode->vde;
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&pdo_list_lock);
 
         if (!vde || vde->type != VCB_TYPE_VOLUME) {
             vde = NULL;
