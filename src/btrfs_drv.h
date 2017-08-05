@@ -1086,8 +1086,8 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...);
 
 #define TRACE(s, ...)
 #define WARN(s, ...)
-#define FIXME(s, ...) DbgPrint("Btrfs FIXME : " funcname " : " s, ##__VA_ARGS__)
-#define ERR(s, ...) DbgPrint("Btrfs ERR : " funcname " : " s, ##__VA_ARGS__)
+#define FIXME(s, ...) DbgPrint("Btrfs FIXME : %s : " s, funcname, ##__VA_ARGS__)
+#define ERR(s, ...) DbgPrint("Btrfs ERR : %s : " s, funcname, ##__VA_ARGS__)
 
 #endif
 
