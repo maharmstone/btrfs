@@ -94,6 +94,9 @@ PFILE_OBJECT comfo = NULL;
 PDEVICE_OBJECT comdo = NULL;
 HANDLE log_handle = NULL;
 ERESOURCE log_lock;
+HANDLE serial_thread_handle = NULL;
+
+static void init_serial(BOOL first_time);
 #endif
 
 static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject);
@@ -4987,12 +4990,53 @@ void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int 
 }
 
 #ifdef _DEBUG
-static void init_serial() {
+_Function_class_(KSTART_ROUTINE)
+static void serial_thread(void* context) {
+    LARGE_INTEGER due_time;
+    KTIMER timer;
+
+    UNUSED(context);
+
+    KeInitializeTimer(&timer);
+
+    due_time.QuadPart = (UINT64)-10000000;
+
+    KeSetTimer(&timer, due_time, NULL);
+
+    while (TRUE) {
+        KeWaitForSingleObject(&timer, Executive, KernelMode, FALSE, NULL);
+
+        init_serial(FALSE);
+
+        if (comdo)
+            break;
+
+        KeSetTimer(&timer, due_time, NULL);
+    }
+
+    KeCancelTimer(&timer);
+
+    PsTerminateSystemThread(STATUS_SUCCESS);
+
+    serial_thread_handle = NULL;
+}
+
+static void init_serial(BOOL first_time) {
     NTSTATUS Status;
 
     Status = IoGetDeviceObjectPointer(&log_device, FILE_WRITE_DATA, &comfo, &comdo);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+
+        if (first_time) {
+            NTSTATUS Status;
+
+            Status = PsCreateSystemThread(&serial_thread_handle, 0, NULL, NULL, NULL, serial_thread, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ERR("PsCreateSystemThread returned %08x\n", Status);
+                return;
+            }
+        }
     }
 }
 #endif
@@ -5025,7 +5069,7 @@ static void init_logging() {
     ExAcquireResourceExclusiveLite(&log_lock, TRUE);
 
     if (log_device.Length > 0)
-        init_serial();
+        init_serial(TRUE);
     else if (log_file.Length > 0) {
         NTSTATUS Status;
         OBJECT_ATTRIBUTES oa;
