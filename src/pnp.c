@@ -513,6 +513,8 @@ end:
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
 exit:
+    TRACE("returning %08x\n", Status);
+
     if (top_level)
         IoSetTopLevelIrp(NULL);
 
