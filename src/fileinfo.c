@@ -4375,6 +4375,8 @@ end2:
     }
 
 end:
+    TRACE("returning %08x\n", Status);
+
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
 
