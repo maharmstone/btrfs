@@ -2610,6 +2610,8 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 end:
     Irp->IoStatus.Status = Status;
 
+    TRACE("returning %08x\n", Status);
+
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     if (top_level)
