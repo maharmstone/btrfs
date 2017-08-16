@@ -2197,6 +2197,8 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Status = STATUS_SUCCESS;
 
 exit:
+    TRACE("returning %08x\n", Status);
+
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
 
