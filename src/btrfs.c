@@ -4716,6 +4716,8 @@ static NTSTATUS drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ P
 end:
     Irp->IoStatus.Status = Status;
 
+    TRACE("returning %08x\n", Status);
+
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     if (top_level)
