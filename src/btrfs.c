@@ -141,9 +141,9 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
     }
 
 #ifdef DEBUG_LONG_MESSAGES
-    sprintf(buf2, "%p:%s:%s:%u:", PsGetCurrentThreadId(), func, file, line);
+    sprintf(buf2, "%p:%s:%s:%u:", PsGetCurrentThread(), func, file, line);
 #else
-    sprintf(buf2, "%p:%s:", PsGetCurrentThreadId(), func);
+    sprintf(buf2, "%p:%s:", PsGetCurrentThread(), func);
 #endif
     buf = &buf2[strlen(buf2)];
 
