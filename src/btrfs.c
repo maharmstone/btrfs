@@ -530,6 +530,8 @@ static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Ir
 end:
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
+    TRACE("returning %08x\n", Status);
+
     if (top_level)
         IoSetTopLevelIrp(NULL);
 
