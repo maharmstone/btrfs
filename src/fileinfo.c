@@ -4067,6 +4067,8 @@ end2:
     ExReleaseResourceLite(fcb->Header.Resource);
 
 end:
+    TRACE("returning %08x\n", Status);
+
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW ? retlen : 0;
 
