@@ -796,7 +796,7 @@ NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         access_req |= ACCESS_SYSTEM_SECURITY;
     }
 
-    if ((ccb->access & access_req) != access_req) {
+    if (Irp->RequestorMode == UserMode && (ccb->access & access_req) != access_req) {
         Status = STATUS_ACCESS_DENIED;
         WARN("insufficient privileges\n");
         goto end;
