@@ -1153,6 +1153,8 @@ end:
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
 
+    TRACE("returning %08x\n", Status);
+
     IoCompleteRequest( Irp, IO_NO_INCREMENT );
 
     if (top_level)
