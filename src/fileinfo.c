@@ -204,12 +204,14 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     TRACE("atts = %x\n", atts);
 
     if (atts & FILE_ATTRIBUTE_READONLY) {
+        TRACE("not allowing readonly file to be deleted\n");
         Status = STATUS_CANNOT_DELETE;
         goto end;
     }
 
     // FIXME - can we skip this bit for subvols?
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
+        TRACE("directory not empty\n");
         Status = STATUS_DIRECTORY_NOT_EMPTY;
         goto end;
     }
