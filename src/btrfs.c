@@ -4757,6 +4757,8 @@ static NTSTATUS drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
 
 exit:
+    TRACE("returning %08x\n", Status);
+
     if (top_level)
         IoSetTopLevelIrp(NULL);
 
