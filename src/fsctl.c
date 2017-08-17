@@ -2472,6 +2472,23 @@ static NTSTATUS get_compression(PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS set_compression(PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    USHORT* compression;
+
+    TRACE("FSCTL_SET_COMPRESSION\n");
+
+    if (IrpSp->Parameters.FileSystemControl.InputBufferLength < sizeof(USHORT))
+        return STATUS_INVALID_PARAMETER;
+
+    compression = Irp->AssociatedIrp.SystemBuffer;
+
+    if (*compression != COMPRESSION_FORMAT_NONE)
+        return STATUS_INVALID_PARAMETER;
+
+    return STATUS_SUCCESS;
+}
+
 static void update_volumes(device_extension* Vcb) {
     LIST_ENTRY* le;
     volume_device_extension* vde = Vcb->vde;
@@ -4819,8 +4836,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             break;
 
         case FSCTL_SET_COMPRESSION:
-            WARN("STUB: FSCTL_SET_COMPRESSION\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            Status = set_compression(Irp);
             break;
 
         case FSCTL_SET_BOOTLOADER_ACCESSED:
