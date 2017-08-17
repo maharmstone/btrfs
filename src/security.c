@@ -670,7 +670,7 @@ end:
     return Status;
 }
 
-static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* sd, SECURITY_INFORMATION flags, PIRP Irp) {
+static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* sd, PSECURITY_INFORMATION flags, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -679,7 +679,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
-    TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, flags);
+    TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, *flags);
 
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
@@ -705,7 +705,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
 
     oldsd = fcb->sd;
 
-    Status = SeSetSecurityDescriptorInfo(NULL, &flags, sd, (void**)&fcb->sd, PagedPool, IoGetFileObjectGenericMapping());
+    Status = SeSetSecurityDescriptorInfo(NULL, flags, sd, (void**)&fcb->sd, PagedPool, IoGetFileObjectGenericMapping());
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeSetSecurityDescriptorInfo returned %08x\n", Status);
@@ -803,7 +803,7 @@ NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     }
 
     Status = set_file_security(DeviceObject->DeviceExtension, FileObject, IrpSp->Parameters.SetSecurity.SecurityDescriptor,
-                               IrpSp->Parameters.SetSecurity.SecurityInformation, Irp);
+                               &IrpSp->Parameters.SetSecurity.SecurityInformation, Irp);
 
 end:
     Irp->IoStatus.Status = Status;
