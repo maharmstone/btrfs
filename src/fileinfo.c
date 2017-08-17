@@ -2593,18 +2593,6 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             FIXME("STUB: FileValidDataLengthInformation\n");
             break;
 
-        case FileNormalizedNameInformation:
-            FIXME("STUB: FileNormalizedNameInformation\n");
-            break;
-
-        case FileStandardLinkInformation:
-            FIXME("STUB: FileStandardLinkInformation\n");
-            break;
-
-        case FileRemoteProtocolInformation:
-            TRACE("FileRemoteProtocolInformation\n");
-            break;
-
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.SetFile.FileInformationClass);
     }
