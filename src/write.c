@@ -30,9 +30,9 @@ static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVO
 
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
-extern tPsUpdateDiskCounters PsUpdateDiskCounters;
-extern tCcCopyWriteEx CcCopyWriteEx;
-extern tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
+extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
+extern tCcCopyWriteEx fCcCopyWriteEx;
+extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 extern BOOL diskacc;
 
 BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, UINT64 length, UINT64* address) {
@@ -2071,7 +2071,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
     }
 
     if (diskacc)
-        FsRtlUpdateDiskCounters(0, total_writing);
+        fFsRtlUpdateDiskCounters(0, total_writing);
 
     Status = STATUS_SUCCESS;
 
@@ -4307,9 +4307,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 Status = Irp->IoStatus.Status;
                 goto end;
             } else {
-                if (CcCopyWriteEx) {
+                if (fCcCopyWriteEx) {
                     TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
-                    if (!CcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
+                    if (!fCcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
                         Status = STATUS_PENDING;
                         goto end;
                     }
@@ -4659,7 +4659,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOLEAN wait, BOOLEAN defer
                 thread = PsGetCurrentThread();
 
             if (thread)
-                PsUpdateDiskCounters(PsGetThreadProcess(thread), 0, IrpSp->Parameters.Write.Length, 0, 1, 0);
+                fPsUpdateDiskCounters(PsGetThreadProcess(thread), 0, IrpSp->Parameters.Write.Length, 0, 1, 0);
         }
     }
 

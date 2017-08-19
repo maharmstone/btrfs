@@ -56,9 +56,9 @@ typedef struct {
 } read_data_context;
 
 extern BOOL diskacc;
-extern tPsUpdateDiskCounters PsUpdateDiskCounters;
-extern tCcCopyReadEx CcCopyReadEx;
-extern tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
+extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
+extern tCcCopyReadEx fCcCopyReadEx;
+extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 
 #define LINUX_PAGE_SIZE 4096
 
@@ -2555,7 +2555,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 #endif
 
     if (diskacc)
-        FsRtlUpdateDiskCounters(total_reading, 0);
+        fFsRtlUpdateDiskCounters(total_reading, 0);
 
     // check if any of the devices return a "user-induced" error
 
@@ -3162,11 +3162,11 @@ NTSTATUS do_read(PIRP Irp, BOOLEAN wait, ULONG* bytes_read) {
             if (IrpSp->MinorFunction & IRP_MN_MDL) {
                 CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
             } else {
-                if (CcCopyReadEx) {
+                if (fCcCopyReadEx) {
                     TRACE("CcCopyReadEx(%p, %llx, %x, %u, %p, %p, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart,
                           length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread);
                     TRACE("sizes = %llx, %llx, %llx\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
-                    if (!CcCopyReadEx(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread)) {
+                    if (!fCcCopyReadEx(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread)) {
                         TRACE("CcCopyReadEx could not wait\n");
 
                         IoMarkIrpPending(Irp);
@@ -3237,7 +3237,7 @@ NTSTATUS do_read(PIRP Irp, BOOLEAN wait, ULONG* bytes_read) {
                 thread = PsGetCurrentThread();
 
             if (thread)
-                PsUpdateDiskCounters(PsGetThreadProcess(thread), *bytes_read, 0, 1, 0, 0);
+                fPsUpdateDiskCounters(PsGetThreadProcess(thread), *bytes_read, 0, 1, 0, 0);
         }
 
         return Status;

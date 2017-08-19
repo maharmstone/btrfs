@@ -76,11 +76,11 @@ UINT32 mount_allow_degraded = 0;
 UINT32 mount_readonly = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
-tPsUpdateDiskCounters PsUpdateDiskCounters;
-tCcCopyReadEx CcCopyReadEx;
-tCcCopyWriteEx CcCopyWriteEx;
-tCcSetAdditionalCacheAttributesEx CcSetAdditionalCacheAttributesEx;
-tFsRtlUpdateDiskCounters FsRtlUpdateDiskCounters;
+tPsUpdateDiskCounters fPsUpdateDiskCounters;
+tCcCopyReadEx fCcCopyReadEx;
+tCcCopyWriteEx fCcCopyWriteEx;
+tCcSetAdditionalCacheAttributesEx fCcSetAdditionalCacheAttributesEx;
+tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -3583,7 +3583,7 @@ void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs) {
     CcInitializeCacheMap(FileObject, ccfs, FALSE, cache_callbacks, FileObject);
 
     if (diskacc)
-        CcSetAdditionalCacheAttributesEx(FileObject, CC_ENABLE_DISK_IO_ACCOUNTING);
+        fCcSetAdditionalCacheAttributesEx(FileObject, CC_ENABLE_DISK_IO_ACCOUNTING);
 
     CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
 }
@@ -5338,38 +5338,38 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
         UNICODE_STRING name;
-        tPsIsDiskCountersEnabled PsIsDiskCountersEnabled;
+        tPsIsDiskCountersEnabled fPsIsDiskCountersEnabled;
 
         RtlInitUnicodeString(&name, L"PsIsDiskCountersEnabled");
-        PsIsDiskCountersEnabled = (tPsIsDiskCountersEnabled)MmGetSystemRoutineAddress(&name);
+        fPsIsDiskCountersEnabled = (tPsIsDiskCountersEnabled)MmGetSystemRoutineAddress(&name);
 
-        if (PsIsDiskCountersEnabled) {
-            diskacc = PsIsDiskCountersEnabled();
+        if (fPsIsDiskCountersEnabled) {
+            diskacc = fPsIsDiskCountersEnabled();
 
             RtlInitUnicodeString(&name, L"PsUpdateDiskCounters");
-            PsUpdateDiskCounters = (tPsUpdateDiskCounters)MmGetSystemRoutineAddress(&name);
+            fPsUpdateDiskCounters = (tPsUpdateDiskCounters)MmGetSystemRoutineAddress(&name);
 
-            if (!PsUpdateDiskCounters)
+            if (!fPsUpdateDiskCounters)
                 diskacc = FALSE;
 
             RtlInitUnicodeString(&name, L"FsRtlUpdateDiskCounters");
-            FsRtlUpdateDiskCounters = (tFsRtlUpdateDiskCounters)MmGetSystemRoutineAddress(&name);
+            fFsRtlUpdateDiskCounters = (tFsRtlUpdateDiskCounters)MmGetSystemRoutineAddress(&name);
         }
 
         RtlInitUnicodeString(&name, L"CcCopyReadEx");
-        CcCopyReadEx = (tCcCopyReadEx)MmGetSystemRoutineAddress(&name);
+        fCcCopyReadEx = (tCcCopyReadEx)MmGetSystemRoutineAddress(&name);
 
         RtlInitUnicodeString(&name, L"CcCopyWriteEx");
-        CcCopyWriteEx = (tCcCopyWriteEx)MmGetSystemRoutineAddress(&name);
+        fCcCopyWriteEx = (tCcCopyWriteEx)MmGetSystemRoutineAddress(&name);
 
         RtlInitUnicodeString(&name, L"CcSetAdditionalCacheAttributesEx");
-        CcSetAdditionalCacheAttributesEx = (tCcSetAdditionalCacheAttributesEx)MmGetSystemRoutineAddress(&name);
+        fCcSetAdditionalCacheAttributesEx = (tCcSetAdditionalCacheAttributesEx)MmGetSystemRoutineAddress(&name);
     } else {
-        PsUpdateDiskCounters = NULL;
-        CcCopyReadEx = NULL;
-        CcCopyWriteEx = NULL;
-        CcSetAdditionalCacheAttributesEx = NULL;
-        FsRtlUpdateDiskCounters = NULL;
+        fPsUpdateDiskCounters = NULL;
+        fCcCopyReadEx = NULL;
+        fCcCopyWriteEx = NULL;
+        fCcSetAdditionalCacheAttributesEx = NULL;
+        fFsRtlUpdateDiskCounters = NULL;
     }
 
     drvobj = DriverObject;
