@@ -2453,6 +2453,101 @@ end:
     return Status;
 }
 
+static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+    FILE_VALID_DATA_LENGTH_INFORMATION* fvdli = Irp->AssociatedIrp.SystemBuffer;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
+    NTSTATUS Status;
+    LARGE_INTEGER time;
+    CC_FILE_SIZES ccfs;
+    LIST_ENTRY rollback;
+    BOOL set_size = FALSE;
+    ULONG filter;
+
+    if (IrpSp->Parameters.SetFile.Length < sizeof(FILE_VALID_DATA_LENGTH_INFORMATION)) {
+        ERR("input buffer length was %u, expected %u\n", IrpSp->Parameters.SetFile.Length, sizeof(FILE_VALID_DATA_LENGTH_INFORMATION));
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!fileref) {
+        ERR("fileref is NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    InitializeListHead(&rollback);
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+
+    if (fcb->atts & FILE_ATTRIBUTE_SPARSE_FILE) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (fvdli->ValidDataLength.QuadPart <= fcb->Header.ValidDataLength.QuadPart || fvdli->ValidDataLength.QuadPart > fcb->Header.FileSize.QuadPart) {
+        TRACE("invalid VDL of %llu (current VDL = %llu, file size = %llu)\n", fvdli->ValidDataLength.QuadPart,
+              fcb->Header.ValidDataLength.QuadPart, fcb->Header.FileSize.QuadPart);
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (fileref ? fileref->deleted : fcb->deleted) {
+        Status = STATUS_FILE_CLOSED;
+        goto end;
+    }
+
+    // This function doesn't really do anything - the fsctl can only increase the value of ValidDataLength,
+    // and we set it to the max anyway.
+
+    ccfs.AllocationSize = fcb->Header.AllocationSize;
+    ccfs.FileSize = fcb->Header.FileSize;
+    ccfs.ValidDataLength = fvdli->ValidDataLength;
+    set_size = TRUE;
+
+    filter = FILE_NOTIFY_CHANGE_SIZE;
+
+    if (!ccb->user_set_write_time) {
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &fcb->inode_item.st_mtime);
+        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+    }
+
+    fcb->inode_item_changed = TRUE;
+    mark_fcb_dirty(fcb);
+
+    send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    if (set_size) {
+        try {
+            CcSetFileSizes(FileObject, &ccfs);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status))
+            ERR("CcSetFileSizes threw exception %08x\n", Status);
+        else
+            fcb->Header.AllocationSize = ccfs.AllocationSize;
+    }
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return Status;
+}
+
 _Dispatch_type_(IRP_MJ_SET_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
@@ -2575,13 +2670,9 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             break;
 
         case FilePositionInformation:
-        {
             TRACE("FilePositionInformation\n");
-
             Status = set_position_information(IrpSp->FileObject, Irp);
-
             break;
-        }
 
         case FileRenameInformation:
             TRACE("FileRenameInformation\n");
@@ -2590,8 +2681,19 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             break;
 
         case FileValidDataLengthInformation:
-            FIXME("STUB: FileValidDataLengthInformation\n");
+        {
+            TRACE("FileValidDataLengthInformation\n");
+
+            if (Irp->RequestorMode == UserMode && !(ccb->access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            Status = set_valid_data_length_information(Vcb, Irp, IrpSp->FileObject);
+
             break;
+        }
 
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.SetFile.FileInformationClass);
