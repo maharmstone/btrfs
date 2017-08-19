@@ -4760,44 +4760,60 @@ end:
     return Status;
 }
 
+static NTSTATUS oplock_request(device_extension* Vcb, PIRP Irp) {
+    // FIXME
+
+    return STATUS_INVALID_DEVICE_REQUEST;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
 
     switch (type) {
         case FSCTL_REQUEST_OPLOCK:
-            WARN("STUB: FSCTL_REQUEST_OPLOCK\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_REQUEST_OPLOCK\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_REQUEST_OPLOCK_LEVEL_1:
-            WARN("STUB: FSCTL_REQUEST_OPLOCK_LEVEL_1\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_REQUEST_OPLOCK_LEVEL_1\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_REQUEST_OPLOCK_LEVEL_2:
-            WARN("STUB: FSCTL_REQUEST_OPLOCK_LEVEL_2\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_REQUEST_OPLOCK_LEVEL_2\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_REQUEST_BATCH_OPLOCK:
-            WARN("STUB: FSCTL_REQUEST_BATCH_OPLOCK\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_REQUEST_BATCH_OPLOCK\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_OPLOCK_BREAK_ACKNOWLEDGE:
-            WARN("STUB: FSCTL_OPLOCK_BREAK_ACKNOWLEDGE\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_OPLOCK_BREAK_ACKNOWLEDGE\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            break;
+
+        case FSCTL_OPLOCK_BREAK_ACK_NO_2:
+            WARN("FSCTL_OPLOCK_BREAK_ACK_NO_2\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_OPBATCH_ACK_CLOSE_PENDING:
-            WARN("STUB: FSCTL_OPBATCH_ACK_CLOSE_PENDING\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_OPBATCH_ACK_CLOSE_PENDING\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_OPLOCK_BREAK_NOTIFY:
-            WARN("STUB: FSCTL_OPLOCK_BREAK_NOTIFY\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            WARN("FSCTL_OPLOCK_BREAK_NOTIFY\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            break;
+
+        case FSCTL_REQUEST_FILTER_OPLOCK:
+            WARN("FSCTL_REQUEST_FILTER_OPLOCK\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
             break;
 
         case FSCTL_LOCK_VOLUME:
@@ -4844,22 +4860,12 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
             Status = STATUS_INVALID_DEVICE_REQUEST;
             break;
 
-        case FSCTL_OPLOCK_BREAK_ACK_NO_2:
-            WARN("STUB: FSCTL_OPLOCK_BREAK_ACK_NO_2\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_INVALIDATE_VOLUMES:
             Status = invalidate_volumes(Irp);
             break;
 
         case FSCTL_QUERY_FAT_BPB:
             WARN("STUB: FSCTL_QUERY_FAT_BPB\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
-        case FSCTL_REQUEST_FILTER_OPLOCK:
-            WARN("STUB: FSCTL_REQUEST_FILTER_OPLOCK\n");
             Status = STATUS_INVALID_DEVICE_REQUEST;
             break;
 
