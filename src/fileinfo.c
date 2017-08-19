@@ -2881,6 +2881,9 @@ NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* nam
     while (fr->parent) {
         USHORT movelen;
 
+        if (!fr->dc)
+            return STATUS_INTERNAL_ERROR;
+
         if (!overflow) {
             if (fr->dc->name.Length + sizeof(WCHAR) + fn->Length > fn->MaximumLength)
                 overflow = TRUE;
