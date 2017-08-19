@@ -1433,6 +1433,8 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
     if (fcb->list_entry_all.Flink)
         RemoveEntryList(&fcb->list_entry_all);
 
+    FsRtlUninitializeOplock(fcb_oplock(fcb));
+
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);

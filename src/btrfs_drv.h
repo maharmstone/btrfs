@@ -250,6 +250,7 @@ typedef struct _fcb {
     BOOL inode_item_changed;
     enum prop_compression_type prop_compression;
     LIST_ENTRY xattrs;
+    OPLOCK oplock; // stored in Header in Windows 8 and above
 
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
@@ -277,6 +278,8 @@ typedef struct _fcb {
     LIST_ENTRY list_entry_all;
     LIST_ENTRY list_entry_dirty;
 } fcb;
+
+#define fcb_oplock(f) (f->Header.Version >= FSRTL_FCB_HEADER_V2 ? &f->Header.Oplock : &f->oplock)
 
 typedef struct {
     ERESOURCE fileref_lock;

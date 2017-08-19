@@ -88,6 +88,8 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     InitializeListHead(&fcb->dir_children_hash);
     InitializeListHead(&fcb->dir_children_hash_uc);
 
+    FsRtlInitializeOplock(fcb_oplock(fcb));
+
     return fcb;
 }
 
