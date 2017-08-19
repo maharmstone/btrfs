@@ -81,6 +81,7 @@ tCcCopyReadEx fCcCopyReadEx;
 tCcCopyWriteEx fCcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx fCcSetAdditionalCacheAttributesEx;
 tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
+tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -4691,13 +4692,13 @@ static NTSTATUS drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ P
         case IRP_MN_KERNEL_CALL:
             TRACE("IRP_MN_KERNEL_CALL\n");
 
-            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode);
+            Status = fsctl_request(DeviceObject, &Irp, IrpSp->Parameters.FileSystemControl.FsControlCode);
             break;
 
         case IRP_MN_USER_FS_REQUEST:
             TRACE("IRP_MN_USER_FS_REQUEST\n");
 
-            Status = fsctl_request(DeviceObject, Irp, IrpSp->Parameters.FileSystemControl.FsControlCode);
+            Status = fsctl_request(DeviceObject, &Irp, IrpSp->Parameters.FileSystemControl.FsControlCode);
             break;
 
         case IRP_MN_VERIFY_VOLUME:
@@ -4718,11 +4719,13 @@ static NTSTATUS drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ P
     }
 
 end:
-    Irp->IoStatus.Status = Status;
-
     TRACE("returning %08x\n", Status);
 
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    if (Irp) {
+        Irp->IoStatus.Status = Status;
+
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    }
 
     if (top_level)
         IoSetTopLevelIrp(NULL);
@@ -5364,12 +5367,16 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
         RtlInitUnicodeString(&name, L"CcSetAdditionalCacheAttributesEx");
         fCcSetAdditionalCacheAttributesEx = (tCcSetAdditionalCacheAttributesEx)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"FsRtlCheckLockForOplockRequest");
+        fFsRtlCheckLockForOplockRequest = (tFsRtlCheckLockForOplockRequest)MmGetSystemRoutineAddress(&name);
     } else {
         fPsUpdateDiskCounters = NULL;
         fCcCopyReadEx = NULL;
         fCcCopyWriteEx = NULL;
         fCcSetAdditionalCacheAttributesEx = NULL;
         fFsRtlUpdateDiskCounters = NULL;
+        fFsRtlCheckLockForOplockRequest = NULL;
     }
 
     drvobj = DriverObject;

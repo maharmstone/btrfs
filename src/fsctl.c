@@ -42,6 +42,7 @@
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 extern PDRIVER_OBJECT drvobj;
+extern tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 
 static void mark_subvol_dirty(device_extension* Vcb, root* r);
 
@@ -4760,60 +4761,150 @@ end:
     return Status;
 }
 
-static NTSTATUS oplock_request(device_extension* Vcb, PIRP Irp) {
-    // FIXME
+static NTSTATUS oplock_request(device_extension* Vcb, PIRP* Pirp) {
+    PIRP Irp = *Pirp;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    REQUEST_OPLOCK_INPUT_BUFFER* roib = Irp->AssociatedIrp.SystemBuffer;
+    NTSTATUS Status;
+    ULONG code = IrpSp->Parameters.FileSystemControl.FsControlCode;
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    fcb* fcb;
+    ccb* ccb;
+    file_ref* fileref;
+    ULONG oplock_count = 0;
+    BOOL tree_locked = FALSE;
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    TRACE("(%p, %p)\n", Vcb, *Pirp);
+
+    fcb = FileObject->FsContext;
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ccb = FileObject->FsContext2;
+    if (!ccb) {
+        ERR("ccb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    fileref = ccb->fileref;
+    if (!fileref) {
+        ERR("fileref was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (code == FSCTL_REQUEST_OPLOCK) {
+        if (IrpSp->Parameters.FileSystemControl.InputBufferLength < sizeof(REQUEST_OPLOCK_INPUT_BUFFER)) {
+            WARN("input buffer length was %u, expected %u\n", IrpSp->Parameters.FileSystemControl.InputBufferLength, sizeof(REQUEST_OPLOCK_INPUT_BUFFER));
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+
+        if (IrpSp->Parameters.FileSystemControl.OutputBufferLength < sizeof(REQUEST_OPLOCK_OUTPUT_BUFFER)) {
+            WARN("output buffer length was %u, expected %u\n", IrpSp->Parameters.FileSystemControl.OutputBufferLength, sizeof(REQUEST_OPLOCK_OUTPUT_BUFFER));
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+
+        if (!(roib->Flags & (REQUEST_OPLOCK_INPUT_FLAG_REQUEST | REQUEST_OPLOCK_INPUT_FLAG_ACK)))
+            return STATUS_INVALID_PARAMETER;
+    }
+
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && (code != FSCTL_REQUEST_OPLOCK || !FsRtlOplockIsSharedRequest(Irp))) {
+        WARN("requesting oplock on directory that is not read or read-handle\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (code == FSCTL_REQUEST_OPLOCK_LEVEL_1 || code == FSCTL_REQUEST_BATCH_OPLOCK || code == FSCTL_REQUEST_FILTER_OPLOCK ||
+        code == FSCTL_REQUEST_OPLOCK_LEVEL_2 || (code == FSCTL_REQUEST_OPLOCK && roib->Flags & REQUEST_OPLOCK_INPUT_FLAG_REQUEST)) {
+
+        ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+        tree_locked = TRUE;
+
+        ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+
+        if (FsRtlOplockIsSharedRequest(Irp)) {
+            if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+                if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8))
+                    oplock_count = (ULONG)!fFsRtlCheckLockForOplockRequest(&fcb->lock, &fcb->Header.AllocationSize);
+                else
+                    oplock_count = (ULONG)FsRtlAreThereCurrentOrInProgressFileLocks(&fcb->lock);
+            }
+        } else
+            oplock_count = 0;
+    } else if (code == FSCTL_OPLOCK_BREAK_ACKNOWLEDGE || code == FSCTL_OPBATCH_ACK_CLOSE_PENDING || code == FSCTL_OPLOCK_BREAK_NOTIFY ||
+               code == FSCTL_OPLOCK_BREAK_ACK_NO_2 || code == FSCTL_REQUEST_OPLOCK)
+        ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    else
+        return STATUS_INVALID_PARAMETER;
+
+    if (fileref->delete_on_close && (code == FSCTL_REQUEST_FILTER_OPLOCK || code == FSCTL_REQUEST_BATCH_OPLOCK ||
+        (code == FSCTL_REQUEST_OPLOCK && roib->RequestedOplockLevel & OPLOCK_LEVEL_CACHE_HANDLE))
+    )
+        return STATUS_DELETE_PENDING;
+
+    Status = FsRtlOplockFsctrl(fcb_oplock(fcb), Irp, oplock_count);
+
+    *Pirp = NULL; // don't complete Irp
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    if (tree_locked)
+        ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return Status;
 }
 
-NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP Irp, UINT32 type) {
+NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, UINT32 type) {
+    PIRP Irp = *Pirp;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
 
     switch (type) {
         case FSCTL_REQUEST_OPLOCK:
-            WARN("FSCTL_REQUEST_OPLOCK\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_REQUEST_OPLOCK\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_REQUEST_OPLOCK_LEVEL_1:
-            WARN("FSCTL_REQUEST_OPLOCK_LEVEL_1\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_REQUEST_OPLOCK_LEVEL_1\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_REQUEST_OPLOCK_LEVEL_2:
-            WARN("FSCTL_REQUEST_OPLOCK_LEVEL_2\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_REQUEST_OPLOCK_LEVEL_2\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_REQUEST_BATCH_OPLOCK:
-            WARN("FSCTL_REQUEST_BATCH_OPLOCK\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_REQUEST_BATCH_OPLOCK\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_OPLOCK_BREAK_ACKNOWLEDGE:
-            WARN("FSCTL_OPLOCK_BREAK_ACKNOWLEDGE\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_OPLOCK_BREAK_ACKNOWLEDGE\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_OPLOCK_BREAK_ACK_NO_2:
-            WARN("FSCTL_OPLOCK_BREAK_ACK_NO_2\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_OPLOCK_BREAK_ACK_NO_2\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_OPBATCH_ACK_CLOSE_PENDING:
-            WARN("FSCTL_OPBATCH_ACK_CLOSE_PENDING\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_OPBATCH_ACK_CLOSE_PENDING\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_OPLOCK_BREAK_NOTIFY:
-            WARN("FSCTL_OPLOCK_BREAK_NOTIFY\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_OPLOCK_BREAK_NOTIFY\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_REQUEST_FILTER_OPLOCK:
-            WARN("FSCTL_REQUEST_FILTER_OPLOCK\n");
-            Status = oplock_request(DeviceObject->DeviceExtension, Irp);
+            TRACE("FSCTL_REQUEST_FILTER_OPLOCK\n");
+            Status = oplock_request(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_LOCK_VOLUME:
