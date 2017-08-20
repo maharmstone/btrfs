@@ -2748,11 +2748,11 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     ULONG options;
     NTSTATUS Status;
     ccb* ccb;
-    PIO_STACK_LOCATION Stack = IoGetCurrentIrpStackLocation(Irp);
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     USHORT parsed;
     ULONG fn_offset = 0;
     file_ref *related, *fileref = NULL;
-    POOL_TYPE pool_type = Stack->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
+    POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     ACCESS_MASK granted_access;
     BOOL loaded_related = FALSE;
     UNICODE_STRING fn;
@@ -2768,15 +2768,15 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
     Irp->IoStatus.Information = 0;
 
-    RequestedDisposition = ((Stack->Parameters.Create.Options >> 24) & 0xff);
-    options = Stack->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
+    RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
+    options = IrpSp->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
 
     if (options & FILE_DIRECTORY_FILE && RequestedDisposition == FILE_SUPERSEDE) {
         WARN("error - supersede requested with FILE_DIRECTORY_FILE\n");
         return STATUS_INVALID_PARAMETER;
     }
 
-    FileObject = Stack->FileObject;
+    FileObject = IrpSp->FileObject;
 
     if (!FileObject) {
         ERR("FileObject was NULL\n");
@@ -2864,11 +2864,11 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             goto exit;
         }
 
-        if (!related && RequestedDisposition != FILE_OPEN && !(Stack->Flags & SL_OPEN_TARGET_DIRECTORY)) {
+        if (!related && RequestedDisposition != FILE_OPEN && !(IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY)) {
             ULONG fnoff;
 
             Status = open_fileref(Vcb, &related, &fn, NULL, TRUE, &parsed, &fnoff,
-                                  pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+                                  pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
 
             if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
                 Status = STATUS_OBJECT_PATH_NOT_FOUND;
@@ -2886,16 +2886,16 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                     fn.Buffer = &fn.Buffer[fnoff / sizeof(WCHAR)];
                     fn.Length -= (USHORT)fnoff;
 
-                    Status = open_fileref(Vcb, &fileref, &fn, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                          pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+                    Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
+                                          pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
 
                     loaded_related = TRUE;
                 }
 
             }
         } else {
-            Status = open_fileref(Vcb, &fileref, &fn, related, Stack->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                  pool_type, Stack->Flags & SL_CASE_SENSITIVE, Irp);
+            Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
+                                  pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
         }
     }
 
@@ -2998,15 +2998,15 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             }
         }
 
-        if (Stack->Parameters.Create.SecurityContext->DesiredAccess != 0) {
-            SeLockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+        if (IrpSp->Parameters.Create.SecurityContext->DesiredAccess != 0) {
+            SeLockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
             if (!SeAccessCheck((fileref->fcb->ads || fileref->fcb == Vcb->dummy_fcb) ? fileref->parent->fcb->sd : fileref->fcb->sd,
-                               &Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
-                               TRUE, Stack->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
-                               IoGetFileObjectGenericMapping(), Stack->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                               &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                               TRUE, IrpSp->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                               IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
                                &granted_access, &Status)) {
-                SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+                SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
                 TRACE("SeAccessCheck failed, returning %08x\n", Status);
 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
@@ -3016,7 +3016,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 goto exit;
             }
 
-            SeUnlockSubjectContext(&Stack->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
+            SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
         } else
             granted_access = 0;
 
@@ -3061,9 +3061,9 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 allowed |= FILE_WRITE_ATTRIBUTES;
             }
 
-            if (Stack->Parameters.Create.SecurityContext->DesiredAccess & MAXIMUM_ALLOWED) {
+            if (IrpSp->Parameters.Create.SecurityContext->DesiredAccess & MAXIMUM_ALLOWED) {
                 granted_access &= allowed;
-                Stack->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess &= allowed;
+                IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess &= allowed;
             } else if (granted_access & ~allowed) {
                 Status = Vcb->readonly ? STATUS_MEDIA_WRITE_PROTECTED : STATUS_ACCESS_DENIED;
 
@@ -3139,7 +3139,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         }
 
         if (fileref->open_count > 0) {
-            Status = IoCheckShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, FALSE);
+            Status = IoCheckShareAccess(granted_access, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, FALSE);
 
             if (!NT_SUCCESS(Status)) {
                 WARN("IoCheckShareAccess failed, returning %08x\n", Status);
@@ -3153,7 +3153,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
             IoUpdateShareAccess(FileObject, &fileref->fcb->share_access);
         } else
-            IoSetShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
+            IoSetShareAccess(granted_access, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
 
         if (granted_access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fileref->fcb->nonpaged->segment_object, MmFlushForWrite)) {
@@ -3232,11 +3232,11 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             }
 
             if (!fileref->fcb->ads) {
-                if (Irp->AssociatedIrp.SystemBuffer && Stack->Parameters.Create.EaLength > 0) {
+                if (Irp->AssociatedIrp.SystemBuffer && IrpSp->Parameters.Create.EaLength > 0) {
                     ULONG offset;
                     FILE_FULL_EA_INFORMATION* eainfo;
 
-                    Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength, &offset);
+                    Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength, &offset);
                     if (!NT_SUCCESS(Status)) {
                         ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
 
@@ -3272,7 +3272,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                     if (fileref->fcb->ea_xattr.Buffer)
                         ExFreePool(fileref->fcb->ea_xattr.Buffer);
 
-                    fileref->fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, Stack->Parameters.Create.EaLength, ALLOC_TAG);
+                    fileref->fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(pool_type, IrpSp->Parameters.Create.EaLength, ALLOC_TAG);
                     if (!fileref->fcb->ea_xattr.Buffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3286,7 +3286,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                         goto exit;
                     }
 
-                    fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = (USHORT)Stack->Parameters.Create.EaLength;
+                    fileref->fcb->ea_xattr.Length = fileref->fcb->ea_xattr.MaximumLength = (USHORT)IrpSp->Parameters.Create.EaLength;
                     RtlCopyMemory(fileref->fcb->ea_xattr.Buffer, Irp->AssociatedIrp.SystemBuffer, fileref->fcb->ea_xattr.Length);
                 } else {
                     if (fileref->fcb->ea_xattr.Length > 0) {
@@ -3320,13 +3320,13 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                                             fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.', TRUE, Irp);
 
                 if (RequestedDisposition == FILE_SUPERSEDE)
-                    fileref->fcb->atts = Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
+                    fileref->fcb->atts = IrpSp->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
                 else
-                    fileref->fcb->atts |= Stack->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
+                    fileref->fcb->atts |= IrpSp->Parameters.Create.FileAttributes | FILE_ATTRIBUTE_ARCHIVE;
 
                 if (fileref->fcb->atts != oldatts) {
                     fileref->fcb->atts_changed = TRUE;
-                    fileref->fcb->atts_deleted = Stack->Parameters.Create.FileAttributes == defda;
+                    fileref->fcb->atts_deleted = IrpSp->Parameters.Create.FileAttributes == defda;
                     filter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
                 }
 
@@ -3391,7 +3391,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         ccb->has_wildcard = FALSE;
         ccb->specific_file = FALSE;
         ccb->access = granted_access;
-        ccb->case_sensitive = Stack->Flags & SL_CASE_SENSITIVE;
+        ccb->case_sensitive = IrpSp->Flags & SL_CASE_SENSITIVE;
         ccb->reserving = FALSE;
         ccb->lxss = called_from_lxss();
 
@@ -3420,7 +3420,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
         // Make sure paging files don't have any extents marked as being prealloc,
         // as this would mean we'd have to lock exclusively when writing.
-        if (Stack->Flags & SL_OPEN_PAGING_FILE) {
+        if (IrpSp->Flags & SL_OPEN_PAGING_FILE) {
             LIST_ENTRY* le;
             BOOL changed = FALSE;
 
@@ -3480,8 +3480,8 @@ exit:
     if (Status == STATUS_SUCCESS) {
         fcb* fcb2;
 
-        Stack->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess |= granted_access;
-        Stack->Parameters.Create.SecurityContext->AccessState->RemainingDesiredAccess &= ~(granted_access | MAXIMUM_ALLOWED);
+        IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess |= granted_access;
+        IrpSp->Parameters.Create.SecurityContext->AccessState->RemainingDesiredAccess &= ~(granted_access | MAXIMUM_ALLOWED);
 
         if (!FileObject->Vpb)
             FileObject->Vpb = DeviceObject->Vpb;
