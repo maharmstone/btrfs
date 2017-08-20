@@ -3152,13 +3152,14 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             }
 
             IoUpdateShareAccess(FileObject, &fileref->fcb->share_access);
-        } else {
+        } else
             IoSetShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
-        }
 
         if (granted_access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fileref->fcb->nonpaged->segment_object, MmFlushForWrite)) {
                 Status = (options & FILE_DELETE_ON_CLOSE) ? STATUS_CANNOT_DELETE : STATUS_SHARING_VIOLATION;
+
+                IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(Vcb, fileref);
@@ -3177,6 +3178,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 WARN("cannot overwrite readonly file\n");
                 Status = STATUS_ACCESS_DENIED;
 
+                IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
+
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(Vcb, fileref);
                 ExReleaseResourceLite(&Vcb->fcb_lock);
@@ -3189,6 +3192,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 if (!NT_SUCCESS(Status)) {
                     ERR("stream_set_end_of_file_information returned %08x\n", Status);
 
+                    IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
+
                     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                     free_fileref(Vcb, fileref);
                     ExReleaseResourceLite(&Vcb->fcb_lock);
@@ -3199,6 +3204,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 Status = truncate_file(fileref->fcb, 0, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("truncate_file returned %08x\n", Status);
+
+                    IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
                     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                     free_fileref(Vcb, fileref);
@@ -3213,6 +3220,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("extend_file returned %08x\n", Status);
+
+                    IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
                     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                     free_fileref(Vcb, fileref);
@@ -3230,6 +3239,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                     Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, Stack->Parameters.Create.EaLength, &offset);
                     if (!NT_SUCCESS(Status)) {
                         ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+
+                        IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
                         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                         free_fileref(Vcb, fileref);
@@ -3265,6 +3276,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                     if (!fileref->fcb->ea_xattr.Buffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
+
+                        IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
                         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                         free_fileref(Vcb, fileref);
@@ -3334,6 +3347,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                         WARN("returning STATUS_ACCESS_DENIED as no EA knowledge\n");
                         Status = STATUS_ACCESS_DENIED;
 
+                        IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
+
                         ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                         free_fileref(Vcb, fileref);
                         ExReleaseResourceLite(&Vcb->fcb_lock);
@@ -3355,6 +3370,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         if (!ccb) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
+
+            IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
             ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
             free_fileref(Vcb, fileref);
