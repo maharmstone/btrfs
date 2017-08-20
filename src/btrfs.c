@@ -100,7 +100,7 @@ HANDLE serial_thread_handle = NULL;
 static void init_serial(BOOL first_time);
 #endif
 
-static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject);
+static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp);
 
 typedef struct {
     KEVENT Event;
@@ -471,7 +471,7 @@ static NTSTATUS drv_close(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     // FIXME - unmount if called for volume
     // FIXME - call FsRtlNotifyUninitializeSync(&Vcb->NotifySync) if unmounting
 
-    Status = close_file(IrpSp->FileObject);
+    Status = close_file(IrpSp->FileObject, Irp);
 
 end:
     Irp->IoStatus.Status = Status;
@@ -1580,7 +1580,7 @@ void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_e
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
 
-static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject) {
+static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref = NULL;
@@ -1604,6 +1604,13 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject) {
     // FIXME - make sure notification gets sent if file is being deleted
 
     if (ccb) {
+        if (!(FileObject->Flags & FO_CLEANUP_COMPLETE)) {
+            TRACE("file was not cleaned up\n");
+
+            // This forces the FileObject to be cleaned up - see fastfat
+            FsRtlCheckOplockEx(fcb_oplock(fcb), Irp, 0, NULL, NULL, NULL);
+        }
+
         if (ccb->query_string.Buffer)
             RtlFreeUnicodeString(&ccb->query_string);
 
