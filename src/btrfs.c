@@ -2080,6 +2080,12 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
+    if (FileObject->Flags & FO_CLEANUP_COMPLETE) {
+        TRACE("FileObject %p already cleaned up\n", FileObject);
+        Status = STATUS_SUCCESS;
+        goto exit;
+    }
+
     // We have to use the pointer to Vcb stored in the fcb, as we can receive cleanup
     // messages belonging to other devices.
 
