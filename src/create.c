@@ -3138,7 +3138,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         }
 
         if (fileref->open_count > 0) {
-            Status = IoCheckShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, TRUE);
+            Status = IoCheckShareAccess(granted_access, Stack->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, FALSE);
 
             if (!NT_SUCCESS(Status)) {
                 WARN("IoCheckShareAccess failed, returning %08x\n", Status);
