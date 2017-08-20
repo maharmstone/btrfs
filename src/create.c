@@ -2270,7 +2270,6 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     UNICODE_STRING dsus, fpus, stream;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
-    PACCESS_STATE access_state = IrpSp->Parameters.Create.SecurityContext->AccessState;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
 #endif
@@ -2398,6 +2397,8 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
             goto end;
         }
 
+        IoSetShareAccess(IrpSp->Parameters.Create.SecurityContext->DesiredAccess, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
+
         send_notification_fileref(fileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
         send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
     }
@@ -2424,7 +2425,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     RtlInitUnicodeString(&ccb->query_string, NULL);
     ccb->has_wildcard = FALSE;
     ccb->specific_file = FALSE;
-    ccb->access = access_state->OriginalDesiredAccess;
+    ccb->access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
     ccb->case_sensitive = IrpSp->Flags & SL_CASE_SENSITIVE;
     ccb->reserving = FALSE;
     ccb->lxss = called_from_lxss();
