@@ -776,22 +776,22 @@ NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     Irp->IoStatus.Information = 0;
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & OWNER_SECURITY_INFORMATION) {
+    if (IrpSp->Parameters.SetSecurity.SecurityInformation & OWNER_SECURITY_INFORMATION) {
         TRACE("OWNER_SECURITY_INFORMATION\n");
         access_req |= WRITE_OWNER;
     }
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & GROUP_SECURITY_INFORMATION) {
+    if (IrpSp->Parameters.SetSecurity.SecurityInformation & GROUP_SECURITY_INFORMATION) {
         TRACE("GROUP_SECURITY_INFORMATION\n");
         access_req |= WRITE_OWNER;
     }
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & DACL_SECURITY_INFORMATION) {
+    if (IrpSp->Parameters.SetSecurity.SecurityInformation & DACL_SECURITY_INFORMATION) {
         TRACE("DACL_SECURITY_INFORMATION\n");
         access_req |= WRITE_DAC;
     }
 
-    if (IrpSp->Parameters.QuerySecurity.SecurityInformation & SACL_SECURITY_INFORMATION) {
+    if (IrpSp->Parameters.SetSecurity.SecurityInformation & SACL_SECURITY_INFORMATION) {
         TRACE("SACL_SECURITY_INFORMATION\n");
         access_req |= ACCESS_SYSTEM_SECURITY;
     }
