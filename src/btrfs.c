@@ -74,6 +74,7 @@ UINT32 mount_no_trim = 0;
 UINT32 mount_clear_cache = 0;
 UINT32 mount_allow_degraded = 0;
 UINT32 mount_readonly = 0;
+UINT32 no_pnp = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters fPsUpdateDiskCounters;
@@ -2858,7 +2859,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
     if (!vde)
         goto end;
 
-    pdode = vde->pdo->DeviceExtension;
+    pdode = vde->pdode;
 
     ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
@@ -3091,7 +3092,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 if (!done && Vcb->vde) {
                     volume_device_extension* vde = Vcb->vde;
-                    pdo_device_extension* pdode = vde->pdo->DeviceExtension;
+                    pdo_device_extension* pdode = vde->pdode;
 
                     ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
@@ -3939,7 +3940,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     if (vde) {
-        pdode = vde->pdo->DeviceExtension;
+        pdode = vde->pdode;
 
         ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
 
@@ -4529,7 +4530,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
             ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x (user-induced)\n", Status);
 
             if (Vcb->vde) {
-                pdo_device_extension* pdode = Vcb->vde->pdo->DeviceExtension;
+                pdo_device_extension* pdode = Vcb->vde->pdode;
                 LIST_ENTRY* le2;
                 BOOL changed = FALSE;
 
@@ -5199,13 +5200,12 @@ static void degraded_wait_thread(_In_ void* context) {
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
-static NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
+NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
     LIST_ENTRY* le;
     NTSTATUS Status;
-    BOOL found = FALSE;
     UNICODE_STRING volname;
     ULONG i, j;
-    pdo_device_extension* pdode;
+    pdo_device_extension* pdode = NULL;
     PDEVICE_OBJECT voldev;
     volume_device_extension* vde;
 
@@ -5218,20 +5218,18 @@ static NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDe
         pdo_device_extension* pdode2 = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
         if (pdode2->pdo == PhysicalDeviceObject) {
-            found = TRUE;
+            pdode = pdode2;
             break;
         }
 
         le = le->Flink;
     }
 
-    if (!found) {
+    if (!pdode) {
         WARN("unrecognized PDO %p\n", PhysicalDeviceObject);
         Status = STATUS_NOT_SUPPORTED;
         goto end;
     }
-
-    pdode = PhysicalDeviceObject->DeviceExtension;
 
     ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
@@ -5274,6 +5272,7 @@ static NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDe
     vde->device = voldev;
     vde->mounted_device = NULL;
     vde->pdo = PhysicalDeviceObject;
+    vde->pdode = pdode;
     vde->removing = FALSE;
     vde->open_count = 0;
 

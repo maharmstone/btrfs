@@ -2493,7 +2493,7 @@ static NTSTATUS set_compression(PIRP Irp) {
 static void update_volumes(device_extension* Vcb) {
     LIST_ENTRY* le;
     volume_device_extension* vde = Vcb->vde;
-    pdo_device_extension* pdode = vde->pdo->DeviceExtension;
+    pdo_device_extension* pdode = vde->pdode;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
@@ -2956,7 +2956,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     ExFreePool(mb);
 
     vde = Vcb->vde;
-    pdode = vde->pdo->DeviceExtension;
+    pdode = vde->pdode;
 
     vc = ExAllocatePoolWithTag(NonPagedPool, sizeof(volume_child), ALLOC_TAG);
     if (!vc) {
@@ -2973,7 +2973,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     vc->notification_entry = NULL;
 
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj,
-                                            drvobj, pnp_removal, vde->pdo->DeviceExtension, &vc->notification_entry);
+                                            drvobj, pnp_removal, vde->pdode, &vc->notification_entry);
     if (!NT_SUCCESS(Status))
         WARN("IoRegisterPlugPlayNotification returned %08x\n", Status);
 

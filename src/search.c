@@ -331,7 +331,7 @@ end:
 void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lock) _Releases_exclusive_lock_(_Curr_->child_lock) _In_ volume_device_extension* vde,
                          _In_ volume_child* vc, _In_ BOOL skip_dev) {
     NTSTATUS Status;
-    pdo_device_extension* pdode = vde->pdo->DeviceExtension;
+    pdo_device_extension* pdode = vde->pdode;
     device_extension* Vcb = vde->mounted_device ? vde->mounted_device->DeviceExtension : NULL;
 
     if (vc->notification_entry)

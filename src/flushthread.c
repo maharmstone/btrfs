@@ -7199,7 +7199,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     vde = Vcb->vde;
 
     if (vde) {
-        pdo_device_extension* pdode = vde->pdo->DeviceExtension;
+        pdo_device_extension* pdode = vde->pdode;
 
         ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 

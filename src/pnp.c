@@ -351,7 +351,7 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
             break;
 
         case IRP_MN_QUERY_DEVICE_RELATIONS:
-            if (IrpSp->Parameters.QueryDeviceRelations.Type != BusRelations)
+            if (IrpSp->Parameters.QueryDeviceRelations.Type != BusRelations || no_pnp)
                 break;
 
             return bus_query_device_relations(Irp);

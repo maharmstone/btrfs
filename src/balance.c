@@ -2659,7 +2659,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
     vde = Vcb->vde;
 
     if (dev->devobj) {
-        pdo_device_extension* pdode = vde->pdo->DeviceExtension;
+        pdo_device_extension* pdode = vde->pdode;
 
         ExAcquireResourceExclusiveLite(&pdode->child_lock, TRUE);
 

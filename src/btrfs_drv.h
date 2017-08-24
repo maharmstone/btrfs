@@ -788,19 +788,22 @@ typedef struct {
     LIST_ENTRY list_entry;
 } volume_child;
 
+struct pdo_device_extension;
+
 typedef struct _volume_device_extension {
     UINT32 type;
     UNICODE_STRING name;
     PDEVICE_OBJECT device;
     PDEVICE_OBJECT mounted_device;
     PDEVICE_OBJECT pdo;
+    struct pdo_device_extension* pdode;
     UNICODE_STRING bus_name;
     PDEVICE_OBJECT attached_device;
     BOOL removing;
     LONG open_count;
 } volume_device_extension;
 
-typedef struct {
+typedef struct pdo_device_extension {
     UINT32 type;
     BTRFS_UUID uuid;
     volume_device_extension* vde;
@@ -1034,6 +1037,7 @@ NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ UINT64 StartingOf
 NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_STRING pnp_name, _Out_ const GUID** guid);
 void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int error);
 NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
+NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -1055,6 +1059,7 @@ extern UINT32 mount_no_trim;
 extern UINT32 mount_clear_cache;
 extern UINT32 mount_allow_degraded;
 extern UINT32 mount_readonly;
+extern UINT32 no_pnp;
 
 #ifdef _DEBUG
 

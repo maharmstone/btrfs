@@ -794,6 +794,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     get_registry_value(h, L"ClearCache", REG_DWORD, &mount_clear_cache, sizeof(mount_clear_cache));
     get_registry_value(h, L"AllowDegraded", REG_DWORD, &mount_allow_degraded, sizeof(mount_allow_degraded));
     get_registry_value(h, L"Readonly", REG_DWORD, &mount_readonly, sizeof(mount_readonly));
+    get_registry_value(h, L"NoPNP", REG_DWORD, &no_pnp, sizeof(no_pnp));
 
     if (mount_flush_interval == 0)
         mount_flush_interval = 1;
