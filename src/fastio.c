@@ -54,7 +54,7 @@ static BOOLEAN fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN wait, PFIL
     }
 
     if (fcb->ads) {
-        if (!ccb || !ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb) {
+        if (!ccb->fileref || !ccb->fileref->parent || !ccb->fileref->parent->fcb) {
             FsRtlExitFileSystem();
             return FALSE;
         }
