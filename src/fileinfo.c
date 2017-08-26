@@ -217,7 +217,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     }
 
     if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForDelete)) {
-        WARN("trying to delete file which is being mapped as an image\n");
+        TRACE("trying to delete file which is being mapped as an image\n");
         Status = STATUS_CANNOT_DELETE;
         goto end;
     }
