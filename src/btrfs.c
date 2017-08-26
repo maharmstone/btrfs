@@ -3978,6 +3978,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         readobj = vc->devobj;
         readobjsize = vc->size;
+
+        vde->device->Characteristics &= ~FILE_DEVICE_SECURE_OPEN;
     } else {
         GET_LENGTH_INFORMATION gli;
 
@@ -5257,7 +5259,8 @@ NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObj
 
     volname.Buffer[j] = '}';
 
-    Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK, FILE_DEVICE_SECURE_OPEN, FALSE, &voldev);
+    Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK, FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL,
+                            FALSE, &voldev);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08x\n", Status);
         goto end2;
