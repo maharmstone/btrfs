@@ -451,24 +451,25 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
 
         RemoveEntryList(&pdode->list_entry);
 
-        if (Vcb && Vcb->options.allow_degraded) {
-            Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
-            if (!NT_SUCCESS(Status))
-                WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
-        }
-
         vde->removing = TRUE;
 
         Status = IoSetDeviceInterfaceState(&vde->bus_name, FALSE);
         if (!NT_SUCCESS(Status))
             WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
 
-        IoDetachDevice(vde->pdo);
+        if (vde->pdo->AttachedDevice)
+            IoDetachDevice(vde->pdo);
 
         if (vde->open_count == 0)
             remove = TRUE;
 
         ExReleaseResourceLite(&pdode->child_lock);
+
+        if (!no_pnp) {
+            control_device_extension* cde = master_devobj->DeviceExtension;
+
+            IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
+        }
 
         if (remove) {
             PDEVICE_OBJECT pdo;
@@ -480,11 +481,12 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
                 Vcb->vde = NULL;
 
             ExDeleteResourceLite(&pdode->child_lock);
-            IoDetachDevice(vde->pdo);
 
             pdo = vde->pdo;
             IoDeleteDevice(vde->device);
-            IoDeleteDevice(pdo);
+
+            if (no_pnp)
+                IoDeleteDevice(pdo);
         }
     } else
         ExReleaseResourceLite(&pdode->child_lock);
