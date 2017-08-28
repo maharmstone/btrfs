@@ -814,6 +814,7 @@ NTSTATUS vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             return vol_get_length(vde, Irp);
 
         case IOCTL_STORAGE_CHECK_VERIFY:
+        case IOCTL_DISK_CHECK_VERIFY:
             return vol_check_verify(vde);
 
         case IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS:
