@@ -714,7 +714,7 @@ static NTSTATUS vol_ioctl_passthrough(volume_device_extension* vde, PIRP Irp) {
 
     if (vc->list_entry.Flink != &pdode->children) { // more than one device
         ExReleaseResourceLite(&pdode->child_lock);
-        return STATUS_ACCESS_DENIED;
+        return STATUS_INVALID_DEVICE_REQUEST;
     }
 
     Irp2 = IoAllocateIrp(vc->devobj->StackSize, FALSE);
