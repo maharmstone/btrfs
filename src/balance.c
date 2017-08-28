@@ -2719,6 +2719,8 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
                 RemoveEntryList(&vc->list_entry);
                 ExFreePool(vc);
 
+                ObDereferenceObject(vc->fileobj);
+
                 break;
             }
 
@@ -2749,8 +2751,6 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
 
         if (dev->trim && !dev->readonly && !Vcb->options.no_trim)
             trim_whole_device(dev);
-
-        ObDereferenceObject(dev->devobj);
     }
 
     while (!IsListEmpty(&dev->space)) {
