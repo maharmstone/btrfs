@@ -3830,6 +3830,7 @@ static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
+    PDEVICE_OBJECT device2;
 
     if (!device)
         return FALSE;
@@ -3863,7 +3864,12 @@ static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device) {
         }
     }
 
-    device->Flags &= ~DO_VERIFY_VOLUME;
+    device2 = device;
+
+    do {
+        device2->Flags &= ~DO_VERIFY_VOLUME;
+        device2 = IoGetLowerDeviceObject(device2);
+    } while (device2);
 
     ExFreePool(sb);
     return TRUE;
@@ -4034,7 +4040,11 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     Status = read_superblock(Vcb, readobj, readobjsize);
     if (!NT_SUCCESS(Status)) {
-        Status = STATUS_UNRECOGNIZED_VOLUME;
+        if (!IoIsErrorUserInduced(Status))
+            Status = STATUS_UNRECOGNIZED_VOLUME;
+        else if (Irp->Tail.Overlay.Thread)
+            IoSetHardErrorOrVerifyDevice(Irp, readobj);
+
         goto exit;
     }
 
