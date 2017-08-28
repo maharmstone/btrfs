@@ -1224,6 +1224,12 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
                 le = le->Flink;
             }
         }
+
+        if ((!new_pdo || !no_pnp) && pdode->vde) {
+            Status = IoSetDeviceInterfaceState(&pdode->vde->bus_name, TRUE);
+            if (!NT_SUCCESS(Status))
+                WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+        }
     }
 
     ExReleaseResourceLite(&pdode->child_lock);
