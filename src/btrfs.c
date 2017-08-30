@@ -88,7 +88,7 @@ void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entr
 ERESOURCE pdo_list_lock, mapping_lock;
 LIST_ENTRY pdo_list;
 BOOL finished_probing = FALSE;
-HANDLE degraded_wait_handle = NULL;
+HANDLE degraded_wait_handle = NULL, mountmgr_thread_handle = NULL;
 BOOL degraded_wait = TRUE;
 
 #ifdef _DEBUG
@@ -5524,6 +5524,11 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         ERR("IoRegisterPlugPlayNotification returned %08x\n", Status);
 
     finished_probing = TRUE;
+
+    Status = PsCreateSystemThread(&mountmgr_thread_handle, 0, NULL, NULL, NULL, mountmgr_thread, NULL);
+    if (!NT_SUCCESS(Status))
+        WARN("PsCreateSystemThread returned %08x\n", Status);
+
     IoRegisterFileSystem(DeviceObject);
 
     return STATUS_SUCCESS;

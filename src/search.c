@@ -728,3 +728,68 @@ NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
 
     return STATUS_SUCCESS;
 }
+
+_Function_class_(KSTART_ROUTINE)
+void mountmgr_thread(_In_ void* context) {
+    UNICODE_STRING mmdevpath;
+    NTSTATUS Status;
+    PFILE_OBJECT FileObject;
+    PDEVICE_OBJECT mountmgr;
+    MOUNTMGR_CHANGE_NOTIFY_INFO mcni;
+
+    UNUSED(context);
+
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        return;
+    }
+
+    mcni.EpicNumber = 0;
+
+    while (TRUE) {
+        MOUNTMGR_MOUNT_POINT mmp;
+        MOUNTMGR_MOUNT_POINTS mmps;
+
+        Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_CHANGE_NOTIFY, &mcni, sizeof(MOUNTMGR_CHANGE_NOTIFY_INFO), &mcni,
+                           sizeof(MOUNTMGR_CHANGE_NOTIFY_INFO), FALSE, NULL);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("IOCTL_MOUNTMGR_CHANGE_NOTIFY returned %08x\n", Status);
+            break;
+        }
+
+        ERR("MOUNTMGR CHANGED!!!\n");
+
+        RtlZeroMemory(&mmp, sizeof(MOUNTMGR_MOUNT_POINT));
+
+        Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_QUERY_POINTS, &mmp, sizeof(MOUNTMGR_MOUNT_POINT), &mmps, sizeof(MOUNTMGR_MOUNT_POINTS),
+                           FALSE, NULL);
+
+        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+            ERR("IOCTL_MOUNTMGR_QUERY_POINTS 1 returned %08x\n", Status);
+
+        if (mmps.Size > 0) {
+            MOUNTMGR_MOUNT_POINTS* mmps2;
+
+            mmps2 = ExAllocatePoolWithTag(NonPagedPool, mmps.Size, ALLOC_TAG);
+            if (!mmps2) {
+                ERR("out of memory\n");
+                break;
+            }
+
+            Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_QUERY_POINTS, &mmp, sizeof(MOUNTMGR_MOUNT_POINTS), mmps2, mmps.Size,
+                               FALSE, NULL);
+            if (!NT_SUCCESS(Status))
+                ERR("IOCTL_MOUNTMGR_QUERY_POINTS returned %08x\n", Status);
+            else {
+                // FIXME
+            }
+
+            ExFreePool(mmps2);
+        }
+    }
+
+    ObDereferenceObject(FileObject);
+}

@@ -1165,6 +1165,9 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
 // in search.c
 NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 
+_Function_class_(KSTART_ROUTINE)
+void mountmgr_thread(_In_ void* context);
+
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
 
