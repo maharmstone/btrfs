@@ -113,6 +113,8 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         LARGE_INTEGER time;
         BTRFS_TIME now;
 
+        fbi->FileAttributes &= ~FILE_ATTRIBUTE_NORMAL;
+
         defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref && fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.',
                                     TRUE, Irp);
 
