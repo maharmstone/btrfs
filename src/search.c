@@ -206,6 +206,8 @@ NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     ULONG mmpsize;
     MOUNTMGR_MOUNT_POINTS mmps1, *mmps2;
 
+    TRACE("removing drive letter\n");
+
     mmpsize = sizeof(MOUNTMGR_MOUNT_POINT) + devpath->Length;
 
     mmp = ExAllocatePoolWithTag(PagedPool, mmpsize, ALLOC_TAG);
@@ -729,6 +731,104 @@ NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
     return STATUS_SUCCESS;
 }
 
+static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING device_name) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    BOOL done = FALSE;
+
+    ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
+
+    le = pdo_list.Flink;
+    while (le != &pdo_list) {
+        pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+        LIST_ENTRY* le2;
+
+        ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
+
+        le2 = pdode->children.Flink;
+
+        while (le2 != &pdode->children) {
+            volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+
+            if (vc->devobj) {
+                MOUNTDEV_NAME mdn;
+
+                Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), TRUE, NULL);
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                else {
+                    MOUNTDEV_NAME* mdn2;
+                    ULONG mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+
+                    mdn2 = ExAllocatePoolWithTag(NonPagedPool, mdnsize, ALLOC_TAG);
+                    if (!mdn2)
+                        ERR("out of memory\n");
+                    else {
+                        Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, TRUE, NULL);
+                        if (!NT_SUCCESS(Status))
+                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                        else {
+                            if (mdn2->NameLength == device_name->Length && RtlCompareMemory(mdn2->Name, device_name->Buffer, device_name->Length) == device_name->Length) {
+                                Status = remove_drive_letter(mountmgr, device_name);
+                                if (!NT_SUCCESS(Status))
+                                    ERR("remove_drive_letter returned %08x\n", Status);
+                                else
+                                    vc->had_drive_letter = TRUE;
+
+                                done = TRUE;
+                                break;
+                            }
+                        }
+
+                        ExFreePool(mdn2);
+                    }
+                }
+            }
+
+            le2 = le2->Flink;
+        }
+
+        ExReleaseResourceLite(&pdode->child_lock);
+
+        if (done)
+            break;
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&pdo_list_lock);
+}
+
+static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmps) {
+    ULONG i;
+
+    static WCHAR pref[] = L"\\DosDevices\\";
+
+    for (i = 0; i < mmps->NumberOfMountPoints; i++) {
+        UNICODE_STRING symlink, device_name;
+
+        if (mmps->MountPoints[i].SymbolicLinkNameOffset != 0) {
+            symlink.Buffer = (WCHAR*)(((UINT8*)mmps) + mmps->MountPoints[i].SymbolicLinkNameOffset);
+            symlink.Length = symlink.MaximumLength = mmps->MountPoints[i].SymbolicLinkNameLength;
+        } else {
+            symlink.Buffer = NULL;
+            symlink.Length = symlink.MaximumLength = 0;
+        }
+
+        if (mmps->MountPoints[i].DeviceNameOffset != 0) {
+            device_name.Buffer = (WCHAR*)(((UINT8*)mmps) + mmps->MountPoints[i].DeviceNameOffset);
+            device_name.Length = device_name.MaximumLength = mmps->MountPoints[i].DeviceNameLength;
+        } else {
+            device_name.Buffer = NULL;
+            device_name.Length = device_name.MaximumLength = 0;
+        }
+
+        if (symlink.Length > wcslen(pref) * sizeof(WCHAR) &&
+            RtlCompareMemory(symlink.Buffer, pref, wcslen(pref) * sizeof(WCHAR)) == wcslen(pref) * sizeof(WCHAR))
+            mountmgr_process_drive(mountmgr, &device_name);
+    }
+}
+
 _Function_class_(KSTART_ROUTINE)
 void mountmgr_thread(_In_ void* context) {
     UNICODE_STRING mmdevpath;
@@ -760,7 +860,7 @@ void mountmgr_thread(_In_ void* context) {
             break;
         }
 
-        ERR("MOUNTMGR CHANGED!!!\n");
+        TRACE("mountmgr changed\n");
 
         RtlZeroMemory(&mmp, sizeof(MOUNTMGR_MOUNT_POINT));
 
@@ -783,9 +883,8 @@ void mountmgr_thread(_In_ void* context) {
                                FALSE, NULL);
             if (!NT_SUCCESS(Status))
                 ERR("IOCTL_MOUNTMGR_QUERY_POINTS returned %08x\n", Status);
-            else {
-                // FIXME
-            }
+            else
+                mountmgr_updated(mountmgr, mmps2);
 
             ExFreePool(mmps2);
         }
