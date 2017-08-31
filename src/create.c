@@ -3142,7 +3142,10 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             Status = IoCheckShareAccess(granted_access, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, FALSE);
 
             if (!NT_SUCCESS(Status)) {
-                WARN("IoCheckShareAccess failed, returning %08x\n", Status);
+                if (Status == STATUS_SHARING_VIOLATION)
+                    TRACE("IoCheckShareAccess failed, returning %08x\n", Status);
+                else
+                    WARN("IoCheckShareAccess failed, returning %08x\n", Status);
 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
                 free_fileref(Vcb, fileref);
