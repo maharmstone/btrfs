@@ -2359,6 +2359,9 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
             ERR("create_stream returned %08x\n", Status);
             goto end;
         }
+
+        IoSetShareAccess(IrpSp->Parameters.Create.SecurityContext->DesiredAccess, IrpSp->Parameters.Create.ShareAccess,
+                         FileObject, &fileref->fcb->share_access);
     } else {
         ACCESS_MASK granted_access;
 
