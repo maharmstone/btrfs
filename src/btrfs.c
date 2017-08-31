@@ -5274,8 +5274,8 @@ NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObj
 
     volname.Buffer[j] = '}';
 
-    Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK, FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL,
-                            FALSE, &voldev);
+    Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK,
+                            RtlIsNtDdiVersionAvailable(NTDDI_WIN8) ? FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL : 0, FALSE, &voldev);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08x\n", Status);
         goto end2;
