@@ -3025,7 +3025,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         sf = fileref;
         while (sf) {
             if (sf->delete_on_close) {
-                WARN("could not open as deletion pending\n");
+                TRACE("could not open as deletion pending\n");
                 Status = STATUS_DELETE_PENDING;
 
                 ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
