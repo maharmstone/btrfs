@@ -30,6 +30,9 @@
 extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
 extern UNICODE_STRING registry_path;
+extern KEVENT mountmgr_thread_event;
+extern HANDLE mountmgr_thread_handle;
+extern BOOL shutting_down;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 
@@ -849,11 +852,30 @@ void mountmgr_thread(_In_ void* context) {
     mcni.EpicNumber = 0;
 
     while (TRUE) {
+        PIRP Irp;
         MOUNTMGR_MOUNT_POINT mmp;
         MOUNTMGR_MOUNT_POINTS mmps;
+        IO_STATUS_BLOCK iosb;
 
-        Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_CHANGE_NOTIFY, &mcni, sizeof(MOUNTMGR_CHANGE_NOTIFY_INFO), &mcni,
-                           sizeof(MOUNTMGR_CHANGE_NOTIFY_INFO), FALSE, NULL);
+        KeClearEvent(&mountmgr_thread_event);
+
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_CHANGE_NOTIFY, mountmgr, &mcni, sizeof(MOUNTMGR_CHANGE_NOTIFY_INFO),
+                                            &mcni, sizeof(MOUNTMGR_CHANGE_NOTIFY_INFO), FALSE, &mountmgr_thread_event, &iosb);
+
+        if (!Irp) {
+            ERR("out of memory\n");
+            break;
+        }
+
+        Status = IoCallDriver(mountmgr, Irp);
+
+        if (Status == STATUS_PENDING) {
+            KeWaitForSingleObject(&mountmgr_thread_event, Executive, KernelMode, FALSE, NULL);
+            Status = iosb.Status;
+        }
+
+        if (shutting_down)
+            break;
 
         if (!NT_SUCCESS(Status)) {
             ERR("IOCTL_MOUNTMGR_CHANGE_NOTIFY returned %08x\n", Status);
@@ -891,4 +913,8 @@ void mountmgr_thread(_In_ void* context) {
     }
 
     ObDereferenceObject(FileObject);
+
+    mountmgr_thread_handle = NULL;
+
+    PsTerminateSystemThread(STATUS_SUCCESS);
 }

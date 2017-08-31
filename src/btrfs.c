@@ -90,6 +90,8 @@ LIST_ENTRY pdo_list;
 BOOL finished_probing = FALSE;
 HANDLE degraded_wait_handle = NULL, mountmgr_thread_handle = NULL;
 BOOL degraded_wait = TRUE;
+KEVENT mountmgr_thread_event;
+BOOL shutting_down = FALSE;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -4820,6 +4822,9 @@ static NTSTATUS drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     Status = STATUS_SUCCESS;
 
+    shutting_down = TRUE;
+    KeSetEvent(&mountmgr_thread_event, 0, FALSE);
+
     while (!IsListEmpty(&VcbList)) {
         Vcb = CONTAINING_RECORD(VcbList.Flink, device_extension, list_entry);
 
@@ -5524,6 +5529,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         ERR("IoRegisterPlugPlayNotification returned %08x\n", Status);
 
     finished_probing = TRUE;
+
+    KeInitializeEvent(&mountmgr_thread_event, NotificationEvent, FALSE);
 
     Status = PsCreateSystemThread(&mountmgr_thread_handle, 0, NULL, NULL, NULL, mountmgr_thread, NULL);
     if (!NT_SUCCESS(Status))
