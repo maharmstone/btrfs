@@ -342,6 +342,24 @@ end:
     return Status;
 }
 
+static NTSTATUS bus_query_hardware_ids(PIRP Irp) {
+    WCHAR* out;
+
+    static WCHAR ids[] = L"ROOT\\btrfs\0";
+
+    out = ExAllocatePoolWithTag(PagedPool, sizeof(ids), ALLOC_TAG);
+    if (!out) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(out, ids, sizeof(ids));
+
+    Irp->IoStatus.Information = (ULONG_PTR)out;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -355,6 +373,21 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
                 break;
 
             return bus_query_device_relations(Irp);
+
+        case IRP_MN_QUERY_ID:
+        {
+            NTSTATUS Status;
+
+            if (IrpSp->Parameters.QueryId.IdType != BusQueryHardwareIDs)
+                break;
+
+            Status = bus_query_hardware_ids(Irp);
+
+            Irp->IoStatus.Status = Status;
+            IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+            return Status;
+        }
     }
 
     IoSkipCurrentIrpStackLocation(Irp);
