@@ -4739,6 +4739,13 @@ NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
 
+    if (!(Irp->Flags & IRP_PAGING_IO)) {
+        Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+
+        if (Status != STATUS_SUCCESS)
+            goto end;
+    }
+
     try {
         if (IrpSp->MinorFunction & IRP_MN_COMPLETE) {
             CcMdlWriteComplete(IrpSp->FileObject, &IrpSp->Parameters.Write.ByteOffset, Irp->MdlAddress);
