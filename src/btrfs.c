@@ -516,6 +516,17 @@ static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Ir
         goto end;
     }
 
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (fcb == Vcb->volume_fcb) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
     Status = STATUS_SUCCESS;
     Irp->IoStatus.Status = Status;
     Irp->IoStatus.Information = 0;
