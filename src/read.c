@@ -3331,8 +3331,18 @@ NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb_lock = TRUE;
     }
 
+    if (!(Irp->Flags & IRP_PAGING_IO)) {
+        Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+
+        if (Status != STATUS_SUCCESS)
+            goto end2;
+
+        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    }
+
     Status = do_read(Irp, wait, &bytes_read);
 
+end2:
     if (fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
 
