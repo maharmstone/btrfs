@@ -4810,7 +4810,7 @@ static NTSTATUS oplock_request(device_extension* Vcb, PIRP* Pirp) {
     }
 
     if (fcb->type == BTRFS_TYPE_DIRECTORY && (code != FSCTL_REQUEST_OPLOCK || !FsRtlOplockIsSharedRequest(Irp))) {
-        WARN("requesting oplock on directory that is not read or read-handle\n");
+        TRACE("requesting oplock on directory that is not read or read-handle\n");
         return STATUS_INVALID_PARAMETER;
     }
 
