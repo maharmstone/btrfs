@@ -527,9 +527,19 @@ static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Ir
         goto end;
     }
 
+    Irp->IoStatus.Information = 0;
+
+    Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+
+    if (Status != STATUS_SUCCESS) {
+        Irp->IoStatus.Status = Status;
+        goto end;
+    }
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+
     Status = STATUS_SUCCESS;
     Irp->IoStatus.Status = Status;
-    Irp->IoStatus.Information = 0;
 
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
         CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &Irp->IoStatus);
