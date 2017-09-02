@@ -2500,7 +2500,7 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
     PIRP Irp;
     KEVENT Event;
     NTSTATUS Status;
-    PIO_STACK_LOCATION Stack;
+    PIO_STACK_LOCATION IrpSp;
     IO_STATUS_BLOCK IoStatus;
 
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
@@ -2518,8 +2518,8 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
     if (!Irp) return STATUS_INSUFFICIENT_RESOURCES;
 
     if (Override) {
-        Stack = IoGetNextIrpStackLocation(Irp);
-        Stack->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+        IrpSp = IoGetNextIrpStackLocation(Irp);
+        IrpSp->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
     }
 
     Status = IoCallDriver(DeviceObject, Irp);
