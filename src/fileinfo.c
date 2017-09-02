@@ -2564,6 +2564,8 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     top_level = is_top_level(Irp);
 
+    Irp->IoStatus.Information = 0;
+
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         Status = vol_set_information(DeviceObject, Irp);
         goto end;
@@ -2600,7 +2602,14 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
 
-    Irp->IoStatus.Information = 0;
+    if (fcb != Vcb->volume_fcb) {
+        Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+
+        if (Status != STATUS_SUCCESS)
+            goto end;
+
+        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+    }
 
     Status = STATUS_NOT_IMPLEMENTED;
 
