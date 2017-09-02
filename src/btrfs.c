@@ -2090,7 +2090,7 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     device_extension* Vcb = DeviceObject->DeviceExtension;
-    fcb* fcb;
+    fcb* fcb = FileObject->FsContext;
     BOOL top_level;
 
     FsRtlEnterFileSystem();
@@ -2117,6 +2117,16 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+
+    Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+    if (Status != STATUS_SUCCESS)
+        goto exit;
+
     // We have to use the pointer to Vcb stored in the fcb, as we can receive cleanup
     // messages belonging to other devices.
 
@@ -2126,7 +2136,6 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         file_ref* fileref;
         BOOL locked = TRUE;
 
-        fcb = FileObject->FsContext;
         ccb = FileObject->FsContext2;
         fileref = ccb ? ccb->fileref : NULL;
 
