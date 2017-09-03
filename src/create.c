@@ -88,8 +88,6 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     InitializeListHead(&fcb->dir_children_hash);
     InitializeListHead(&fcb->dir_children_hash_uc);
 
-    FsRtlInitializeOplock(fcb_oplock(fcb));
-
     return fcb;
 }
 
@@ -3160,36 +3158,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             IoUpdateShareAccess(FileObject, &fileref->fcb->share_access);
         } else
             IoSetShareAccess(granted_access, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
-
-        if (fileref->open_count > 0) {
-            Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, NULL, NULL, NULL);
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("FsRtlCheckOplock returned %08x\n", Status);
-
-                IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
-
-                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-                free_fileref(Vcb, fileref);
-                ExReleaseResourceLite(&Vcb->fcb_lock);
-
-                goto exit;
-            }
-        }
-
-        Status = FsRtlCheckOplockEx(fcb_oplock(fileref->fcb), Irp, OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY, NULL, NULL, NULL);
-
-        if (!NT_SUCCESS(Status)) {
-            ERR("FsRtlCheckOplockEx returned %08x\n", Status);
-
-            IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
-
-            ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
-            free_fileref(Vcb, fileref);
-            ExReleaseResourceLite(&Vcb->fcb_lock);
-
-            goto exit;
-        }
 
         if (granted_access & FILE_WRITE_DATA || options & FILE_DELETE_ON_CLOSE) {
             if (!MmFlushImageSection(&fileref->fcb->nonpaged->segment_object, MmFlushForWrite)) {

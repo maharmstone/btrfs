@@ -3321,15 +3321,6 @@ NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     if (Irp->Flags & IRP_PAGING_IO)
         wait = TRUE;
 
-    if (!(Irp->Flags & IRP_PAGING_IO)) {
-        Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
-
-        if (Status != STATUS_SUCCESS)
-            goto exit;
-
-        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-    }
-
     if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
         if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
             Status = STATUS_PENDING;

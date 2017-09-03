@@ -2602,15 +2602,6 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
 
-    if (fcb != Vcb->volume_fcb) {
-        Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
-
-        if (Status != STATUS_SUCCESS)
-            goto end;
-
-        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
-    }
-
     Status = STATUS_NOT_IMPLEMENTED;
 
     TRACE("set information\n");

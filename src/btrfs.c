@@ -82,7 +82,6 @@ tCcCopyReadEx fCcCopyReadEx;
 tCcCopyWriteEx fCcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx fCcSetAdditionalCacheAttributesEx;
 tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
-tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -528,13 +527,6 @@ static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Ir
     }
 
     Irp->IoStatus.Information = 0;
-
-    Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
-
-    if (Status != STATUS_SUCCESS) {
-        Irp->IoStatus.Status = Status;
-        goto end;
-    }
 
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
 
@@ -1458,8 +1450,6 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
     if (fcb->list_entry_all.Flink)
         RemoveEntryList(&fcb->list_entry_all);
 
-    FsRtlUninitializeOplock(fcb_oplock(fcb));
-
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
@@ -1611,6 +1601,8 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     LONG open_files;
     device_extension* Vcb;
 
+    UNUSED(Irp);
+
     TRACE("FileObject = %p\n", FileObject);
 
     fcb = FileObject->FsContext;
@@ -1628,13 +1620,6 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     // FIXME - make sure notification gets sent if file is being deleted
 
     if (ccb) {
-        if (!(FileObject->Flags & FO_CLEANUP_COMPLETE)) {
-            TRACE("file was not cleaned up\n");
-
-            // This forces the FileObject to be cleaned up - see fastfat
-            FsRtlCheckOplockEx(fcb_oplock(fcb), Irp, 0, NULL, NULL, NULL);
-        }
-
         if (ccb->query_string.Buffer)
             RtlFreeUnicodeString(&ccb->query_string);
 
@@ -2122,10 +2107,6 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         Status = STATUS_INVALID_PARAMETER;
         goto exit;
     }
-
-    Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
-    if (Status != STATUS_SUCCESS)
-        goto exit;
 
     // We have to use the pointer to Vcb stored in the fcb, as we can receive cleanup
     // messages belonging to other devices.
@@ -4817,14 +4798,6 @@ static NTSTATUS drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp
 
     TRACE("lock control\n");
 
-    Status = FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
-
-    if (Status != STATUS_SUCCESS) {
-        Irp->IoStatus.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        goto exit;
-    }
-
     Status = FsRtlProcessFileLock(&fcb->lock, Irp, NULL);
 
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
@@ -5435,16 +5408,12 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
         RtlInitUnicodeString(&name, L"CcSetAdditionalCacheAttributesEx");
         fCcSetAdditionalCacheAttributesEx = (tCcSetAdditionalCacheAttributesEx)MmGetSystemRoutineAddress(&name);
-
-        RtlInitUnicodeString(&name, L"FsRtlCheckLockForOplockRequest");
-        fFsRtlCheckLockForOplockRequest = (tFsRtlCheckLockForOplockRequest)MmGetSystemRoutineAddress(&name);
     } else {
         fPsUpdateDiskCounters = NULL;
         fCcCopyReadEx = NULL;
         fCcCopyWriteEx = NULL;
         fCcSetAdditionalCacheAttributesEx = NULL;
         fFsRtlUpdateDiskCounters = NULL;
-        fFsRtlCheckLockForOplockRequest = NULL;
     }
 
     drvobj = DriverObject;

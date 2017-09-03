@@ -254,7 +254,6 @@ typedef struct _fcb {
     BOOL inode_item_changed;
     enum prop_compression_type prop_compression;
     LIST_ENTRY xattrs;
-    OPLOCK oplock; // stored in Header in Windows 8 and above
 
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
@@ -282,8 +281,6 @@ typedef struct _fcb {
     LIST_ENTRY list_entry_all;
     LIST_ENTRY list_entry_dirty;
 } fcb;
-
-#define fcb_oplock(f) (f->Header.Version >= FSRTL_FCB_HEADER_V2 ? &f->Header.Oplock : &f->oplock)
 
 typedef struct {
     ERESOURCE fileref_lock;
@@ -1471,7 +1468,7 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((UINT64)((minor) & ~0xFF)) << 12) | (((UINT64)((major) & ~0xFFF)) << 32))
 
-#define fast_io_possible(fcb) (!FsRtlOplockIsFastIoPossible(fcb_oplock(fcb)) ? FastIoIsNotPossible : (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable))
+#define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
@@ -1642,8 +1639,6 @@ typedef BOOLEAN (*tCcCopyReadEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOff
 typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG Flags);
 
 typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten);
-
-typedef BOOLEAN (*tFsRtlCheckLockForOplockRequest)(PFILE_LOCK FileLock, PLARGE_INTEGER AllocationSize);
 
 #ifndef _MSC_VER
 
