@@ -10,7 +10,7 @@ Signature   = "$Windows NT$"
 Class       = Volume
 ClassGuid   = {71a27cdd-812a-11d0-bec7-08002be2092f}
 Provider    = %Me%
-DriverVer   = 02/14/2016,0.1.0.0
+DriverVer   = 09/04/2017,1.0.0.0
 CatalogFile = btrfs.cat
 
 [DestinationDirs]
@@ -26,16 +26,21 @@ Btrfs.DllFiles          = 11            ;%windir%\system32
 OptionDesc  = %ServiceDescription%
 CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
 RegisterDlls = shellbtrfs
+CopyINF     = btrfs.inf
 
 [DefaultInstall.Services]
-AddService  = %ServiceName%,2,Btrfs.Service
+AddService  = %ServiceName%,0x802,Btrfs.Service
 
 [Manufacturer]
-%Me%=Standard,NT
+%Me%=Standard,NTamd64,NTx86
 
-[Standard.NT]
+[Standard.NTamd64]
 %VolumeName% = Btrfs_Install, BtrfsVolume
-%ControllerName% = Btrfs_Install, DETECTED\btrfs
+%ControllerName% = Btrfs_Install, ROOT\btrfs
+
+[Standard.NTx86]
+%VolumeName% = Btrfs_Install, BtrfsVolume
+%ControllerName% = Btrfs_Install, ROOT\btrfs
 
 [Btrfs_Install]
 OptionDesc   = %ServiceDescription%

@@ -85,6 +85,7 @@
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <IncludePath>$(DDK_INC_PATH);$(IncludePath)</IncludePath>
     <LibraryPath>$(DDK_LIB_PATH);$(LibraryPath)</LibraryPath>
+    <EnableInf2cat>false</EnableInf2cat>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>.\x86\</OutDir>
@@ -94,6 +95,7 @@
     <TargetExt>.sys</TargetExt>
     <IncludePath>$(DDK_INC_PATH);$(IncludePath)</IncludePath>
     <LibraryPath>$(DDK_LIB_PATH);$(LibraryPath)</LibraryPath>
+    <EnableInf2cat>false</EnableInf2cat>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>.\x64\</OutDir>
@@ -103,6 +105,7 @@
     <TargetExt>.sys</TargetExt>
     <IncludePath>$(DDK_INC_PATH);$(IncludePath)</IncludePath>
     <LibraryPath>$(DDK_LIB_PATH);$(LibraryPath)</LibraryPath>
+    <EnableInf2cat>false</EnableInf2cat>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -303,6 +306,16 @@
   </ItemGroup>
   <ItemGroup>
     <Inf Include="btrfs.inf" />
+  </ItemGroup>
+  <ItemGroup>
+    <FilesToPackage Include="$(TargetPath)" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+      <PackageRelativeDirectory>
+      </PackageRelativeDirectory>
+    </FilesToPackage>
+    <FilesToPackage Include="$(TargetPath)" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      <PackageRelativeDirectory>
+      </PackageRelativeDirectory>
+    </FilesToPackage>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

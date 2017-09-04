@@ -1,10 +1,10 @@
-WinBtrfs v0.10
---------------
+WinBtrfs v1.0
+-------------
 
-WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs. The
-aim is for it to be feature-complete, with only a few features still
-outstanding. It is a reimplementation from scratch, and contains no code from the
-Linux kernel. First, a disclaimer:
+WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
+A reimplementation from scratch, it contains no code from the Linux kernel,
+and should work on any version from Windows 7 onwards.
+First, a disclaimer:
 
 This software is in active development - YOU USE IT AT YOUR OWN RISK. I take NO
 RESPONSIBILITY for any damage it may do to your filesystem. DO NOT USE THIS
@@ -15,8 +15,7 @@ THE POSSIBILITY OF SILENT CORRUPTION.
 In other words, assume that the driver is going to corrupt your entire
 filesystem, and you'll be pleasantly surprised when it doesn't.
 
-However, having said that, it ought to be suitable for day-to-day use, especially
-when mounted readonly.
+However, having said that, it ought to be suitable for day-to-day use.
 
 Everything here is released under the GNU Lesser General Public Licence (LGPL);
 see the file LICENCE for more info. You are encouraged to play about with the
@@ -72,13 +71,15 @@ Features
 * TRIM/DISCARD
 * Reflink copy
 * Subvol send and receive
+* Degraded mounts
+* Free space tree (compat_ro flag `free_space_cache`)
+* Shrinking and expanding
 
 Todo
 ----
 
-* Degraded mounts
-* New (Linux 4.5) free space cache (compat_ro flag `free_space_cache`)
 * Passthrough of permissions etc. for LXSS
+* Oplocks
 
 Installation
 ------------
@@ -90,26 +91,28 @@ Prompt" and click "Run as administrator"), and run the following command:
 
     bcdedit -set TESTSIGNING ON
 
-Reboot, and you should see "Test Mode" on the bottom right of the Desktop.
+Reboot, and you should see "Test Mode" on the bottom right of the Desktop. You may
+need to disable "Secure Boot" in BIOS for this to work.
 
-If you just want to test the driver out, run loader.exe as an Administrator.
-Despite what it says, you can close it - the driver will stay in memory until
-you shutdown. Be warned that currently running programs, including the Desktop,
-might not display your Btrfs partition until they're restarted - your drive
-might not appear in My Computer, but if you run E:\ (for example), it'll show
-up.
+To install the driver, right-click btrfs.inf and choose Install.
 
-If you're feeling adventurous and want to install the driver permanently,
-right-click btrfs.inf, click Install, and reboot.
+Uninstalling
+------------
+
+If you want to uninstall, go to Device Manager, find "Btrfs controller" under
+"Storage volumes", right click and choose "Uninstall". Tick the checkbox to
+uninstall the driver as well, and let Windows reboot itself.
+
+If you need to uninstall via the registry, open regedit and set the value of
+HKLM\SYSTEM\CurrentControlSet\services\btrfs\Start to 4, to disable the service.
+After you reboot, you can then delete the btrfs key and remove
+C:\Windows\System32\drivers\btrfs.sys.
 
 Compilation
 -----------
 
-You will need Microsoft Visual C++ if you want to compile the driver; I used the
-2008 edition, but later versions should work too. I've not been able to get it
-to work with GCC; it worked for a while, then suddenly stopped when the code
-got to a certain size. If you've got any clues about what this is all about, I'd
-appreciate it if you sent me an e-mail.
+You will need Microsoft Visual C++ 2015 if you want to compile the driver; you might
+be able to get earlier versions to work with a bit of work.
 
 You'll also need a copy of the Windows DDK; I placed mine in C:\WinDDK. If yours
 is somewhere else, you'll need to edit the project settings. You'll also need to
@@ -124,6 +127,8 @@ HKLM\SYSTEM\CurrentControlSet\services\btrfs\Mappings. Create a DWORD with the
 name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001),
 and the value of your Linux uid (e.g. 1000). It will take effect next time the
 driver is loaded.
+
+You can find your current SID by running `wmic useraccount get name,sid`.
 
 Similarly, the group mappings are stored in under GroupMappings. The default
 entry maps Windows' Users group to gid 100, which is usually "users" on Linux.
@@ -212,6 +217,17 @@ flag, e.g. `format /fs:ntfs D:`.
 
 Changelog
 ---------
+
+v1.0 (2017-09-04):
+* First non-beta release!
+* Degraded mounts
+* New free space cache (compat_ro flag `free_space_cache`)
+* Shrinking and expanding of volumes
+* Registry options now re-read when changed, rather than just on startup
+* Improved balancing on very full filesystems
+* Fixed problem preventing user profile directory being stored on btrfs on Windows 8 and above
+* Better Plug and Play support
+* Miscellaneous bug fixes
 
 v0.10 (2017-05-02):
 * Reflink copy
@@ -366,7 +382,7 @@ of the `compress-force` flag on Linux.
 * `CompressType` (DWORD): set this to 1 to prefer zlib compression, and 2 to prefer lzo compression. The
 default is 0, which uses lzo compression if the incompat flag is set, and zlib otherwise.
 
-* `FlushInterval` (DWORD): the interval in seconds between metadata flushes. The default is 30, as on Linux - 
+* `FlushInterval` (DWORD): the interval in seconds between metadata flushes. The default is 30, as on Linux -
 the parameter is called `commit` there.
 
 * `ZlibLevel` (DWORD): a number between -1 and 9, which determines how much CPU time is spent trying to
@@ -386,6 +402,9 @@ called `subvolid`.
 
 * `SkipBalance` (DWORD): set to 1 to tell the driver not to attempt resuming a balance which was running
 when the system last powered down. The default is 0. The equivalent parameter on Linux is `skip_balance`.
+
+* `NoPNP` (DWORD): useful for debugging only, this forces any volumes to appear rather than exposing them
+via the usual Plug and Play method.
 
 Contact
 -------
