@@ -1000,10 +1000,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     rootfcb->inode_item_changed = TRUE;
 
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    acquire_fcb_lock_exclusive(Vcb);
     InsertTailList(&r->fcbs, &rootfcb->list_entry);
     InsertTailList(&Vcb->all_fcbs, &rootfcb->list_entry_all);
-    ExReleaseResourceLite(&Vcb->fcb_lock);
+    release_fcb_lock(Vcb);
 
     rootfcb->Header.IsFastIoPossible = fast_io_possible(rootfcb);
     rootfcb->Header.AllocationSize.QuadPart = 0;
@@ -1047,9 +1047,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (!fr) {
         ERR("out of memory\n");
 
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        acquire_fcb_lock_exclusive(Vcb);
         free_fcb(Vcb, rootfcb);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
+        release_fcb_lock(Vcb);
 
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -1071,9 +1071,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fr->fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!fr->fcb->hash_ptrs) {
         ERR("out of memory\n");
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        acquire_fcb_lock_exclusive(Vcb);
         free_fileref(Vcb, fr);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
+        release_fcb_lock(Vcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -1083,9 +1083,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fr->fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!fr->fcb->hash_ptrs_uc) {
         ERR("out of memory\n");
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        acquire_fcb_lock_exclusive(Vcb);
         free_fileref(Vcb, fr);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
+        release_fcb_lock(Vcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -1153,9 +1153,9 @@ end:
 
 end2:
     if (fr) {
-        ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+        acquire_fcb_lock_exclusive(Vcb);
         free_fileref(Vcb, fr);
-        ExReleaseResourceLite(&Vcb->fcb_lock);
+        release_fcb_lock(Vcb);
     }
 
     return Status;
@@ -2192,15 +2192,15 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     if (Vcb->locked)
         return STATUS_SUCCESS;
 
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    acquire_fcb_lock_exclusive(Vcb);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
-        ExReleaseResourceLite(&Vcb->fcb_lock);
+        release_fcb_lock(Vcb);
         goto end;
     }
 
-    ExReleaseResourceLite(&Vcb->fcb_lock);
+    release_fcb_lock(Vcb);
 
     if (Vcb->balance.thread && KeReadStateEvent(&Vcb->balance.event)) {
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
@@ -3740,7 +3740,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     name.Length = name.MaximumLength = bmn->namelen;
     name.Buffer = bmn->name;
 
-    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+    acquire_fcb_lock_exclusive(Vcb);
 
     Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, TRUE);
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
@@ -3980,7 +3980,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     Status = STATUS_SUCCESS;
 
 end:
-    ExReleaseResourceLite(&Vcb->fcb_lock);
+    release_fcb_lock(Vcb);
 
     ExFreePool(utf8.Buffer);
 
@@ -4427,11 +4427,11 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
         return STATUS_INTERNAL_ERROR;
     }
 
-    ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
+    acquire_fcb_lock_shared(Vcb);
 
     Status = open_fileref_by_inode(Vcb, r, r->root_item.objid, &fr, Irp);
     if (!NT_SUCCESS(Status)) {
-        ExReleaseResourceLite(&Vcb->fcb_lock);
+        release_fcb_lock(Vcb);
         ERR("open_fileref_by_inode returned %08x\n", Status);
         return Status;
     }
@@ -4449,7 +4449,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
 
     free_fileref(Vcb, fr);
 
-    ExReleaseResourceLite(&Vcb->fcb_lock);
+    release_fcb_lock(Vcb);
 
     return Status;
 }

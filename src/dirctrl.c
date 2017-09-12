@@ -628,7 +628,7 @@ static NTSTATUS query_directory(PIRP Irp) {
         return STATUS_NO_MORE_FILES;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
+    acquire_fcb_lock_shared(Vcb);
 
     TRACE("%S\n", file_desc(IrpSp->FileObject));
 
@@ -906,7 +906,7 @@ end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
 end2:
-    ExReleaseResourceLite(&Vcb->fcb_lock);
+    release_fcb_lock(Vcb);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     TRACE("returning %08x\n", Status);
