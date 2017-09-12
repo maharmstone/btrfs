@@ -875,6 +875,18 @@ typedef struct {
     LIST_ENTRY list_entry;
 } name_bit;
 
+static __inline void acquire_fcb_lock_shared(device_extension* Vcb) {
+    ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
+}
+
+static __inline void acquire_fcb_lock_exclusive(device_extension* Vcb) {
+    ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+}
+
+static __inline void release_fcb_lock(device_extension* Vcb) {
+    ExReleaseResourceLite(&Vcb->fcb_lock);
+}
+
 static __inline void* map_user_buffer(PIRP Irp, ULONG priority) {
     if (!Irp->MdlAddress) {
         return Irp->UserBuffer;
