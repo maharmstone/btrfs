@@ -1485,8 +1485,19 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         name_bit* nb = CONTAINING_RECORD(le, name_bit, list_entry);
         BOOL lastpart = le->Flink == &parts || (has_stream && le->Flink->Flink == &parts);
         BOOL streampart = has_stream && le->Flink == &parts;
+#ifdef DEBUG_STATS
+        LARGE_INTEGER time1, time2;
+#endif
 
+#ifdef DEBUG_STATS
+        time1 = KeQueryPerformanceCounter(NULL);
+#endif
         Status = open_fileref_child(Vcb, sf, &nb->us, case_sensitive, lastpart, streampart, pooltype, &sf2, Irp);
+#ifdef DEBUG_STATS
+        time2 = KeQueryPerformanceCounter(NULL);
+        Vcb->stats.open_fileref_child_calls++;
+        Vcb->stats.open_fileref_child_time += time2.QuadPart - time1.QuadPart;
+#endif
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
                 TRACE("open_fileref_child returned %08x\n", Status);

@@ -619,6 +619,9 @@ typedef struct {
     UINT64 create_total_time;
     UINT64 open_fcb_calls;
     UINT64 open_fcb_time;
+    UINT64 open_fileref_child_calls;
+    UINT64 open_fileref_child_time;
+    UINT64 fcb_lock_time;
 } debug_stats;
 #endif
 
@@ -876,11 +879,39 @@ typedef struct {
 } name_bit;
 
 static __inline void acquire_fcb_lock_shared(device_extension* Vcb) {
+#ifdef DEBUG_STATS
+    LARGE_INTEGER time1, time2;
+
+    if (ExAcquireResourceSharedLite(&Vcb->fcb_lock, FALSE))
+        return;
+
+    time1 = KeQueryPerformanceCounter(NULL);
+#endif
+
     ExAcquireResourceSharedLite(&Vcb->fcb_lock, TRUE);
+
+#ifdef DEBUG_STATS
+    time2 = KeQueryPerformanceCounter(NULL);
+    Vcb->stats.fcb_lock_time += time2.QuadPart - time1.QuadPart;
+#endif
 }
 
 static __inline void acquire_fcb_lock_exclusive(device_extension* Vcb) {
+#ifdef DEBUG_STATS
+    LARGE_INTEGER time1, time2;
+
+    if (ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, FALSE))
+        return;
+
+    time1 = KeQueryPerformanceCounter(NULL);
+#endif
+
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, TRUE);
+
+#ifdef DEBUG_STATS
+    time2 = KeQueryPerformanceCounter(NULL);
+    Vcb->stats.fcb_lock_time += time2.QuadPart - time1.QuadPart;
+#endif
 }
 
 static __inline void release_fcb_lock(device_extension* Vcb) {
