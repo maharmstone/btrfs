@@ -3476,7 +3476,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 #ifdef DEBUG_STATS
         open_type = 2;
 #endif
-        Status = file_create(Irp, DeviceObject->DeviceExtension, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
+        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
         release_fcb_lock(Vcb);
 
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
