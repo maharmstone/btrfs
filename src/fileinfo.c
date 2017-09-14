@@ -1911,7 +1911,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT16 end, f
         TRACE("extending stream to %llx bytes\n", end);
 
         if (end > fcb->adsmaxlen) {
-            ERR("error - xattr too long (%llu > %u)\n", end, fcb->adsmaxlen);
+            ERR("error - xattr too long (%u > %u)\n", end, fcb->adsmaxlen);
             return STATUS_DISK_FULL;
         }
 
