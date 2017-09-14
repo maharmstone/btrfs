@@ -156,6 +156,9 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 #define _Create_lock_level_(a)
 #define _Lock_level_order_(a,b)
 #define _Has_lock_level_(a)
+#define _Requires_lock_not_held_(a)
+#define _Acquires_exclusive_lock_(a)
+#define _Acquires_shared_lock_(a)
 #endif
 
 _Create_lock_level_(tree_lock)
@@ -878,6 +881,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } name_bit;
 
+_Requires_lock_not_held_(Vcb->fcb_lock)
+_Acquires_shared_lock_(Vcb->fcb_lock)
 static __inline void acquire_fcb_lock_shared(device_extension* Vcb) {
 #ifdef DEBUG_STATS
     LARGE_INTEGER time1, time2;
@@ -896,6 +901,8 @@ static __inline void acquire_fcb_lock_shared(device_extension* Vcb) {
 #endif
 }
 
+_Requires_lock_not_held_(Vcb->fcb_lock)
+_Acquires_exclusive_lock_(Vcb->fcb_lock)
 static __inline void acquire_fcb_lock_exclusive(device_extension* Vcb) {
 #ifdef DEBUG_STATS
     LARGE_INTEGER time1, time2;
@@ -914,6 +921,8 @@ static __inline void acquire_fcb_lock_exclusive(device_extension* Vcb) {
 #endif
 }
 
+_Requires_lock_held_(Vcb->fcb_lock)
+_Releases_lock_(Vcb->fcb_lock)
 static __inline void release_fcb_lock(device_extension* Vcb) {
     ExReleaseResourceLite(&Vcb->fcb_lock);
 }
