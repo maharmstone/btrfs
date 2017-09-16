@@ -1962,6 +1962,18 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_ PFILE_OBJECT FileObject, _I
                 }
 
                 fileref->fcb->deleted = TRUE;
+
+                le = fileref->children.Flink;
+                while (le != &fileref->children) {
+                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+
+                    if (fr2->fcb->ads) {
+                        fr2->fcb->deleted = TRUE;
+                        mark_fcb_dirty(fr2->fcb);
+                    }
+
+                    le = le->Flink;
+                }
             }
 
             if (fileref->dc) {
@@ -1991,11 +2003,25 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_ PFILE_OBJECT FileObject, _I
 
                 mark_fcb_dirty(fileref->fcb); // so ROOT_ITEM gets updated
             } else {
+                LIST_ENTRY* le;
+
                 // FIXME - we need a lock here
 
                 RemoveEntryList(&fileref->fcb->subvol->list_entry);
 
                 InsertTailList(&fileref->fcb->Vcb->drop_roots, &fileref->fcb->subvol->list_entry);
+
+                le = fileref->children.Flink;
+                while (le != &fileref->children) {
+                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+
+                    if (fr2->fcb->ads) {
+                        fr2->fcb->deleted = TRUE;
+                        mark_fcb_dirty(fr2->fcb);
+                    }
+
+                    le = le->Flink;
+                }
             }
         }
     } else {
