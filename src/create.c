@@ -1664,6 +1664,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     if (parfileref->fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
+    if (options & FILE_DIRECTORY_FILE && IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_TEMPORARY)
+        return STATUS_INVALID_PARAMETER;
+
     Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N returned %08x\n", Status);
