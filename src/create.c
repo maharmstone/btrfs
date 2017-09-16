@@ -3212,6 +3212,17 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 goto exit;
             }
 
+            if (!fileref->fcb->ads && (IrpSp->Parameters.Create.FileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != ((fileref->fcb->atts & (FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN)))) {
+                IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
+
+                acquire_fcb_lock_exclusive(Vcb);
+                free_fileref(Vcb, fileref);
+                release_fcb_lock(Vcb);
+
+                Status = STATUS_ACCESS_DENIED;
+                goto exit;
+            }
+
             if (fileref->fcb->ads) {
                 Status = stream_set_end_of_file_information(Vcb, 0, fileref->fcb, fileref, FALSE);
                 if (!NT_SUCCESS(Status)) {
