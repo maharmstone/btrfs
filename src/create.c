@@ -1416,6 +1416,13 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
             return STATUS_OBJECT_PATH_NOT_FOUND;
         }
 
+        // if path starts with two backslashes, ignore one of them
+        if (fnus2.Length >= 2 * sizeof(WCHAR) && fnus2.Buffer[1] == '\\') {
+            fnus2.Buffer++;
+            fnus2.Length -= sizeof(WCHAR);
+            fnus2.MaximumLength -= sizeof(WCHAR);
+        }
+
         if (fnus2.Length == sizeof(WCHAR)) {
             if (Vcb->root_fileref->open_count == 0 && !(Vcb->Vpb->Flags & VPB_MOUNTED)) // don't allow root to be opened on unmounted FS
                 return STATUS_DEVICE_NOT_READY;
