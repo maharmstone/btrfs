@@ -3065,6 +3065,16 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) || (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) ||
                    is_subvol_readonly(fileref->fcb->subvol, Irp) || fileref->fcb == Vcb->dummy_fcb || Vcb->readonly;
 
+        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || readonly)) {
+            Status = STATUS_CANNOT_DELETE;
+
+            acquire_fcb_lock_exclusive(Vcb);
+            free_fileref(Vcb, fileref);
+            release_fcb_lock(Vcb);
+
+            goto exit;
+        }
+
         if (readonly) {
             ACCESS_MASK allowed;
 
@@ -3098,17 +3108,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
                 goto exit;
             }
-        }
-
-        if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || Vcb->readonly ||
-            is_subvol_readonly(fileref->fcb->subvol, Irp) || readonly)) {
-            Status = STATUS_CANNOT_DELETE;
-
-            acquire_fcb_lock_exclusive(Vcb);
-            free_fileref(Vcb, fileref);
-            release_fcb_lock(Vcb);
-
-            goto exit;
         }
 
         if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
