@@ -658,8 +658,6 @@ static NTSTATUS query_directory(PIRP Irp) {
             TRACE("    unknown flags: %u\n", flags);
     }
 
-    initial = !ccb->query_string.Buffer;
-
     if (IrpSp->Flags & SL_RESTART_SCAN) {
         ccb->query_dir_offset = 0;
 
@@ -667,7 +665,12 @@ static NTSTATUS query_directory(PIRP Irp) {
             RtlFreeUnicodeString(&ccb->query_string);
             ccb->query_string.Buffer = NULL;
         }
+
+        ccb->has_wildcard = FALSE;
+        ccb->specific_file = FALSE;
     }
+
+    initial = !ccb->query_string.Buffer;
 
     if (IrpSp->Parameters.QueryDirectory.FileName && IrpSp->Parameters.QueryDirectory.FileName->Length > 1) {
         TRACE("QD filename: %.*S\n", IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
