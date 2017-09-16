@@ -2874,7 +2874,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         }
     } else {
         if (related && fn.Length != 0 && fn.Buffer[0] == '\\') {
-            Status = STATUS_OBJECT_NAME_INVALID;
+            Status = STATUS_INVALID_PARAMETER;
             release_fcb_lock(Vcb);
             goto exit;
         }
