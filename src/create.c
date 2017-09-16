@@ -2301,6 +2301,9 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
 
+    if (options & FILE_DELETE_ON_CLOSE && IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_READONLY)
+        return STATUS_CANNOT_DELETE;
+
     dsus.Buffer = datasuf;
     dsus.Length = dsus.MaximumLength = (USHORT)wcslen(datasuf) * sizeof(WCHAR);
     fpus.Buffer = NULL;
