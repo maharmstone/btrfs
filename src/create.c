@@ -1720,9 +1720,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     TRACE("requested attributes = %x\n", IrpSp->Parameters.Create.FileAttributes);
 
-    IrpSp->Parameters.Create.FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
-
-    defda = FILE_ATTRIBUTE_ARCHIVE;
+    defda = 0;
 
     if (utf8[0] == '.')
         defda |= FILE_ATTRIBUTE_HIDDEN;
@@ -1732,6 +1730,11 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         IrpSp->Parameters.Create.FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
     } else
         IrpSp->Parameters.Create.FileAttributes &= ~FILE_ATTRIBUTE_DIRECTORY;
+
+    if (!(IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        IrpSp->Parameters.Create.FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
+        defda |= FILE_ATTRIBUTE_ARCHIVE;
+    }
 
     TRACE("defda = %x\n", defda);
 
