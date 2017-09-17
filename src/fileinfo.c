@@ -2007,7 +2007,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             set_size = TRUE;
         }
 
-        filter = FILE_NOTIFY_CHANGE_SIZE;
+        filter = FILE_NOTIFY_CHANGE_STREAM_SIZE;
 
         if (!ccb->user_set_write_time) {
             KeQuerySystemTime(&time);
@@ -2018,7 +2018,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             mark_fcb_dirty(fileref->parent->fcb);
         }
 
-        send_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED, &fileref->dc->name);
+        send_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED_STREAM, &fileref->dc->name);
 
         goto end;
     }
