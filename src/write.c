@@ -4551,6 +4551,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
             if (changed_length)
                 filter |= FILE_NOTIFY_CHANGE_STREAM_SIZE;
+
+            filter |= FILE_NOTIFY_CHANGE_STREAM_WRITE;
         }
 
         if (!ccb->user_set_write_time) {
