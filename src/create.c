@@ -3273,6 +3273,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             }
 
             if (!fileref->fcb->ads) {
+                LIST_ENTRY* le;
+
                 if (Irp->AssociatedIrp.SystemBuffer && IrpSp->Parameters.Create.EaLength > 0) {
                     ULONG offset;
                     FILE_FULL_EA_INFORMATION* eainfo;
@@ -3338,6 +3340,41 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                         fileref->fcb->ea_changed = TRUE;
                         fileref->fcb->ealen = 0;
                     }
+                }
+
+                // remove streams and send notifications
+                le = fileref->fcb->dir_children_index.Flink;
+                while (le != &fileref->fcb->dir_children_index) {
+                    dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+                    LIST_ENTRY* le2 = le->Flink;
+
+                    if (dc->index == 0) {
+                        if (!dc->fileref) {
+                            file_ref* fr2;
+
+                            Status = open_fileref_child(Vcb, fileref, &dc->name, TRUE, TRUE, TRUE, PagedPool, &fr2, NULL);
+                            if (!NT_SUCCESS(Status))
+                                WARN("open_fileref_child returned %08x\n", Status);
+                        }
+
+                        if (dc->fileref) {
+                            send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_STREAM_NAME, FILE_ACTION_REMOVED_STREAM, &dc->name);
+
+                            Status = delete_fileref(dc->fileref, NULL, NULL, rollback);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("delete_fileref returned %08x\n", Status);
+
+                                acquire_fcb_lock_exclusive(Vcb);
+                                free_fileref(Vcb, fileref);
+                                release_fcb_lock(Vcb);
+
+                                goto exit;
+                            }
+                        }
+                    } else
+                        break;
+
+                    le = le2;
                 }
             }
 
