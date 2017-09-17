@@ -289,6 +289,10 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
 
+    // IFSTest insists on this, for some reason...
+    if (Irp->UserBuffer)
+        return STATUS_INVALID_PARAMETER;
+
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
 
