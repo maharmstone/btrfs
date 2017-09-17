@@ -339,15 +339,9 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto end;
     }
 
-    if (buflen < REPARSE_DATA_BUFFER_HEADER_SIZE) {
-        WARN("buffer was too short (%u bytes, expected at least %u)\n", buflen, REPARSE_DATA_BUFFER_HEADER_SIZE);
-        Status = STATUS_IO_REPARSE_DATA_INVALID;
-        goto end;
-    }
-
-    if (buflen != REPARSE_DATA_BUFFER_HEADER_SIZE + rdb->ReparseDataLength) {
-        WARN("buffer was wrong length (%u bytes, expected %u)\n", buflen, REPARSE_DATA_BUFFER_HEADER_SIZE + rdb->ReparseDataLength);
-        Status = STATUS_IO_REPARSE_DATA_INVALID;
+    Status = FsRtlValidateReparsePointBuffer(buflen, rdb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
         goto end;
     }
 
