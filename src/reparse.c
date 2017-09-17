@@ -335,7 +335,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     if (buflen < sizeof(ULONG)) {
         WARN("buffer was not long enough to hold tag\n");
-        Status = STATUS_INVALID_PARAMETER;
+        Status = STATUS_INVALID_BUFFER_SIZE;
         goto end;
     }
 
