@@ -94,7 +94,8 @@ Prompt" and click "Run as administrator"), and run the following command:
 Reboot, and you should see "Test Mode" on the bottom right of the Desktop. You may
 need to disable "Secure Boot" in BIOS for this to work.
 
-To install the driver, right-click btrfs.inf and choose Install.
+To install the driver, [download and extract the latest release](https://github.com/maharmstone/btrfs/releases),
+right-click btrfs.inf, and choose Install.
 
 Uninstalling
 ------------
