@@ -305,7 +305,7 @@
     <ClCompile Include="src\zlib\zutil.c" />
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="btrfs.inf" />
+    <Inf Include="src\btrfs.inf" />
   </ItemGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
