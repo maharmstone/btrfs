@@ -2375,6 +2375,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_write returned %08x\n", Status);
                     ExReleaseResourceLite(&Vcb->tree_lock);
+                    ExFreePool(newvpb);
                     goto end;
                 }
 
