@@ -3,7 +3,9 @@ WinBtrfs v1.0
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
-and should work on any version from Windows 7 onwards.
+and should work on any version from Windows 7 onwards. It is also included
+as part of the free operating system [ReactOS](https://www.reactos.org/).
+
 First, a disclaimer:
 
 This software is in active development - YOU USE IT AT YOUR OWN RISK. I take NO
@@ -84,18 +86,14 @@ Todo
 Installation
 ------------
 
-The driver is self-signed at the moment, meaning that if you're using a 64-bit
-version of Windows you'll have to tell it to boot up in Test Mode if you want it
-to work. To do this, launch an admin command prompt (right-click on "Command
-Prompt" and click "Run as administrator"), and run the following command:
-
-    bcdedit -set TESTSIGNING ON
-
-Reboot, and you should see "Test Mode" on the bottom right of the Desktop. You may
-need to disable "Secure Boot" in BIOS for this to work.
-
 To install the driver, [download and extract the latest release](https://github.com/maharmstone/btrfs/releases),
-right-click btrfs.inf, and choose Install.
+right-click btrfs.inf, and choose Install. The driver is signed, so should work out
+of the box on modern versions of Windows.
+
+For the very latest versions of Windows 10, Microsoft introduced more onerous
+requirements for signing, which are only available to corporations and not individuals.
+If this affects you (i.e. you get a signing error when trying to install the driver),
+try disabling Secure Boot in your BIOS settings.
 
 Uninstalling
 ------------
@@ -169,15 +167,6 @@ clone subvolumes.
 Troubleshooting
 ---------------
 
-* My drive doesn't show up!
-
-If you're on 64-bit Windows, check that you're running in Test Mode ("Test Mode" appears
-in the bottom right of the Desktop).
-
-* My drive is readonly
-
-Check that you've not got the new free space cache enabled, which isn't yet supported.
-
 * The filenames are weird!
 or
 * I get strange errors on certain files or directories!
@@ -218,6 +207,11 @@ flag, e.g. `format /fs:ntfs D:`.
 
 Changelog
 ---------
+
+v1.0.1 (2017-10-15):
+* Fixed deadlock
+* Binaries now signed
+* Minor bug fixes
 
 v1.0 (2017-09-04):
 * First non-beta release!
