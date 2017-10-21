@@ -879,6 +879,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                         if (stream == INVALID_HANDLE_VALUE) {
                             ShowError(hwnd, GetLastError());
+                            FindClose(h);
                             goto end;
                         }
 
@@ -888,6 +889,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                         if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
                             ShowError(hwnd, GetLastError());
+                            FindClose(h);
                             free(data);
                             CloseHandle(stream);
                             goto end;
@@ -901,6 +903,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     if (stream == INVALID_HANDLE_VALUE) {
                         ShowError(hwnd, GetLastError());
 
+                        FindClose(h);
                         if (data) free(data);
 
                         goto end;
@@ -909,6 +912,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     if (data) {
                         if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
                             ShowError(hwnd, GetLastError());
+                            FindClose(h);
                             free(data);
                             CloseHandle(stream);
                             goto end;
