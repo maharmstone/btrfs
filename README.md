@@ -95,6 +95,14 @@ requirements for signing, which are only available to corporations and not indiv
 If this affects you (i.e. you get a signing error when trying to install the driver),
 try disabling Secure Boot in your BIOS settings.
 
+It is possibile to install the driver from the command line. To do so, open shell with 
+Administrator's rights, cd into the driver directory where the inf file is, and use
+the pnputil.exe command like this:
+
+> pnputil /a /i btrfs.inf
+
+( Micorsoft Docs: https://docs.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax )
+
 Uninstalling
 ------------
 
@@ -106,6 +114,22 @@ If you need to uninstall via the registry, open regedit and set the value of
 HKLM\SYSTEM\CurrentControlSet\services\btrfs\Start to 4, to disable the service.
 After you reboot, you can then delete the btrfs key and remove
 C:\Windows\System32\drivers\btrfs.sys.
+
+You can remove the driver from Windows' driver repository using the pnputil.exe
+command from a shell with Administrator's privileges.
+
+First discover the Published Name of the driver like this:
+
+> pnpputil /e
+
+this command will output many informations about installed drivers. Find the right
+entry and write down the inf name (es. oem22.inf).
+
+After that, issue the command to remove the driver:
+
+> pnputil /d <Published Name>
+
+This procedure should work on every version of Windows, starting with Windows Vista 
 
 Compilation
 -----------
