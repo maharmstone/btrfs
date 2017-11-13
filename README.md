@@ -120,14 +120,14 @@ command from a shell with Administrator's privileges.
 
 First discover the Published Name of the driver like this:
 
-> pnpputil /enum-drivers
+> pnputil.exe /enum-drivers
 
 this command will output many informations about installed drivers. Find the right
 entry and write down the inf name (es. oem22.inf).
 
 After that, issue the command to remove the driver:
 
-> pnputil /delete-driver <Published Name> /uninstall /force /reboot
+> pnputil.exe /delete-driver <Published Name> /uninstall /force /reboot
 
 Compilation
 -----------
