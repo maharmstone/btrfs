@@ -99,7 +99,7 @@ It is possibile to install the driver from the command line. To do so, open shel
 Administrator's rights, cd into the driver directory where the inf file is, and use
 the pnputil.exe command like this:
 
-> pnputil /a /i btrfs.inf
+> pnputil.exe /add-driver btrfs.inf /subdirs /install /reboot
 
 ( Micorsoft Docs: https://docs.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax )
 
@@ -120,16 +120,14 @@ command from a shell with Administrator's privileges.
 
 First discover the Published Name of the driver like this:
 
-> pnpputil /e
+> pnpputil /enum-drivers
 
 this command will output many informations about installed drivers. Find the right
 entry and write down the inf name (es. oem22.inf).
 
 After that, issue the command to remove the driver:
 
-> pnputil /d <Published Name>
-
-This procedure should work on every version of Windows, starting with Windows Vista 
+> pnputil /delete-driver <Published Name> /uninstall /force /reboot
 
 Compilation
 -----------
