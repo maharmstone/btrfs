@@ -194,6 +194,15 @@ type 7 in `fdisk`. For GPT partitions, this should be type 6 in `fdisk` ("Micros
 basic data"), or 0700 in `gdisk`. We have to do some chicanery to get Linux partitions
 to appear in the first place, but unfortunately this confuses diskmgmt.msc too much.
 
+* How do I change drive letter and mount points without using Disk Management?
+Using the mountvol tool from an elevated command prompt.
+Run mountvol to see a list of all volume ids available along with their drive letters or mount points attached.
+Commands to use with example volume id of `\\?\Volume{00000000-0000-0000-0000-000000000000}`:
+  * Change drive letter to `L`: `mountvol L: \\?\Volume{00000000-0000-0000-0000-000000000000}`
+  * Add mount point `C:\emptyfolder`: `mountvol C:\emptyfolder \\?\Volume{00000000-0000-0000-0000-000000000000}`
+  * Remove drive letter `L`: `mountvol L: /D`
+  * Remove mount point `C:\emptyfolder`: `mountvol C:\emptyfolder /D`
+
 * How do I format a partition as Btrfs?
 
 Use the included command line program mkbtrfs.exe. We can't add Btrfs to Windows' own
