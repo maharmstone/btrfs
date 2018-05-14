@@ -2071,7 +2071,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             }
         } else if (num_errors == 1) {
             UINT32 crc32a, crc32b, len;
-            UINT16 stripe_num, bad_stripe_num;
+            UINT16 stripe_num, bad_stripe_num = 0;
             UINT64 addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 * Vcb->superblock.sector_size);
             UINT8* scratch;
 
