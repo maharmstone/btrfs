@@ -1,4 +1,4 @@
-WinBtrfs v1.0.1
+WinBtrfs v1.0.2
 ---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -207,6 +207,9 @@ flag, e.g. `format /fs:ntfs D:`.
 
 Changelog
 ---------
+
+v1.0.2 (2018-05-19):
+* Minor bug fixes
 
 v1.0.1 (2017-10-15):
 * Fixed deadlock
