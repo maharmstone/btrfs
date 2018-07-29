@@ -675,7 +675,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     if (IrpSp->Parameters.QueryDirectory.FileName && IrpSp->Parameters.QueryDirectory.FileName->Length > 1) {
         TRACE("QD filename: %.*S\n", IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
 
-        if (IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != '*') {
+        if (IrpSp->Parameters.QueryDirectory.FileName->Length > sizeof(WCHAR) || IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != L'*') {
             specific_file = TRUE;
 
             if (FsRtlDoesNameContainWildCards(IrpSp->Parameters.QueryDirectory.FileName)) {
