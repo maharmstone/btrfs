@@ -1641,6 +1641,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 
                 if (!context.stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
+                    MmUnlockPages(master_mdl);
+                    IoFreeMdl(master_mdl);
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
                 }
@@ -1650,6 +1652,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
+            MmUnlockPages(master_mdl);
+            IoFreeMdl(master_mdl);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -1756,6 +1760,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
         stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(read_data_stripe*) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripes) {
             ERR("out of memory\n");
+            MmUnlockPages(master_mdl);
+            IoFreeMdl(master_mdl);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -1791,6 +1797,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 
                         if (!context.stripes[i+j].mdl) {
                             ERR("IoAllocateMdl failed\n");
+                            MmUnlockPages(master_mdl);
+                            IoFreeMdl(master_mdl);
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto exit;
                         }
@@ -1814,6 +1822,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 
                             if (!context.stripes[i+j].mdl) {
                                 ERR("IoAllocateMdl failed\n");
+                                MmUnlockPages(master_mdl);
+                                IoFreeMdl(master_mdl);
                                 Status = STATUS_INSUFFICIENT_RESOURCES;
                                 goto exit;
                             }
@@ -1835,6 +1845,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes / ci->sub_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
+            MmUnlockPages(master_mdl);
+            IoFreeMdl(master_mdl);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -2071,6 +2083,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 
                 if (!context.stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
+                    MmUnlockPages(master_mdl);
+                    IoFreeMdl(master_mdl);
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
                 }
@@ -2081,6 +2095,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
             dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
             if (!dummypage) {
                 ERR("out of memory\n");
+                MmUnlockPages(master_mdl);
+                IoFreeMdl(master_mdl);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
@@ -2088,6 +2104,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
             dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
             if (!dummy_mdl) {
                 ERR("IoAllocateMdl failed\n");
+                MmUnlockPages(master_mdl);
+                IoFreeMdl(master_mdl);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
@@ -2100,6 +2118,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
+            MmUnlockPages(master_mdl);
+            IoFreeMdl(master_mdl);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -2324,6 +2344,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 
                 if (!context.stripes[i].mdl) {
                     ERR("IoAllocateMdl failed\n");
+                    MmUnlockPages(master_mdl);
+                    IoFreeMdl(master_mdl);
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto exit;
                 }
@@ -2334,6 +2356,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
             dummypage = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, ALLOC_TAG);
             if (!dummypage) {
                 ERR("out of memory\n");
+                MmUnlockPages(master_mdl);
+                IoFreeMdl(master_mdl);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
@@ -2341,6 +2365,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
             dummy_mdl = IoAllocateMdl(dummypage, PAGE_SIZE, FALSE, FALSE, NULL);
             if (!dummy_mdl) {
                 ERR("IoAllocateMdl failed\n");
+                MmUnlockPages(master_mdl);
+                IoFreeMdl(master_mdl);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto exit;
             }
@@ -2353,6 +2379,8 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
         stripeoff = ExAllocatePoolWithTag(NonPagedPool, sizeof(UINT32) * ci->num_stripes, ALLOC_TAG);
         if (!stripeoff) {
             ERR("out of memory\n");
+            MmUnlockPages(master_mdl);
+            IoFreeMdl(master_mdl);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
