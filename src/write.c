@@ -1283,7 +1283,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, UINT64 addr
             stripes[i].mdl = IoAllocateMdl((UINT8*)MmGetMdlVirtualAddress(master_mdl) + irp_offset, (ULONG)(stripes[i].end - stripes[i].start), FALSE, FALSE, NULL);
             if (!stripes[i].mdl) {
                 ERR("IoAllocateMdl failed\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
             }
         }
     }
@@ -1698,7 +1699,8 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, UINT64 addr
             stripes[i].mdl = IoAllocateMdl((UINT8*)MmGetMdlVirtualAddress(master_mdl) + irp_offset, (ULONG)(stripes[i].end - stripes[i].start), FALSE, FALSE, NULL);
             if (!stripes[i].mdl) {
                 ERR("IoAllocateMdl failed\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto exit;
             }
         }
     }
@@ -2079,8 +2081,16 @@ end:
 
     if (stripes) ExFreePool(stripes);
 
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
         free_write_data_stripes(wtc);
+
+        if (stripe) {
+            if (stripe->Irp)
+                IoFreeIrp(stripe->Irp);
+
+            IoFreePool(stripe);
+        }
+    }
 
     return Status;
 
@@ -3630,6 +3640,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
                                      Irp, NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
+            ExFreePool(newext1);
+            ExFreePool(newext2);
             return Status;
         }
 
@@ -3725,6 +3737,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, UINT64 start_data,
         Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (UINT32)ned2->num_bytes, Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08x\n", Status);
+            ExFreePool(newext1);
+            ExFreePool(newext2);
             return Status;
         }
 
