@@ -3726,6 +3726,8 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     context = ExAllocatePoolWithTag(NonPagedPool, sizeof(send_context), ALLOC_TAG);
     if (!context) {
         ERR("out of memory\n");
+        if (clones)
+            ExFreePool(clones);
         ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -3765,6 +3767,8 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
         ERR("out of memory\n");
         ExFreePool(context->data);
         ExFreePool(context);
+        if (clones)
+            ExFreePool(clones);
         ExReleaseResourceLite(&Vcb->send_load_lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -3790,6 +3794,8 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
         ExFreePool(send);
         ExFreePool(context->data);
         ExFreePool(context);
+        if (clones)
+            ExFreePool(clones);
         ExReleaseResourceLite(&Vcb->send_load_lock);
         return Status;
     }
