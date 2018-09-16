@@ -2088,7 +2088,7 @@ end:
             if (stripe->Irp)
                 IoFreeIrp(stripe->Irp);
 
-            IoFreePool(stripe);
+            ExFreePool(stripe);
         }
     }
 
