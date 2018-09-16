@@ -95,7 +95,7 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
 
             if (ln[i].size + sizeof(tree_header) + sizeof(leaf_node) > Vcb->superblock.node_size) {
                 ERR("overlarge item in tree %llx: %u > %u\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
-                ExFreePool(td);
+                ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
                 ExFreePool(t);
                 ExFreePool(buf);
                 return STATUS_INTERNAL_ERROR;
