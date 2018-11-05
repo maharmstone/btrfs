@@ -205,6 +205,11 @@ run `format /fs:btrfs`, if you don't need to set any Btrfs-specific options.
 If Windows' Format dialog box refuses to appear, try running format.com with the /fs
 flag, e.g. `format /fs:ntfs D:`.
 
+* I can't mount a Synology NAS
+
+Synology seems to use LVM for its block devices. Until somebody writes an LVM driver
+for Windows, you're out of luck.
+
 Changelog
 ---------
 
