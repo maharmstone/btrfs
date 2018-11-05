@@ -1878,7 +1878,6 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
     NTSTATUS Status;
     UINT32 i;
     CHUNK_ITEM_STRIPE* cis;
-    write_data_stripe* stripe;
     write_stripe* stripes = NULL;
     UINT64 total_writing = 0;
     ULONG allowed_missing, missing;
@@ -1999,6 +1998,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
     }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
+        write_data_stripe* stripe;
         PIO_STACK_LOCATION IrpSp;
 
         stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_data_stripe), ALLOC_TAG);
@@ -2026,6 +2026,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
 
                 if (!stripe->Irp) {
                     ERR("IoAllocateIrp failed\n");
+                    ExFreePool(stripe);
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
@@ -2034,6 +2035,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
 
                 if (!stripe->Irp) {
                     ERR("IoMakeAssociatedIrp failed\n");
+                    ExFreePool(stripe);
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
@@ -2081,16 +2083,8 @@ end:
 
     if (stripes) ExFreePool(stripes);
 
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status))
         free_write_data_stripes(wtc);
-
-        if (stripe) {
-            if (stripe->Irp)
-                IoFreeIrp(stripe->Irp);
-
-            ExFreePool(stripe);
-        }
-    }
 
     return Status;
 
