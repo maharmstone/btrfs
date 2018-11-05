@@ -99,7 +99,7 @@ sub incompat_flags {
     }
 
     if ($f&16) {
-        push @l,"compress_lzov2";
+        push @l,"compress_zstd";
         $f&=~16;
     }
 
