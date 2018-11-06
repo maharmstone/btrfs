@@ -154,9 +154,8 @@ public:
     void change_gid(HWND hDlg, uint32_t gid);
     void apply_changes(HWND hDlg);
     void set_size_on_disk(HWND hwndDlg);
-    void add_to_search_list(WCHAR* fn);
     DWORD search_list_thread();
-    void do_search(WCHAR* fn);
+    void do_search(const wstring& fn);
     void update_size_details_dialog(HWND hDlg);
     void open_as_admin(HWND hwndDlg);
     void set_cmdline(const wstring& cmdline);
@@ -181,7 +180,7 @@ private:
     bool stgm_set;
     bool flags_changed, perms_changed, uid_changed, gid_changed;
     uint64_t sizes[4], totalsize;
-    deque<WCHAR*> search_list;
+    deque<wstring> search_list;
     wstring filename;
 
     void apply_changes_file(HWND hDlg, const wstring& fn);

@@ -57,48 +57,29 @@ HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     return E_NOINTERFACE;
 }
 
-void BtrfsPropSheet::add_to_search_list(WCHAR* fn) {
-    WCHAR* s;
-
-    s = (WCHAR*)malloc((wcslen(fn) + 1) * sizeof(WCHAR));
-    if (!s)
-        return;
-
-    memcpy(s, fn, (wcslen(fn) + 1) * sizeof(WCHAR));
-
-    search_list.push_back(s);
-}
-
-void BtrfsPropSheet::do_search(WCHAR* fn) {
+void BtrfsPropSheet::do_search(const wstring& fn) {
     HANDLE h;
-    WCHAR* ss;
+    wstring ss;
     WIN32_FIND_DATAW ffd;
 
-    ss = (WCHAR*)malloc((wcslen(fn) + 3) * sizeof(WCHAR));
-    if (!ss)
-        return;
+    ss = fn + L"\\*"s;
 
-    memcpy(ss, fn, (wcslen(fn) + 1) * sizeof(WCHAR));
-    wcscat(ss, L"\\*");
-
-    h = FindFirstFileW(ss, &ffd);
+    h = FindFirstFileW(ss.c_str(), &ffd);
     if (h == INVALID_HANDLE_VALUE)
         return;
 
     do {
         if (ffd.cFileName[0] != '.' || ((ffd.cFileName[1] != 0) && (ffd.cFileName[1] != '.' || ffd.cFileName[2] != 0))) {
-            WCHAR* fn2 = (WCHAR*)malloc((wcslen(fn) + 1 + wcslen(ffd.cFileName) + 1) * sizeof(WCHAR));
+            wstring fn2;
 
-            memcpy(fn2, fn, (wcslen(fn) + 1) * sizeof(WCHAR));
-            wcscat(fn2, L"\\");
-            wcscat(fn2, ffd.cFileName);
+            fn2 = fn + L"\\"s + ffd.cFileName;
 
-            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                add_to_search_list(fn2);
-            } else {
+            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                search_list.push_back(fn2);
+            else {
                 HANDLE fh;
 
-                fh = CreateFileW(fn2, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                fh = CreateFileW(fn2.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                  OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
                 if (fh != INVALID_HANDLE_VALUE) {
@@ -118,8 +99,6 @@ void BtrfsPropSheet::do_search(WCHAR* fn) {
 
                     CloseHandle(fh);
                 }
-
-                free(fn2);
             }
         }
     } while (FindNextFileW(h, &ffd));
@@ -129,12 +108,9 @@ void BtrfsPropSheet::do_search(WCHAR* fn) {
 
 DWORD BtrfsPropSheet::search_list_thread() {
     while (!search_list.empty()) {
-        WCHAR* fn = search_list.front();
-
-        do_search(fn);
+        do_search(search_list.front());
 
         search_list.pop_front();
-        free(fn);
     }
 
     thread = nullptr;
@@ -177,7 +153,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
         show_admin_button = true;
 
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-        add_to_search_list((WCHAR*)fn.c_str());
+        search_list.push_back(fn);
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
@@ -382,7 +358,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
     readonly = !(fai.AccessFlags & FILE_WRITE_ATTRIBUTES);
 
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-        add_to_search_list((WCHAR*)cmdline.c_str());
+        search_list.push_back(cmdline);
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
