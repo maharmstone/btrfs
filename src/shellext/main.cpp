@@ -546,15 +546,13 @@ end:
     return ret;
 }
 
-static bool unreg_prop_sheet_handler(const WCHAR* filetype, const WCHAR* name) {
-    WCHAR path[MAX_PATH];
+static bool unreg_prop_sheet_handler(const wstring& filetype, const wstring& name) {
+    wstring path;
     LONG l;
 
-    wcscpy(path, filetype);
-    wcscat(path, L"\\ShellEx\\PropertySheetHandlers\\");
-    wcscat(path, name);
+    path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
 
-    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path);
+    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
 
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
