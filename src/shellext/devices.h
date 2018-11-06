@@ -31,7 +31,7 @@ typedef struct {
     wstring fstype;
     ULONG disk_num;
     ULONG part_num;
-    UINT64 size;
+    uint64_t size;
     BOOL has_parts;
     BTRFS_UUID fs_uuid;
     BTRFS_UUID dev_uuid;
@@ -44,8 +44,8 @@ typedef struct {
     const WCHAR* name;
     const char* magic;
     ULONG magiclen;
-    UINT32 sboff;
-    UINT32 kboff;
+    uint32_t sboff;
+    uint32_t kboff;
 } fs_identifier;
 
 // This list is compiled from information in libblkid, part of util-linux
@@ -146,12 +146,12 @@ private:
 class BtrfsDeviceResize {
 public:
     INT_PTR CALLBACK DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void ShowDialog(HWND hwnd, WCHAR* fn, UINT64 dev_id);
+    void ShowDialog(HWND hwnd, WCHAR* fn, uint64_t dev_id);
 
 private:
     void do_resize(HWND hwndDlg);
 
-    UINT64 dev_id, new_size;
+    uint64_t dev_id, new_size;
     WCHAR fn[MAX_PATH], new_size_text[255];
     btrfs_device dev_info;
 };

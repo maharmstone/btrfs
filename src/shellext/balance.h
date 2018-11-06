@@ -35,16 +35,16 @@ public:
     INT_PTR CALLBACK BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
-    void ShowBalanceOptions(HWND hwndDlg, UINT8 type);
+    void ShowBalanceOptions(HWND hwndDlg, uint8_t type);
     void SaveBalanceOpts(HWND hwndDlg);
     void StartBalance(HWND hwndDlg);
     void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
     void PauseBalance(HWND hwndDlg);
     void StopBalance(HWND hwndDlg);
 
-    UINT32 balance_status;
+    uint32_t balance_status;
     btrfs_balance_opts data_opts, metadata_opts, system_opts;
-    UINT8 opts_type;
+    uint8_t opts_type;
     btrfs_query_balance bqb;
     BOOL cancelling;
     BOOL removing;

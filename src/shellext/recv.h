@@ -26,7 +26,7 @@ extern LONG objs_loaded;
 
 typedef struct {
     BTRFS_UUID uuid;
-    UINT64 transid;
+    uint64_t transid;
     wstring path;
 } subvol_cache;
 
@@ -53,33 +53,33 @@ public:
     INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
-    BOOL cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_unlink(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    void add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, const wstring& path);
+    BOOL cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    void add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path);
     BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf16);
     void ShowRecvError(int resid, ...);
-    BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len);
-    BOOL do_recv(HANDLE f, UINT64* pos, UINT64 size);
+    BOOL find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
+    BOOL do_recv(HANDLE f, uint64_t* pos, uint64_t size);
 
     HANDLE dir, parent, master, thread, lastwritefile;
     HWND hwnd;
     wstring streamfile, dirpath, subvolpath, lastwritepath;
     DWORD lastwriteatt;
     ULONG num_received;
-    UINT64 stransid;
+    uint64_t stransid;
     BTRFS_UUID subvol_uuid;
     BOOL running, cancelling;
     vector<subvol_cache> cache;

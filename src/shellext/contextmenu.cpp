@@ -500,7 +500,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
         ShowError(hwnd, GetLastError());
 }
 
-static UINT64 __inline sector_align(UINT64 n, UINT64 a) {
+static uint64_t __inline sector_align(uint64_t n, uint64_t a) {
     if (n & (a - 1))
         n = (n + a) & ~(a - 1);
 
@@ -777,7 +777,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
             reparse_header rh;
             ULONG rplen;
-            UINT8* rp;
+            uint8_t* rp;
 
             if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, &rh, sizeof(reparse_header), &bytesret, NULL)) {
                 if (GetLastError() != ERROR_MORE_DATA) {
@@ -787,7 +787,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             }
 
             rplen = sizeof(reparse_header) + rh.ReparseDataLength;
-            rp = (UINT8*)malloc(rplen);
+            rp = (uint8_t*)malloc(rplen);
 
             if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, rp, rplen, &bytesret, NULL)) {
                 ShowError(hwnd, GetLastError());
@@ -806,7 +806,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
             FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
             DUPLICATE_EXTENTS_DATA ded;
-            UINT64 offset, alloc_size;
+            uint64_t offset, alloc_size;
             ULONG maxdup;
 
             if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
@@ -867,7 +867,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                 if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                     HANDLE stream;
-                    UINT8* data = NULL;
+                    uint8_t* data = NULL;
 
                     if (fsd.StreamSize.QuadPart > 0) {
                         wstring fn2;
@@ -885,7 +885,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                         // We can get away with this because our streams are guaranteed to be below 64 KB -
                         // don't do this on NTFS!
-                        data = (UINT8*)malloc(fsd.StreamSize.QuadPart);
+                        data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
 
                         if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
                             ShowError(hwnd, GetLastError());
@@ -1519,7 +1519,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
             reparse_header rh;
             ULONG rplen;
-            UINT8* rp;
+            uint8_t* rp;
 
             if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, &rh, sizeof(reparse_header), &bytesret, NULL)) {
                 if (GetLastError() != ERROR_MORE_DATA)
@@ -1527,7 +1527,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             }
 
             rplen = sizeof(reparse_header) + rh.ReparseDataLength;
-            rp = (UINT8*)malloc(rplen);
+            rp = (uint8_t*)malloc(rplen);
 
             if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, rp, rplen, &bytesret, NULL))
                 goto end;
@@ -1542,7 +1542,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
             FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
             DUPLICATE_EXTENTS_DATA ded;
-            UINT64 offset, alloc_size;
+            uint64_t offset, alloc_size;
             ULONG maxdup;
 
             if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO)))
@@ -1591,7 +1591,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
 
                 if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                     HANDLE stream;
-                    UINT8* data = NULL;
+                    uint8_t* data = NULL;
 
                     if (fsd.StreamSize.QuadPart > 0) {
                         wstring fn2;
@@ -1606,7 +1606,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
 
                         // We can get away with this because our streams are guaranteed to be below 64 KB -
                         // don't do this on NTFS!
-                        data = (UINT8*)malloc(fsd.StreamSize.QuadPart);
+                        data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
 
                         if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
                             free(data);

@@ -102,7 +102,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                 OBJECT_ATTRIBUTES attr;
                 GET_LENGTH_INFORMATION gli;
                 ULONG i;
-                UINT8 sb[4096];
+                uint8_t sb[4096];
 
                 path.Buffer = detail->DevicePath;
                 path.Length = path.MaximumLength = wcslen(detail->DevicePath) * sizeof(WCHAR);
@@ -167,7 +167,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                             desc2 = "";
 
                             if (sdd2->VendorIdOffset != 0) {
-                                desc2 += (char*)((UINT8*)sdd2 + sdd2->VendorIdOffset);
+                                desc2 += (char*)((uint8_t*)sdd2 + sdd2->VendorIdOffset);
 
                                 while (desc2.length() > 0 && desc2[desc2.length() - 1] == ' ')
                                     desc2 = desc2.substr(0, desc2.length() - 1);
@@ -177,7 +177,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                                 if (sdd2->VendorIdOffset != 0 && desc2.length() != 0 && desc2[desc2.length() - 1] != ' ')
                                     desc2 += " ";
 
-                                desc2 += (char*)((UINT8*)sdd2 + sdd2->ProductIdOffset);
+                                desc2 += (char*)((uint8_t*)sdd2 + sdd2->ProductIdOffset);
 
                                 while (desc2.length() > 0 && desc2[desc2.length() - 1] == ' ')
                                     desc2 = desc2.substr(0, desc2.length() - 1);
@@ -249,7 +249,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                             ULONG i;
 
                             for (i = 0; i < mmps2->NumberOfMountPoints; i++) {
-                                WCHAR* symlink = (WCHAR*)((UINT8*)mmps2 + mmps2->MountPoints[i].SymbolicLinkNameOffset);
+                                WCHAR* symlink = (WCHAR*)((uint8_t*)mmps2 + mmps2->MountPoints[i].SymbolicLinkNameOffset);
 
                                 if (mmps2->MountPoints[i].SymbolicLinkNameLength == 0x1c &&
                                     RtlCompareMemory(symlink, dosdevices, wcslen(dosdevices) * sizeof(WCHAR)) == wcslen(dosdevices) * sizeof(WCHAR) &&
@@ -449,7 +449,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                             if (j == 0)
                                 dev = &bfs2->device;
                             else
-                                dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
+                                dev = (btrfs_filesystem_device*)((uint8_t*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
 
                             if (RtlCompareMemory(&device_list[i].dev_uuid, &device_list[i].dev_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                                 for (k = 0; k < device_list.size(); k++) {
@@ -470,7 +470,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                     }
 
                     if (bfs2->next_entry != 0)
-                        bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
+                        bfs2 = (btrfs_filesystem*)((uint8_t*)bfs2 + bfs2->next_entry);
                     else
                         break;
                 }
@@ -813,7 +813,7 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                     }
 
                     if (bd->next_entry > 0)
-                        bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                        bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
                     else
                         break;
                 }
@@ -898,7 +898,7 @@ static INT_PTR CALLBACK stub_DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         return FALSE;
 }
 
-void BtrfsDeviceResize::ShowDialog(HWND hwnd, WCHAR* fn, UINT64 dev_id) {
+void BtrfsDeviceResize::ShowDialog(HWND hwnd, WCHAR* fn, uint64_t dev_id) {
     this->dev_id = dev_id;
     wcscpy(this->fn, fn);
 
@@ -946,7 +946,7 @@ end:
 
 void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     WCHAR *s, *vol, *dev;
-    UINT64 devid;
+    uint64_t devid;
     HANDLE h, token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
@@ -996,7 +996,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         goto end;
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(UINT64), NULL, 0);
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), NULL, 0);
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_CANNOT_DELETE)
             ShowStringError(hwnd, IDS_CANNOT_REMOVE_RAID);
@@ -1021,7 +1021,7 @@ end:
 
 void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     WCHAR *s, *vol, *dev;
-    UINT64 devid;
+    uint64_t devid;
     HANDLE token;
     TOKEN_PRIVILEGES tp;
     LUID luid;

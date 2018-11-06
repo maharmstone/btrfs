@@ -88,7 +88,7 @@ public:
     void ShowDevices(HWND hwndDlg);
     void ShowScrub(HWND hwndDlg);
     INT_PTR CALLBACK StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
-    void ShowStats(HWND hwndDlg, UINT64 devid);
+    void ShowStats(HWND hwndDlg, uint64_t devid);
     void ResetStats(HWND hwndDlg);
 
     btrfs_device* devices;
@@ -103,5 +103,5 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     WCHAR fn[MAX_PATH];
-    UINT64 stats_dev;
+    uint64_t stats_dev;
 };

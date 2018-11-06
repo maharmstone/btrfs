@@ -40,7 +40,7 @@
 
 BOOL have_sse42 = FALSE;
 
-static const UINT32 crctable[] = {
+static const uint32_t crctable[] = {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
     0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b, 0x4d43cfd0, 0xbf284cd3, 0xac78bf27, 0x5e133c24,
     0x105ec76f, 0xe235446c, 0xf165b798, 0x030e349b, 0xd7c45070, 0x25afd373, 0x36ff2087, 0xc494a384,
@@ -85,7 +85,7 @@ do {                                                                  \
     }                                                                   \
 } while(0)
 
-static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
+static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
     const char* buf = (const char*)input;
 
     // Annoyingly, the CRC32 intrinsics don't work properly in modern versions of MSVC -
@@ -103,33 +103,33 @@ static UINT32 crc32c_hw(const void *input, ULONG len, UINT32 crc) {
 #ifdef _AMD64_
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable:4244) // _mm_crc32_u64 wants to return UINT64(!)
+#pragma warning(disable:4244) // _mm_crc32_u64 wants to return uint64_t(!)
 #pragma warning(disable:4242)
 #endif
-    CALC_CRC(_mm_crc32_u64, crc, UINT64, buf, len);
+    CALC_CRC(_mm_crc32_u64, crc, uint64_t, buf, len);
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 #endif
-    CALC_CRC(_mm_crc32_u32, crc, UINT32, buf, len);
+    CALC_CRC(_mm_crc32_u32, crc, uint32_t, buf, len);
 
 #ifdef _MSC_VER
     for (; len > 0; len--, buf++) {
         crc = crctable[(crc ^ *buf) & 0xff] ^ (crc >> 8);
     }
 #else
-    CALC_CRC(_mm_crc32_u16, crc, UINT16, buf, len);
-    CALC_CRC(_mm_crc32_u8, crc, UINT8, buf, len);
+    CALC_CRC(_mm_crc32_u16, crc, uint16_t, buf, len);
+    CALC_CRC(_mm_crc32_u8, crc, uint8_t, buf, len);
 #endif
 
     return crc;
 }
 
-static UINT32 calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen) {
+static uint32_t calc_crc32c(uint32_t seed, uint8_t* msg, ULONG msglen) {
     if (have_sse42)
         return crc32c_hw(msg, msglen, seed);
     else {
-        UINT32 rem;
+        uint32_t rem;
         ULONG i;
 
         rem = seed;
@@ -142,12 +142,12 @@ static UINT32 calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen) {
     }
 }
 
-BOOL BtrfsRecv::find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len) {
+BOOL BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len) {
     ULONG off = 0;
 
     while (off < datalen) {
         btrfs_send_tlv* tlv = (btrfs_send_tlv*)(data + off);
-        UINT8* payload = data + off + sizeof(btrfs_send_tlv);
+        uint8_t* payload = data + off + sizeof(btrfs_send_tlv);
 
         if (off + sizeof(btrfs_send_tlv) + tlv->length > datalen) // file is truncated
             return FALSE;
@@ -198,10 +198,10 @@ BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* name;
     BTRFS_UUID* uuid;
-    UINT64* gen;
+    uint64_t* gen;
     ULONG namelen, uuidlen, genlen, bcslen;
     btrfs_create_subvol* bcs;
     NTSTATUS Status;
@@ -228,8 +228,8 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (genlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(UINT64));
+    if (genlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -293,7 +293,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, const wstring& path) {
+void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path) {
     subvol_cache sc;
 
     sc.uuid = *uuid;
@@ -303,10 +303,10 @@ void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, const wstring&
     cache.push_back(sc);
 }
 
-BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* name;
     BTRFS_UUID *uuid, *parent_uuid;
-    UINT64 *gen, *parent_transid;
+    uint64_t *gen, *parent_transid;
     ULONG namelen, uuidlen, genlen, paruuidlen, partransidlen, bcslen;
     btrfs_create_snapshot* bcs;
     NTSTATUS Status;
@@ -336,8 +336,8 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (genlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(UINT64));
+    if (genlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -356,8 +356,8 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (partransidlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(UINT64));
+    if (partransidlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -453,9 +453,9 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *name, *pathlink;
-    UINT64 *inode, *rdev = NULL, *mode = NULL;
+    uint64_t *inode, *rdev = NULL, *mode = NULL;
     ULONG namelen, inodelen, bmnsize;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -472,8 +472,8 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (inodelen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"inode", inodelen, sizeof(UINT64));
+    if (inodelen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"inode", inodelen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -485,8 +485,8 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             return FALSE;
         }
 
-        if (rdevlen < sizeof(UINT64)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdev, sizeof(UINT64));
+        if (rdevlen < sizeof(uint64_t)) {
+            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdev, sizeof(uint64_t));
             return FALSE;
         }
 
@@ -495,8 +495,8 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             return FALSE;
         }
 
-        if (modelen < sizeof(UINT64)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(UINT64));
+        if (modelen < sizeof(uint64_t)) {
+            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
             return FALSE;
         }
     } else if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
@@ -598,15 +598,15 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
 
         CloseHandle(h);
     } else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
-        UINT64* mode;
+        uint64_t* mode;
         ULONG modelen;
 
         if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
             HANDLE h;
             btrfs_set_inode_info bsii;
 
-            if (modelen < sizeof(UINT64)) {
-                ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(UINT64));
+            if (modelen < sizeof(uint64_t)) {
+                ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
                 return FALSE;
             }
 
@@ -636,7 +636,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *path, *path_to;
     ULONG path_len, path_to_len;
     wstring pathu, path_tou;
@@ -665,7 +665,7 @@ BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *path, *path_link;
     ULONG path_len, path_link_len;
     wstring pathu, path_linku;
@@ -694,7 +694,7 @@ BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* path;
     ULONG pathlen;
     wstring pathu;
@@ -729,7 +729,7 @@ BOOL BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* path;
     ULONG pathlen;
     wstring pathu;
@@ -764,9 +764,9 @@ BOOL BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *path, *xattrname;
-    UINT8* xattrdata;
+    uint8_t* xattrdata;
     ULONG pathlen, xattrnamelen, xattrdatalen;
     wstring pathu;
 
@@ -884,7 +884,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *path, *xattrname;
     ULONG pathlen, xattrnamelen;
     wstring pathu;
@@ -983,10 +983,10 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data)
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* path;
-    UINT64* offset;
-    UINT8* writedata;
+    uint64_t* offset;
+    uint8_t* writedata;
     ULONG pathlen, offsetlen, datalen;
     wstring pathu;
     HANDLE h;
@@ -1002,8 +1002,8 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (offsetlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(UINT64));
+    if (offsetlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -1076,9 +1076,9 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *path, *clonepath;
-    UINT64 *offset, *cloneoffset, *clonetransid, *clonelen;
+    uint64_t *offset, *cloneoffset, *clonetransid, *clonelen;
     BTRFS_UUID* cloneuuid;
     ULONG i, offsetlen, pathlen, clonepathlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
     wstring pathu, clonepathu, clonepar;
@@ -1096,8 +1096,8 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (offsetlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(UINT64));
+    if (offsetlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -1106,8 +1106,8 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (clonelenlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_len", clonelenlen, sizeof(UINT64));
+    if (clonelenlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_len", clonelenlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -1134,8 +1134,8 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (clonetransidlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", clonetransidlen, sizeof(UINT64));
+    if (clonetransidlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", clonetransidlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -1152,8 +1152,8 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (cloneoffsetlen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_offset", cloneoffsetlen, sizeof(UINT64));
+    if (cloneoffsetlen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_offset", cloneoffsetlen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -1218,7 +1218,7 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if ((UINT64)filesize.QuadPart < *offset + *clonelen) {
+    if ((uint64_t)filesize.QuadPart < *offset + *clonelen) {
         LARGE_INTEGER sizeli;
 
         sizeli.QuadPart = *offset + *clonelen;
@@ -1258,9 +1258,9 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* path;
-    UINT64* size;
+    uint64_t* size;
     ULONG pathlen, sizelen;
     wstring pathu;
     HANDLE h;
@@ -1277,8 +1277,8 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (sizelen < sizeof(UINT64)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"size", sizelen, sizeof(UINT64));
+    if (sizelen < sizeof(uint64_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"size", sizelen, sizeof(uint64_t));
         return FALSE;
     }
 
@@ -1331,10 +1331,10 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     HANDLE h;
     char* path;
-    UINT32* mode;
+    uint32_t* mode;
     ULONG pathlen, modelen;
     wstring pathu;
     btrfs_set_inode_info bsii;
@@ -1351,8 +1351,8 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (modelen < sizeof(UINT32)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(UINT32));
+    if (modelen < sizeof(uint32_t)) {
+        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint32_t));
         return FALSE;
     }
 
@@ -1383,10 +1383,10 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     HANDLE h;
     char* path;
-    UINT32 *uid, *gid;
+    uint32_t *uid, *gid;
     ULONG pathlen, uidlen, gidlen;
     wstring pathu;
     btrfs_set_inode_info bsii;
@@ -1409,8 +1409,8 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_UID, (void**)&uid, &uidlen)) {
-        if (uidlen < sizeof(UINT32)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uid", uidlen, sizeof(UINT32));
+        if (uidlen < sizeof(uint32_t)) {
+            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uid", uidlen, sizeof(uint32_t));
             CloseHandle(h);
             return FALSE;
         }
@@ -1420,8 +1420,8 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     }
 
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_GID, (void**)&gid, &gidlen)) {
-        if (gidlen < sizeof(UINT32)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"gid", gidlen, sizeof(UINT32));
+        if (gidlen < sizeof(uint32_t)) {
+            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"gid", gidlen, sizeof(uint32_t));
             CloseHandle(h);
             return FALSE;
         }
@@ -1447,11 +1447,11 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-static __inline UINT64 unix_time_to_win(BTRFS_TIME* t) {
+static __inline uint64_t unix_time_to_win(BTRFS_TIME* t) {
     return (t->seconds * 10000000) + (t->nanoseconds / 100) + 116444736000000000;
 }
 
-BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
+BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char* path;
     ULONG pathlen;
     wstring pathu;
@@ -1555,12 +1555,12 @@ static void delete_directory(wstring dir) {
     RemoveDirectoryW(dir.c_str());
 }
 
-static BOOL check_csum(btrfs_send_command* cmd, UINT8* data) {
-    UINT32 crc32 = cmd->csum, calc;
+static BOOL check_csum(btrfs_send_command* cmd, uint8_t* data) {
+    uint32_t crc32 = cmd->csum, calc;
 
     cmd->csum = 0;
 
-    calc = calc_crc32c(0, (UINT8*)cmd, sizeof(btrfs_send_command));
+    calc = calc_crc32c(0, (uint8_t*)cmd, sizeof(btrfs_send_command));
 
     if (cmd->length > 0)
         calc = calc_crc32c(calc, data, cmd->length);
@@ -1568,7 +1568,7 @@ static BOOL check_csum(btrfs_send_command* cmd, UINT8* data) {
     return calc == crc32 ? TRUE : FALSE;
 }
 
-BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
+BOOL BtrfsRecv::do_recv(HANDLE f, uint64_t* pos, uint64_t size) {
     btrfs_send_header header;
     BOOL b = TRUE, ended = FALSE;
 
@@ -1597,7 +1597,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
 
     while (TRUE) {
         btrfs_send_command cmd;
-        UINT8* data;
+        uint8_t* data;
         ULONG progress;
 
         if (cancelling) {
@@ -1626,7 +1626,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
                 break;
             }
 
-            data = (UINT8*)malloc(cmd.length);
+            data = (uint8_t*)malloc(cmd.length);
             if (!data) {
                 ShowRecvError(IDS_OUT_OF_MEMORY);
                 b = FALSE;
@@ -1809,7 +1809,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, UINT64* pos, UINT64 size) {
 DWORD BtrfsRecv::recv_thread() {
     HANDLE f;
     LARGE_INTEGER size;
-    UINT64 pos = 0;
+    uint64_t pos = 0;
     BOOL b;
 
     running = TRUE;
@@ -1835,7 +1835,7 @@ DWORD BtrfsRecv::recv_thread() {
 
     do {
         b = do_recv(f, &pos, size.QuadPart);
-    } while (b && pos < (UINT64)size.QuadPart);
+    } while (b && pos < (uint64_t)size.QuadPart);
 
     CloseHandle(parent);
     CloseHandle(f);
@@ -1947,7 +1947,7 @@ static INT_PTR CALLBACK stub_RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 }
 
 void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path, BOOL quiet) {
-    UINT32 cpuInfo[4];
+    uint32_t cpuInfo[4];
 
     streamfile = file;
     dirpath = path;

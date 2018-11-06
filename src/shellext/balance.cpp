@@ -29,9 +29,9 @@
 #include <shlwapi.h>
 #include <uxtheme.h>
 
-static UINT64 convtypes2[] = { BLOCK_FLAG_SINGLE, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID5, BLOCK_FLAG_RAID6, BLOCK_FLAG_RAID10 };
+static uint64_t convtypes2[] = { BLOCK_FLAG_SINGLE, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID5, BLOCK_FLAG_RAID6, BLOCK_FLAG_RAID10 };
 
-static WCHAR hex_digit(UINT8 u) {
+static WCHAR hex_digit(uint8_t u) {
     if (u >= 0xa && u <= 0xf)
         return u - 0xa + 'a';
     else
@@ -39,9 +39,9 @@ static WCHAR hex_digit(UINT8 u) {
 }
 
 static void serialize(void* data, ULONG len, WCHAR* s) {
-    UINT8* d;
+    uint8_t* d;
 
-    d = (UINT8*)data;
+    d = (uint8_t*)data;
 
     while (TRUE) {
         *s = hex_digit(*d >> 4); s++;
@@ -407,7 +407,7 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
                 i++;
 
                 if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
                 else
                     break;
             }
@@ -598,7 +598,7 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     num_writeable_devices++;
 
                 if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
                 else
                     break;
             }
@@ -865,7 +865,7 @@ static INT_PTR CALLBACK stub_BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
         return FALSE;
 }
 
-void BtrfsBalance::ShowBalanceOptions(HWND hwndDlg, UINT8 type) {
+void BtrfsBalance::ShowBalanceOptions(HWND hwndDlg, uint8_t type) {
     opts_type = type;
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_BALANCE_OPTIONS), hwndDlg, stub_BalanceOptsDlgProc, (LPARAM)this);
 }
@@ -1046,7 +1046,7 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
         }
 
         if (bd->next_entry > 0)
-            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+            bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
         else
             break;
     }
@@ -1054,7 +1054,7 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_BALANCE), hwndDlg, stub_BalanceDlgProc, (LPARAM)this);
 }
 
-static UINT8 from_hex_digit(WCHAR c) {
+static uint8_t from_hex_digit(WCHAR c) {
     if (c >= 'a' && c <= 'f')
         return c - 'a' + 0xa;
     else if (c >= 'A' && c <= 'F')
@@ -1064,9 +1064,9 @@ static UINT8 from_hex_digit(WCHAR c) {
 }
 
 static void unserialize(void* data, ULONG len, WCHAR* s) {
-    UINT8* d;
+    uint8_t* d;
 
-    d = (UINT8*)data;
+    d = (uint8_t*)data;
 
     while (s[0] != 0 && s[1] != 0 && len > 0) {
         *d = from_hex_digit(s[0]) << 4 | from_hex_digit(s[1]);

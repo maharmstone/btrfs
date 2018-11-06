@@ -119,7 +119,7 @@ void set_dpi_aware() {
     SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 }
 
-void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {
+void format_size(uint64_t size, WCHAR* s, ULONG len, BOOL show_bytes) {
     WCHAR nb[255], nb2[255], t[255], bytes[255];
     WCHAR kb[255];
     ULONG sr;

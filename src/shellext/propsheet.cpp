@@ -464,7 +464,7 @@ void BtrfsPropSheet::set_cmdline(wstring cmdline) {
     this->filename = cmdline;
 }
 
-static ULONG inode_type_to_string_ref(UINT8 type) {
+static ULONG inode_type_to_string_ref(uint8_t type) {
     switch (type) {
         case BTRFS_TYPE_FILE:
             return IDS_INODE_FILE;
@@ -492,7 +492,7 @@ static ULONG inode_type_to_string_ref(UINT8 type) {
     }
 }
 
-void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {
+void BtrfsPropSheet::change_inode_flag(HWND hDlg, uint64_t flag, UINT state) {
     if (flag & BTRFS_INODE_NODATACOW)
         flag |= BTRFS_INODE_NODATASUM;
 
@@ -672,7 +672,7 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
     SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
 
-void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
+void BtrfsPropSheet::change_uid(HWND hDlg, uint32_t uid) {
     if (this->uid != uid) {
         this->uid = uid;
         uid_changed = TRUE;
@@ -681,7 +681,7 @@ void BtrfsPropSheet::change_uid(HWND hDlg, UINT32 uid) {
     }
 }
 
-void BtrfsPropSheet::change_gid(HWND hDlg, UINT32 gid) {
+void BtrfsPropSheet::change_gid(HWND hDlg, uint32_t gid) {
     if (this->gid != gid) {
         this->gid = gid;
         gid_changed = TRUE;
@@ -746,7 +746,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
     return FALSE;
 }
 
-static void set_check_box(HWND hwndDlg, ULONG id, UINT64 min, UINT64 max) {
+static void set_check_box(HWND hwndDlg, ULONG id, uint64_t min, uint64_t max) {
     if (min && max) {
         SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_CHECKED, 0);
     } else if (!min && !max) {
@@ -804,8 +804,8 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
 }
 
 // based on functions in sys/sysmacros.h
-#define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((UINT32)((rdev) >> 32) & ~0xFFF))
-#define minor(rdev) (((rdev) & 0xFF) | ((UINT32)((rdev) >> 12) & ~0xFF))
+#define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((uint32_t)((rdev) >> 32) & ~0xFFF))
+#define minor(rdev) (((rdev) & 0xFF) | ((uint32_t)((rdev) >> 12) & ~0xFF))
 
 void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     WCHAR s[255];

@@ -38,7 +38,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     WCHAR t[255], u[255], dt[255], tm[255];
     FILETIME filetime;
     SYSTEMTIME systime;
-    UINT64 recoverable_errors = 0, unrecoverable_errors = 0;
+    uint64_t recoverable_errors = 0, unrecoverable_errors = 0;
 
     if (bqs->num_errors > 0) {
         HANDLE h;
@@ -198,7 +198,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             if (bse->next_entry == 0)
                 break;
             else
-                bse = (btrfs_scrub_error*)((UINT8*)bse + bse->next_entry);
+                bse = (btrfs_scrub_error*)((uint8_t*)bse + bse->next_entry);
         } while (TRUE);
     }
 
@@ -253,7 +253,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
 
         speed = (float)bqs2->data_scrubbed / ((float)bqs2->duration / 10000000.0f);
 
-        format_size((UINT64)speed, d2, sizeof(d2) / sizeof(WCHAR), FALSE);
+        format_size((uint64_t)speed, d2, sizeof(d2) / sizeof(WCHAR), FALSE);
 
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, bqs2->duration / 10000000, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;

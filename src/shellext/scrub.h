@@ -37,7 +37,7 @@ private:
     void StopScrub(HWND hwndDlg);
 
     WCHAR fn[MAX_PATH];
-    UINT32 status;
-    UINT64 chunks_left;
-    UINT32 num_errors;
+    uint32_t status;
+    uint64_t chunks_left;
+    uint32_t num_errors;
 };

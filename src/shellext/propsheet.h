@@ -148,10 +148,10 @@ public:
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
 
     void init_propsheet(HWND hwndDlg);
-    void change_inode_flag(HWND hDlg, UINT64 flag, UINT state);
+    void change_inode_flag(HWND hDlg, uint64_t flag, UINT state);
     void change_perm_flag(HWND hDlg, ULONG perm, UINT state);
-    void change_uid(HWND hDlg, UINT32 uid);
-    void change_gid(HWND hDlg, UINT32 gid);
+    void change_uid(HWND hDlg, uint32_t uid);
+    void change_gid(HWND hDlg, uint32_t gid);
     void apply_changes(HWND hDlg);
     void set_size_on_disk(HWND hwndDlg);
     void add_to_search_list(WCHAR* fn);
@@ -166,11 +166,11 @@ public:
     BOOL can_change_nocow;
     WCHAR size_format[255];
     HANDLE thread;
-    UINT32 min_mode, max_mode, mode, mode_set;
-    UINT64 min_flags, max_flags, flags, flags_set;
-    UINT64 subvol, inode, rdev;
-    UINT8 type, min_compression_type, max_compression_type, compress_type;
-    UINT32 uid, gid;
+    uint32_t min_mode, max_mode, mode, mode_set;
+    uint64_t min_flags, max_flags, flags, flags_set;
+    uint64_t subvol, inode, rdev;
+    uint8_t type, min_compression_type, max_compression_type, compress_type;
+    uint32_t uid, gid;
     BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols,
          ro_subvol, various_ro, ro_changed, show_admin_button;
 
@@ -180,7 +180,7 @@ private:
     STGMEDIUM stgm;
     BOOL stgm_set;
     BOOL flags_changed, perms_changed, uid_changed, gid_changed;
-    UINT64 sizes[4], totalsize;
+    uint64_t sizes[4], totalsize;
     deque<WCHAR*> search_list;
     wstring filename;
 

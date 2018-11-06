@@ -26,6 +26,7 @@
 #include <windows.h>
 #include <winternl.h>
 #include <string>
+#include <stdint.h>
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 
@@ -152,7 +153,7 @@ extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 void ShowStringError(HWND hwndDlg, int num, ...);
-void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
+void format_size(uint64_t size, WCHAR* s, ULONG len, BOOL show_bytes);
 void set_dpi_aware();
 wstring format_message(ULONG last_error);
 wstring format_ntstatus(NTSTATUS Status);

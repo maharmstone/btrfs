@@ -140,23 +140,23 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
 }
 
 typedef struct {
-    UINT64 dev_id;
+    uint64_t dev_id;
     WCHAR* name;
-    UINT64 alloc;
-    UINT64 size;
+    uint64_t alloc;
+    uint64_t size;
 } dev;
 
 void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_usage* usage) {
-    UINT8 i, j;
-    UINT64 num_devs, k, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
+    uint8_t i, j;
+    uint64_t num_devs, k, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
     btrfs_device* bd;
     dev* devs = NULL;
     btrfs_usage* bue;
     WCHAR t[255], u[255], v[255];
 
-    static const UINT64 types[] = { BLOCK_FLAG_DATA, BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA, BLOCK_FLAG_METADATA, BLOCK_FLAG_SYSTEM };
+    static const uint64_t types[] = { BLOCK_FLAG_DATA, BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA, BLOCK_FLAG_METADATA, BLOCK_FLAG_SYSTEM };
     static const ULONG typestrings[] = { IDS_USAGE_DATA, IDS_USAGE_MIXED, IDS_USAGE_METADATA, IDS_USAGE_SYSTEM };
-    static const UINT64 duptypes[] = { 0, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID10, BLOCK_FLAG_RAID5, BLOCK_FLAG_RAID6 };
+    static const uint64_t duptypes[] = { 0, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID10, BLOCK_FLAG_RAID5, BLOCK_FLAG_RAID6 };
     static const ULONG dupstrings[] = { IDS_SINGLE, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID10, IDS_RAID5, IDS_RAID6 };
 
     s[0] = 0;
@@ -168,7 +168,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         num_devs++;
 
         if (bd->next_entry > 0)
-            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+            bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
         else
             break;
     }
@@ -227,7 +227,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         k++;
 
         if (bd->next_entry > 0)
-            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+            bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
         else
             break;
     }
@@ -259,7 +259,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         }
 
         if (bue->next_entry > 0)
-            bue = (btrfs_usage*)((UINT8*)bue + bue->next_entry);
+            bue = (btrfs_usage*)((uint8_t*)bue + bue->next_entry);
         else
             break;
     }
@@ -391,7 +391,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
                         goto end;
 
                     for (k = 0; k < bue->num_devices; k++) {
-                        UINT64 l;
+                        uint64_t l;
                         BOOL found = FALSE;
 
                         format_size(bue->devices[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), FALSE);
@@ -444,7 +444,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
                 }
 
                 if (bue->next_entry > 0)
-                    bue = (btrfs_usage*)((UINT8*)bue + bue->next_entry);
+                    bue = (btrfs_usage*)((uint8_t*)bue + bue->next_entry);
                 else
                     break;
             }
@@ -689,15 +689,15 @@ static int CALLBACK lv_sort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort) {
         return 0;
 }
 
-static UINT64 find_dev_alloc(UINT64 dev_id, btrfs_usage* usage) {
+static uint64_t find_dev_alloc(uint64_t dev_id, btrfs_usage* usage) {
     btrfs_usage* bue;
-    UINT64 alloc;
+    uint64_t alloc;
 
     alloc = 0;
 
     bue = usage;
     while (TRUE) {
-        UINT64 k;
+        uint64_t k;
 
         for (k = 0; k < bue->num_devices; k++) {
             if (bue->devices[k].dev_id == dev_id)
@@ -705,7 +705,7 @@ static UINT64 find_dev_alloc(UINT64 dev_id, btrfs_usage* usage) {
         }
 
         if (bue->next_entry > 0)
-            bue = (btrfs_usage*)((UINT8*)bue + bue->next_entry);
+            bue = (btrfs_usage*)((uint8_t*)bue + bue->next_entry);
         else
             break;
     }
@@ -721,7 +721,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     btrfs_usage* usage;
     btrfs_device* bd;
     int i;
-    UINT64 num_rw_devices;
+    uint64_t num_rw_devices;
 
     h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -802,7 +802,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     while (TRUE) {
         LVITEMW lvi;
         WCHAR s[255], u[255];
-        UINT64 alloc;
+        uint64_t alloc;
 
         // ID
 
@@ -889,7 +889,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         i++;
 
         if (bd->next_entry > 0)
-            bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+            bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
         else
             break;
     }
@@ -989,7 +989,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                 }
 
                 if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
                 else
                     break;
             }
@@ -1059,7 +1059,7 @@ static INT_PTR CALLBACK stub_StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
         return FALSE;
 }
 
-void BtrfsVolPropSheet::ShowStats(HWND hwndDlg, UINT64 devid) {
+void BtrfsVolPropSheet::ShowStats(HWND hwndDlg, uint64_t devid) {
     stats_dev = devid;
 
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DEVICE_STATS), hwndDlg, stub_StatsDlgProc, (LPARAM)this);
@@ -1312,7 +1312,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                         BOOL device_readonly = FALSE;
                         LVITEMW lvi;
                         WCHAR sel[MAX_PATH];
-                        UINT64 devid;
+                        uint64_t devid;
 
                         devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
@@ -1334,7 +1334,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             }
 
                             if (bd->next_entry > 0)
-                                bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                                bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
                             else
                                 break;
                         }
@@ -1422,7 +1422,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 }
 
                 if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((UINT8*)bd + bd->next_entry);
+                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
                 else
                     break;
             }
@@ -1544,7 +1544,7 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     NTSTATUS Status;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    UINT64 devid;
+    uint64_t devid;
     WCHAR *s, *vol, *dev;
     IO_STATUS_BLOCK iosb;
 
@@ -1590,7 +1590,7 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         goto end;
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(UINT64), NULL, 0);
+    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(uint64_t), NULL, 0);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
 
