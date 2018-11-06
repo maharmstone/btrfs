@@ -69,7 +69,7 @@ private:
     bool cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
     bool cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
     void add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path);
-    bool utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf16);
+    bool utf8_to_utf16(HWND hwnd, const string& utf8, wstring& utf16);
     void ShowRecvError(int resid, ...);
     bool find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
     bool do_recv(HANDLE f, uint64_t* pos, uint64_t size);
