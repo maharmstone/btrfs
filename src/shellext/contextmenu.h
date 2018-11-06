@@ -75,7 +75,7 @@ private:
     LONG refcount;
     BOOL ignore, allow_snapshot;
     BOOL bg;
-    WCHAR path[MAX_PATH];
+    wstring path;
     STGMEDIUM stgm;
     BOOL stgm_set;
     HBITMAP uacicon;

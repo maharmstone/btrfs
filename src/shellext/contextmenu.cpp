@@ -138,12 +138,18 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
         return S_OK;
     }
 
-    if (!SHGetPathFromIDListW(pidlFolder, path))
-        return E_FAIL;
+    {
+        WCHAR pathbuf[MAX_PATH];
+
+        if (!SHGetPathFromIDListW(pidlFolder, pathbuf))
+            return E_FAIL;
+
+        path = pathbuf;
+    }
 
     // check we have permissions to create new subdirectory
 
-    h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
     if (h == INVALID_HANDLE_VALUE)
         return E_FAIL;
@@ -185,7 +191,7 @@ static BOOL get_volume_path_parent(const WCHAR* fn, WCHAR* volpath, ULONG volpat
     return b;
 }
 
-static BOOL show_reflink_paste(WCHAR* path) {
+static BOOL show_reflink_paste(const wstring& path) {
     HDROP hdrop;
     HANDLE lh;
     ULONG num_files;
@@ -194,7 +200,7 @@ static BOOL show_reflink_paste(WCHAR* path) {
     if (!IsClipboardFormatAvailable(CF_HDROP))
         return FALSE;
 
-    if (!GetVolumePathNameW(path, volpath1, sizeof(volpath1) / sizeof(WCHAR)))
+    if (!GetVolumePathNameW(path.c_str(), volpath1, sizeof(volpath1) / sizeof(WCHAR)))
         return FALSE;
 
     if (!OpenClipboard(NULL))
@@ -1068,7 +1074,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             HANDLE h;
             IO_STATUS_BLOCK iosb;
             NTSTATUS Status;
-            ULONG pathlen, searchpathlen, pathend, bcslen;
+            ULONG searchpathlen, pathend, bcslen;
             WCHAR name[MAX_PATH], *searchpath;
             btrfs_create_subvol* bcs;
             HANDLE fff;
@@ -1079,19 +1085,17 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 return E_FAIL;
             }
 
-            h = CreateFileW(path, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
             if (h == INVALID_HANDLE_VALUE) {
                 ShowError(pici->hwnd, GetLastError());
                 return E_FAIL;
             }
 
-            pathlen = wcslen(path);
-
-            searchpathlen = pathlen + wcslen(name) + 10;
+            searchpathlen = path.size() + wcslen(name) + 10;
             searchpath = (WCHAR*)malloc(searchpathlen * sizeof(WCHAR));
 
-            StringCchCopyW(searchpath, searchpathlen, path);
+            StringCchCopyW(searchpath, searchpathlen, path.c_str());
             StringCchCatW(searchpath, searchpathlen, L"\\");
             pathend = wcslen(searchpath);
 
