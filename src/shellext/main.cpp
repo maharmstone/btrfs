@@ -275,6 +275,37 @@ wstring format_ntstatus(NTSTATUS Status) {
     return s;
 }
 
+bool load_string(HMODULE module, UINT id, wstring& s) {
+    int len;
+    LPWSTR retstr = nullptr;
+
+    len = LoadStringW(module, id, (LPWSTR)&retstr, 0);
+
+    if (len == 0)
+        return false;
+
+    s = wstring(retstr, len);
+
+    return true;
+}
+
+void wstring_sprintf(wstring& s, wstring fmt, ...) {
+    int len;
+    va_list args;
+
+    va_start(args, fmt);
+    len = _vsnwprintf(nullptr, 0, fmt.c_str(), args);
+
+    if (len == 0)
+        s = L"";
+    else {
+        s.resize(len);
+        _vsnwprintf((wchar_t*)s.c_str(), len, fmt.c_str(), args);
+    }
+
+    va_end(args);
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif

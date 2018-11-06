@@ -808,7 +808,7 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
 #define minor(rdev) (((rdev) & 0xFF) | ((uint32_t)((rdev) >> 12) & ~0xFF))
 
 void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
-    WCHAR s[255];
+    wstring s;
     ULONG sr;
     int i;
     HWND comptype;
@@ -819,28 +819,24 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, 0 };
 
     if (various_subvols) {
-        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_VARIOUS, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
-    } else {
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", subvol) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
-    }
+    } else
+        wstring_sprintf(s, L"%llx", subvol);
 
-    SetDlgItemTextW(hwndDlg, IDC_SUBVOL, s);
+    SetDlgItemTextW(hwndDlg, IDC_SUBVOL, s.c_str());
 
     if (various_inodes) {
-        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_VARIOUS, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
-    } else {
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llx", inode) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
-    }
+    } else
+        wstring_sprintf(s, L"%llx", inode);
 
-    SetDlgItemTextW(hwndDlg, IDC_INODE, s);
+    SetDlgItemTextW(hwndDlg, IDC_INODE, s.c_str());
 
     if (various_types)
         sr = IDS_VARIOUS;
@@ -855,33 +851,31 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     }
 
     if (sr == IDS_INODE_UNKNOWN) {
-        WCHAR t[255];
+        wstring t;
 
-        if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, sr, t)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, type) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
+        wstring_sprintf(s, t, type);
     } else if (sr == IDS_INODE_CHAR || sr == IDS_INODE_BLOCK) {
-        WCHAR t[255];
+        wstring t;
 
-        if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, sr, t)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, major(rdev), minor(rdev)) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
+        wstring_sprintf(s, t, major(rdev), minor(rdev));
     } else {
-        if (!LoadStringW(module, sr, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, sr, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
     }
 
-    SetDlgItemTextW(hwndDlg, IDC_TYPE, s);
+    SetDlgItemTextW(hwndDlg, IDC_TYPE, s.c_str());
 
     GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_format, sizeof(size_format) / sizeof(WCHAR));
     set_size_on_disk(hwndDlg);
@@ -901,14 +895,14 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 
     i = 0;
     while (comp_types[i] != 0) {
-        WCHAR t[255];
+        wstring t;
 
-        if (!LoadStringW(module, comp_types[i], t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, comp_types[i], t)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)t);
+        SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)t.c_str());
 
         i++;
     }
@@ -927,32 +921,28 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     }
 
     if (various_uids) {
-        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_VARIOUS, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
         EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
-    } else {
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", uid) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
-    }
+    } else
+        s = to_wstring(uid);
 
-    SetDlgItemTextW(hwndDlg, IDC_UID, s);
+    SetDlgItemTextW(hwndDlg, IDC_UID, s.c_str());
 
     if (various_gids) {
-        if (!LoadStringW(module, IDS_VARIOUS, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_VARIOUS, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
         EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
-    } else {
-        if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%u", gid) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
-    }
+    } else
+        s = to_wstring(gid);
 
-    SetDlgItemTextW(hwndDlg, IDC_GID, s);
+    SetDlgItemTextW(hwndDlg, IDC_GID, s.c_str());
 
     ShowWindow(GetDlgItem(hwndDlg, IDC_SUBVOL_RO), has_subvols);
 
