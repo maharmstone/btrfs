@@ -506,15 +506,13 @@ end:
     return ret;
 }
 
-static bool unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name) {
-    WCHAR path[MAX_PATH];
+static bool unreg_context_menu_handler(const wstring& filetype, const wstring& name) {
+    wstring path;
     LONG l;
 
-    wcscpy(path, filetype);
-    wcscat(path, L"\\ShellEx\\ContextMenuHandlers\\");
-    wcscat(path, name);
+    path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
 
-    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path);
+    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
 
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
