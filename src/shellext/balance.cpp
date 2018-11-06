@@ -58,15 +58,14 @@ static void serialize(void* data, ULONG len, WCHAR* s) {
 }
 
 void BtrfsBalance::StartBalance(HWND hwndDlg) {
-    WCHAR t[MAX_PATH + 600], u[600];
+    wstring t;
+    WCHAR modfn[MAX_PATH], u[600];
     SHELLEXECUTEINFOW sei;
     btrfs_start_balance bsb;
 
-    t[0] = '"';
-    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-    wcscat(t, L"\",StartBalance ");
-    wcscat(t, fn);
-    wcscat(t, L" ");
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+    t = L"\""s + modfn + L"\",StartBalance "s + fn + L" "s;
 
     RtlCopyMemory(&bsb.opts[0], &data_opts, sizeof(btrfs_balance_opts));
     RtlCopyMemory(&bsb.opts[1], &metadata_opts, sizeof(btrfs_balance_opts));
@@ -88,7 +87,8 @@ void BtrfsBalance::StartBalance(HWND hwndDlg) {
         bsb.opts[2].flags &= ~BTRFS_BALANCE_OPTS_ENABLED;
 
     serialize(&bsb, sizeof(btrfs_start_balance), u);
-    wcscat(t, u);
+
+    t += u;
 
     RtlZeroMemory(&sei, sizeof(sei));
 
@@ -96,7 +96,7 @@ void BtrfsBalance::StartBalance(HWND hwndDlg) {
     sei.hwnd = hwndDlg;
     sei.lpVerb = L"runas";
     sei.lpFile = L"rundll32.exe";
-    sei.lpParameters = t;
+    sei.lpParameters = t.c_str();
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -127,13 +127,13 @@ void BtrfsBalance::StartBalance(HWND hwndDlg) {
 }
 
 void BtrfsBalance::PauseBalance(HWND hwndDlg) {
-    WCHAR t[MAX_PATH + 100];
+    WCHAR modfn[MAX_PATH];
+    wstring t;
     SHELLEXECUTEINFOW sei;
 
-    t[0] = '"';
-    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-    wcscat(t, L"\",PauseBalance ");
-    wcscat(t, fn);
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+    t = L"\""s + modfn + L"\",PauseBalance " + fn;
 
     RtlZeroMemory(&sei, sizeof(sei));
 
@@ -141,7 +141,7 @@ void BtrfsBalance::PauseBalance(HWND hwndDlg) {
     sei.hwnd = hwndDlg;
     sei.lpVerb = L"runas";
     sei.lpFile = L"rundll32.exe";
-    sei.lpParameters = t;
+    sei.lpParameters = t.c_str();
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -155,13 +155,13 @@ void BtrfsBalance::PauseBalance(HWND hwndDlg) {
 }
 
 void BtrfsBalance::StopBalance(HWND hwndDlg) {
-    WCHAR t[MAX_PATH + 100];
+    WCHAR modfn[MAX_PATH];
+    wstring t;
     SHELLEXECUTEINFOW sei;
 
-    t[0] = '"';
-    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-    wcscat(t, L"\",StopBalance ");
-    wcscat(t, fn);
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+    t = L"\""s + modfn + L"\",StopBalance " + fn;
 
     RtlZeroMemory(&sei, sizeof(sei));
 
@@ -169,7 +169,7 @@ void BtrfsBalance::StopBalance(HWND hwndDlg) {
     sei.hwnd = hwndDlg;
     sei.lpVerb = L"runas";
     sei.lpFile = L"rundll32.exe";
-    sei.lpParameters = t;
+    sei.lpParameters = t.c_str();
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -189,8 +189,8 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, BOOL first) {
     BOOL balancing = FALSE;
     WCHAR s[255], t[255];
 
-    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
@@ -995,8 +995,8 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
         devices = NULL;
     }
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
 
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;

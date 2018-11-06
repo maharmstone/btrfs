@@ -22,12 +22,12 @@
 
 class BtrfsBalance {
 public:
-    BtrfsBalance(WCHAR* drive, BOOL RemoveDevice = FALSE, BOOL ShrinkDevice = FALSE) {
+    BtrfsBalance(const wstring& drive, BOOL RemoveDevice = FALSE, BOOL ShrinkDevice = FALSE) {
         removing = FALSE;
         devices = NULL;
         called_from_RemoveDevice = RemoveDevice;
         called_from_ShrinkDevice = ShrinkDevice;
-        wcscpy(fn, drive);
+        fn = drive;
     }
 
     void ShowBalance(HWND hwndDlg);
@@ -49,7 +49,7 @@ private:
     BOOL cancelling;
     BOOL removing;
     BOOL shrinking;
-    WCHAR fn[MAX_PATH];
+    wstring fn;
     btrfs_device* devices;
     BOOL readonly;
     BOOL called_from_RemoveDevice, called_from_ShrinkDevice;
