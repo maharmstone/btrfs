@@ -260,7 +260,7 @@ v0.8 (2016-12-30):
  * Balances
  * Adding and removing devices
  * Showing disk usage, i.e. the equivalent to `btrfs fi usage`
-* Checksums now calulated in parallel where appropriate
+* Checksums now calculated in parallel where appropriate
 * Creation of new filesystems, with mkbtrfs.exe
 * Plug and play support for RAID devices
 * Disk usage now correctly allocated to processes in taskmgr
