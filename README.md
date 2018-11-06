@@ -2,8 +2,7 @@ WinBtrfs v1.0.2
 ---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
-A reimplementation from scratch, it contains no code from the Linux kernel,
-and should work on any version from Windows 7 onwards. It is also included
+A reimplementation from scratch, it contains no code from the Linux kernel and should work on any version from Windows 7 onwards. It is also included
 as part of the free operating system [ReactOS](https://www.reactos.org/).
 
 First, a disclaimer:
@@ -11,7 +10,7 @@ First, a disclaimer:
 This software is in active development - YOU USE IT AT YOUR OWN RISK. I take NO
 RESPONSIBILITY for any damage it may do to your filesystem. DO NOT USE THIS
 DRIVER UNLESS YOU HAVE FULL AND UP-TO-DATE BACKUPS OF ALL YOUR DATA. Do not rely
-on Btrfs' internal mechanisms: SNAPSHOTS ARE NOT BACKUPS, AND DO NOT RULE OUT
+on Btrfs' internal mechanisms: SNAPSHOTS ARE NOT BACKUPS AND DO NOT RULE OUT
 THE POSSIBILITY OF SILENT CORRUPTION.
 
 In other words, assume that the driver is going to corrupt your entire
@@ -23,10 +22,10 @@ Everything here is released under the GNU Lesser General Public Licence (LGPL);
 see the file LICENCE for more info. You are encouraged to play about with the
 source code as you will, and I'd appreciate a note (mark@harmstone.com) if you
 come up with anything nifty. On top of that, I'm open to relicensing the code if
-you've a burning desire to use it on a GPL or commercial project, or what have
+you have a burning desire to use it on a GPL or commercial project, or what have
 you - drop me a line and we'll talk.
 
-See at the end of this document for copyright details of third-party code that's
+See at the end of this document for copyright details of the third-party code that's
 included here.
 
 Donations
@@ -48,7 +47,7 @@ Features
 * Discovery of Btrfs partitions, even if Windows would normally ignore them
 * Getting and setting of Access Control Lists (ACLs), using the xattr
   security.NTACL
-* Alternate Data Streams (e.g. :Zone.Identifier is stored as the xattr
+* Alternate Data Streams (e.g.: Zone.Identifier is stored as the xattr
   user.Zone.Identifier)
 * Supported incompat flags: `mixed_backref`, `default_subvol`, `big_metadata`,
   `extended_iref`, `skinny_metadata`.
@@ -102,7 +101,7 @@ If you want to uninstall, go to Device Manager, find "Btrfs controller" under
 "Storage volumes", right click and choose "Uninstall". Tick the checkbox to
 uninstall the driver as well, and let Windows reboot itself.
 
-If you need to uninstall via the registry, open regedit and set the value of
+If you need to uninstall via the registry, open Regedit and set the value of
 HKLM\SYSTEM\CurrentControlSet\services\btrfs\Start to 4, to disable the service.
 After you reboot, you can then delete the btrfs key and remove
 C:\Windows\System32\drivers\btrfs.sys.
@@ -187,18 +186,18 @@ e-mail me what it says.
 This is something Microsoft hardcoded into LXSS, presumably to stop people hosing
 their systems by running `mkdir /mnt/c/WiNdOwS`.
 
-* Disk Management doesn't work properly, e.g. unable to change drive letter
+* Disk Management doesn't work properly, e.g. unable to change the drive letter
 
 Try changing the type of your partition in Linux. For MBR partitions, this should be
 type 7 in `fdisk`. For GPT partitions, this should be type 6 in `fdisk` ("Microsoft
 basic data"), or 0700 in `gdisk`. We have to do some chicanery to get Linux partitions
-to appear in the first place, but unfortunately this confuses diskmgmt.msc too much.
+to appear in the first place, but unfortunately, this confuses diskmgmt.msc too much.
 
 * How do I format a partition as Btrfs?
 
 Use the included command line program mkbtrfs.exe. We can't add Btrfs to Windows' own
 dialog box, unfortunately, as its list of filesystems has been hardcoded. You can also
-run `format /fs:btrfs`, if you don't need to set any Btrfs-specific options.
+run `format /fs:btrfs` if you don't need to set any Btrfs-specific options.
 
 * I can't reformat a mounted Btrfs filesystem
 
@@ -260,7 +259,7 @@ v0.8 (2016-12-30):
  * Balances
  * Adding and removing devices
  * Showing disk usage, i.e. the equivalent to `btrfs fi usage`
-* Checksums now calulated in parallel where appropriate
+* Checksums now calculated in parallel where appropriate
 * Creation of new filesystems, with mkbtrfs.exe
 * Plug and play support for RAID devices
 * Disk usage now correctly allocated to processes in taskmgr
@@ -282,10 +281,10 @@ v0.6 (2016-08-21):
 * Compression support (both zlib and lzo)
 * Mixed groups support
 * No-holes support
-* Added inode property sheet to shell extension
+* Added inode property sheet to the shell extension
 * Many more mount options (see below)
 * Better support for removable devices
-* Page file support
+* Pagefile support
 * Many miscellaneous bug fixes
 
 v0.5 (2016-07-24):
@@ -309,15 +308,15 @@ v0.4 (2016-05-02):
 * Hard links
 * Plug and play
 * Free-space cache
-* Fix problems preventing volume from being shared over the network
+* Fix problems preventing the volume from being shared over the network
 * Miscellaneous bug fixes
 
 v0.3 (2016-03-25):
 * Bug fixes:
  * Fixed crashes when metadata blocks were SINGLE, such as on SSDs
  * Fixed crash when splitting an internal tree
- * Fixed tree traversal failing when first item in tree had been deleted
- * Fixed emptying out of whole tree (probably only relevant to checksum tree)
+ * Fixed tree traversal failing when the first item in the tree had been deleted
+ * Fixed emptying out of the whole tree (probably only relevant to checksum tree)
  * Fixed "incorrect local backref count" message appearing in `btrfs check`
  * Miscellaneous other fixes
 * Added beginnings of shell extension, which currently only changes the icon of subvolumes
@@ -355,7 +354,7 @@ HKLM\SYSTEM\CurrentControlSet\Services\btrfs:
 and 3 for absolutely everything, including traces.
 * `LogDevice` (string, optional): the serial device you want to output to, such as
 `\Device\Serial0`. This is probably only useful on virtual machines.
-* `LogFile` (string, optional): the file you wish to output to, if `LogDevice` isn't set.
+* `LogFile` (string, optional): the file you wish to output to if `LogDevice` isn't set.
 Bear in mind this is a kernel filename, so you'll have to prefix it with "\\??\\" (e.g.,
 "\\??\\C:\\btrfs.log"). It probably goes without saying, but don't store this on a volume the
 driver itself is using, or you'll cause an infinite loop.
@@ -379,10 +378,10 @@ the equivalent of the `ro` flag on Linux.
 the equivalent of the `compress` flag on Linux.
 
 * `CompressForce` (DWORD): set this to 1 to force compression, i.e. to ignore the `nocompress` inode
-flag and even attempt compression of incompressible files. This isn't a good idea, but is the equivalent
+flag and even attempt compression of incompressible files. This isn't a good idea but is the equivalent
 of the `compress-force` flag on Linux.
 
-* `CompressType` (DWORD): set this to 1 to prefer zlib compression, and 2 to prefer lzo compression. The
+* `CompressType` (DWORD): set this to 1 to prefer Zlib compression, and 2 to prefer lzo compression. The
 default is 0, which uses lzo compression if the incompat flag is set, and zlib otherwise.
 
 * `FlushInterval` (DWORD): the interval in seconds between metadata flushes. The default is 30, as on Linux -
@@ -422,18 +421,14 @@ This code also contains portions of zlib, which is licensed as follows:
 
   Copyright (C) 1995-2017 Jean-loup Gailly and Mark Adler
 
-  This software is provided 'as-is', without any express or implied
-  warranty.  In no event will the authors be held liable for any damages
-  arising from the use of this software.
+  This software is provided 'as-is', without any express or implied warranty.  In no event will the authors be held liable for any damages arising from the use of this software.
 
   Permission is granted to anyone to use this software for any purpose,
   including commercial applications, and to alter it and redistribute it
   freely, subject to the following restrictions:
 
   1. The origin of this software must not be misrepresented; you must not
-     claim that you wrote the original software. If you use this software
-     in a product, an acknowledgment in the product documentation would be
-     appreciated but is not required.
+     claim that you wrote the original software. If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
   2. Altered source versions must be plainly marked as such, and must not be
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
