@@ -1372,7 +1372,7 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
     }
 }
 
-static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
+static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const wstring& destname) {
     HANDLE source, dest;
     bool ret = false;
     FILE_BASIC_INFO fbi;

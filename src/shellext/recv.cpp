@@ -1522,7 +1522,7 @@ void BtrfsRecv::ShowRecvError(int resid, ...) {
     SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
 }
 
-static void delete_directory(wstring dir) {
+static void delete_directory(const wstring& dir) {
     HANDLE h;
     WIN32_FIND_DATAW fff;
 

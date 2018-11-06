@@ -159,7 +159,7 @@ public:
     void do_search(WCHAR* fn);
     void update_size_details_dialog(HWND hDlg);
     void open_as_admin(HWND hwndDlg);
-    void set_cmdline(wstring cmdline);
+    void set_cmdline(const wstring& cmdline);
 
     bool readonly;
     bool can_change_perms;
@@ -184,7 +184,7 @@ private:
     deque<WCHAR*> search_list;
     wstring filename;
 
-    void apply_changes_file(HWND hDlg, wstring fn);
-    HRESULT check_file(wstring fn, UINT i, UINT num_files, UINT* sv);
+    void apply_changes_file(HWND hDlg, const wstring& fn);
+    HRESULT check_file(const wstring& fn, UINT i, UINT num_files, UINT* sv);
     HRESULT load_file_list();
 };

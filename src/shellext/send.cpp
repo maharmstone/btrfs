@@ -578,7 +578,7 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     CloseHandle(token);
 }
 
-static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wstring> clones) {
+static void send_subvol(const wstring& subvol, const wstring& file, const wstring& parent, const vector<wstring>& clones) {
     char* buf;
     HANDLE dirh, stream;
     ULONG bss_size, i;

@@ -622,7 +622,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     return true;
 }
 
-static void create_subvol(wstring fn) {
+static void create_subvol(const wstring& fn) {
     size_t found = fn.rfind(L"\\");
     wstring path, file;
     HANDLE h;
@@ -672,7 +672,7 @@ void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     LocalFree(args);
 }
 
-static void create_snapshot2(wstring source, wstring fn) {
+static void create_snapshot2(const wstring& source, const wstring& fn) {
     size_t found = fn.rfind(L"\\");
     wstring path, file;
     HANDLE h, src;
