@@ -293,7 +293,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     return TRUE;
 }
 
-void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, std::wstring path) {
+void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, const std::wstring& path) {
     subvol_cache sc;
 
     sc.uuid = *uuid;

@@ -68,7 +68,7 @@ private:
     BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
     BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data);
-    void add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, std::wstring path);
+    void add_cache_entry(BTRFS_UUID* uuid, UINT64 transid, const std::wstring& path);
     BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, std::wstring* utf16);
     void ShowRecvError(int resid, ...);
     BOOL find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, ULONG* len);
