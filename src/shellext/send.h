@@ -24,13 +24,13 @@
 class BtrfsSend {
 public:
     BtrfsSend() {
-        started = FALSE;
+        started = false;
         file[0] = 0;
         dirh = INVALID_HANDLE_VALUE;
         stream = INVALID_HANDLE_VALUE;
         subvol = L"";
         buf = nullptr;
-        incremental = FALSE;
+        incremental = false;
     }
 
     ~BtrfsSend() {
@@ -50,8 +50,8 @@ private:
     void RemoveClone(HWND hwnd);
     void ShowSendError(UINT msg, ...);
 
-    BOOL started;
-    BOOL incremental;
+    bool started;
+    bool incremental;
     WCHAR file[MAX_PATH], closetext[255];
     HANDLE thread, dirh, stream;
     HWND hwnd;

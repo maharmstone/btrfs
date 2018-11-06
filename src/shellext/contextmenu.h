@@ -25,10 +25,10 @@ class BtrfsContextMenu : public IShellExtInit, IContextMenu {
 public:
     BtrfsContextMenu() {
         refcount = 0;
-        ignore = TRUE;
-        stgm_set = FALSE;
+        ignore = true;
+        stgm_set = false;
         uacicon = nullptr;
-        allow_snapshot = FALSE;
+        allow_snapshot = false;
         InterlockedIncrement(&objs_loaded);
     }
 
@@ -73,13 +73,13 @@ public:
 
 private:
     LONG refcount;
-    BOOL ignore, allow_snapshot;
-    BOOL bg;
+    bool ignore, allow_snapshot;
+    bool bg;
     wstring path;
     STGMEDIUM stgm;
-    BOOL stgm_set;
+    bool stgm_set;
     HBITMAP uacicon;
 
-    BOOL reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
+    bool reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
     void get_uac_icon();
 };

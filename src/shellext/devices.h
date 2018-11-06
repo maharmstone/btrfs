@@ -32,12 +32,12 @@ typedef struct {
     ULONG disk_num;
     ULONG part_num;
     uint64_t size;
-    BOOL has_parts;
+    bool has_parts;
     BTRFS_UUID fs_uuid;
     BTRFS_UUID dev_uuid;
-    BOOL ignore;
-    BOOL multi_device;
-    BOOL is_disk;
+    bool ignore;
+    bool multi_device;
+    bool is_disk;
 } device;
 
 typedef struct {

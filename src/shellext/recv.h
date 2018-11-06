@@ -36,8 +36,8 @@ public:
         thread = nullptr;
         master = INVALID_HANDLE_VALUE;
         dir = INVALID_HANDLE_VALUE;
-        running = FALSE;
-        cancelling = FALSE;
+        running = false;
+        cancelling = false;
         stransid = 0;
         num_received = 0;
         hwnd = nullptr;
@@ -48,31 +48,31 @@ public:
         cache.clear();
     }
 
-    void Open(HWND hwnd, WCHAR* file, WCHAR* path, BOOL quiet);
+    void Open(HWND hwnd, WCHAR* file, WCHAR* path, bool quiet);
     DWORD recv_thread();
     INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
-    BOOL cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    BOOL cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
     void add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path);
-    BOOL utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf16);
+    bool utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf16);
     void ShowRecvError(int resid, ...);
-    BOOL find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
-    BOOL do_recv(HANDLE f, uint64_t* pos, uint64_t size);
+    bool find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
+    bool do_recv(HANDLE f, uint64_t* pos, uint64_t size);
 
     HANDLE dir, parent, master, thread, lastwritefile;
     HWND hwnd;
@@ -81,6 +81,6 @@ private:
     ULONG num_received;
     uint64_t stransid;
     BTRFS_UUID subvol_uuid;
-    BOOL running, cancelling;
+    bool running, cancelling;
     vector<subvol_cache> cache;
 };

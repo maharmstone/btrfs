@@ -32,7 +32,7 @@
 
 void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     btrfs_query_scrub* bqs2 = nullptr;
-    BOOL alloc_bqs2 = FALSE;
+    bool alloc_bqs2 = false;
     NTSTATUS Status;
     wstring s;
     WCHAR t[255], u[255], dt[255], tm[255];
@@ -72,7 +72,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             }
         } while (Status == STATUS_BUFFER_OVERFLOW);
 
-        alloc_bqs2 = TRUE;
+        alloc_bqs2 = true;
 
         CloseHandle(h);
     } else
@@ -199,7 +199,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
                 break;
             else
                 bse = (btrfs_scrub_error*)((uint8_t*)bse + bse->next_entry);
-        } while (TRUE);
+        } while (true);
     }
 
     if (bqs2->finish_time.QuadPart > 0) {
@@ -249,11 +249,11 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             goto end;
         }
 
-        format_size(bqs2->data_scrubbed, d1, sizeof(d1) / sizeof(WCHAR), FALSE);
+        format_size(bqs2->data_scrubbed, d1, sizeof(d1) / sizeof(WCHAR), false);
 
         speed = (float)bqs2->data_scrubbed / ((float)bqs2->duration / 10000000.0f);
 
-        format_size((uint64_t)speed, d2, sizeof(d2) / sizeof(WCHAR), FALSE);
+        format_size((uint64_t)speed, d2, sizeof(d2) / sizeof(WCHAR), false);
 
         if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, bqs2->duration / 10000000, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
@@ -295,7 +295,7 @@ end:
         free(bqs2);
 }
 
-void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
+void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
     HANDLE h;
     btrfs_query_scrub bqs;
 
@@ -323,9 +323,9 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
         WCHAR s[255];
 
         if (bqs.status == BTRFS_SCRUB_STOPPED) {
-            EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), TRUE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), true);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), false);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), false);
 
             if (bqs.error != STATUS_SUCCESS) {
                 WCHAR t[255];
@@ -347,9 +347,9 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, BOOL first_time) {
             WCHAR t[255];
             float pc;
 
-            EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), FALSE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), TRUE);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), TRUE);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), false);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), true);
+            EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), true);
 
             if (!LoadStringW(module, bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING, t, sizeof(t) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
@@ -428,7 +428,7 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
             return;
         }
 
-        RefreshScrubDlg(hwndDlg, TRUE);
+        RefreshScrubDlg(hwndDlg, true);
 
         CloseHandle(h);
     } else {
@@ -500,7 +500,7 @@ void BtrfsScrub::StopScrub(HWND hwndDlg) {
 INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
-            RefreshScrubDlg(hwndDlg, TRUE);
+            RefreshScrubDlg(hwndDlg, true);
             SetTimer(hwndDlg, 1, 1000, nullptr);
         break;
 
@@ -511,30 +511,30 @@ INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
                         case IDOK:
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
-                        return TRUE;
+                        return true;
 
                         case IDC_START_SCRUB:
                             StartScrub(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDC_PAUSE_SCRUB:
                             PauseScrub(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDC_CANCEL_SCRUB:
                             StopScrub(hwndDlg);
-                        return TRUE;
+                        return true;
                     }
                 break;
             }
         break;
 
         case WM_TIMER:
-            RefreshScrubDlg(hwndDlg, FALSE);
+            RefreshScrubDlg(hwndDlg, false);
         break;
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -550,7 +550,7 @@ static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     if (bs)
         return bs->ScrubDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -573,7 +573,7 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -616,7 +616,7 @@ void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         tp.Privileges[0].Luid = luid;
         tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
             CloseHandle(token);
             goto end;
         }
@@ -662,7 +662,7 @@ void CALLBACK StopScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
         tp.Privileges[0].Luid = luid;
         tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
             goto end;
 
         CloseHandle(token);

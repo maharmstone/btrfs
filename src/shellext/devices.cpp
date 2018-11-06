@@ -137,9 +137,9 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                 dev.friendly_name = L"";
                 dev.drive = L"";
                 dev.fstype = L"";
-                dev.has_parts = FALSE;
-                dev.ignore = FALSE;
-                dev.multi_device = FALSE;
+                dev.has_parts = false;
+                dev.ignore = false;
+                dev.multi_device = false;
 
                 dev.is_disk = RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID);
 
@@ -218,7 +218,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                     } while (Status == STATUS_BUFFER_TOO_SMALL);
 
                     if (NT_SUCCESS(Status) && dli->PartitionCount > 0)
-                        dev.has_parts = TRUE;
+                        dev.has_parts = true;
 
                     free(dli);
                 } else {
@@ -306,7 +306,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                         name = get_mountdev_name(file);
 
                         if (name.length() > pref.length() && RtlCompareMemory(name.c_str(), pref.c_str(), pref.length() * sizeof(WCHAR)) == pref.length() * sizeof(WCHAR))
-                            dev.ignore = TRUE;
+                            dev.ignore = true;
                     }
                 }
 
@@ -440,7 +440,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             if (bfs && device_list[i].drive == L"" && device_list[i].fstype == L"Btrfs") {
                 btrfs_filesystem* bfs2 = bfs;
 
-                while (TRUE) {
+                while (true) {
                     if (RtlCompareMemory(&bfs2->uuid, &device_list[i].fs_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                         ULONG j, k;
                         btrfs_filesystem_device* dev;
@@ -493,7 +493,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                 name += L", ";
             }
 
-            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), FALSE);
+            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), false);
             name += size;
 
             name += L")";
@@ -630,7 +630,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
         {
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
             populate_device_tree(GetDlgItem(hwndDlg, IDC_DEVICE_TREE));
-            EnableWindow(GetDlgItem(hwndDlg, IDOK), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDOK), false);
             break;
         }
 
@@ -640,11 +640,11 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     switch (LOWORD(wParam)) {
                         case IDOK:
                             AddDevice(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
-                        return TRUE;
+                        return true;
                     }
                 break;
             }
@@ -656,7 +656,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 {
                     NMTREEVIEWW* nmtv = (NMTREEVIEWW*)lParam;
                     TVITEMW tvi;
-                    BOOL enable = FALSE;
+                    bool enable = false;
 
                     RtlZeroMemory(&tvi, sizeof(TVITEMW));
                     tvi.hItem = nmtv->itemNew.hItem;
@@ -677,7 +677,7 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
         break;
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -693,7 +693,7 @@ static INT_PTR CALLBACK stub_DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wP
     if (bda)
         return bda->DeviceAddDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void BtrfsDeviceAdd::ShowDialog() {
@@ -739,7 +739,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
         WCHAR s[255], t[255], u[255];
 
         LoadStringW(module, IDS_RESIZE_SUCCESSFUL, s, sizeof(s) / sizeof(WCHAR));
-        format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+        format_size(new_size, u, sizeof(u) / sizeof(WCHAR), true);
         StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id, u);
         MessageBoxW(hwndDlg, t, L"", MB_OK);
 
@@ -751,7 +751,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
         par = GetParent(hwndDlg);
         EndDialog(hwndDlg, 0);
 
-        bb = new BtrfsBalance(fn, FALSE, TRUE);
+        bb = new BtrfsBalance(fn, false, true);
 
         bb->ShowBalance(par);
 
@@ -780,13 +780,13 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 IO_STATUS_BLOCK iosb;
                 btrfs_device *devices, *bd;
                 ULONG devsize;
-                BOOL found = FALSE;
+                bool found = false;
                 HWND slider;
 
                 devsize = 1024;
                 devices = (btrfs_device*)malloc(devsize);
 
-                while (TRUE) {
+                while (true) {
                     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
                     if (Status == STATUS_BUFFER_OVERFLOW) {
                         devsize += 1024;
@@ -800,15 +800,15 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 if (!NT_SUCCESS(Status)) {
                     free(devices);
                     CloseHandle(h);
-                    return FALSE;
+                    return false;
                 }
 
                 bd = devices;
 
-                while (TRUE) {
+                while (true) {
                     if (bd->dev_id == dev_id) {
                         memcpy(&dev_info, bd, sizeof(btrfs_device));
-                        found = TRUE;
+                        found = true;
                         break;
                     }
 
@@ -821,14 +821,14 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 if (!found) {
                     free(devices);
                     CloseHandle(h);
-                    return FALSE;
+                    return false;
                 }
 
                 free(devices);
                 CloseHandle(h);
 
                 GetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, s, sizeof(s) / sizeof(WCHAR));
-                format_size(dev_info.size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+                format_size(dev_info.size, u, sizeof(u) / sizeof(WCHAR), true);
                 StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, u);
                 SetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, t);
 
@@ -839,11 +839,11 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
 
                 slider = GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER);
-                SendMessageW(slider, TBM_SETRANGEMIN, FALSE, 0);
-                SendMessageW(slider, TBM_SETRANGEMAX, FALSE, dev_info.max_size / 1048576);
-                SendMessageW(slider, TBM_SETPOS, TRUE, new_size / 1048576);
+                SendMessageW(slider, TBM_SETRANGEMIN, false, 0);
+                SendMessageW(slider, TBM_SETRANGEMAX, false, dev_info.max_size / 1048576);
+                SendMessageW(slider, TBM_SETPOS, true, new_size / 1048576);
             } else
-                return FALSE;
+                return false;
 
             break;
         }
@@ -854,11 +854,11 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                     switch (LOWORD(wParam)) {
                         case IDOK:
                             do_resize(hwndDlg);
-                            return TRUE;
+                            return true;
 
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
-                            return TRUE;
+                            return true;
                     }
                 break;
             }
@@ -870,17 +870,17 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
 
             new_size = UInt32x32To64(SendMessageW(GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER), TBM_GETPOS, 0, 0), 1048576);
 
-            format_size(new_size, u, sizeof(u) / sizeof(WCHAR), TRUE);
+            format_size(new_size, u, sizeof(u) / sizeof(WCHAR), true);
             StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), new_size_text, u);
             SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
 
-            EnableWindow(GetDlgItem(hwndDlg, IDOK), new_size > 0 ? TRUE : FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, IDOK), new_size > 0 ? true : false);
 
             break;
         }
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -895,7 +895,7 @@ static INT_PTR CALLBACK stub_DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
     if (bdr)
         return bdr->DeviceResizeDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void BtrfsDeviceResize::ShowDialog(HWND hwnd, const wstring& fn, uint64_t dev_id) {
@@ -931,7 +931,7 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -970,7 +970,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -1009,7 +1009,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     CloseHandle(h);
 
-    bb = new BtrfsBalance(vol, TRUE);
+    bb = new BtrfsBalance(vol, true);
 
     bb->ShowBalance(hwnd);
 
@@ -1043,7 +1043,7 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }

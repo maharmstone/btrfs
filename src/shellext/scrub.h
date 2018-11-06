@@ -30,7 +30,7 @@ public:
     INT_PTR CALLBACK ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
-    void RefreshScrubDlg(HWND hwndDlg, BOOL first_time);
+    void RefreshScrubDlg(HWND hwndDlg, bool first_time);
     void UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs);
     void StartScrub(HWND hwndDlg);
     void PauseScrub(HWND hwndDlg);

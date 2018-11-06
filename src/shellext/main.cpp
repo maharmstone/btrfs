@@ -119,7 +119,7 @@ void set_dpi_aware() {
     SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 }
 
-void format_size(uint64_t size, WCHAR* s, ULONG len, BOOL show_bytes) {
+void format_size(uint64_t size, WCHAR* s, ULONG len, bool show_bytes) {
     WCHAR nb[255], nb2[255], t[255], bytes[255];
     WCHAR kb[255];
     ULONG sr;
@@ -325,7 +325,7 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     return CLASS_E_CLASSNOTAVAILABLE;
 }
 
-static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWORD type, const BYTE* data, DWORD datasize) {
+static bool write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWORD type, const BYTE* data, DWORD datasize) {
     LONG l;
     HKEY hk;
     DWORD dispos;
@@ -336,7 +336,7 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
         wsprintfW(s, L"RegCreateKey returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        return FALSE;
+        return false;
     }
 
     l = RegSetValueExW(hk, val, 0, type, data, datasize);
@@ -345,7 +345,7 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
         wsprintfW(s, L"RegSetValueEx returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        return FALSE;
+        return false;
     }
 
     l = RegCloseKey(hk);
@@ -354,16 +354,16 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
         wsprintfW(s, L"RegCloseKey returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        return FALSE;
+        return false;
     }
 
-    return TRUE;
+    return true;
 }
 
-static BOOL register_clsid(const GUID clsid, const WCHAR* description) {
+static bool register_clsid(const GUID clsid, const WCHAR* description) {
     WCHAR* clsidstring;
     WCHAR inproc[MAX_PATH], progid[MAX_PATH], clsidkeyname[MAX_PATH], dllpath[MAX_PATH];
-    BOOL ret = FALSE;
+    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
@@ -382,7 +382,7 @@ static BOOL register_clsid(const GUID clsid, const WCHAR* description) {
     if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, L"ThreadingModel", REG_SZ, (BYTE*)L"Apartment", (wcslen(L"Apartment") + 1) * sizeof(WCHAR)))
         goto end;
 
-    ret = TRUE;
+    ret = true;
 
 end:
     CoTaskMemFree(clsidstring);
@@ -390,10 +390,10 @@ end:
     return ret;
 }
 
-static BOOL unregister_clsid(const GUID clsid) {
+static bool unregister_clsid(const GUID clsid) {
     WCHAR* clsidstring;
     WCHAR clsidkeyname[MAX_PATH];
-    BOOL ret = FALSE;
+    bool ret = false;
     LONG l;
 
     StringFromCLSID(clsid, &clsidstring);
@@ -406,19 +406,19 @@ static BOOL unregister_clsid(const GUID clsid) {
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        ret = FALSE;
+        ret = false;
     } else
-        ret = TRUE;
+        ret = true;
 
     CoTaskMemFree(clsidstring);
 
     return ret;
 }
 
-static BOOL reg_icon_overlay(const GUID clsid, const WCHAR* name) {
+static bool reg_icon_overlay(const GUID clsid, const WCHAR* name) {
     WCHAR path[MAX_PATH];
     WCHAR* clsidstring;
-    BOOL ret = FALSE;
+    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
@@ -428,7 +428,7 @@ static BOOL reg_icon_overlay(const GUID clsid, const WCHAR* name) {
     if (!write_reg_key(HKEY_LOCAL_MACHINE, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
         goto end;
 
-    ret = TRUE;
+    ret = true;
 
 end:
     CoTaskMemFree(clsidstring);
@@ -436,7 +436,7 @@ end:
     return ret;
 }
 
-static BOOL unreg_icon_overlay(const WCHAR* name) {
+static bool unreg_icon_overlay(const WCHAR* name) {
     WCHAR path[MAX_PATH];
     LONG l;
 
@@ -450,15 +450,15 @@ static BOOL unreg_icon_overlay(const WCHAR* name) {
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        return FALSE;
+        return false;
     } else
-        return TRUE;
+        return true;
 }
 
-static BOOL reg_context_menu_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
+static bool reg_context_menu_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
     WCHAR path[MAX_PATH];
     WCHAR* clsidstring;
-    BOOL ret = FALSE;
+    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
@@ -469,7 +469,7 @@ static BOOL reg_context_menu_handler(const GUID clsid, const WCHAR* filetype, co
     if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
         goto end;
 
-    ret = TRUE;
+    ret = true;
 
 end:
     CoTaskMemFree(clsidstring);
@@ -477,7 +477,7 @@ end:
     return ret;
 }
 
-static BOOL unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name) {
+static bool unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name) {
     WCHAR path[MAX_PATH];
     LONG l;
 
@@ -492,15 +492,15 @@ static BOOL unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name)
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        return FALSE;
+        return false;
     } else
-        return TRUE;
+        return true;
 }
 
-static BOOL reg_prop_sheet_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
+static bool reg_prop_sheet_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
     WCHAR path[MAX_PATH];
     WCHAR* clsidstring;
-    BOOL ret = FALSE;
+    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
@@ -511,7 +511,7 @@ static BOOL reg_prop_sheet_handler(const GUID clsid, const WCHAR* filetype, cons
     if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
         goto end;
 
-    ret = TRUE;
+    ret = true;
 
 end:
     CoTaskMemFree(clsidstring);
@@ -519,7 +519,7 @@ end:
     return ret;
 }
 
-static BOOL unreg_prop_sheet_handler(const WCHAR* filetype, const WCHAR* name) {
+static bool unreg_prop_sheet_handler(const WCHAR* filetype, const WCHAR* name) {
     WCHAR path[MAX_PATH];
     LONG l;
 
@@ -534,9 +534,9 @@ static BOOL unreg_prop_sheet_handler(const WCHAR* filetype, const WCHAR* name) {
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
         MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
-        return FALSE;
+        return false;
     } else
-        return TRUE;
+        return true;
 }
 
 STDAPI DllRegisterServer(void) {
@@ -619,7 +619,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     if (dwReason == DLL_PROCESS_ATTACH)
         module = (HMODULE)hModule;
 
-    return TRUE;
+    return true;
 }
 
 static void create_subvol(wstring fn) {
@@ -647,8 +647,8 @@ static void create_subvol(wstring fn) {
     bcslen = offsetof(btrfs_create_subvol, name[0]) + (file.length() * sizeof(WCHAR));
     bcs = (btrfs_create_subvol*)malloc(bcslen);
 
-    bcs->readonly = FALSE;
-    bcs->posix = FALSE;
+    bcs->readonly = false;
+    bcs->posix = false;
     bcs->namelen = file.length() * sizeof(WCHAR);
     memcpy(bcs->name, file.c_str(), bcs->namelen);
 
@@ -703,8 +703,8 @@ static void create_snapshot2(wstring source, wstring fn) {
     bcslen = offsetof(btrfs_create_snapshot, name[0]) + (file.length() * sizeof(WCHAR));
     bcs = (btrfs_create_snapshot*)malloc(bcslen);
 
-    bcs->readonly = FALSE;
-    bcs->posix = FALSE;
+    bcs->readonly = false;
+    bcs->posix = false;
     bcs->namelen = file.length() * sizeof(WCHAR);
     memcpy(bcs->name, file.c_str(), bcs->namelen);
     bcs->subvol = src;

@@ -62,13 +62,13 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     if (FAILED(pdtobj->GetData(&format, &stgm)))
         return E_INVALIDARG;
 
-    stgm_set = TRUE;
+    stgm_set = true;
 
     hdrop = (HDROP)GlobalLock(stgm.hGlobal);
 
     if (!hdrop) {
         ReleaseStgMedium(&stgm);
-        stgm_set = FALSE;
+        stgm_set = false;
         return E_INVALIDARG;
     }
 
@@ -93,7 +93,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
 
             devices = (btrfs_device*)malloc(devsize);
 
-            while (TRUE) {
+            while (true) {
                 Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
                 if (Status == STATUS_BUFFER_OVERFLOW) {
                     if (i < 8) {
@@ -121,7 +121,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_UUID, nullptr, 0, &uuid, sizeof(BTRFS_UUID));
             uuid_set = NT_SUCCESS(Status);
 
-            ignore = FALSE;
+            ignore = false;
             balance = new BtrfsBalance(fn);
 
             CloseHandle(h);
@@ -164,7 +164,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     num_devs = 0;
     bd = devices;
 
-    while (TRUE) {
+    while (true) {
         num_devs++;
 
         if (bd->next_entry > 0)
@@ -181,7 +181,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
 
     dev_size = 0;
 
-    while (TRUE) {
+    while (true) {
         if (bd->missing) {
             if (!LoadStringW(module, IDS_MISSING, u, sizeof(u) / sizeof(WCHAR))) {
                 ShowError(hwndDlg, GetLastError());
@@ -237,7 +237,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     metadata_size = metadata_alloc = 0;
 
     bue = usage;
-    while (TRUE) {
+    while (true) {
         for (k = 0; k < bue->num_devices; k++) {
             dev_alloc += bue->devices[k].alloc;
 
@@ -271,7 +271,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         goto end;
     }
 
-    format_size(dev_size, v, sizeof(v) / sizeof(WCHAR), FALSE);
+    format_size(dev_size, v, sizeof(v) / sizeof(WCHAR), false);
 
     if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
         goto end;
@@ -289,7 +289,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         goto end;
     }
 
-    format_size(dev_alloc, v, sizeof(v) / sizeof(WCHAR), FALSE);
+    format_size(dev_alloc, v, sizeof(v) / sizeof(WCHAR), false);
 
     if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
         goto end;
@@ -307,7 +307,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         goto end;
     }
 
-    format_size(dev_size - dev_alloc, v, sizeof(v) / sizeof(WCHAR), FALSE);
+    format_size(dev_size - dev_alloc, v, sizeof(v) / sizeof(WCHAR), false);
 
     if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
         goto end;
@@ -359,7 +359,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         for (j = 0; j < sizeof(duptypes) / sizeof(duptypes[0]); j++) {
             bue = usage;
 
-            while (TRUE) {
+            while (true) {
                 if ((bue->type & types[i]) == types[i] &&
                     ((duptypes[j] == 0 && (bue->type & (BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1 | BLOCK_FLAG_RAID10 | BLOCK_FLAG_RAID5 | BLOCK_FLAG_RAID6)) == 0)
                     || bue->type & duptypes[j])) {
@@ -378,8 +378,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
                         goto end;
                     }
 
-                    format_size(bue->size, sizestring, sizeof(sizestring) / sizeof(WCHAR), FALSE);
-                    format_size(bue->used, usedstring, sizeof(usedstring) / sizeof(WCHAR), FALSE);
+                    format_size(bue->size, sizestring, sizeof(sizestring) / sizeof(WCHAR), false);
+                    format_size(bue->used, usedstring, sizeof(usedstring) / sizeof(WCHAR), false);
 
                     if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), typestring, dupstring, sizestring, usedstring) == STRSAFE_E_INSUFFICIENT_BUFFER)
                         goto end;
@@ -392,9 +392,9 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
 
                     for (k = 0; k < bue->num_devices; k++) {
                         uint64_t l;
-                        BOOL found = FALSE;
+                        bool found = false;
 
-                        format_size(bue->devices[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), FALSE);
+                        format_size(bue->devices[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), false);
 
                         for (l = 0; l < num_devs; l++) {
                             if (devs[l].dev_id == bue->devices[k].dev_id) {
@@ -409,7 +409,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
 
                                 devs[l].alloc += bue->devices[k].alloc;
 
-                                found = TRUE;
+                                found = true;
                                 break;
                             }
                         }
@@ -465,7 +465,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     for (k = 0; k < num_devs; k++) {
         WCHAR sizestring[255];
 
-        format_size(devs[k].size - devs[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), FALSE);
+        format_size(devs[k].size - devs[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), false);
 
         if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), L"%s\t%s", devs[k].name, sizestring) == STRSAFE_E_INSUFFICIENT_BUFFER)
             goto end;
@@ -505,7 +505,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
 
         devices = (btrfs_device*)malloc(devsize);
 
-        while (TRUE) {
+        while (true) {
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
             if (Status == STATUS_BUFFER_OVERFLOW) {
                 if (i < 8) {
@@ -531,7 +531,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
 
         usage = (btrfs_usage*)malloc(usagesize);
 
-        while (TRUE) {
+        while (true) {
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
             if (Status == STATUS_BUFFER_OVERFLOW) {
                 if (i < 8) {
@@ -553,7 +553,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
             return;
         }
 
-        ignore = FALSE;
+        ignore = false;
 
         CloseHandle(h);
     } else
@@ -590,7 +590,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
                 usage = (btrfs_usage*)malloc(usagesize);
 
-                while (TRUE) {
+                while (true) {
                     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
                     if (Status == STATUS_BUFFER_OVERFLOW) {
                         if (i < 8) {
@@ -631,18 +631,18 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                         case IDOK:
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
-                        return TRUE;
+                        return true;
 
                         case IDC_USAGE_REFRESH:
                             RefreshUsage(hwndDlg);
-                        return TRUE;
+                        return true;
                     }
                 break;
             }
         break;
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -658,7 +658,7 @@ static INT_PTR CALLBACK stub_UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     if (bvps)
         return bvps->UsageDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void BtrfsVolPropSheet::ShowUsage(HWND hwndDlg) {
@@ -696,7 +696,7 @@ static uint64_t find_dev_alloc(uint64_t dev_id, btrfs_usage* usage) {
     alloc = 0;
 
     bue = usage;
-    while (TRUE) {
+    while (true) {
         uint64_t k;
 
         for (k = 0; k < bue->num_devices; k++) {
@@ -739,7 +739,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
 
     devices = (btrfs_device*)malloc(devsize);
 
-    while (TRUE) {
+    while (true) {
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
         if (Status == STATUS_BUFFER_OVERFLOW) {
             if (i < 8) {
@@ -767,7 +767,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
 
     usage = (btrfs_usage*)malloc(usagesize);
 
-    while (TRUE) {
+    while (true) {
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
         if (Status == STATUS_BUFFER_OVERFLOW) {
             if (i < 8) {
@@ -799,7 +799,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     num_rw_devices = 0;
 
     i = 0;
-    while (TRUE) {
+    while (true) {
         LVITEMW lvi;
         WCHAR s[255], u[255];
         uint64_t alloc;
@@ -866,7 +866,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         // size
 
         lvi.iSubItem = 3;
-        format_size(bd->size, s, sizeof(s) / sizeof(WCHAR), FALSE);
+        format_size(bd->size, s, sizeof(s) / sizeof(WCHAR), false);
         lvi.pszText = s;
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
@@ -875,7 +875,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         alloc = find_dev_alloc(bd->dev_id, usage);
 
         lvi.iSubItem = 4;
-        format_size(alloc, s, sizeof(s) / sizeof(WCHAR), FALSE);
+        format_size(alloc, s, sizeof(s) / sizeof(WCHAR), false);
         lvi.pszText = s;
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
@@ -948,7 +948,7 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
         free(devices);
         devices = (btrfs_device*)malloc(devsize);
 
-        while (TRUE) {
+        while (true) {
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
             if (Status == STATUS_BUFFER_OVERFLOW) {
                 if (i < 8) {
@@ -982,7 +982,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
             bd = devices;
 
-            while (TRUE) {
+            while (true) {
                 if (bd->dev_id == stats_dev) {
                     dev = bd;
                     break;
@@ -997,13 +997,13 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
             if (!dev) {
                 EndDialog(hwndDlg, 0);
                 ShowStringError(hwndDlg, IDS_CANNOT_FIND_DEVICE);
-                return FALSE;
+                return false;
             }
 
             GetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
 
             if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev->dev_id) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return FALSE;
+                return false;
 
             SetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, t);
 
@@ -1011,12 +1011,12 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                 GetDlgItemTextW(hwndDlg, stat_ids[i], s, sizeof(s) / sizeof(WCHAR));
 
                 if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev->stats[i]) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return FALSE;
+                    return false;
 
                 SetDlgItemTextW(hwndDlg, stat_ids[i], t);
             }
 
-            SendMessageW(GetDlgItem(hwndDlg, IDC_RESET_STATS), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_RESET_STATS), BCM_SETSHIELD, 0, true);
             EnableWindow(GetDlgItem(hwndDlg, IDC_RESET_STATS), !readonly);
 
             break;
@@ -1029,18 +1029,18 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                         case IDOK:
                         case IDCANCEL:
                             EndDialog(hwndDlg, 0);
-                        return TRUE;
+                        return true;
 
                         case IDC_RESET_STATS:
                             ResetStats(hwndDlg);
-                        return TRUE;
+                        return true;
                     }
                 break;
             }
         break;
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -1056,7 +1056,7 @@ static INT_PTR CALLBACK stub_StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     if (bvps)
         return bvps->StatsDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void BtrfsVolPropSheet::ShowStats(HWND hwndDlg, uint64_t devid) {
@@ -1087,9 +1087,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             add_lv_column(devlist, IDS_DEVLIST_DESC, w * 16 / 44);
             add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
 
-            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, TRUE);
-            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_REMOVE), BCM_SETSHIELD, 0, TRUE);
-            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, true);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_REMOVE), BCM_SETSHIELD, 0, true);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), BCM_SETSHIELD, 0, true);
 
             RefreshDevList(devlist);
 
@@ -1104,7 +1104,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                         case IDCANCEL:
                             KillTimer(hwndDlg, 1);
                             EndDialog(hwndDlg, 0);
-                        return TRUE;
+                        return true;
 
                         case IDC_DEVICE_ADD:
                         {
@@ -1128,7 +1128,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             if (!ShellExecuteExW(&sei)) {
                                 ShowError(hwndDlg, GetLastError());
-                                return TRUE;
+                                return true;
                             }
 
                             WaitForSingleObject(sei.hProcess, INFINITE);
@@ -1136,12 +1136,12 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
 
-                            return TRUE;
+                            return true;
                         }
 
                         case IDC_DEVICE_REFRESH:
                             RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
-                            return TRUE;
+                            return true;
 
                         case IDC_DEVICE_SHOW_STATS:
                         {
@@ -1155,7 +1155,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 
                             if (index == -1)
-                                return TRUE;
+                                return true;
 
                             RtlZeroMemory(&lvi, sizeof(LVITEMW));
                             lvi.mask = LVIF_TEXT;
@@ -1166,7 +1166,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
 
                             ShowStats(hwndDlg, _wtoi(sel));
-                            return TRUE;
+                            return true;
                         }
 
                         case IDC_DEVICE_REMOVE:
@@ -1182,7 +1182,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 
                             if (index == -1)
-                                return TRUE;
+                                return true;
 
                             RtlZeroMemory(&lvi, sizeof(LVITEMW));
                             lvi.mask = LVIF_TEXT;
@@ -1199,19 +1199,19 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             if (!LoadStringW(module, IDS_REMOVE_DEVICE_CONFIRMATION, mess, sizeof(mess) / sizeof(WCHAR))) {
                                 ShowError(hwndDlg, GetLastError());
-                                return TRUE;
+                                return true;
                             }
 
                             if (StringCchPrintfW(mess2, sizeof(mess2) / sizeof(WCHAR), mess, sel, sel2) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                return TRUE;
+                                return true;
 
                             if (!LoadStringW(module, IDS_CONFIRMATION_TITLE, title, sizeof(title) / sizeof(WCHAR))) {
                                 ShowError(hwndDlg, GetLastError());
-                                return TRUE;
+                                return true;
                             }
 
                             if (MessageBoxW(hwndDlg, mess2, title, MB_YESNO) != IDYES)
-                                return TRUE;
+                                return true;
 
                             t[0] = '"';
                             GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
@@ -1232,7 +1232,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             if (!ShellExecuteExW(&sei)) {
                                 ShowError(hwndDlg, GetLastError());
-                                return TRUE;
+                                return true;
                             }
 
                             WaitForSingleObject(sei.hProcess, INFINITE);
@@ -1240,7 +1240,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
 
-                            return TRUE;
+                            return true;
                         }
 
                         case IDC_DEVICE_RESIZE:
@@ -1256,7 +1256,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 
                             if (index == -1)
-                                return TRUE;
+                                return true;
 
                             RtlZeroMemory(&lvi, sizeof(LVITEMW));
                             lvi.mask = LVIF_TEXT;
@@ -1285,7 +1285,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                             if (!ShellExecuteExW(&sei)) {
                                 ShowError(hwndDlg, GetLastError());
-                                return TRUE;
+                                return true;
                             }
 
                             WaitForSingleObject(sei.hProcess, INFINITE);
@@ -1309,7 +1309,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     if (nmv->uNewState & LVIS_SELECTED && !readonly) {
                         HWND devlist;
                         btrfs_device* bd;
-                        BOOL device_readonly = FALSE;
+                        bool device_readonly = false;
                         LVITEMW lvi;
                         WCHAR sel[MAX_PATH];
                         uint64_t devid;
@@ -1327,7 +1327,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                         bd = devices;
 
-                        while (TRUE) {
+                        while (true) {
                             if (bd->dev_id == devid) {
                                 device_readonly = bd->readonly;
                                 break;
@@ -1341,7 +1341,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                         EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), !device_readonly);
                     } else
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), FALSE);
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), false);
 
                     break;
                 }
@@ -1349,7 +1349,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
         break;
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -1365,7 +1365,7 @@ static INT_PTR CALLBACK stub_DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
     if (bvps)
         return bvps->DeviceDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void BtrfsVolPropSheet::ShowDevices(HWND hwndDlg) {
@@ -1412,12 +1412,12 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
             SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
-            bps->readonly = TRUE;
+            bps->readonly = true;
             bd = bps->devices;
 
-            while (TRUE) {
+            while (true) {
                 if (!bd->readonly) {
-                    bps->readonly = FALSE;
+                    bps->readonly = false;
                     break;
                 }
 
@@ -1442,16 +1442,16 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
             } else
                 SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
 
-            SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_SCRUB), BCM_SETSHIELD, 0, TRUE);
+            SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_SCRUB), BCM_SETSHIELD, 0, true);
 
-            return FALSE;
+            return false;
         }
 
         case WM_NOTIFY:
         {
             switch (((LPNMHDR)lParam)->code) {
                 case PSN_KILLACTIVE:
-                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, FALSE);
+                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, false);
                 break;
             }
             break;
@@ -1489,7 +1489,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         }
     }
 
-    return FALSE;
+    return false;
 }
 
 HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
@@ -1564,7 +1564,7 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }

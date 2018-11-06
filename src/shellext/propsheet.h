@@ -89,21 +89,21 @@ class BtrfsPropSheet : public IShellExtInit, IShellPropSheetExt {
 public:
     BtrfsPropSheet() {
         refcount = 0;
-        ignore = TRUE;
-        stgm_set = FALSE;
-        readonly = FALSE;
-        flags_changed = FALSE;
-        perms_changed = FALSE;
-        uid_changed = FALSE;
-        gid_changed = FALSE;
-        compress_type_changed = FALSE;
-        ro_changed = FALSE;
-        can_change_perms = FALSE;
-        show_admin_button = FALSE;
+        ignore = true;
+        stgm_set = false;
+        readonly = false;
+        flags_changed = false;
+        perms_changed = false;
+        uid_changed = false;
+        gid_changed = false;
+        compress_type_changed = false;
+        ro_changed = false;
+        can_change_perms = false;
+        show_admin_button = false;
         thread = nullptr;
         mode = mode_set = 0;
         flags = flags_set = 0;
-        has_subvols = FALSE;
+        has_subvols = false;
         filename = L"";
 
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
@@ -161,9 +161,9 @@ public:
     void open_as_admin(HWND hwndDlg);
     void set_cmdline(wstring cmdline);
 
-    BOOL readonly;
-    BOOL can_change_perms;
-    BOOL can_change_nocow;
+    bool readonly;
+    bool can_change_perms;
+    bool can_change_nocow;
     WCHAR size_format[255];
     HANDLE thread;
     uint32_t min_mode, max_mode, mode, mode_set;
@@ -171,15 +171,15 @@ public:
     uint64_t subvol, inode, rdev;
     uint8_t type, min_compression_type, max_compression_type, compress_type;
     uint32_t uid, gid;
-    BOOL various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols,
+    bool various_subvols, various_inodes, various_types, various_uids, various_gids, compress_type_changed, has_subvols,
          ro_subvol, various_ro, ro_changed, show_admin_button;
 
 private:
     LONG refcount;
-    BOOL ignore;
+    bool ignore;
     STGMEDIUM stgm;
-    BOOL stgm_set;
-    BOOL flags_changed, perms_changed, uid_changed, gid_changed;
+    bool stgm_set;
+    bool flags_changed, perms_changed, uid_changed, gid_changed;
     uint64_t sizes[4], totalsize;
     deque<WCHAR*> search_list;
     wstring filename;

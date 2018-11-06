@@ -174,7 +174,7 @@ HRESULT BtrfsPropSheet::check_file(wstring fn, UINT i, UINT num_files, UINT* sv)
     readonly = !(fai.AccessFlags & FILE_WRITE_ATTRIBUTES);
 
     if (!readonly && num_files == 1 && !can_change_perms)
-        show_admin_button = TRUE;
+        show_admin_button = true;
 
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         add_to_search_list((WCHAR*)fn.c_str());
@@ -195,19 +195,19 @@ HRESULT BtrfsPropSheet::check_file(wstring fn, UINT i, UINT num_files, UINT* sv)
             rdev = bii2.st_rdev;
         } else {
             if (subvol != bii2.subvol)
-                various_subvols = TRUE;
+                various_subvols = true;
 
             if (inode != bii2.inode)
-                various_inodes = TRUE;
+                various_inodes = true;
 
             if (type != bii2.type)
-                various_types = TRUE;
+                various_types = true;
 
             if (uid != bii2.st_uid)
-                various_uids = TRUE;
+                various_uids = true;
 
             if (gid != bii2.st_gid)
-                various_gids = TRUE;
+                various_gids = true;
         }
 
         if (bii2.inline_length > 0) {
@@ -230,25 +230,25 @@ HRESULT BtrfsPropSheet::check_file(wstring fn, UINT i, UINT num_files, UINT* sv)
         max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
 
         if (bii2.inode == SUBVOL_ROOT_INODE) {
-            BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+            bool ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
 
-            has_subvols = TRUE;
+            has_subvols = true;
 
             if (*sv == 0)
                 ro_subvol = ro;
             else {
                 if (ro_subvol != ro)
-                    various_ro = TRUE;
+                    various_ro = true;
             }
 
             (*sv)++;
         }
 
-        ignore = FALSE;
+        ignore = false;
 
         if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
             if (filesize.QuadPart != 0)
-                can_change_nocow = FALSE;
+                can_change_nocow = false;
         }
 
         CloseHandle(h);
@@ -272,10 +272,10 @@ HRESULT BtrfsPropSheet::load_file_list() {
     max_flags = 0;
     min_compression_type = 0xff;
     max_compression_type = 0;
-    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
+    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = false;
 
-    can_change_perms = TRUE;
-    can_change_nocow = TRUE;
+    can_change_perms = true;
+    can_change_nocow = true;
 
     sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
 
@@ -318,13 +318,13 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     if (FAILED(pdtobj->GetData(&format, &stgm)))
         return E_INVALIDARG;
 
-    stgm_set = TRUE;
+    stgm_set = true;
 
     hdrop = (HDROP)GlobalLock(stgm.hGlobal);
 
     if (!hdrop) {
         ReleaseStgMedium(&stgm);
-        stgm_set = FALSE;
+        stgm_set = false;
         return E_INVALIDARG;
     }
 
@@ -359,10 +359,10 @@ void BtrfsPropSheet::set_cmdline(wstring cmdline) {
     max_flags = 0;
     min_compression_type = 0xff;
     max_compression_type = 0;
-    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = FALSE;
+    various_subvols = various_inodes = various_types = various_uids = various_gids = various_ro = false;
 
-    can_change_perms = TRUE;
-    can_change_nocow = TRUE;
+    can_change_perms = true;
+    can_change_nocow = true;
 
     h = CreateFileW(cmdline.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
@@ -418,25 +418,25 @@ void BtrfsPropSheet::set_cmdline(wstring cmdline) {
         max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
 
         if (bii2.inode == SUBVOL_ROOT_INODE) {
-            BOOL ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+            bool ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
 
-            has_subvols = TRUE;
+            has_subvols = true;
 
             if (sv == 0)
                 ro_subvol = ro;
             else {
                 if (ro_subvol != ro)
-                    various_ro = TRUE;
+                    various_ro = true;
             }
 
             sv++;
         }
 
-        ignore = FALSE;
+        ignore = false;
 
         if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
             if (filesize.QuadPart != 0)
-                can_change_nocow = FALSE;
+                can_change_nocow = false;
         }
 
         CloseHandle(h);
@@ -506,7 +506,7 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, uint64_t flag, UINT state) {
         flags_set = ~flag;
     }
 
-    flags_changed = TRUE;
+    flags_changed = true;
 
     SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
@@ -572,27 +572,27 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, wstring fn) {
 
     if (flags_changed || perms_changed || uid_changed || gid_changed || compress_type_changed) {
         if (flags_changed) {
-            bsii.flags_changed = TRUE;
+            bsii.flags_changed = true;
             bsii.flags = (bii2.flags & ~flags_set) | (flags & flags_set);
         }
 
         if (perms_changed) {
-            bsii.mode_changed = TRUE;
+            bsii.mode_changed = true;
             bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
         }
 
         if (uid_changed) {
-            bsii.uid_changed = TRUE;
+            bsii.uid_changed = true;
             bsii.st_uid = uid;
         }
 
         if (gid_changed) {
-            bsii.gid_changed = TRUE;
+            bsii.gid_changed = true;
             bsii.st_gid = gid;
         }
 
         if (compress_type_changed) {
-            bsii.compression_type_changed = TRUE;
+            bsii.compression_type_changed = true;
             bsii.compression_type = compress_type;
         }
 
@@ -613,10 +613,10 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     WCHAR fn[MAX_PATH]; // FIXME - is this long enough?
 
     if (various_uids)
-        uid_changed = FALSE;
+        uid_changed = false;
 
     if (various_gids)
-        gid_changed = FALSE;
+        gid_changed = false;
 
     if (!flags_changed && !perms_changed && !uid_changed && !gid_changed && !compress_type_changed && !ro_changed)
         return;
@@ -633,17 +633,17 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
         }
     }
 
-    flags_changed = FALSE;
-    perms_changed = FALSE;
-    uid_changed = FALSE;
-    gid_changed = FALSE;
-    ro_changed = FALSE;
+    flags_changed = false;
+    perms_changed = false;
+    uid_changed = false;
+    gid_changed = false;
+    ro_changed = false;
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     WCHAR size_on_disk[1024], s[1024], old_text[1024];
 
-    format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR), TRUE);
+    format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR), true);
 
     if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), size_format, size_on_disk) == STRSAFE_E_INSUFFICIENT_BUFFER) {
         ShowError(hwndDlg, ERROR_INSUFFICIENT_BUFFER);
@@ -667,7 +667,7 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
         mode_set = ~flag;
     }
 
-    perms_changed = TRUE;
+    perms_changed = true;
 
     SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
@@ -675,7 +675,7 @@ void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
 void BtrfsPropSheet::change_uid(HWND hDlg, uint32_t uid) {
     if (this->uid != uid) {
         this->uid = uid;
-        uid_changed = TRUE;
+        uid_changed = true;
 
         SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
     }
@@ -684,7 +684,7 @@ void BtrfsPropSheet::change_uid(HWND hDlg, uint32_t uid) {
 void BtrfsPropSheet::change_gid(HWND hDlg, uint32_t gid) {
     if (this->gid != gid) {
         this->gid = gid;
-        gid_changed = TRUE;
+        gid_changed = true;
 
         SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
     }
@@ -696,7 +696,7 @@ void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
     ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO };
 
     for (i = 0; i < 4; i++) {
-        format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR), TRUE);
+        format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR), true);
 
         GetDlgItemTextW(hDlg, items[i], old_text, sizeof(old_text) / sizeof(WCHAR));
 
@@ -718,13 +718,13 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
             if (bps->thread)
                 SetTimer(hwndDlg, 1, 250, nullptr);
 
-            return TRUE;
+            return true;
         }
 
         case WM_COMMAND:
             if (HIWORD(wParam) == BN_CLICKED && (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)) {
                 EndDialog(hwndDlg, 0);
-                return TRUE;
+                return true;
             }
         break;
 
@@ -743,7 +743,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
         }
     }
 
-    return FALSE;
+    return false;
 }
 
 static void set_check_box(HWND hwndDlg, ULONG id, uint64_t min, uint64_t max) {
@@ -981,7 +981,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     }
 
     if (show_admin_button) {
-        SendMessageW(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), BCM_SETSHIELD, 0, TRUE);
+        SendMessageW(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), BCM_SETSHIELD, 0, true);
         ShowWindow(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), SW_SHOW);
     } else
         ShowWindow(GetDlgItem(hwndDlg, IDC_OPEN_ADMIN), SW_HIDE);
@@ -1000,7 +1000,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
             bps->init_propsheet(hwndDlg);
 
-            return FALSE;
+            return false;
         }
 
         case WM_COMMAND:
@@ -1072,17 +1072,17 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             case IDC_SUBVOL_RO:
                                 switch (IsDlgButtonChecked(hwndDlg, LOWORD(wParam))) {
                                     case BST_CHECKED:
-                                        bps->ro_subvol = TRUE;
-                                        bps->ro_changed = TRUE;
+                                        bps->ro_subvol = true;
+                                        bps->ro_changed = true;
                                     break;
 
                                     case BST_UNCHECKED:
-                                        bps->ro_subvol = FALSE;
-                                        bps->ro_changed = TRUE;
+                                        bps->ro_subvol = false;
+                                        bps->ro_changed = true;
                                     break;
 
                                     case BST_INDETERMINATE:
-                                        bps->ro_changed = FALSE;
+                                        bps->ro_changed = false;
                                     break;
                                 }
 
@@ -1128,14 +1128,14 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
                                 if (bps->min_compression_type != bps->max_compression_type) {
                                     if (sel == 0)
-                                        bps->compress_type_changed = FALSE;
+                                        bps->compress_type_changed = false;
                                     else {
                                         bps->compress_type = sel - 1;
-                                        bps->compress_type_changed = TRUE;
+                                        bps->compress_type_changed = true;
                                     }
                                 } else {
                                     bps->compress_type = sel;
-                                    bps->compress_type_changed = TRUE;
+                                    bps->compress_type_changed = true;
                                 }
 
                                 SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
@@ -1156,7 +1156,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         {
             switch (((LPNMHDR)lParam)->code) {
                 case PSN_KILLACTIVE:
-                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, FALSE);
+                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, false);
                 break;
 
                 case PSN_APPLY: {
@@ -1195,7 +1195,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         }
     }
 
-    return FALSE;
+    return false;
 }
 
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {

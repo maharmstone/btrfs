@@ -86,13 +86,13 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
         if (FAILED(pdtobj->GetData(&format, &stgm)))
             return E_INVALIDARG;
 
-        stgm_set = TRUE;
+        stgm_set = true;
 
         hdrop = (HDROP)GlobalLock(stgm.hGlobal);
 
         if (!hdrop) {
             ReleaseStgMedium(&stgm);
-            stgm_set = FALSE;
+            stgm_set = false;
             return E_INVALIDARG;
         }
 
@@ -116,12 +116,12 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                         h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
                         if (h2 != INVALID_HANDLE_VALUE)
-                            allow_snapshot = TRUE;
+                            allow_snapshot = true;
 
                         CloseHandle(h2);
 
-                        ignore = FALSE;
-                        bg = FALSE;
+                        ignore = false;
+                        bg = false;
 
                         CloseHandle(h);
                         GlobalUnlock(hdrop);
@@ -165,15 +165,15 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
 
     CloseHandle(h);
 
-    ignore = FALSE;
-    bg = TRUE;
+    ignore = false;
+    bg = true;
 
     return S_OK;
 }
 
-static BOOL get_volume_path_parent(const WCHAR* fn, WCHAR* volpath, ULONG volpathlen) {
+static bool get_volume_path_parent(const WCHAR* fn, WCHAR* volpath, ULONG volpathlen) {
     WCHAR *f, *p;
-    BOOL b;
+    bool b;
 
     f = PathFindFileNameW(fn);
 
@@ -191,33 +191,33 @@ static BOOL get_volume_path_parent(const WCHAR* fn, WCHAR* volpath, ULONG volpat
     return b;
 }
 
-static BOOL show_reflink_paste(const wstring& path) {
+static bool show_reflink_paste(const wstring& path) {
     HDROP hdrop;
     HANDLE lh;
     ULONG num_files;
     WCHAR fn[MAX_PATH], volpath1[255], volpath2[255];
 
     if (!IsClipboardFormatAvailable(CF_HDROP))
-        return FALSE;
+        return false;
 
     if (!GetVolumePathNameW(path.c_str(), volpath1, sizeof(volpath1) / sizeof(WCHAR)))
-        return FALSE;
+        return false;
 
     if (!OpenClipboard(nullptr))
-        return FALSE;
+        return false;
 
     hdrop = (HDROP)GetClipboardData(CF_HDROP);
 
     if (!hdrop) {
         CloseClipboard();
-        return FALSE;
+        return false;
     }
 
     lh = GlobalLock(hdrop);
 
     if (!lh) {
         CloseClipboard();
-        return FALSE;
+        return false;
     }
 
     num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
@@ -225,19 +225,19 @@ static BOOL show_reflink_paste(const wstring& path) {
     if (num_files == 0) {
         GlobalUnlock(lh);
         CloseClipboard();
-        return FALSE;
+        return false;
     }
 
     if (!DragQueryFileW(hdrop, 0, fn, sizeof(fn) / sizeof(WCHAR))) {
         GlobalUnlock(lh);
         CloseClipboard();
-        return FALSE;
+        return false;
     }
 
     if (!get_volume_path_parent(fn, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
         GlobalUnlock(lh);
         CloseClipboard();
-        return FALSE;
+        return false;
     }
 
     GlobalUnlock(lh);
@@ -358,7 +358,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
             mii.wID = idCmdFirst + entries;
             mii.hbmpItem = uacicon;
 
-            if (!InsertMenuItemW(hmenu, indexMenu + entries, TRUE, &mii))
+            if (!InsertMenuItemW(hmenu, indexMenu + entries, true, &mii))
                 return E_FAIL;
 
             entries++;
@@ -388,7 +388,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
             mii.wID = idCmdFirst + 1;
             mii.hbmpItem = uacicon;
 
-            if (!InsertMenuItemW(hmenu, indexMenu + 1, TRUE, &mii))
+            if (!InsertMenuItemW(hmenu, indexMenu + 1, true, &mii))
                 return E_FAIL;
 
             entries++;
@@ -487,8 +487,8 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
             namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
 
             bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - 1 + namelen);
-            bcs->readonly = FALSE;
-            bcs->posix = FALSE;
+            bcs->readonly = false;
+            bcs->posix = false;
             bcs->subvol = h;
             bcs->namelen = namelen;
             memcpy(bcs->name, &searchpath[pathend], namelen);
@@ -513,11 +513,11 @@ static uint64_t __inline sector_align(uint64_t n, uint64_t a) {
     return n;
 }
 
-BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
+bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
     HANDLE source, dest;
     WCHAR* name, volpath1[255], volpath2[255];
     wstring dirw, newpath;
-    BOOL ret = FALSE;
+    bool ret = false;
     FILE_BASIC_INFO fbi;
     FILETIME atime, mtime;
     btrfs_inode_info bii;
@@ -542,28 +542,28 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
     if (!get_volume_path_parent(fn, volpath1, sizeof(volpath1) / sizeof(WCHAR))) {
         ShowError(hwnd, GetLastError());
-        return FALSE;
+        return false;
     }
 
     if (!GetVolumePathNameW(dir, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
         ShowError(hwnd, GetLastError());
-        return FALSE;
+        return false;
     }
 
     if (wcscmp(volpath1, volpath2)) // different filesystems
-        return FALSE;
+        return false;
 
     source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
     if (source == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
-        return FALSE;
+        return false;
     }
 
     Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info));
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
         CloseHandle(source);
-        return FALSE;
+        return false;
     }
 
     // if subvol, do snapshot instead
@@ -578,7 +578,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         if (dirh == INVALID_HANDLE_VALUE) {
             ShowError(hwnd, GetLastError());
             CloseHandle(source);
-            return FALSE;
+            return false;
         }
 
         search = dirw;
@@ -619,18 +619,18 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             ShowNtStatusError(hwnd, Status);
             CloseHandle(source);
             CloseHandle(dirh);
-            return FALSE;
+            return false;
         }
 
         CloseHandle(source);
         CloseHandle(dirh);
-        return TRUE;
+        return true;
     }
 
     if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
         ShowError(hwnd, GetLastError());
         CloseHandle(source);
-        return FALSE;
+        return false;
     }
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
@@ -642,7 +642,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         if (dirh == INVALID_HANDLE_VALUE) {
             ShowError(hwnd, GetLastError());
             CloseHandle(source);
-            return FALSE;
+            return false;
         }
 
         bmnsize = offsetof(btrfs_mknod, name[0]) + (wcslen(name) * sizeof(WCHAR));
@@ -660,7 +660,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             CloseHandle(dirh);
             CloseHandle(source);
             free(bmn);
-            return FALSE;
+            return false;
         }
 
         CloseHandle(dirh);
@@ -682,7 +682,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS && wcscmp(fn, newpath.c_str())) {
             ShowError(hwnd, GetLastError());
             CloseHandle(source);
-            return FALSE;
+            return false;
         }
 
         do {
@@ -721,22 +721,22 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS) {
                     ShowError(hwnd, GetLastError());
                     CloseHandle(source);
-                    return FALSE;
+                    return false;
                 }
 
                 num++;
             } else
                 break;
-        } while (TRUE);
+        } while (true);
     }
 
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
-    bsii.flags_changed = TRUE;
+    bsii.flags_changed = true;
     bsii.flags = bii.flags;
 
     if (bii.flags & BTRFS_INODE_COMPRESS) {
-        bsii.compression_type_changed = TRUE;
+        bsii.compression_type_changed = true;
         bsii.compression_type = bii.compression_type;
     }
 
@@ -980,13 +980,13 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         goto end;
     }
 
-    ret = TRUE;
+    ret = true;
 
 end:
     if (!ret) {
         FILE_DISPOSITION_INFO fdi;
 
-        fdi.DeleteFile = TRUE;
+        fdi.DeleteFile = true;
         if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
             ShowError(hwnd, GetLastError());
     }
@@ -1124,8 +1124,8 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             bcslen = offsetof(btrfs_create_subvol, name[0]) + (wcslen(&searchpath[pathend]) * sizeof(WCHAR));
             bcs = (btrfs_create_subvol*)malloc(bcslen);
 
-            bcs->readonly = FALSE;
-            bcs->posix = FALSE;
+            bcs->readonly = false;
+            bcs->posix = false;
             bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
             memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
 
@@ -1374,7 +1374,7 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
 
 static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
     HANDLE source, dest;
-    BOOL ret = FALSE;
+    bool ret = false;
     FILE_BASIC_INFO fbi;
     FILETIME atime, mtime;
     btrfs_inode_info bii;
@@ -1475,11 +1475,11 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
 
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
-    bsii.flags_changed = TRUE;
+    bsii.flags_changed = true;
     bsii.flags = bii.flags;
 
     if (bii.flags & BTRFS_INODE_COMPRESS) {
-        bsii.compression_type_changed = TRUE;
+        bsii.compression_type_changed = true;
         bsii.compression_type = bii.compression_type;
     }
 
@@ -1687,13 +1687,13 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
     } else if (!NT_SUCCESS(Status))
         goto end;
 
-    ret = TRUE;
+    ret = true;
 
 end:
     if (!ret) {
         FILE_DISPOSITION_INFO fdi;
 
-        fdi.DeleteFile = TRUE;
+        fdi.DeleteFile = true;
         SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
     }
 
@@ -1712,7 +1712,7 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
 
     if (num_args >= 2) {
         HANDLE destdirh;
-        BOOL dest_is_dir = FALSE;
+        bool dest_is_dir = false;
         wstring dest = args[num_args - 1], destdir, destname;
         WCHAR volpath2[MAX_PATH];
         int i;
@@ -1722,7 +1722,7 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
             BY_HANDLE_FILE_INFORMATION bhfi;
 
             if (GetFileInformationByHandle(destdirh, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                dest_is_dir = TRUE;
+                dest_is_dir = true;
 
                 destdir = dest;
                 if (destdir.substr(destdir.length() - 1, 1) != L"\\")

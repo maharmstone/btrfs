@@ -22,8 +22,8 @@
 
 class BtrfsBalance {
 public:
-    BtrfsBalance(const wstring& drive, BOOL RemoveDevice = FALSE, BOOL ShrinkDevice = FALSE) {
-        removing = FALSE;
+    BtrfsBalance(const wstring& drive, bool RemoveDevice = false, bool ShrinkDevice = false) {
+        removing = false;
         devices = nullptr;
         called_from_RemoveDevice = RemoveDevice;
         called_from_ShrinkDevice = ShrinkDevice;
@@ -38,7 +38,7 @@ private:
     void ShowBalanceOptions(HWND hwndDlg, uint8_t type);
     void SaveBalanceOpts(HWND hwndDlg);
     void StartBalance(HWND hwndDlg);
-    void RefreshBalanceDlg(HWND hwndDlg, BOOL first);
+    void RefreshBalanceDlg(HWND hwndDlg, bool first);
     void PauseBalance(HWND hwndDlg);
     void StopBalance(HWND hwndDlg);
 
@@ -46,11 +46,11 @@ private:
     btrfs_balance_opts data_opts, metadata_opts, system_opts;
     uint8_t opts_type;
     btrfs_query_balance bqb;
-    BOOL cancelling;
-    BOOL removing;
-    BOOL shrinking;
+    bool cancelling;
+    bool removing;
+    bool shrinking;
     wstring fn;
     btrfs_device* devices;
-    BOOL readonly;
-    BOOL called_from_RemoveDevice, called_from_ShrinkDevice;
+    bool readonly;
+    bool called_from_RemoveDevice, called_from_ShrinkDevice;
 };

@@ -46,7 +46,7 @@ DWORD BtrfsSend::Thread() {
     btrfs_send_subvol* bss;
     btrfs_send_header header;
     btrfs_send_command end;
-    BOOL success = FALSE;
+    bool success = false;
     ULONG bss_size, i;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
@@ -184,13 +184,13 @@ DWORD BtrfsSend::Thread() {
     SetEndOfFile(stream);
 
     ShowSendError(IDS_SEND_SUCCESS);
-    success = TRUE;
+    success = true;
 
 end:
     if (!success) {
         FILE_DISPOSITION_INFO fdi;
 
-        fdi.DeleteFile = TRUE;
+        fdi.DeleteFile = true;
 
         SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
     }
@@ -206,12 +206,12 @@ end3:
     free(buf);
     buf = nullptr;
 
-    started = FALSE;
+    started = false;
 
     SetDlgItemTextW(hwnd, IDCANCEL, closetext);
-    EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
-    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), TRUE);
-    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), TRUE);
+    EnableWindow(GetDlgItem(hwnd, IDOK), true);
+    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), true);
+    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), true);
 
     return 0;
 }
@@ -244,15 +244,15 @@ void BtrfsSend::StartSend(HWND hwnd) {
             return;
     }
 
-    started = TRUE;
+    started = true;
     ShowSendError(IDS_SEND_WRITING);
 
     LoadStringW(module, IDS_SEND_CANCEL, s, sizeof(s) / sizeof(WCHAR));
     SetDlgItemTextW(hwnd, IDCANCEL, s);
 
-    EnableWindow(GetDlgItem(hwnd, IDOK), FALSE);
-    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), FALSE);
-    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), FALSE);
+    EnableWindow(GetDlgItem(hwnd, IDOK), false);
+    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), false);
+    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), false);
 
     clones.clear();
 
@@ -433,7 +433,7 @@ void BtrfsSend::RemoveClone(HWND hwnd) {
     SendMessageW(cl, LB_DELETESTRING, sel, 0);
 
     if (SendMessageW(cl, LB_GETCURSEL, 0, 0) == LB_ERR)
-        EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), FALSE);
+        EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), false);
 }
 
 INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -450,7 +450,7 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                     switch (LOWORD(wParam)) {
                         case IDOK:
                             StartSend(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDCANCEL:
                             if (started) {
@@ -459,7 +459,7 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                                 if (stream != INVALID_HANDLE_VALUE) {
                                     FILE_DISPOSITION_INFO fdi;
 
-                                    fdi.DeleteFile = TRUE;
+                                    fdi.DeleteFile = true;
 
                                     SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
                                     CloseHandle(stream);
@@ -468,54 +468,54 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                                 if (dirh != INVALID_HANDLE_VALUE)
                                     CloseHandle(dirh);
 
-                                started = FALSE;
+                                started = false;
 
                                 SetDlgItemTextW(hwndDlg, IDCANCEL, closetext);
 
-                                EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
-                                EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), TRUE);
-                                EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), TRUE);
+                                EnableWindow(GetDlgItem(hwnd, IDOK), true);
+                                EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), true);
+                                EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), true);
                             } else
                                 EndDialog(hwndDlg, 1);
-                        return TRUE;
+                        return true;
 
                         case IDC_BROWSE:
                             Browse(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDC_INCREMENTAL:
                             incremental = IsDlgButtonChecked(hwndDlg, LOWORD(wParam));
 
                             EnableWindow(GetDlgItem(hwnd, IDC_PARENT_SUBVOL), incremental);
                             EnableWindow(GetDlgItem(hwnd, IDC_PARENT_BROWSE), incremental);
-                        return TRUE;
+                        return true;
 
                         case IDC_PARENT_BROWSE:
                             BrowseParent(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDC_CLONE_ADD:
                             AddClone(hwndDlg);
-                        return TRUE;
+                        return true;
 
                         case IDC_CLONE_REMOVE:
                             RemoveClone(hwndDlg);
-                        return TRUE;
+                        return true;
                     }
                 break;
 
                 case LBN_SELCHANGE:
                     switch (LOWORD(wParam)) {
                         case IDC_CLONE_LIST:
-                            EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), TRUE);
-                        return TRUE;
+                            EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), true);
+                        return true;
                     }
                 break;
             }
         break;
     }
 
-    return FALSE;
+    return false;
 }
 
 static INT_PTR CALLBACK stub_SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -530,7 +530,7 @@ static INT_PTR CALLBACK stub_SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
     if (bs)
         return bs->SendDlgProc(hwndDlg, uMsg, wParam, lParam);
     else
-        return FALSE;
+        return false;
 }
 
 void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
@@ -563,7 +563,7 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         CloseHandle(token);
         return;
@@ -587,7 +587,7 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
     NTSTATUS Status;
     btrfs_send_header header;
     btrfs_send_command end;
-    BOOL success = FALSE;
+    bool success = false;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
@@ -672,13 +672,13 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
 
     SetEndOfFile(stream);
 
-    success = TRUE;
+    success = true;
 
 end2:
     if (!success) {
         FILE_DISPOSITION_INFO fdi;
 
-        fdi.DeleteFile = TRUE;
+        fdi.DeleteFile = true;
 
         SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
     }
@@ -717,7 +717,7 @@ void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         tp.Privileges[0].Luid = luid;
         tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
             goto end;
 
         CloseHandle(token);

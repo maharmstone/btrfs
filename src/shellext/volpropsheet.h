@@ -29,8 +29,8 @@ class BtrfsVolPropSheet : public IShellExtInit, IShellPropSheetExt {
 public:
     BtrfsVolPropSheet() {
         refcount = 0;
-        ignore = TRUE;
-        stgm_set = FALSE;
+        ignore = true;
+        stgm_set = false;
         devices = nullptr;
 
         InterlockedIncrement(&objs_loaded);
@@ -92,16 +92,16 @@ public:
     void ResetStats(HWND hwndDlg);
 
     btrfs_device* devices;
-    BOOL readonly;
+    bool readonly;
     BtrfsBalance* balance;
     BTRFS_UUID uuid;
-    BOOL uuid_set;
+    bool uuid_set;
 
 private:
     LONG refcount;
-    BOOL ignore;
+    bool ignore;
     STGMEDIUM stgm;
-    BOOL stgm_set;
+    bool stgm_set;
     WCHAR fn[MAX_PATH];
     uint64_t stats_dev;
 };
