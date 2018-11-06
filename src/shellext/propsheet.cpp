@@ -741,19 +741,21 @@ static void set_check_box(HWND hwndDlg, ULONG id, uint64_t min, uint64_t max) {
 
 void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
     ULONG num_files, i;
-    WCHAR fn[MAX_PATH];
+    WCHAR fn[MAX_PATH], modfn[MAX_PATH];
 
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
+    if (num_files == 0)
+        return;
+
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-            WCHAR t[MAX_PATH + 100];
+            wstring t;
             SHELLEXECUTEINFOW sei;
 
-            t[0] = '"';
-            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-            wcscat(t, L"\",ShowPropSheet ");
-            wcscat(t, fn);
+            t = L"\""s + modfn + L"\",ShowPropSheet "s + fn;
 
             RtlZeroMemory(&sei, sizeof(sei));
 
@@ -761,7 +763,7 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
             sei.hwnd = hwndDlg;
             sei.lpVerb = L"runas";
             sei.lpFile = L"rundll32.exe";
-            sei.lpParameters = t;
+            sei.lpParameters = t.c_str();
             sei.nShow = SW_SHOW;
             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
