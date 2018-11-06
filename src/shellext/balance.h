@@ -24,7 +24,7 @@ class BtrfsBalance {
 public:
     BtrfsBalance(const wstring& drive, BOOL RemoveDevice = FALSE, BOOL ShrinkDevice = FALSE) {
         removing = FALSE;
-        devices = NULL;
+        devices = nullptr;
         called_from_RemoveDevice = RemoveDevice;
         called_from_ShrinkDevice = ShrinkDevice;
         fn = drive;

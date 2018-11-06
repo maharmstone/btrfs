@@ -51,7 +51,7 @@ DWORD BtrfsSend::Thread() {
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
-    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (dirh == INVALID_HANDLE_VALUE) {
         ShowSendError(IDS_SEND_CANT_OPEN_DIR, subvol.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         goto end3;
@@ -69,7 +69,7 @@ DWORD BtrfsSend::Thread() {
 
         GetDlgItemTextW(hwnd, IDC_PARENT_SUBVOL, parent, sizeof(parent) / sizeof(WCHAR));
 
-        parenth = CreateFileW(parent, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        parenth = CreateFileW(parent, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (parenth == INVALID_HANDLE_VALUE) {
             ShowSendError(IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
             goto end2;
@@ -77,14 +77,14 @@ DWORD BtrfsSend::Thread() {
 
         bss->parent = parenth;
     } else
-        bss->parent = NULL;
+        bss->parent = nullptr;
 
     bss->num_clones = clones.size();
 
     for (i = 0; i < bss->num_clones; i++) {
         HANDLE h;
 
-        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ULONG j;
 
@@ -101,7 +101,7 @@ DWORD BtrfsSend::Thread() {
         bss->clones[i] = h;
     }
 
-    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, NULL, 0);
+    Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, nullptr, 0);
 
     for (i = 0; i < bss->num_clones; i++) {
         CloseHandle(bss->clones[i]);
@@ -144,7 +144,7 @@ DWORD BtrfsSend::Thread() {
 
     if (bss->parent) CloseHandle(bss->parent);
 
-    stream = CreateFileW(file, FILE_WRITE_DATA | DELETE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    stream = CreateFileW(file, FILE_WRITE_DATA | DELETE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (stream == INVALID_HANDLE_VALUE) {
         ShowSendError(IDS_SEND_CANT_OPEN_FILE, file, GetLastError(), format_message(GetLastError()).c_str());
         goto end2;
@@ -153,16 +153,16 @@ DWORD BtrfsSend::Thread() {
     memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic));
     header.version = 1;
 
-    if (!WriteFile(stream, &header, sizeof(header), NULL, NULL)) {
+    if (!WriteFile(stream, &header, sizeof(header), nullptr, nullptr)) {
         ShowSendError(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         goto end;
     }
 
     do {
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, NULL, 0, buf, SEND_BUFFER_LEN);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, nullptr, 0, buf, SEND_BUFFER_LEN);
 
         if (NT_SUCCESS(Status)) {
-            if (!WriteFile(stream, buf, iosb.Information, NULL, NULL))
+            if (!WriteFile(stream, buf, iosb.Information, nullptr, nullptr))
                 ShowSendError(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
     } while (NT_SUCCESS(Status));
@@ -176,7 +176,7 @@ DWORD BtrfsSend::Thread() {
     end.cmd = BTRFS_SEND_CMD_END;
     end.csum = 0x9dc96c50;
 
-    if (!WriteFile(stream, &end, sizeof(end), NULL, NULL)) {
+    if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr)) {
         ShowSendError(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         goto end;
     }
@@ -204,7 +204,7 @@ end2:
 
 end3:
     free(buf);
-    buf = NULL;
+    buf = nullptr;
 
     started = FALSE;
 
@@ -277,10 +277,10 @@ void BtrfsSend::StartSend(HWND hwnd) {
         }
     }
 
-    thread = CreateThread(NULL, 0, send_thread, this, 0, NULL);
+    thread = CreateThread(nullptr, 0, send_thread, this, 0, nullptr);
 
     if (!thread)
-        ShowError(NULL, GetLastError());
+        ShowError(nullptr, GetLastError());
 }
 
 void BtrfsSend::Browse(HWND hwnd) {
@@ -338,13 +338,13 @@ void BtrfsSend::BrowseParent(HWND hwnd) {
         return;
     }
 
-    h = CreateFileW(parent, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(parent, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
         return;
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
     if (!NT_SUCCESS(Status)) {
         ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
         CloseHandle(h);
@@ -398,13 +398,13 @@ void BtrfsSend::AddClone(HWND hwnd) {
         return;
     }
 
-    h = CreateFileW(path, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(path, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, path, GetLastError(), format_message(GetLastError()).c_str());
         return;
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
     if (!NT_SUCCESS(Status)) {
         ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
         CloseHandle(h);
@@ -553,7 +553,7 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         CloseHandle(token);
         return;
@@ -563,7 +563,7 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         CloseHandle(token);
         return;
@@ -591,11 +591,11 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
-    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (dirh == INVALID_HANDLE_VALUE)
         goto end3;
 
-    stream = CreateFileW(file.c_str(), FILE_WRITE_DATA | DELETE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    stream = CreateFileW(file.c_str(), FILE_WRITE_DATA | DELETE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (stream == INVALID_HANDLE_VALUE) {
         CloseHandle(dirh);
         goto end3;
@@ -608,20 +608,20 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
     if (parent != L"") {
         HANDLE parenth;
 
-        parenth = CreateFileW(parent.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        parenth = CreateFileW(parent.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (parenth == INVALID_HANDLE_VALUE)
             goto end2;
 
         bss->parent = parenth;
     } else
-        bss->parent = NULL;
+        bss->parent = nullptr;
 
     bss->num_clones = clones.size();
 
     for (i = 0; i < bss->num_clones; i++) {
         HANDLE h;
 
-        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ULONG j;
 
@@ -636,7 +636,7 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
         bss->clones[i] = h;
     }
 
-    Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, NULL, 0);
+    Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, nullptr, 0);
 
     for (i = 0; i < bss->num_clones; i++) {
         CloseHandle(bss->clones[i]);
@@ -650,14 +650,14 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
     memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic));
     header.version = 1;
 
-    if (!WriteFile(stream, &header, sizeof(header), NULL, NULL))
+    if (!WriteFile(stream, &header, sizeof(header), nullptr, nullptr))
         goto end2;
 
     do {
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, NULL, 0, buf, SEND_BUFFER_LEN);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, nullptr, 0, buf, SEND_BUFFER_LEN);
 
         if (NT_SUCCESS(Status))
-            WriteFile(stream, buf, iosb.Information, NULL, NULL);
+            WriteFile(stream, buf, iosb.Information, nullptr, nullptr);
     } while (NT_SUCCESS(Status));
 
     if (Status != STATUS_END_OF_FILE)
@@ -667,7 +667,7 @@ static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wst
     end.cmd = BTRFS_SEND_CMD_END;
     end.csum = 0x9dc96c50;
 
-    if (!WriteFile(stream, &end, sizeof(end), NULL, NULL))
+    if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
         goto end2;
 
     SetEndOfFile(stream);
@@ -710,14 +710,14 @@ void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
             goto end;
 
-        if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid))
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
             goto end;
 
         tp.PrivilegeCount = 1;
         tp.Privileges[0].Luid = luid;
         tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+        if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
             goto end;
 
         CloseHandle(token);

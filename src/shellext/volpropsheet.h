@@ -31,11 +31,11 @@ public:
         refcount = 0;
         ignore = TRUE;
         stgm_set = FALSE;
-        devices = NULL;
+        devices = nullptr;
 
         InterlockedIncrement(&objs_loaded);
 
-        balance = NULL;
+        balance = nullptr;
     }
 
     virtual ~BtrfsVolPropSheet() {

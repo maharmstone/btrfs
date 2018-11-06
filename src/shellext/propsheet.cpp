@@ -53,7 +53,7 @@ HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
         return S_OK;
     }
 
-    *ppObj = NULL;
+    *ppObj = nullptr;
     return E_NOINTERFACE;
 }
 
@@ -98,15 +98,15 @@ void BtrfsPropSheet::do_search(WCHAR* fn) {
             } else {
                 HANDLE fh;
 
-                fh = CreateFileW(fn2, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+                fh = CreateFileW(fn2, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
                 if (fh != INVALID_HANDLE_VALUE) {
                     NTSTATUS Status;
                     IO_STATUS_BLOCK iosb;
                     btrfs_inode_info bii2;
 
-                    Status = NtFsControlFile(fh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+                    Status = NtFsControlFile(fh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
                     if (NT_SUCCESS(Status)) {
                         sizes[0] += bii2.inline_length;
@@ -137,7 +137,7 @@ DWORD BtrfsPropSheet::search_list_thread() {
         free(fn);
     }
 
-    thread = NULL;
+    thread = nullptr;
 
     return 0;
 }
@@ -156,8 +156,8 @@ HRESULT BtrfsPropSheet::check_file(wstring fn, UINT i, UINT num_files, UINT* sv)
     BY_HANDLE_FILE_INFORMATION bhfi;
     btrfs_inode_info bii2;
 
-    h = CreateFileW(fn.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
         return E_FAIL;
@@ -179,7 +179,7 @@ HRESULT BtrfsPropSheet::check_file(wstring fn, UINT i, UINT num_files, UINT* sv)
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         add_to_search_list((WCHAR*)fn.c_str());
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
     if (NT_SUCCESS(Status) && !bii2.top) {
         int j;
@@ -264,7 +264,7 @@ HRESULT BtrfsPropSheet::load_file_list() {
     UINT num_files, i, sv = 0;
     WCHAR fn[MAX_PATH];
 
-    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
     min_mode = 0;
     max_mode = 0;
@@ -303,7 +303,7 @@ HRESULT BtrfsPropSheet::load_file_list() {
 }
 
 HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
-    FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     HDROP hdrop;
     HRESULT hr;
 
@@ -333,10 +333,10 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         return hr;
 
     if (search_list.size() > 0) {
-        thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
+        thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
 
         if (!thread)
-            ShowError(NULL, GetLastError());
+            ShowError(nullptr, GetLastError());
     }
 
     GlobalUnlock(hdrop);
@@ -364,8 +364,8 @@ void BtrfsPropSheet::set_cmdline(wstring cmdline) {
     can_change_perms = TRUE;
     can_change_nocow = TRUE;
 
-    h = CreateFileW(cmdline.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(cmdline.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
         return;
@@ -384,7 +384,7 @@ void BtrfsPropSheet::set_cmdline(wstring cmdline) {
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         add_to_search_list((WCHAR*)cmdline.c_str());
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
     if (NT_SUCCESS(Status) && !bii2.top) {
         int j;
@@ -455,10 +455,10 @@ void BtrfsPropSheet::set_cmdline(wstring cmdline) {
     flags_set = ~(min_flags ^ max_flags);
 
     if (search_list.size() > 0) {
-        thread = CreateThread(NULL, 0, global_search_list_thread, this, 0, NULL);
+        thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
 
         if (!thread)
-            ShowError(NULL, GetLastError());
+            ShowError(nullptr, GetLastError());
     }
 
     this->filename = cmdline;
@@ -528,8 +528,8 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, wstring fn) {
     if (mode_set & S_ISUID && (((min_mode & S_ISUID) != (max_mode & S_ISUID)) || ((min_mode & S_ISUID) != (mode & S_ISUID))))
         perms |= WRITE_OWNER;
 
-    h = CreateFileW(fn.c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn.c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hDlg, GetLastError());
@@ -538,7 +538,7 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, wstring fn) {
 
     ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii2, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hDlg, Status);
@@ -596,7 +596,7 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, wstring fn) {
             bsii.compression_type = compress_type;
         }
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hDlg, Status);
@@ -624,7 +624,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
     if (filename[0] != 0)
         apply_changes_file(hDlg, filename);
     else {
-        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
         for (i = 0; i < num_files; i++) {
             if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -716,7 +716,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
             bps->update_size_details_dialog(hwndDlg);
 
             if (bps->thread)
-                SetTimer(hwndDlg, 1, 250, NULL);
+                SetTimer(hwndDlg, 1, 250, nullptr);
 
             return TRUE;
         }
@@ -767,7 +767,7 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
     ULONG num_files, i;
     WCHAR fn[MAX_PATH];
 
-    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -887,7 +887,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     set_size_on_disk(hwndDlg);
 
     if (thread)
-        SetTimer(hwndDlg, 1, 250, NULL);
+        SetTimer(hwndDlg, 1, 250, nullptr);
 
     set_check_box(hwndDlg, IDC_NODATACOW, min_flags & BTRFS_INODE_NODATACOW, max_flags & BTRFS_INODE_NODATACOW);
     set_check_box(hwndDlg, IDC_COMPRESS, min_flags & BTRFS_INODE_COMPRESS, max_flags & BTRFS_INODE_COMPRESS);
@@ -895,7 +895,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     comptype = GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE);
 
     if (min_compression_type != max_compression_type) {
-        SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)L"");
+        SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)L"");
         SendMessage(comptype, CB_SETCURSEL, 0, 0);
     }
 
@@ -908,7 +908,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
             return;
         }
 
-        SendMessage(comptype, CB_ADDSTRING, NULL, (LPARAM)t);
+        SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)t);
 
         i++;
     }
@@ -1210,7 +1210,7 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     icex.dwICC = ICC_LINK_CLASS;
 
     if (!InitCommonControlsEx(&icex)) {
-        MessageBoxW(NULL, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
+        MessageBoxW(nullptr, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
     }
 
     psp.dwSize = sizeof(psp);
@@ -1221,7 +1221,7 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     psp.pszTitle = MAKEINTRESOURCE(IDS_PROP_SHEET_TITLE);
     psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
     psp.pcRefParent = (UINT*)&objs_loaded;
-    psp.pfnCallback = NULL;
+    psp.pfnCallback = nullptr;
     psp.lParam = (LPARAM)this;
 
     hPage = CreatePropertySheetPage(&psp);
@@ -1266,7 +1266,7 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     psp.hIcon = 0;
     psp.pszTitle = MAKEINTRESOURCEW(IDS_PROP_SHEET_TITLE);
     psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
-    psp.pfnCallback = NULL;
+    psp.pfnCallback = nullptr;
     psp.lParam = (LPARAM)bps;
 
     memset(&psh, 0, sizeof(PROPSHEETHEADERW));

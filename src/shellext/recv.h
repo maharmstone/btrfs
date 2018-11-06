@@ -33,14 +33,14 @@ typedef struct {
 class BtrfsRecv {
 public:
     BtrfsRecv() {
-        thread = NULL;
+        thread = nullptr;
         master = INVALID_HANDLE_VALUE;
         dir = INVALID_HANDLE_VALUE;
         running = FALSE;
         cancelling = FALSE;
         stransid = 0;
         num_received = 0;
-        hwnd = NULL;
+        hwnd = nullptr;
         cache.clear();
     }
 

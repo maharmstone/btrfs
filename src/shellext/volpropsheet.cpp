@@ -41,14 +41,14 @@ HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
         return S_OK;
     }
 
-    *ppObj = NULL;
+    *ppObj = nullptr;
     return E_NOINTERFACE;
 }
 
 HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
     HANDLE h;
     ULONG num_files;
-    FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     HDROP hdrop;
 
     if (pidlFolder)
@@ -72,7 +72,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
         return E_INVALIDARG;
     }
 
-    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+    num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
     if (num_files > 1) {
         GlobalUnlock(hdrop);
@@ -80,8 +80,8 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     }
 
     if (DragQueryFileW((HDROP)stgm.hGlobal, 0, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
         if (h != INVALID_HANDLE_VALUE) {
             NTSTATUS Status;
@@ -94,7 +94,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             devices = (btrfs_device*)malloc(devsize);
 
             while (TRUE) {
-                Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
                 if (Status == STATUS_BUFFER_OVERFLOW) {
                     if (i < 8) {
                         devsize += 1024;
@@ -118,7 +118,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                 return E_FAIL;
             }
 
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_UUID, NULL, 0, &uuid, sizeof(BTRFS_UUID));
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_UUID, nullptr, 0, &uuid, sizeof(BTRFS_UUID));
             uuid_set = NT_SUCCESS(Status);
 
             ignore = FALSE;
@@ -150,7 +150,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
     uint8_t i, j;
     uint64_t num_devs, k, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
     btrfs_device* bd;
-    dev* devs = NULL;
+    dev* devs = nullptr;
     btrfs_usage* bue;
     WCHAR t[255], u[255], v[255];
 
@@ -492,8 +492,8 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     WCHAR s[4096];
     btrfs_usage* usage;
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
@@ -506,7 +506,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
         devices = (btrfs_device*)malloc(devsize);
 
         while (TRUE) {
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
             if (Status == STATUS_BUFFER_OVERFLOW) {
                 if (i < 8) {
                     devsize += 1024;
@@ -532,7 +532,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
         usage = (btrfs_usage*)malloc(usagesize);
 
         while (TRUE) {
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
             if (Status == STATUS_BUFFER_OVERFLOW) {
                 if (i < 8) {
                     usagesize += 1024;
@@ -579,8 +579,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
             if (h != INVALID_HANDLE_VALUE) {
                 btrfs_usage* usage;
@@ -591,7 +591,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
                 usage = (btrfs_usage*)malloc(usagesize);
 
                 while (TRUE) {
-                    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
+                    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
                     if (Status == STATUS_BUFFER_OVERFLOW) {
                         if (i < 8) {
                             usagesize += 1024;
@@ -723,8 +723,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     int i;
     uint64_t num_rw_devices;
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(GetParent(devlist), GetLastError());
@@ -740,7 +740,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     devices = (btrfs_device*)malloc(devsize);
 
     while (TRUE) {
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
         if (Status == STATUS_BUFFER_OVERFLOW) {
             if (i < 8) {
                 devsize += 1024;
@@ -768,7 +768,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     usage = (btrfs_usage*)malloc(usagesize);
 
     while (TRUE) {
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_USAGE, NULL, 0, usage, usagesize);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
         if (Status == STATUS_BUFFER_OVERFLOW) {
             if (i < 8) {
                 usagesize += 1024;
@@ -934,8 +934,8 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
@@ -949,7 +949,7 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
         devices = (btrfs_device*)malloc(devsize);
 
         while (TRUE) {
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
             if (Status == STATUS_BUFFER_OVERFLOW) {
                 if (i < 8) {
                     devsize += 1024;
@@ -975,7 +975,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         case WM_INITDIALOG:
         {
             WCHAR s[255], t[255];
-            btrfs_device *bd, *dev = NULL;
+            btrfs_device *bd, *dev = nullptr;
             int i;
 
             static int stat_ids[] = { IDC_WRITE_ERRS, IDC_READ_ERRS, IDC_FLUSH_ERRS, IDC_CORRUPTION_ERRS, IDC_GENERATION_ERRS };
@@ -1504,7 +1504,7 @@ HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, L
     icex.dwICC = ICC_LINK_CLASS;
 
     if (!InitCommonControlsEx(&icex))
-        MessageBoxW(NULL, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
+        MessageBoxW(nullptr, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
 
     psp.dwSize = sizeof(psp);
     psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;
@@ -1514,7 +1514,7 @@ HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, L
     psp.pszTitle = MAKEINTRESOURCE(IDS_VOL_PROP_SHEET_TITLE);
     psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
     psp.pcRefParent = (UINT*)&objs_loaded;
-    psp.pfnCallback = NULL;
+    psp.pfnCallback = nullptr;
     psp.lParam = (LPARAM)this;
 
     hPage = CreatePropertySheetPage(&psp);
@@ -1555,7 +1555,7 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -1564,7 +1564,7 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -1582,15 +1582,15 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     if (devid == 0)
         goto end;
 
-    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(uint64_t), NULL, 0);
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(uint64_t), nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
 

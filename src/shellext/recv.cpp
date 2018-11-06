@@ -169,7 +169,7 @@ BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf
     ULONG utf16len;
     WCHAR* buf;
 
-    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, utf8, utf8len);
+    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8, utf8len);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
@@ -247,7 +247,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     bcs->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
-    Status = NtFsControlFile(parent, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
+    Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
@@ -264,13 +264,13 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         CloseHandle(master);
 
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (master == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
 
-    Status = NtFsControlFile(master, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, NULL, 0);
+    Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
@@ -278,7 +278,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
     dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
                       FILE_SHARE_READ | FILE_SHARE_WRITE,
-                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (dir == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -370,7 +370,7 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
     bfs.uuid = *parent_uuid;
     bfs.ctransid = *parent_transid;
 
-    Status = NtFsControlFile(parent, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
+    Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
                              parpathw, sizeof(parpathw));
     if (Status == STATUS_NOT_FOUND) {
         ShowRecvError(IDS_RECV_CANT_FIND_PARENT_SUBVOL);
@@ -392,7 +392,7 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
     parpath += parpathw;
 
     subvol = CreateFileW(parpath.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (subvol == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, parpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -407,7 +407,7 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
     bcs->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
-    Status = NtFsControlFile(parent, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, NULL, 0);
+    Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_CREATE_SNAPSHOT_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
@@ -424,13 +424,13 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         CloseHandle(master);
 
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (master == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
 
-    Status = NtFsControlFile(master, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, NULL, 0);
+    Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         return FALSE;
@@ -438,7 +438,7 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
 
     dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
                       FILE_SHARE_READ | FILE_SHARE_WRITE,
-                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (dir == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -455,7 +455,7 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
 
 BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     char *name, *pathlink;
-    uint64_t *inode, *rdev = NULL, *mode = NULL;
+    uint64_t *inode, *rdev = nullptr, *mode = nullptr;
     ULONG namelen, inodelen, bmnsize;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -534,7 +534,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     bmn->namelen = nameu.length() * sizeof(WCHAR);
     memcpy(bmn->name, nameu.c_str(), bmn->namelen);
 
-    Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
+    Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_MKNOD_FAILED, Status, format_ntstatus(Status).c_str());
         free(bmn);
@@ -567,14 +567,14 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
                 pathlinku.c_str(), rdb->SymbolicLinkReparseBuffer.PrintNameLength);
 
         h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             free(rdb);
             return FALSE;
         }
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, NULL, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
             free(rdb);
@@ -589,7 +589,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         bsii.mode_changed = TRUE;
         bsii.st_mode = 0777;
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
             CloseHandle(h);
@@ -611,7 +611,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
             }
 
             h = CreateFileW((subvolpath + nameu).c_str(), WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                            NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                            nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
             if (h == INVALID_HANDLE_VALUE) {
                 ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
                 return FALSE;
@@ -622,7 +622,7 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
             bsii.mode_changed = TRUE;
             bsii.st_mode = *mode;
 
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
             if (!NT_SUCCESS(Status)) {
                 ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
                 CloseHandle(h);
@@ -686,7 +686,7 @@ BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     if (!utf8_to_utf16(hwnd, path_link, path_link_len, path_linku))
         return FALSE;
 
-    if (!CreateHardLinkW((subvolpath + pathu).c_str(), (subvolpath + path_linku).c_str(), NULL)) {
+    if (!CreateHardLinkW((subvolpath + pathu).c_str(), (subvolpath + path_linku).c_str(), nullptr)) {
         ShowRecvError(IDS_RECV_CREATEHARDLINK_FAILED, pathu.c_str(), path_linku.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
@@ -815,14 +815,14 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         streamname = streamname.substr(strlen(XATTR_USER));
 
         h = CreateFileW((subvolpath + pathu + L":" + streamname).c_str(), GENERIC_WRITE, 0,
-                        NULL, CREATE_ALWAYS, FILE_FLAG_POSIX_SEMANTICS, NULL);
+                        nullptr, CREATE_ALWAYS, FILE_FLAG_POSIX_SEMANTICS, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_CREATE_FILE, (pathu + L":" + streamname).c_str(), GetLastError(), format_message(GetLastError()).c_str());
             return FALSE;
         }
 
         if (xattrdatalen > 0) {
-            if (!WriteFile(h, xattrdata, xattrdatalen, NULL, NULL)) {
+            if (!WriteFile(h, xattrdata, xattrdatalen, nullptr, nullptr)) {
                 ShowRecvError(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
                 CloseHandle(h);
                 return FALSE;
@@ -850,7 +850,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
             perms |= FILE_WRITE_EA;
 
         h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             return FALSE;
@@ -869,7 +869,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         memcpy(bsxa->data, xattrname, xattrnamelen);
         memcpy(&bsxa->data[xattrnamelen], xattrdata, xattrdatalen);
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, NULL, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
             free(bsxa);
@@ -950,7 +950,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
             perms |= FILE_WRITE_EA;
 
         h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             return FALSE;
@@ -968,7 +968,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
         bsxa->valuelen = 0;
         memcpy(bsxa->data, xattrname, xattrnamelen);
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, NULL, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
             free(bsxa);
@@ -1040,8 +1040,8 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
             }
         }
 
-        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
-                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+        h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, nullptr, OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
             ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             return FALSE;
@@ -1068,7 +1068,7 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         return FALSE;
     }
 
-    if (!WriteFile(h, writedata, datalen, NULL, NULL)) {
+    if (!WriteFile(h, writedata, datalen, nullptr, nullptr)) {
         ShowRecvError(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
@@ -1171,7 +1171,7 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         bfs.uuid = *cloneuuid;
         bfs.ctransid = *clonetransid;
 
-        Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
+        Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
                                  cloneparw, sizeof(cloneparw));
         if (Status == STATUS_NOT_FOUND) {
             ShowRecvError(IDS_RECV_CANT_FIND_CLONE_SUBVOL);
@@ -1197,14 +1197,14 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     }
 
     src = CreateFileW((clonepar + clonepathu).c_str(), FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                      NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (src == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, (clonepar + clonepathu).c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
 
     dest = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (dest == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         CloseHandle(src);
@@ -1243,8 +1243,8 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     ded.TargetFileOffset.QuadPart = *offset;
     ded.ByteCount.QuadPart = *clonelen;
 
-    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA),
-                             NULL, 0);
+    Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA),
+                             nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_DUPLICATE_EXTENTS_FAILED, Status, format_ntstatus(Status).c_str());
         CloseHandle(dest);
@@ -1298,8 +1298,8 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         }
     }
 
-    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, NULL, OPEN_EXISTING,
-                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -1359,8 +1359,8 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
-    h = CreateFileW((subvolpath + pathu).c_str(), WRITE_DAC, 0, NULL, OPEN_EXISTING,
-                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    h = CreateFileW((subvolpath + pathu).c_str(), WRITE_DAC, 0, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -1371,7 +1371,7 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     bsii.mode_changed = TRUE;
     bsii.st_mode = *mode;
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
         CloseHandle(h);
@@ -1399,8 +1399,8 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
-    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES | WRITE_OWNER | WRITE_DAC, 0, NULL, OPEN_EXISTING,
-                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES | WRITE_OWNER | WRITE_DAC, 0, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -1434,7 +1434,7 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
 
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
             CloseHandle(h);
@@ -1468,8 +1468,8 @@ BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
-    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
-                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, NULL);
+    h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, 0, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
@@ -1572,7 +1572,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, uint64_t* pos, uint64_t size) {
     btrfs_send_header header;
     BOOL b = TRUE, ended = FALSE;
 
-    if (!ReadFile(f, &header, sizeof(btrfs_send_header), NULL, NULL)) {
+    if (!ReadFile(f, &header, sizeof(btrfs_send_header), nullptr, nullptr)) {
         ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         return FALSE;
     }
@@ -1608,7 +1608,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, uint64_t* pos, uint64_t size) {
         progress = (ULONG)((float)*pos * 65536.0f / (float)size);
         SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, progress, 0);
 
-        if (!ReadFile(f, &cmd, sizeof(btrfs_send_command), NULL, NULL)) {
+        if (!ReadFile(f, &cmd, sizeof(btrfs_send_command), nullptr, nullptr)) {
             if (GetLastError() != ERROR_HANDLE_EOF) {
                 ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
                 break;
@@ -1633,7 +1633,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, uint64_t* pos, uint64_t size) {
                 break;
             }
 
-            if (!ReadFile(f, data, cmd.length, NULL, NULL)) {
+            if (!ReadFile(f, data, cmd.length, nullptr, nullptr)) {
                 ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
                 free(data);
                 b = FALSE;
@@ -1642,7 +1642,7 @@ BOOL BtrfsRecv::do_recv(HANDLE f, uint64_t* pos, uint64_t size) {
 
             *pos += cmd.length;
         } else
-            data = NULL;
+            data = nullptr;
 
         if (!check_csum(&cmd, data)) {
             ShowRecvError(IDS_RECV_CSUM_ERROR);
@@ -1778,8 +1778,8 @@ BOOL BtrfsRecv::do_recv(HANDLE f, uint64_t* pos, uint64_t size) {
         brs.generation = stransid;
         brs.uuid = subvol_uuid;
 
-        Status = NtFsControlFile(dir, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
-                                 NULL, 0);
+        Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
+                                 nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowRecvError(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
             b = FALSE;
@@ -1814,7 +1814,7 @@ DWORD BtrfsRecv::recv_thread() {
 
     running = TRUE;
 
-    f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         goto end;
@@ -1826,7 +1826,7 @@ DWORD BtrfsRecv::recv_thread() {
     }
 
     parent = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, NULL);
+                         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
     if (parent == INVALID_HANDLE_VALUE) {
         ShowRecvError(IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         CloseHandle(f);
@@ -1870,7 +1870,7 @@ DWORD BtrfsRecv::recv_thread() {
     }
 
 end:
-    thread = NULL;
+    thread = nullptr;
     running = FALSE;
 
     return 0;
@@ -1886,7 +1886,7 @@ INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
     switch (uMsg) {
         case WM_INITDIALOG:
             this->hwnd = hwndDlg;
-            thread = CreateThread(NULL, 0, global_recv_thread, this, 0, NULL);
+            thread = CreateThread(nullptr, 0, global_recv_thread, this, 0, nullptr);
 
             if (!thread)
                 ShowRecvError(IDS_RECV_CREATETHREAD_FAILED, GetLastError(), format_message(GetLastError()).c_str());
@@ -1995,7 +1995,7 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 
     tp->PrivilegeCount = 3;
 
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         free(tp);
         CloseHandle(token);
@@ -2005,7 +2005,7 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     tp->Privileges[0].Luid = luid;
     tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!LookupPrivilegeValueW(NULL, L"SeSecurityPrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         free(tp);
         CloseHandle(token);
@@ -2015,7 +2015,7 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     tp->Privileges[1].Luid = luid;
     tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!LookupPrivilegeValueW(NULL, L"SeRestorePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         free(tp);
         CloseHandle(token);
@@ -2025,7 +2025,7 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     tp->Privileges[2].Luid = luid;
     tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, tp, tplen, NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, FALSE, tp, tplen, nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         free(tp);
         CloseHandle(token);
@@ -2082,7 +2082,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
 
         tp->PrivilegeCount = 3;
 
-        if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
             free(tp);
             CloseHandle(token);
             goto end;
@@ -2091,7 +2091,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         tp->Privileges[0].Luid = luid;
         tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!LookupPrivilegeValueW(NULL, L"SeSecurityPrivilege", &luid)) {
+        if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
             free(tp);
             CloseHandle(token);
             goto end;
@@ -2100,7 +2100,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         tp->Privileges[1].Luid = luid;
         tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!LookupPrivilegeValueW(NULL, L"SeRestorePrivilege", &luid)) {
+        if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
             free(tp);
             CloseHandle(token);
             goto end;
@@ -2109,7 +2109,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         tp->Privileges[2].Luid = luid;
         tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
 
-        if (!AdjustTokenPrivileges(token, FALSE, tp, tplen, NULL, NULL)) {
+        if (!AdjustTokenPrivileges(token, FALSE, tp, tplen, nullptr, nullptr)) {
             free(tp);
             CloseHandle(token);
             goto end;
@@ -2119,7 +2119,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         CloseHandle(token);
 
         br = new BtrfsRecv;
-        br->Open(NULL, args[0], args[1], TRUE);
+        br->Open(nullptr, args[0], args[1], TRUE);
 
         delete br;
     }

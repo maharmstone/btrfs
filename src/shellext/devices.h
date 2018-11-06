@@ -123,7 +123,7 @@ const static fs_identifier fs_ident[] = {
     { L"FAT", "\353",     1, 0, 0 },
     { L"FAT", "\351",     1, 0, 0},
     { L"FAT", "\125\252", 2, 0x1fe, 0 },
-    { NULL, 0, 0, 0 }
+    { nullptr, 0, 0, 0 }
 };
 
 class BtrfsDeviceAdd {

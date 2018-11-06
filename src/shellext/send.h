@@ -29,7 +29,7 @@ public:
         dirh = INVALID_HANDLE_VALUE;
         stream = INVALID_HANDLE_VALUE;
         subvol = L"";
-        buf = NULL;
+        buf = nullptr;
         incremental = FALSE;
     }
 

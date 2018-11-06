@@ -100,7 +100,7 @@ public:
         ro_changed = FALSE;
         can_change_perms = FALSE;
         show_admin_button = FALSE;
-        thread = NULL;
+        thread = nullptr;
         mode = mode_set = 0;
         flags = flags_set = 0;
         has_subvols = FALSE;

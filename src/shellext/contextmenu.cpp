@@ -62,7 +62,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
         return S_OK;
     }
 
-    *ppObj = NULL;
+    *ppObj = nullptr;
     return E_NOINTERFACE;
 }
 
@@ -73,7 +73,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
     NTSTATUS Status;
 
     if (!pidlFolder) {
-        FORMATETC format = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
         UINT num_files, i;
         WCHAR fn[MAX_PATH];
         HDROP hdrop;
@@ -96,14 +96,14 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
             return E_INVALIDARG;
         }
 
-        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
         for (i = 0; i < num_files; i++) {
             if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
                 if (h != INVALID_HANDLE_VALUE) {
-                    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+                    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
                     if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
                         WCHAR parpath[MAX_PATH];
@@ -113,7 +113,7 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
 
                         PathRemoveFileSpecW(parpath);
 
-                        h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                        h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
                         if (h2 != INVALID_HANDLE_VALUE)
                             allow_snapshot = TRUE;
@@ -149,14 +149,14 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
 
     // check we have permissions to create new subdirectory
 
-    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
         return E_FAIL;
 
     // check is Btrfs volume
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
     if (!NT_SUCCESS(Status)) {
         CloseHandle(h);
@@ -203,7 +203,7 @@ static BOOL show_reflink_paste(const wstring& path) {
     if (!GetVolumePathNameW(path.c_str(), volpath1, sizeof(volpath1) / sizeof(WCHAR)))
         return FALSE;
 
-    if (!OpenClipboard(NULL))
+    if (!OpenClipboard(nullptr))
         return FALSE;
 
     hdrop = (HDROP)GetClipboardData(CF_HDROP);
@@ -220,7 +220,7 @@ static BOOL show_reflink_paste(const wstring& path) {
         return FALSE;
     }
 
-    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
     if (num_files == 0) {
         GlobalUnlock(lh);
@@ -265,27 +265,27 @@ static HRESULT Create32BitHBITMAP(HDC hdc, const SIZE *psize, void **ppvBits, HB
     BITMAPINFO bmi;
     HDC hdcUsed;
 
-    *phBmp = NULL;
+    *phBmp = nullptr;
 
     InitBitmapInfo(&bmi, sizeof(bmi), psize->cx, psize->cy, 32);
 
-    hdcUsed = hdc ? hdc : GetDC(NULL);
+    hdcUsed = hdc ? hdc : GetDC(nullptr);
 
     if (hdcUsed) {
-        *phBmp = CreateDIBSection(hdcUsed, &bmi, DIB_RGB_COLORS, ppvBits, NULL, 0);
+        *phBmp = CreateDIBSection(hdcUsed, &bmi, DIB_RGB_COLORS, ppvBits, nullptr, 0);
         if (hdc != hdcUsed)
-            ReleaseDC(NULL, hdcUsed);
+            ReleaseDC(nullptr, hdcUsed);
     }
 
     return !*phBmp ? E_OUTOFMEMORY : S_OK;
 }
 
 void BtrfsContextMenu::get_uac_icon() {
-    IWICImagingFactory* factory = NULL;
+    IWICImagingFactory* factory = nullptr;
     IWICBitmap* bitmap;
     HRESULT hr;
 
-    hr = CoCreateInstance(CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
 
     if (SUCCEEDED(hr)) {
         HANDLE icon;
@@ -306,11 +306,11 @@ void BtrfsContextMenu::get_uac_icon() {
                 sz.cx = (int)cx;
                 sz.cy = -(int)cy;
 
-                hr = Create32BitHBITMAP(NULL, &sz, (void**)&buf, &uacicon);
+                hr = Create32BitHBITMAP(nullptr, &sz, (void**)&buf, &uacicon);
                 if (SUCCEEDED(hr)) {
                     UINT stride = cx * sizeof(DWORD);
                     UINT buflen = cy * stride;
-                    bitmap->CopyPixels(NULL, stride, buflen, buf);
+                    bitmap->CopyPixels(nullptr, stride, buflen, buf);
                 }
             }
 
@@ -414,10 +414,10 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
 
-    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
     if (h != INVALID_HANDLE_VALUE) {
-        Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_FILE_IDS, NULL, 0, &bgfi, sizeof(btrfs_get_file_ids));
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
         if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
             WCHAR parpath[MAX_PATH], subvolname[MAX_PATH], templ[MAX_PATH], name[MAX_PATH], searchpath[MAX_PATH];
@@ -433,7 +433,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
             StringCchCopyW(subvolname, sizeof(subvolname) / sizeof(WCHAR), fn);
             PathStripPathW(subvolname);
 
-            h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
             if (h2 == INVALID_HANDLE_VALUE) {
                 ShowError(hwnd, GetLastError());
@@ -493,7 +493,7 @@ static void create_snapshot(HWND hwnd, WCHAR* fn) {
             bcs->namelen = namelen;
             memcpy(bcs->name, &searchpath[pathend], namelen);
 
-            Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen, NULL, 0);
+            Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen, nullptr, 0);
 
             if (!NT_SUCCESS(Status))
                 ShowNtStatusError(hwnd, Status);
@@ -553,13 +553,13 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     if (wcscmp(volpath1, volpath2)) // different filesystems
         return FALSE;
 
-    source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+    source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
     if (source == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         return FALSE;
     }
 
-    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info));
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
         CloseHandle(source);
@@ -574,7 +574,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         WIN32_FIND_DATAW wfd;
         int num = 2;
 
-        dirh = CreateFileW(dir, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        dirh = CreateFileW(dir, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE) {
             ShowError(hwnd, GetLastError());
             CloseHandle(source);
@@ -611,7 +611,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bcs->namelen = destname.length() * sizeof(WCHAR);
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
 
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen, NULL, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen, nullptr, 0);
 
         free(bcs);
 
@@ -638,7 +638,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         ULONG bmnsize;
         btrfs_mknod* bmn;
 
-        dirh = CreateFileW(dir, FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        dirh = CreateFileW(dir, FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE) {
             ShowError(hwnd, GetLastError());
             CloseHandle(source);
@@ -654,7 +654,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bmn->namelen = wcslen(name) * sizeof(WCHAR);
         memcpy(bmn->name, name, bmn->namelen);
 
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
             CloseHandle(dirh);
@@ -666,15 +666,15 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         CloseHandle(dirh);
         free(bmn);
 
-        dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     } else if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        if (CreateDirectoryExW(fn, newpath.c_str(), NULL))
+        if (CreateDirectoryExW(fn, newpath.c_str(), nullptr))
             dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                               NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                               nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         else
             dest = INVALID_HANDLE_VALUE;
     } else
-        dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+        dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, source);
 
     if (dest == INVALID_HANDLE_VALUE) {
         int num = 2;
@@ -710,12 +710,12 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
             newpath = ss.str();
             if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                if (CreateDirectoryExW(fn, newpath.c_str(), NULL))
-                    dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                if (CreateDirectoryExW(fn, newpath.c_str(), nullptr))
+                    dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
                 else
                     dest = INVALID_HANDLE_VALUE;
             } else
-                dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+                dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, source);
 
             if (dest == INVALID_HANDLE_VALUE) {
                 if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS) {
@@ -740,7 +740,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bsii.compression_type = bii.compression_type;
     }
 
-    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+    Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
         goto end;
@@ -785,7 +785,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             ULONG rplen;
             uint8_t* rp;
 
-            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, &rh, sizeof(reparse_header), &bytesret, NULL)) {
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, &rh, sizeof(reparse_header), &bytesret, nullptr)) {
                 if (GetLastError() != ERROR_MORE_DATA) {
                     ShowError(hwnd, GetLastError());
                     goto end;
@@ -795,12 +795,12 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             rplen = sizeof(reparse_header) + rh.ReparseDataLength;
             rp = (uint8_t*)malloc(rplen);
 
-            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, rp, rplen, &bytesret, NULL)) {
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, rplen, &bytesret, nullptr)) {
                 ShowError(hwnd, GetLastError());
                 goto end;
             }
 
-            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, NULL, 0, &bytesret, NULL)) {
+            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, nullptr, 0, &bytesret, nullptr)) {
                 ShowError(hwnd, GetLastError());
                 goto end;
             }
@@ -820,13 +820,13 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 goto end;
             }
 
-            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL)) {
+            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, nullptr, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, nullptr)) {
                 ShowError(hwnd, GetLastError());
                 goto end;
             }
 
             if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
-                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL)) {
+                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesret, nullptr)) {
                     ShowError(hwnd, GetLastError());
                     goto end;
                 }
@@ -835,7 +835,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
             fsiib.Reserved = 0;
             fsiib.Flags = fgiib.Flags;
-            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL)) {
+            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), nullptr, 0, &bytesret, nullptr)) {
                 ShowError(hwnd, GetLastError());
                 goto end;
             }
@@ -855,7 +855,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             while (offset < alloc_size) {
                 ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
                 ded.ByteCount.QuadPart = maxdup < (alloc_size - offset) ? maxdup : (alloc_size - offset);
-                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL)) {
+                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), nullptr, 0, &bytesret, nullptr)) {
                     ShowError(hwnd, GetLastError());
                     goto end;
                 }
@@ -873,7 +873,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                 if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                     HANDLE stream;
-                    uint8_t* data = NULL;
+                    uint8_t* data = nullptr;
 
                     if (fsd.StreamSize.QuadPart > 0) {
                         wstring fn2;
@@ -881,7 +881,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                         fn2 = fn;
                         fn2 += sn;
 
-                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
                         if (stream == INVALID_HANDLE_VALUE) {
                             ShowError(hwnd, GetLastError());
@@ -893,7 +893,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                         // don't do this on NTFS!
                         data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
 
-                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             ShowError(hwnd, GetLastError());
                             FindClose(h);
                             free(data);
@@ -904,7 +904,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                         CloseHandle(stream);
                     }
 
-                    stream = CreateFileW((newpath + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, NULL);
+                    stream = CreateFileW((newpath + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, nullptr);
 
                     if (stream == INVALID_HANDLE_VALUE) {
                         ShowError(hwnd, GetLastError());
@@ -916,7 +916,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     }
 
                     if (data) {
-                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             ShowError(hwnd, GetLastError());
                             FindClose(h);
                             free(data);
@@ -939,13 +939,13 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     atime.dwHighDateTime = fbi.LastAccessTime.HighPart;
     mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
     mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
-    SetFileTime(dest, NULL, &atime, &mtime);
+    SetFileTime(dest, nullptr, &atime, &mtime);
 
-    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, &bsxa, sizeof(btrfs_set_xattr));
+    Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, &bsxa, sizeof(btrfs_set_xattr));
 
     if (Status == STATUS_BUFFER_OVERFLOW || (NT_SUCCESS(Status) && bsxa.valuelen > 0)) {
         ULONG xalen = 0;
-        btrfs_set_xattr *xa = NULL, *xa2;
+        btrfs_set_xattr *xa = nullptr, *xa2;
 
         do {
             xalen += 1024;
@@ -953,7 +953,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             if (xa) free(xa);
             xa = (btrfs_set_xattr*)malloc(xalen);
 
-            Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, xa, xalen);
+            Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, xa, xalen);
         } while (Status == STATUS_BUFFER_OVERFLOW);
 
         if (!NT_SUCCESS(Status)) {
@@ -964,8 +964,8 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         xa2 = xa;
         while (xa2->valuelen > 0) {
-            Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
-                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, NULL, 0);
+            Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
+                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
             if (!NT_SUCCESS(Status)) {
                 free(xa);
                 ShowNtStatusError(hwnd, Status);
@@ -1011,7 +1011,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             if (!stgm_set)
                 return E_FAIL;
 
-            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
             if (num_files == 0)
                 return E_FAIL;
@@ -1035,7 +1035,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             if (!stgm_set)
                 return E_FAIL;
 
-            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, NULL, 0);
+            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
             if (num_files == 0)
                 return E_FAIL;
@@ -1085,7 +1085,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 return E_FAIL;
             }
 
-            h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+            h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
             if (h == INVALID_HANDLE_VALUE) {
                 ShowError(pici->hwnd, GetLastError());
@@ -1129,7 +1129,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
             memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
 
-            Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
 
             free(searchpath);
             free(bcs);
@@ -1196,7 +1196,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                     ULONG num_files, i;
                     WCHAR fn[MAX_PATH];
 
-                    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
+                    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
                     for (i = 0; i < num_files; i++) {
                         if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
@@ -1384,11 +1384,11 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
     IO_STATUS_BLOCK iosb;
     btrfs_set_xattr bsxa;
 
-    source = CreateFileW(srcfn.c_str(), GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, NULL);
+    source = CreateFileW(srcfn.c_str(), GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
     if (source == INVALID_HANDLE_VALUE)
         return;
 
-    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_INODE_INFO, NULL, 0, &bii, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info));
     if (!NT_SUCCESS(Status)) {
         CloseHandle(source);
         return;
@@ -1400,7 +1400,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         btrfs_create_snapshot* bcs;
         HANDLE dirh;
 
-        dirh = CreateFileW(destdir.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        dirh = CreateFileW(destdir.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE) {
             CloseHandle(source);
             return;
@@ -1412,7 +1412,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         bcs->namelen = destname.length() * sizeof(WCHAR);
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
 
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, NULL, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
 
         free(bcs);
 
@@ -1432,7 +1432,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         ULONG bmnsize;
         btrfs_mknod* bmn;
 
-        dirh = CreateFileW(destdir.c_str(), FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        dirh = CreateFileW(destdir.c_str(), FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE) {
             CloseHandle(source);
             return;
@@ -1447,7 +1447,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         bmn->namelen = destname.length() * sizeof(WCHAR);
         memcpy(bmn->name, destname.c_str(), bmn->namelen);
 
-        Status = NtFsControlFile(dirh, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, NULL, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             CloseHandle(dirh);
             CloseHandle(source);
@@ -1458,15 +1458,15 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         CloseHandle(dirh);
         free(bmn);
 
-        dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     } else if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        if (CreateDirectoryExW(srcfn.c_str(), (destdir + destname).c_str(), NULL))
+        if (CreateDirectoryExW(srcfn.c_str(), (destdir + destname).c_str(), nullptr))
             dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                               NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                               nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
             else
                 dest = INVALID_HANDLE_VALUE;
     } else
-        dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, source);
+        dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, source);
 
     if (dest == INVALID_HANDLE_VALUE) {
         CloseHandle(source);
@@ -1483,7 +1483,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
         bsii.compression_type = bii.compression_type;
     }
 
-    Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), NULL, 0);
+    Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
     if (!NT_SUCCESS(Status))
         goto end;
 
@@ -1525,7 +1525,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             ULONG rplen;
             uint8_t* rp;
 
-            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, &rh, sizeof(reparse_header), &bytesret, NULL)) {
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, &rh, sizeof(reparse_header), &bytesret, nullptr)) {
                 if (GetLastError() != ERROR_MORE_DATA)
                     goto end;
             }
@@ -1533,10 +1533,10 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             rplen = sizeof(reparse_header) + rh.ReparseDataLength;
             rp = (uint8_t*)malloc(rplen);
 
-            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, NULL, 0, rp, rplen, &bytesret, NULL))
+            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, rplen, &bytesret, nullptr))
                 goto end;
 
-            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, NULL, 0, &bytesret, NULL))
+            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, nullptr, 0, &bytesret, nullptr))
                 goto end;
 
             free(rp);
@@ -1552,18 +1552,18 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO)))
                 goto end;
 
-            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, NULL, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, NULL))
+            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, nullptr, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, nullptr))
                 goto end;
 
             if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
-                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesret, NULL))
+                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesret, nullptr))
                     goto end;
             }
 
             fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
             fsiib.Reserved = 0;
             fsiib.Flags = fgiib.Flags;
-            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), NULL, 0, &bytesret, NULL))
+            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), nullptr, 0, &bytesret, nullptr))
                 goto end;
 
             feofi.EndOfFile = fsi.EndOfFile;
@@ -1579,7 +1579,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             while (offset < alloc_size) {
                 ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
                 ded.ByteCount.QuadPart = maxdup < (alloc_size - offset) ? maxdup : (alloc_size - offset);
-                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), NULL, 0, &bytesret, NULL))
+                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), nullptr, 0, &bytesret, nullptr))
                     goto end;
 
                 offset += ded.ByteCount.QuadPart;
@@ -1595,7 +1595,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
 
                 if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                     HANDLE stream;
-                    uint8_t* data = NULL;
+                    uint8_t* data = nullptr;
 
                     if (fsd.StreamSize.QuadPart > 0) {
                         wstring fn2;
@@ -1603,7 +1603,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
                         fn2 = srcfn;
                         fn2 += sn;
 
-                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
                         if (stream == INVALID_HANDLE_VALUE)
                             goto end;
@@ -1612,7 +1612,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
                         // don't do this on NTFS!
                         data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
 
-                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             free(data);
                             CloseHandle(stream);
                             goto end;
@@ -1621,7 +1621,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
                         CloseHandle(stream);
                     }
 
-                    stream = CreateFileW((destdir + destname + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, NULL, CREATE_NEW, 0, NULL);
+                    stream = CreateFileW((destdir + destname + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, nullptr);
 
                     if (stream == INVALID_HANDLE_VALUE) {
                         if (data) free(data);
@@ -1629,7 +1629,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
                     }
 
                     if (data) {
-                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, NULL)) {
+                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             free(data);
                             CloseHandle(stream);
                             goto end;
@@ -1650,13 +1650,13 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
     atime.dwHighDateTime = fbi.LastAccessTime.HighPart;
     mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
     mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
-    SetFileTime(dest, NULL, &atime, &mtime);
+    SetFileTime(dest, nullptr, &atime, &mtime);
 
-    Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, &bsxa, sizeof(btrfs_set_xattr));
+    Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, &bsxa, sizeof(btrfs_set_xattr));
 
     if (Status == STATUS_BUFFER_OVERFLOW || (NT_SUCCESS(Status) && bsxa.valuelen > 0)) {
         ULONG xalen = 0;
-        btrfs_set_xattr *xa = NULL, *xa2;
+        btrfs_set_xattr *xa = nullptr, *xa2;
 
         do {
             xalen += 1024;
@@ -1664,7 +1664,7 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
             if (xa) free(xa);
             xa = (btrfs_set_xattr*)malloc(xalen);
 
-            Status = NtFsControlFile(source, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_XATTRS, NULL, 0, xa, xalen);
+            Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, xa, xalen);
         } while (Status == STATUS_BUFFER_OVERFLOW);
 
         if (!NT_SUCCESS(Status)) {
@@ -1674,8 +1674,8 @@ static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
 
         xa2 = xa;
         while (xa2->valuelen > 0) {
-            Status = NtFsControlFile(dest, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
-                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, NULL, 0);
+            Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
+                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
             if (!NT_SUCCESS(Status)) {
                 free(xa);
                 goto end;
@@ -1717,7 +1717,7 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
         WCHAR volpath2[MAX_PATH];
         int i;
 
-        destdirh = CreateFileW(dest.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+        destdirh = CreateFileW(dest.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (destdirh != INVALID_HANDLE_VALUE) {
             BY_HANDLE_FILE_INFORMATION bhfi;
 

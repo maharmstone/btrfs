@@ -27,7 +27,7 @@ public:
         refcount = 0;
         ignore = TRUE;
         stgm_set = FALSE;
-        uacicon = NULL;
+        uacicon = nullptr;
         allow_snapshot = FALSE;
         InterlockedIncrement(&objs_loaded);
     }

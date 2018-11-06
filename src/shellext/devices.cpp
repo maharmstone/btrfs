@@ -39,8 +39,8 @@ static wstring get_mountdev_name(HANDLE h) {
     ULONG mdnsize;
     wstring name;
 
-    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
-                                   NULL, 0, &mdn, sizeof(MOUNTDEV_NAME));
+    Status = NtDeviceIoControlFile(h, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
+                                   nullptr, 0, &mdn, sizeof(MOUNTDEV_NAME));
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
         return L"";
 
@@ -48,8 +48,8 @@ static wstring get_mountdev_name(HANDLE h) {
 
     mdn2 = (MOUNTDEV_NAME*)malloc(mdnsize);
 
-    Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
-                                   NULL, 0, mdn2, mdnsize);
+    Status = NtDeviceIoControlFile(h, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
+                                   nullptr, 0, mdn2, mdnsize);
     if (!NT_SUCCESS(Status)) {
         free(mdn2);
         return L"";
@@ -67,7 +67,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
     static WCHAR dosdevices[] = L"\\DosDevices\\";
 
-    h = SetupDiGetClassDevs(guid, NULL, 0, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
+    h = SetupDiGetClassDevs(guid, nullptr, 0, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
 
     if (h != INVALID_HANDLE_VALUE) {
         DWORD index = 0;
@@ -75,7 +75,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
         did.cbSize = sizeof(did);
 
-        if (!SetupDiEnumDeviceInterfaces(h, NULL, guid, index, &did))
+        if (!SetupDiEnumDeviceInterfaces(h, nullptr, guid, index, &did))
             return;
 
         do {
@@ -85,7 +85,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
             dd.cbSize = sizeof(dd);
 
-            SetupDiGetDeviceInterfaceDetailW(h, &did, NULL, 0, &size, NULL);
+            SetupDiGetDeviceInterfaceDetailW(h, &did, nullptr, 0, &size, nullptr);
 
             detail = (SP_DEVICE_INTERFACE_DETAIL_DATA_W*)malloc(size);
             memset(detail, 0, size);
@@ -110,7 +110,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                 if (path.Length > 4 * sizeof(WCHAR) && path.Buffer[0] == '\\' && path.Buffer[1] == '\\'  && path.Buffer[2] == '?'  && path.Buffer[3] == '\\')
                     path.Buffer[1] = '?';
 
-                InitializeObjectAttributes(&attr, &path, 0, NULL, NULL);
+                InitializeObjectAttributes(&attr, &path, 0, nullptr, nullptr);
 
                 Status = NtOpenFile(&file, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
 
@@ -119,13 +119,13 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
                 dev.pnp_name = detail->DevicePath;
 
-                Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
+                Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_DISK_GET_LENGTH_INFO, nullptr, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
                 if (!NT_SUCCESS(Status))
                     goto nextitem;
 
                 dev.size = gli.Length.QuadPart;
 
-                Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0, &sdn, sizeof(STORAGE_DEVICE_NUMBER));
+                Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_STORAGE_GET_DEVICE_NUMBER, nullptr, 0, &sdn, sizeof(STORAGE_DEVICE_NUMBER));
                 if (!NT_SUCCESS(Status)) {
                     dev.disk_num = 0xffffffff;
                     dev.part_num = 0xffffffff;
@@ -153,13 +153,13 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                     spq.QueryType = PropertyStandardQuery;
                     spq.AdditionalParameters[0] = 0;
 
-                    Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
+                    Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
                                                    &spq, sizeof(STORAGE_PROPERTY_QUERY), &sdd, sizeof(STORAGE_DEVICE_DESCRIPTOR));
 
                     if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
                         sdd2 = (STORAGE_DEVICE_DESCRIPTOR*)malloc(sdd.Size);
 
-                        Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
+                        Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
                                                     &spq, sizeof(STORAGE_PROPERTY_QUERY), sdd2, sdd.Size);
                         if (NT_SUCCESS(Status)) {
                             string desc2;
@@ -186,7 +186,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                             if (sdd2->VendorIdOffset != 0 || sdd2->ProductIdOffset != 0) {
                                 ULONG ss;
 
-                                ss = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, desc2.c_str(), -1, NULL, 0);
+                                ss = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, desc2.c_str(), -1, nullptr, 0);
 
                                 if (ss > 0) {
                                     WCHAR* desc3 = (WCHAR*)malloc(ss * sizeof(WCHAR));
@@ -203,7 +203,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                     }
 
                     dlisize = 0;
-                    dli = NULL;
+                    dli = nullptr;
 
                     do {
                         dlisize += 1024;
@@ -213,8 +213,8 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
                         dli = (DRIVE_LAYOUT_INFORMATION_EX*)malloc(dlisize);
 
-                        Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
-                                                       NULL, 0, dli, dlisize);
+                        Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                                                       nullptr, 0, dli, dlisize);
                     } while (Status == STATUS_BUFFER_TOO_SMALL);
 
                     if (NT_SUCCESS(Status) && dli->PartitionCount > 0)
@@ -235,14 +235,14 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                     mmp->DeviceNameLength = path.Length;
                     RtlCopyMemory(&mmp[1], path.Buffer, path.Length);
 
-                    Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
+                    Status = NtDeviceIoControlFile(mountmgr, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
                                                    mmp, mmpsize, &mmps, sizeof(MOUNTMGR_MOUNT_POINTS));
                     if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
                         MOUNTMGR_MOUNT_POINTS* mmps2;
 
                         mmps2 = (MOUNTMGR_MOUNT_POINTS*)malloc(mmps.Size);
 
-                        Status = NtDeviceIoControlFile(mountmgr, NULL, NULL, NULL, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
+                        Status = NtDeviceIoControlFile(mountmgr, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
                                                     mmp, mmpsize, mmps2, mmps.Size);
 
                         if (NT_SUCCESS(Status)) {
@@ -278,7 +278,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                             LARGE_INTEGER off;
 
                             off.QuadPart = fs_ident[i].kboff * 1024;
-                            Status = NtReadFile(file, NULL, NULL, NULL, &iosb, sb, sizeof(sb), &off, NULL);
+                            Status = NtReadFile(file, nullptr, nullptr, nullptr, &iosb, sb, sizeof(sb), &off, nullptr);
                         }
 
                         if (NT_SUCCESS(Status)) {
@@ -320,7 +320,7 @@ nextitem2:
             free(detail);
 
             index++;
-        } while (SetupDiEnumDeviceInterfaces(h, NULL, guid, index, &did));
+        } while (SetupDiEnumDeviceInterfaces(h, nullptr, guid, index, &did));
 
         SetupDiDestroyDeviceInfoList(h);
     } else {
@@ -349,14 +349,14 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     UNICODE_STRING us;
     IO_STATUS_BLOCK iosb;
     HANDLE mountmgr, btrfsh;
-    btrfs_filesystem* bfs = NULL;
+    btrfs_filesystem* bfs = nullptr;
 
     static WCHAR btrfs[] = L"\\Btrfs";
 
     device_list.clear();
 
     RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
-    InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
+    InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
 
     Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
                         FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
@@ -368,7 +368,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
     us.Buffer = btrfs;
 
-    InitializeObjectAttributes(&attr, &us, 0, NULL, NULL);
+    InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
 
     Status = NtOpenFile(&btrfsh, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &attr, &iosb,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
@@ -381,17 +381,17 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             if (bfs) free(bfs);
             bfs = (btrfs_filesystem*)malloc(bfssize);
 
-            Status = NtDeviceIoControlFile(btrfsh, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, NULL, 0, bfs, bfssize);
+            Status = NtDeviceIoControlFile(btrfsh, nullptr, nullptr, nullptr, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, nullptr, 0, bfs, bfssize);
             if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
                 free(bfs);
-                bfs = NULL;
+                bfs = nullptr;
                 break;
             }
         } while (Status == STATUS_BUFFER_OVERFLOW);
 
         if (bfs && bfs->num_devices == 0) { // no mounted filesystems found
             free(bfs);
-            bfs = NULL;
+            bfs = nullptr;
         }
     }
     NtClose(btrfsh);
@@ -554,8 +554,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     if (MessageBoxW(hwndDlg, mess, title, MB_YESNO) != IDYES)
         return;
 
-    h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwndDlg, GetLastError());
@@ -565,7 +565,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     vn.Length = vn.MaximumLength = sel->pnp_name.length() * sizeof(WCHAR);
     vn.Buffer = (WCHAR*)sel->pnp_name.c_str();
 
-    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, nullptr, nullptr);
 
     Status = NtOpenFile(&h2, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
     if (!NT_SUCCESS(Status)) {
@@ -575,7 +575,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     }
 
     if (!sel->is_disk) {
-        Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0);
+        Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             WCHAR t[255], u[255];
 
@@ -600,7 +600,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
         }
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_ADD_DEVICE, &h2, sizeof(HANDLE), NULL, 0);
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_ADD_DEVICE, &h2, sizeof(HANDLE), nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwndDlg, Status);
         NtClose(h2);
@@ -609,11 +609,11 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     }
 
     if (!sel->is_disk) {
-        Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
+        Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0);
         if (!NT_SUCCESS(Status))
             ShowNtStatusError(hwndDlg, Status);
 
-        Status = NtFsControlFile(h2, NULL, NULL, NULL, &iosb, FSCTL_UNLOCK_VOLUME, NULL, 0, NULL, 0);
+        Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_UNLOCK_VOLUME, nullptr, 0, nullptr, 0);
         if (!NT_SUCCESS(Status))
             ShowNtStatusError(hwndDlg, Status);
     }
@@ -663,9 +663,9 @@ INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     tvi.mask = TVIF_PARAM | TVIF_HANDLE;
 
                     if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
-                        sel = tvi.lParam == 0 ? NULL : (device*)tvi.lParam;
+                        sel = tvi.lParam == 0 ? nullptr : (device*)tvi.lParam;
                     else
-                        sel = NULL;
+                        sel = nullptr;
 
                     if (sel)
                         enable = (!sel->is_disk || !sel->has_parts) && !sel->multi_device;
@@ -705,7 +705,7 @@ BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
     this->hwnd = hwnd;
     this->cmdline = cmdline;
 
-    sel = NULL;
+    sel = nullptr;
 }
 
 void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
@@ -714,8 +714,8 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
     IO_STATUS_BLOCK iosb;
     btrfs_resize br;
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwndDlg, GetLastError());
@@ -725,7 +725,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
     br.device = dev_id;
     br.size = new_size;
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), NULL, 0);
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), nullptr, 0);
 
     if (Status != STATUS_MORE_PROCESSING_REQUIRED && !NT_SUCCESS(Status)) {
         ShowNtStatusError(hwndDlg, Status);
@@ -772,8 +772,8 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
             StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id);
             SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t);
 
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
             if (h != INVALID_HANDLE_VALUE) {
                 NTSTATUS Status;
@@ -787,7 +787,7 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 devices = (btrfs_device*)malloc(devsize);
 
                 while (TRUE) {
-                    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_GET_DEVICES, NULL, 0, devices, devsize);
+                    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
                     if (Status == STATUS_BUFFER_OVERFLOW) {
                         devsize += 1024;
 
@@ -922,7 +922,7 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -931,7 +931,7 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -961,7 +961,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -970,7 +970,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -988,15 +988,15 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     if (devid == 0)
         goto end;
 
-    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
 
-    Status = NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), NULL, 0);
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_CANNOT_DELETE)
             ShowStringError(hwnd, IDS_CANNOT_REMOVE_RAID);
@@ -1034,7 +1034,7 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         return;
     }
 
-    if (!LookupPrivilegeValueW(NULL, L"SeManageVolumePrivilege", &luid)) {
+    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }
@@ -1043,7 +1043,7 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
         goto end;
     }

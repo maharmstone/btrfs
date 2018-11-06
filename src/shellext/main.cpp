@@ -49,8 +49,8 @@ LONG objs_loaded = 0;
 void ShowError(HWND hwnd, ULONG err) {
     WCHAR* buf;
 
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                       err, 0, (WCHAR*)&buf, 0, NULL) == 0) {
+    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+                       err, 0, (WCHAR*)&buf, 0, nullptr) == 0) {
         MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
         return;
     }
@@ -161,12 +161,12 @@ void format_size(uint64_t size, WCHAR* s, ULONG len, BOOL show_bytes) {
 
     if (size < 1024) {
         if (!LoadStringW(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
+            ShowError(nullptr, GetLastError());
             return;
         }
 
         if (StringCchPrintfW(s, len, t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            ShowError(nullptr, ERROR_INSUFFICIENT_BUFFER);
             return;
         }
 
@@ -175,12 +175,12 @@ void format_size(uint64_t size, WCHAR* s, ULONG len, BOOL show_bytes) {
 
     if (show_bytes) {
         if (!LoadStringW(module, IDS_SIZE_BYTES, t, sizeof(t) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
+            ShowError(nullptr, GetLastError());
             return;
         }
 
         if (StringCchPrintfW(bytes, sizeof(bytes) / sizeof(WCHAR), t, nb2) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            ShowError(nullptr, ERROR_INSUFFICIENT_BUFFER);
             return;
         }
     }
@@ -206,28 +206,28 @@ void format_size(uint64_t size, WCHAR* s, ULONG len, BOOL show_bytes) {
     }
 
     if (!LoadStringW(module, sr, t, sizeof(t) / sizeof(WCHAR))) {
-        ShowError(NULL, GetLastError());
+        ShowError(nullptr, GetLastError());
         return;
     }
 
     if (show_bytes) {
         if (StringCchPrintfW(kb, sizeof(kb) / sizeof(WCHAR), t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            ShowError(nullptr, ERROR_INSUFFICIENT_BUFFER);
             return;
         }
 
         if (!LoadStringW(module, IDS_SIZE_LARGE, t, sizeof(t) / sizeof(WCHAR))) {
-            ShowError(NULL, GetLastError());
+            ShowError(nullptr, GetLastError());
             return;
         }
 
         if (StringCchPrintfW(s, len, t, kb, bytes) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            ShowError(nullptr, ERROR_INSUFFICIENT_BUFFER);
             return;
         }
     } else {
         if (StringCchPrintfW(s, len, t, f) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-            ShowError(NULL, ERROR_INSUFFICIENT_BUFFER);
+            ShowError(nullptr, ERROR_INSUFFICIENT_BUFFER);
             return;
         }
     }
@@ -237,8 +237,8 @@ wstring format_message(ULONG last_error) {
     WCHAR* buf;
     wstring s;
 
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-        last_error, 0, (WCHAR*)&buf, 0, NULL) == 0) {
+    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+        last_error, 0, (WCHAR*)&buf, 0, nullptr) == 0) {
         return L"(error retrieving message)";
     }
 
@@ -330,11 +330,11 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
     HKEY hk;
     DWORD dispos;
 
-    l = RegCreateKeyExW(root, keyname, 0, NULL, 0, KEY_ALL_ACCESS, NULL, &hk, &dispos);
+    l = RegCreateKeyExW(root, keyname, 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hk, &dispos);
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegCreateKey returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         return FALSE;
     }
@@ -343,7 +343,7 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegSetValueEx returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         return FALSE;
     }
@@ -352,7 +352,7 @@ static BOOL write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegCloseKey returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         return FALSE;
     }
@@ -371,12 +371,12 @@ static BOOL register_clsid(const GUID clsid, const WCHAR* description) {
     wsprintfW(progid, L"CLSID\\%s\\ProgId", clsidstring);
     wsprintfW(clsidkeyname, L"CLSID\\%s", clsidstring);
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, NULL, REG_SZ, (BYTE*)description, (wcslen(description) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, nullptr, REG_SZ, (BYTE*)description, (wcslen(description) + 1) * sizeof(WCHAR)))
         goto end;
 
     GetModuleFileNameW(module, dllpath, sizeof(dllpath));
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, NULL, REG_SZ, (BYTE*)dllpath, (wcslen(dllpath) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, nullptr, REG_SZ, (BYTE*)dllpath, (wcslen(dllpath) + 1) * sizeof(WCHAR)))
         goto end;
 
     if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, L"ThreadingModel", REG_SZ, (BYTE*)L"Apartment", (wcslen(L"Apartment") + 1) * sizeof(WCHAR)))
@@ -404,7 +404,7 @@ static BOOL unregister_clsid(const GUID clsid) {
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         ret = FALSE;
     } else
@@ -425,7 +425,7 @@ static BOOL reg_icon_overlay(const GUID clsid, const WCHAR* name) {
     wcscpy(path, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\");
     wcscat(path, name);
 
-    if (!write_reg_key(HKEY_LOCAL_MACHINE, path, NULL, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_LOCAL_MACHINE, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
         goto end;
 
     ret = TRUE;
@@ -448,7 +448,7 @@ static BOOL unreg_icon_overlay(const WCHAR* name) {
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         return FALSE;
     } else
@@ -466,7 +466,7 @@ static BOOL reg_context_menu_handler(const GUID clsid, const WCHAR* filetype, co
     wcscat(path, L"\\ShellEx\\ContextMenuHandlers\\");
     wcscat(path, name);
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, path, NULL, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
         goto end;
 
     ret = TRUE;
@@ -490,7 +490,7 @@ static BOOL unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name)
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         return FALSE;
     } else
@@ -508,7 +508,7 @@ static BOOL reg_prop_sheet_handler(const GUID clsid, const WCHAR* filetype, cons
     wcscat(path, L"\\ShellEx\\PropertySheetHandlers\\");
     wcscat(path, name);
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, path, NULL, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
         goto end;
 
     ret = TRUE;
@@ -532,7 +532,7 @@ static BOOL unreg_prop_sheet_handler(const WCHAR* filetype, const WCHAR* name) {
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, NULL, MB_ICONERROR);
+        MessageBoxW(0, s, nullptr, MB_ICONERROR);
 
         return FALSE;
     } else
@@ -553,32 +553,32 @@ STDAPI DllRegisterServer(void) {
         return E_FAIL;
 
     if (!reg_icon_overlay(CLSID_ShellBtrfsIconHandler, ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register icon overlay.", NULL, MB_ICONERROR);
+        MessageBoxW(0, L"Failed to register icon overlay.", nullptr, MB_ICONERROR);
         return E_FAIL;
     }
 
     if (!reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Directory\\Background", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register context menu handler.", NULL, MB_ICONERROR);
+        MessageBoxW(0, L"Failed to register context menu handler.", nullptr, MB_ICONERROR);
         return E_FAIL;
     }
 
     if (!reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Folder", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register context menu handler.", NULL, MB_ICONERROR);
+        MessageBoxW(0, L"Failed to register context menu handler.", nullptr, MB_ICONERROR);
         return E_FAIL;
     }
 
     if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"Folder", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register property sheet handler.", NULL, MB_ICONERROR);
+        MessageBoxW(0, L"Failed to register property sheet handler.", nullptr, MB_ICONERROR);
         return E_FAIL;
     }
 
     if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"*", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register property sheet handler.", NULL, MB_ICONERROR);
+        MessageBoxW(0, L"Failed to register property sheet handler.", nullptr, MB_ICONERROR);
         return E_FAIL;
     }
 
     if (!reg_prop_sheet_handler(CLSID_ShellBtrfsVolPropSheet, L"Drive", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register volume property sheet handler.", NULL, MB_ICONERROR);
+        MessageBoxW(0, L"Failed to register volume property sheet handler.", nullptr, MB_ICONERROR);
         return E_FAIL;
     }
 
@@ -639,7 +639,7 @@ static void create_subvol(wstring fn) {
     }
     path += L"\\";
 
-    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
         return;
@@ -652,7 +652,7 @@ static void create_subvol(wstring fn) {
     bcs->namelen = file.length() * sizeof(WCHAR);
     memcpy(bcs->name, file.c_str(), bcs->namelen);
 
-    NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, NULL, 0);
+    NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
 
     CloseHandle(h);
 }
@@ -689,11 +689,11 @@ static void create_snapshot2(wstring source, wstring fn) {
     }
     path += L"\\";
 
-    src = CreateFileW(source.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    src = CreateFileW(source.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     if (src == INVALID_HANDLE_VALUE)
         return;
 
-    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         CloseHandle(src);
@@ -709,7 +709,7 @@ static void create_snapshot2(wstring source, wstring fn) {
     memcpy(bcs->name, file.c_str(), bcs->namelen);
     bcs->subvol = src;
 
-    NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, NULL, 0);
+    NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
 
     CloseHandle(h);
     CloseHandle(src);
