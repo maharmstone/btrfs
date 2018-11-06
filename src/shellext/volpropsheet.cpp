@@ -882,7 +882,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
     switch (uMsg) {
         case WM_INITDIALOG:
         {
-            WCHAR s[255], t[255];
+            WCHAR s[255];
+            wstring t;
             btrfs_device *bd, *dev = nullptr;
             int i;
 
@@ -910,18 +911,16 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
             GetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
 
-            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev->dev_id) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return false;
+            wstring_sprintf(t, s, dev->dev_id);
 
-            SetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, t);
+            SetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, t.c_str());
 
             for (i = 0; i < 5; i++) {
                 GetDlgItemTextW(hwndDlg, stat_ids[i], s, sizeof(s) / sizeof(WCHAR));
 
-                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev->stats[i]) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return false;
+                wstring_sprintf(t, s, dev->stats[i]);
 
-                SetDlgItemTextW(hwndDlg, stat_ids[i], t);
+                SetDlgItemTextW(hwndDlg, stat_ids[i], t.c_str());
             }
 
             SendMessageW(GetDlgItem(hwndDlg, IDC_RESET_STATS), BCM_SETSHIELD, 0, true);
