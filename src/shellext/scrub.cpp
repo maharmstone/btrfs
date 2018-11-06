@@ -34,7 +34,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     btrfs_query_scrub* bqs2 = NULL;
     BOOL alloc_bqs2 = FALSE;
     NTSTATUS Status;
-    std::wstring s;
+    wstring s;
     WCHAR t[255], u[255], dt[255], tm[255];
     FILETIME filetime;
     SYSTEMTIME systime;

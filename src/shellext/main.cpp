@@ -233,9 +233,9 @@ void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes) {
     }
 }
 
-std::wstring format_message(ULONG last_error) {
+wstring format_message(ULONG last_error) {
     WCHAR* buf;
-    std::wstring s;
+    wstring s;
 
     if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
         last_error, 0, (WCHAR*)&buf, 0, NULL) == 0) {
@@ -253,9 +253,9 @@ std::wstring format_message(ULONG last_error) {
     return s;
 }
 
-std::wstring format_ntstatus(NTSTATUS Status) {
+wstring format_ntstatus(NTSTATUS Status) {
     _RtlNtStatusToDosError RtlNtStatusToDosError;
-    std::wstring s;
+    wstring s;
     HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
 
     if (!ntdll)
@@ -622,15 +622,15 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     return TRUE;
 }
 
-static void create_subvol(std::wstring fn) {
+static void create_subvol(wstring fn) {
     size_t found = fn.rfind(L"\\");
-    std::wstring path, file;
+    wstring path, file;
     HANDLE h;
     ULONG bcslen;
     btrfs_create_subvol* bcs;
     IO_STATUS_BLOCK iosb;
 
-    if (found == std::wstring::npos) {
+    if (found == wstring::npos) {
         path = L"";
         file = fn;
     } else {
@@ -672,15 +672,15 @@ void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     LocalFree(args);
 }
 
-static void create_snapshot2(std::wstring source, std::wstring fn) {
+static void create_snapshot2(wstring source, wstring fn) {
     size_t found = fn.rfind(L"\\");
-    std::wstring path, file;
+    wstring path, file;
     HANDLE h, src;
     ULONG bcslen;
     btrfs_create_snapshot* bcs;
     IO_STATUS_BLOCK iosb;
 
-    if (found == std::wstring::npos) {
+    if (found == wstring::npos) {
         path = L"";
         file = fn;
     } else {

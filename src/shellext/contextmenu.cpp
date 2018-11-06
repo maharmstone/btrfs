@@ -510,7 +510,7 @@ static UINT64 __inline sector_align(UINT64 n, UINT64 a) {
 BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
     HANDLE source, dest;
     WCHAR* name, volpath1[255], volpath2[255];
-    std::wstring dirw, newpath;
+    wstring dirw, newpath;
     BOOL ret = FALSE;
     FILE_BASIC_INFO fbi;
     FILETIME atime, mtime;
@@ -564,7 +564,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     if (bii.inode == SUBVOL_ROOT_INODE) {
         btrfs_create_snapshot* bcs;
         HANDLE dirh, fff;
-        std::wstring destname, search;
+        wstring destname, search;
         WIN32_FIND_DATAW wfd;
         int num = 2;
 
@@ -583,7 +583,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         if (fff != INVALID_HANDLE_VALUE) {
             do {
-                std::wstringstream ss;
+                wstringstream ss;
 
                 FindClose(fff);
 
@@ -681,7 +681,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         do {
             WCHAR* ext;
-            std::wstringstream ss;
+            wstringstream ss;
 
             ext = PathFindExtensionW(fn);
 
@@ -693,7 +693,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 ss << num;
                 ss << L")";
             } else {
-                std::wstring namew = name;
+                wstring namew = name;
 
                 ss << namew.substr(0, ext - name);
                 ss << L" (";
@@ -744,7 +744,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
             HANDLE h;
             WIN32_FIND_DATAW fff;
-            std::wstring qs;
+            wstring qs;
 
             qs = fn;
             qs += L"\\*";
@@ -752,7 +752,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             h = FindFirstFileW(qs.c_str(), &fff);
             if (h != INVALID_HANDLE_VALUE) {
                 do {
-                    std::wstring fn2;
+                    wstring fn2;
 
                     if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
                         continue;
@@ -861,7 +861,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
         if (h != INVALID_HANDLE_VALUE) {
             do {
-                std::wstring sn;
+                wstring sn;
 
                 sn = fsd.cStreamName;
 
@@ -870,7 +870,7 @@ BOOL BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     UINT8* data = NULL;
 
                     if (fsd.StreamSize.QuadPart > 0) {
-                        std::wstring fn2;
+                        wstring fn2;
 
                         fn2 = fn;
                         fn2 += sn;
@@ -1021,7 +1021,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                    (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SEND_VERBA))) {
             UINT num_files, i;
             WCHAR dll[MAX_PATH], fn[MAX_PATH];
-            std::wstring t;
+            wstring t;
             SHELLEXECUTEINFOW sei;
 
             GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
@@ -1141,7 +1141,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             return S_OK;
         } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
             WCHAR dll[MAX_PATH];
-            std::wstring t;
+            wstring t;
             SHELLEXECUTEINFOW sei;
 
             GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
@@ -1368,7 +1368,7 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
     }
 }
 
-static void reflink_copy2(std::wstring srcfn, std::wstring destdir, std::wstring destname) {
+static void reflink_copy2(wstring srcfn, wstring destdir, wstring destname) {
     HANDLE source, dest;
     BOOL ret = FALSE;
     FILE_BASIC_INFO fbi;
@@ -1487,7 +1487,7 @@ static void reflink_copy2(std::wstring srcfn, std::wstring destdir, std::wstring
         if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
             HANDLE h;
             WIN32_FIND_DATAW fff;
-            std::wstring qs;
+            wstring qs;
 
             qs = srcfn;
             qs += L"\\*";
@@ -1495,7 +1495,7 @@ static void reflink_copy2(std::wstring srcfn, std::wstring destdir, std::wstring
             h = FindFirstFileW(qs.c_str(), &fff);
             if (h != INVALID_HANDLE_VALUE) {
                 do {
-                    std::wstring fn2;
+                    wstring fn2;
 
                     if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
                         continue;
@@ -1585,7 +1585,7 @@ static void reflink_copy2(std::wstring srcfn, std::wstring destdir, std::wstring
         h = FindFirstStreamW(srcfn.c_str(), FindStreamInfoStandard, &fsd, 0);
         if (h != INVALID_HANDLE_VALUE) {
             do {
-                std::wstring sn;
+                wstring sn;
 
                 sn = fsd.cStreamName;
 
@@ -1594,7 +1594,7 @@ static void reflink_copy2(std::wstring srcfn, std::wstring destdir, std::wstring
                     UINT8* data = NULL;
 
                     if (fsd.StreamSize.QuadPart > 0) {
-                        std::wstring fn2;
+                        wstring fn2;
 
                         fn2 = srcfn;
                         fn2 += sn;
@@ -1709,7 +1709,7 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
     if (num_args >= 2) {
         HANDLE destdirh;
         BOOL dest_is_dir = FALSE;
-        std::wstring dest = args[num_args - 1], destdir, destname;
+        wstring dest = args[num_args - 1], destdir, destname;
         WCHAR volpath2[MAX_PATH];
         int i;
 
@@ -1730,7 +1730,7 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
         if (!dest_is_dir) {
             size_t found = dest.rfind(L"\\");
 
-            if (found == std::wstring::npos) {
+            if (found == wstring::npos) {
                 destdir = L"";
                 destname = dest;
             } else {
@@ -1749,10 +1749,10 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
             h = FindFirstFileW(args[i], &ffd);
             if (h != INVALID_HANDLE_VALUE) {
                 WCHAR volpath1[MAX_PATH];
-                std::wstring path = args[i];
+                wstring path = args[i];
                 size_t found = path.rfind(L"\\");
 
-                if (found == std::wstring::npos)
+                if (found == wstring::npos)
                     path = L"";
                 else
                     path = path.substr(0, found);

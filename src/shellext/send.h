@@ -55,7 +55,7 @@ private:
     WCHAR file[MAX_PATH], closetext[255];
     HANDLE thread, dirh, stream;
     HWND hwnd;
-    std::wstring subvol;
+    wstring subvol;
     char* buf;
-    std::vector <std::wstring> clones;
+    vector <wstring> clones;
 };

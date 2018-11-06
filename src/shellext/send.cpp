@@ -578,7 +578,7 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     CloseHandle(token);
 }
 
-static void send_subvol(std::wstring subvol, std::wstring file, std::wstring parent, std::vector<std::wstring> clones) {
+static void send_subvol(wstring subvol, wstring file, wstring parent, vector<wstring> clones) {
     char* buf;
     HANDLE dirh, stream;
     ULONG bss_size, i;
@@ -693,8 +693,8 @@ end3:
 void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     LPWSTR* args;
     int num_args;
-    std::wstring subvol = L"", parent = L"", file = L"";
-    std::vector<std::wstring> clones;
+    wstring subvol = L"", parent = L"", file = L"";
+    vector<wstring> clones;
 
     args = CommandLineToArgvW(lpszCmdLine, &num_args);
 

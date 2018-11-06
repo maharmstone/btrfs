@@ -25,10 +25,10 @@
 #include "../btrfsioctl.h"
 
 typedef struct {
-    std::wstring pnp_name;
-    std::wstring friendly_name;
-    std::wstring drive;
-    std::wstring fstype;
+    wstring pnp_name;
+    wstring friendly_name;
+    wstring drive;
+    wstring fstype;
     ULONG disk_num;
     ULONG part_num;
     UINT64 size;
@@ -140,7 +140,7 @@ private:
     HWND hwnd;
     WCHAR* cmdline;
     device* sel;
-    std::vector<device> device_list;
+    vector<device> device_list;
 };
 
 class BtrfsDeviceResize {

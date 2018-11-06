@@ -32,12 +32,12 @@
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
 
-static std::wstring get_mountdev_name(HANDLE h) {
+static wstring get_mountdev_name(HANDLE h) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     MOUNTDEV_NAME mdn, *mdn2;
     ULONG mdnsize;
-    std::wstring name;
+    wstring name;
 
     Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
                                    NULL, 0, &mdn, sizeof(MOUNTDEV_NAME));
@@ -55,14 +55,14 @@ static std::wstring get_mountdev_name(HANDLE h) {
         return L"";
     }
 
-    name = std::wstring(mdn2->Name, mdn2->NameLength / sizeof(WCHAR));
+    name = wstring(mdn2->Name, mdn2->NameLength / sizeof(WCHAR));
 
     free(mdn2);
 
     return name;
 }
 
-static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vector<device>* device_list) {
+static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<device>* device_list) {
     HDEVINFO h;
 
     static WCHAR dosdevices[] = L"\\DosDevices\\";
@@ -162,7 +162,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vect
                         Status = NtDeviceIoControlFile(file, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
                                                     &spq, sizeof(STORAGE_PROPERTY_QUERY), sdd2, sdd.Size);
                         if (NT_SUCCESS(Status)) {
-                            std::string desc2;
+                            string desc2;
 
                             desc2 = "";
 
@@ -300,8 +300,8 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, std::vect
                     }
 
                     if (dev.fstype == L"Btrfs" && RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) != sizeof(GUID)) {
-                        std::wstring name;
-                        std::wstring pref = L"\\Device\\Btrfs{";
+                        wstring name;
+                        wstring pref = L"\\Device\\Btrfs{";
 
                         name = get_mountdev_name(file);
 
@@ -402,13 +402,13 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
 
     NtClose(mountmgr);
 
-    std::sort(device_list.begin(), device_list.end(), sort_devices);
+    sort(device_list.begin(), device_list.end(), sort_devices);
 
     for (i = 0; i < device_list.size(); i++) {
         if (!device_list[i].ignore) {
             TVINSERTSTRUCTW tis;
             HTREEITEM item;
-            std::wstring name;
+            wstring name;
             WCHAR size[255];
 
             if (device_list[i].disk_num != 0xffffffff && device_list[i].disk_num == last_disk_num)

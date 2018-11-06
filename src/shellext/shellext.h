@@ -29,6 +29,8 @@
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 
+using namespace std;
+
 #define STATUS_SUCCESS                  (NTSTATUS)0x00000000
 #define STATUS_BUFFER_OVERFLOW          (NTSTATUS)0x80000005
 #define STATUS_END_OF_FILE              (NTSTATUS)0xc0000011
@@ -152,5 +154,5 @@ void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
 void ShowStringError(HWND hwndDlg, int num, ...);
 void format_size(UINT64 size, WCHAR* s, ULONG len, BOOL show_bytes);
 void set_dpi_aware();
-std::wstring format_message(ULONG last_error);
-std::wstring format_ntstatus(NTSTATUS Status);
+wstring format_message(ULONG last_error);
+wstring format_ntstatus(NTSTATUS Status);

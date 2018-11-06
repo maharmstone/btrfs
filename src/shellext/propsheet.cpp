@@ -148,7 +148,7 @@ static DWORD WINAPI global_search_list_thread(LPVOID lpParameter) {
     return bps->search_list_thread();
 }
 
-HRESULT BtrfsPropSheet::check_file(std::wstring fn, UINT i, UINT num_files, UINT* sv) {
+HRESULT BtrfsPropSheet::check_file(wstring fn, UINT i, UINT num_files, UINT* sv) {
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
@@ -344,7 +344,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
     return S_OK;
 }
 
-void BtrfsPropSheet::set_cmdline(std::wstring cmdline) {
+void BtrfsPropSheet::set_cmdline(wstring cmdline) {
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
@@ -511,7 +511,7 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, UINT64 flag, UINT state) {
     SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
 
-void BtrfsPropSheet::apply_changes_file(HWND hDlg, std::wstring fn) {
+void BtrfsPropSheet::apply_changes_file(HWND hDlg, wstring fn) {
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
