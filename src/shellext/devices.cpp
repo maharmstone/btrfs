@@ -62,7 +62,7 @@ static wstring get_mountdev_name(HANDLE h) {
     return name;
 }
 
-static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<device>* device_list) {
+static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<device>& device_list) {
     HDEVINFO h;
 
     static WCHAR dosdevices[] = L"\\DosDevices\\";
@@ -310,7 +310,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                     }
                 }
 
-                device_list->push_back(dev);
+                device_list.push_back(dev);
 
 nextitem:
                 NtClose(file);
@@ -396,9 +396,9 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     }
     NtClose(btrfsh);
 
-    find_devices(hwnd, &GUID_DEVINTERFACE_DISK, mountmgr, &device_list);
-    find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, mountmgr, &device_list);
-    find_devices(hwnd, &GUID_DEVINTERFACE_HIDDEN_VOLUME, mountmgr, &device_list);
+    find_devices(hwnd, &GUID_DEVINTERFACE_DISK, mountmgr, device_list);
+    find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, mountmgr, device_list);
+    find_devices(hwnd, &GUID_DEVINTERFACE_HIDDEN_VOLUME, mountmgr, device_list);
 
     NtClose(mountmgr);
 
