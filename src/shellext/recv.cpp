@@ -164,7 +164,7 @@ BOOL BtrfsRecv::find_tlv(UINT8* data, ULONG datalen, UINT16 type, void** value, 
     return FALSE;
 }
 
-BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring* utf16) {
+BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring& utf16) {
     NTSTATUS Status;
     ULONG utf16len;
     WCHAR* buf;
@@ -191,7 +191,7 @@ BOOL BtrfsRecv::utf8_to_utf16(HWND hwnd, char* utf8, ULONG utf8len, wstring* utf
 
     buf[utf16len / sizeof(WCHAR)] = 0;
 
-    *utf16 = buf;
+    utf16 = buf;
 
     free(buf);
 
@@ -236,7 +236,7 @@ BOOL BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     this->subvol_uuid = *uuid;
     this->stransid = *gen;
 
-    if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
+    if (!utf8_to_utf16(hwnd, name, namelen, nameu))
         return FALSE;
 
     bcslen = offsetof(btrfs_create_subvol, name[0]) + (nameu.length() * sizeof(WCHAR));
@@ -364,7 +364,7 @@ BOOL BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
     this->subvol_uuid = *uuid;
     this->stransid = *gen;
 
-    if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
+    if (!utf8_to_utf16(hwnd, name, namelen, nameu))
         return FALSE;
 
     bfs.uuid = *parent_uuid;
@@ -507,11 +507,11 @@ BOOL BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
             return FALSE;
         }
 
-        if (!utf8_to_utf16(hwnd, pathlink, pathlinklen, &pathlinku))
+        if (!utf8_to_utf16(hwnd, pathlink, pathlinklen, pathlinku))
             return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, name, namelen, &nameu))
+    if (!utf8_to_utf16(hwnd, name, namelen, nameu))
         return FALSE;
 
     bmnsize = sizeof(btrfs_mknod) - sizeof(WCHAR) + (nameu.length() * sizeof(WCHAR));
@@ -651,10 +651,10 @@ BOOL BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, path_len, &pathu))
+    if (!utf8_to_utf16(hwnd, path, path_len, pathu))
         return FALSE;
 
-    if (!utf8_to_utf16(hwnd, path_to, path_to_len, &path_tou))
+    if (!utf8_to_utf16(hwnd, path_to, path_to_len, path_tou))
         return FALSE;
 
     if (!MoveFileW((subvolpath + pathu).c_str(), (subvolpath + path_tou).c_str())) {
@@ -680,10 +680,10 @@ BOOL BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, path_len, &pathu))
+    if (!utf8_to_utf16(hwnd, path, path_len, pathu))
         return FALSE;
 
-    if (!utf8_to_utf16(hwnd, path_link, path_link_len, &path_linku))
+    if (!utf8_to_utf16(hwnd, path_link, path_link_len, path_linku))
         return FALSE;
 
     if (!CreateHardLinkW((subvolpath + pathu).c_str(), (subvolpath + path_linku).c_str(), NULL)) {
@@ -705,7 +705,7 @@ BOOL BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     att = GetFileAttributesW((subvolpath + pathu).c_str());
@@ -740,7 +740,7 @@ BOOL BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     att = GetFileAttributesW((subvolpath + pathu).c_str());
@@ -785,7 +785,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER)) &&
@@ -796,7 +796,7 @@ BOOL BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         wstring streamname;
         ULONG att;
 
-        if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
+        if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, streamname))
             return FALSE;
 
         att = GetFileAttributesW((subvolpath + pathu).c_str());
@@ -899,7 +899,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data)
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     if (xattrnamelen > strlen(XATTR_USER) && !memcmp(xattrname, XATTR_USER, strlen(XATTR_USER)) &&
@@ -908,7 +908,7 @@ BOOL BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, UINT8* data)
         ULONG att;
         wstring streamname;
 
-        if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, &streamname))
+        if (!utf8_to_utf16(hwnd, xattrname, xattrnamelen, streamname))
             return FALSE;
 
         streamname = streamname.substr(strlen(XATTR_USER));
@@ -1012,7 +1012,7 @@ BOOL BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     if (lastwritepath != pathu) {
@@ -1116,7 +1116,7 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&cloneuuid, &cloneuuidlen)) {
@@ -1144,7 +1144,7 @@ BOOL BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, clonepath, clonepathlen, &clonepathu))
+    if (!utf8_to_utf16(hwnd, clonepath, clonepathlen, clonepathu))
         return FALSE;
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_OFFSET, (void**)&cloneoffset, &cloneoffsetlen)) {
@@ -1282,7 +1282,7 @@ BOOL BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     att = GetFileAttributesW((subvolpath + pathu).c_str());
@@ -1356,7 +1356,7 @@ BOOL BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     h = CreateFileW((subvolpath + pathu).c_str(), WRITE_DAC, 0, NULL, OPEN_EXISTING,
@@ -1396,7 +1396,7 @@ BOOL BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES | WRITE_OWNER | WRITE_DAC, 0, NULL, OPEN_EXISTING,
@@ -1465,7 +1465,7 @@ BOOL BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, UINT8* data) {
         return FALSE;
     }
 
-    if (!utf8_to_utf16(hwnd, path, pathlen, &pathu))
+    if (!utf8_to_utf16(hwnd, path, pathlen, pathu))
         return FALSE;
 
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING,
