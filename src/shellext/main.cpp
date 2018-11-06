@@ -356,12 +356,12 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     return CLASS_E_CLASSNOTAVAILABLE;
 }
 
-static bool write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWORD type, const BYTE* data, DWORD datasize) {
+static bool write_reg_key(HKEY root, const wstring& keyname, const WCHAR* val, const wstring& data) {
     LONG l;
     HKEY hk;
     DWORD dispos;
 
-    l = RegCreateKeyExW(root, keyname, 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hk, &dispos);
+    l = RegCreateKeyExW(root, keyname.c_str(), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hk, &dispos);
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegCreateKey returned %08x", l);
@@ -370,7 +370,7 @@ static bool write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
         return false;
     }
 
-    l = RegSetValueExW(hk, val, 0, type, data, datasize);
+    l = RegSetValueExW(hk, val, 0, REG_SZ, (const BYTE*)data.c_str(), (data.length() + 1) * sizeof(WCHAR));
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
         wsprintfW(s, L"RegSetValueEx returned %08x", l);
@@ -393,24 +393,25 @@ static bool write_reg_key(HKEY root, const WCHAR* keyname, const WCHAR* val, DWO
 
 static bool register_clsid(const GUID clsid, const WCHAR* description) {
     WCHAR* clsidstring;
-    WCHAR inproc[MAX_PATH], progid[MAX_PATH], clsidkeyname[MAX_PATH], dllpath[MAX_PATH];
+    wstring inproc, progid, clsidkeyname;
+    WCHAR dllpath[MAX_PATH];
     bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    wsprintfW(inproc, L"CLSID\\%s\\InprocServer32", clsidstring);
-    wsprintfW(progid, L"CLSID\\%s\\ProgId", clsidstring);
-    wsprintfW(clsidkeyname, L"CLSID\\%s", clsidstring);
+    inproc = L"CLSID\\"s + clsidstring + L"\\InprocServer32"s;
+    progid = L"CLSID\\"s + clsidstring + L"\\ProgId"s;
+    clsidkeyname = L"CLSID\\"s + clsidstring;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, nullptr, REG_SZ, (BYTE*)description, (wcslen(description) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, nullptr, description))
         goto end;
 
     GetModuleFileNameW(module, dllpath, sizeof(dllpath));
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, nullptr, REG_SZ, (BYTE*)dllpath, (wcslen(dllpath) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, nullptr, dllpath))
         goto end;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, L"ThreadingModel", REG_SZ, (BYTE*)L"Apartment", (wcslen(L"Apartment") + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, L"ThreadingModel", L"Apartment"))
         goto end;
 
     ret = true;
@@ -446,17 +447,16 @@ static bool unregister_clsid(const GUID clsid) {
     return ret;
 }
 
-static bool reg_icon_overlay(const GUID clsid, const WCHAR* name) {
-    WCHAR path[MAX_PATH];
+static bool reg_icon_overlay(const GUID clsid, const wstring& name) {
+    wstring path;
     WCHAR* clsidstring;
     bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    wcscpy(path, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\");
-    wcscat(path, name);
+    path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
 
-    if (!write_reg_key(HKEY_LOCAL_MACHINE, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_LOCAL_MACHINE, path, nullptr, clsidstring))
         goto end;
 
     ret = true;
@@ -486,18 +486,16 @@ static bool unreg_icon_overlay(const WCHAR* name) {
         return true;
 }
 
-static bool reg_context_menu_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
-    WCHAR path[MAX_PATH];
+static bool reg_context_menu_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
+    wstring path;
     WCHAR* clsidstring;
     bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    wcscpy(path, filetype);
-    wcscat(path, L"\\ShellEx\\ContextMenuHandlers\\");
-    wcscat(path, name);
+    path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring))
         goto end;
 
     ret = true;
@@ -528,18 +526,16 @@ static bool unreg_context_menu_handler(const WCHAR* filetype, const WCHAR* name)
         return true;
 }
 
-static bool reg_prop_sheet_handler(const GUID clsid, const WCHAR* filetype, const WCHAR* name) {
-    WCHAR path[MAX_PATH];
+static bool reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
+    wstring path;
     WCHAR* clsidstring;
     bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    wcscpy(path, filetype);
-    wcscat(path, L"\\ShellEx\\PropertySheetHandlers\\");
-    wcscat(path, name);
+    path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, REG_SZ, (BYTE*)clsidstring, (wcslen(clsidstring) + 1) * sizeof(WCHAR)))
+    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring))
         goto end;
 
     ret = true;
