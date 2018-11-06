@@ -79,7 +79,7 @@ public:
     virtual HRESULT __stdcall AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam);
     virtual HRESULT __stdcall ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam);
 
-    void FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_usage* usage);
+    void FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage);
     void RefreshUsage(HWND hwndDlg);
     void ShowUsage(HWND hwndDlg);
     INT_PTR CALLBACK UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);

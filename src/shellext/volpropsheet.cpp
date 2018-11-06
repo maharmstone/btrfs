@@ -22,6 +22,7 @@
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
+#include <vector>
 
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
@@ -144,25 +145,25 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
 
 typedef struct {
     uint64_t dev_id;
-    WCHAR* name;
+    wstring name;
     uint64_t alloc;
     uint64_t size;
 } dev;
 
-void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_usage* usage) {
+void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage) {
     uint8_t i, j;
-    uint64_t num_devs, k, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
+    uint64_t num_devs, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
     btrfs_device* bd;
-    dev* devs = nullptr;
+    vector<dev> devs;
     btrfs_usage* bue;
-    WCHAR t[255], u[255], v[255];
+    wstring t, u, v;
 
     static const uint64_t types[] = { BLOCK_FLAG_DATA, BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA, BLOCK_FLAG_METADATA, BLOCK_FLAG_SYSTEM };
     static const ULONG typestrings[] = { IDS_USAGE_DATA, IDS_USAGE_MIXED, IDS_USAGE_METADATA, IDS_USAGE_SYSTEM };
     static const uint64_t duptypes[] = { 0, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID10, BLOCK_FLAG_RAID5, BLOCK_FLAG_RAID6 };
     static const ULONG dupstrings[] = { IDS_SINGLE, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID10, IDS_RAID5, IDS_RAID6 };
 
-    s[0] = 0;
+    s = L"";
 
     num_devs = 0;
     bd = devices;
@@ -176,58 +177,43 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
             break;
     }
 
-    devs = (dev*)malloc(sizeof(dev) * num_devs);
-    memset(devs, 0, sizeof(dev) * num_devs);
-
     bd = devices;
-    k = 0;
 
     dev_size = 0;
 
     while (true) {
+        dev d;
+
         if (bd->missing) {
-            if (!LoadStringW(module, IDS_MISSING, u, sizeof(u) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_MISSING, d.name)) {
                 ShowError(hwndDlg, GetLastError());
-                goto end;
+                return;
+            }
+        } else if (bd->device_number == 0xffffffff)
+            d.name = wstring(bd->name, bd->namelen / sizeof(WCHAR));
+        else if (bd->partition_number == 0) {
+            if (!load_string(module, IDS_DISK_NUM, u)) {
+                ShowError(hwndDlg, GetLastError());
+                return;
             }
 
-            devs[k].name = (WCHAR*)malloc((wcslen(u) + 1) * sizeof(WCHAR));
-            wcscpy(devs[k].name, u);
-        } else if (bd->device_number == 0xffffffff) {
-            devs[k].name = (WCHAR*)malloc(bd->namelen + sizeof(WCHAR));
-            memcpy(devs[k].name, bd->name, bd->namelen);
-            devs[k].name[bd->namelen / sizeof(WCHAR)] = 0;
-        } else if (bd->partition_number == 0) {
-            if (!LoadStringW(module, IDS_DISK_NUM, u, sizeof(u) / sizeof(WCHAR))) {
-                ShowError(hwndDlg, GetLastError());
-                goto end;
-            }
-
-            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->device_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                goto end;
-
-            devs[k].name = (WCHAR*)malloc((wcslen(t) + 1) * sizeof(WCHAR));
-            wcscpy(devs[k].name, t);
+            wstring_sprintf(d.name, u, bd->device_number);
         } else {
-            if (!LoadStringW(module, IDS_DISK_PART_NUM, u, sizeof(u) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_DISK_PART_NUM, u)) {
                 ShowError(hwndDlg, GetLastError());
-                goto end;
+                return;
             }
 
-            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->device_number, bd->partition_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                goto end;
-
-            devs[k].name = (WCHAR*)malloc((wcslen(t) + 1) * sizeof(WCHAR));
-            wcscpy(devs[k].name, t);
+            wstring_sprintf(d.name, u, bd->device_number, bd->partition_number);
         }
 
-        devs[k].dev_id = bd->dev_id;
-        devs[k].alloc = 0;
-        devs[k].size = bd->size;
+        d.dev_id = bd->dev_id;
+        d.alloc = 0;
+        d.size = bd->size;
+
+        devs.push_back(d);
 
         dev_size += bd->size;
-
-        k++;
 
         if (bd->next_entry > 0)
             bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
@@ -241,7 +227,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
 
     bue = usage;
     while (true) {
-        for (k = 0; k < bue->num_devices; k++) {
+        for (uint64_t k = 0; k < bue->num_devices; k++) {
             dev_alloc += bue->devices[k].alloc;
 
             if (bue->type & BLOCK_FLAG_DATA) {
@@ -253,13 +239,11 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
             }
         }
 
-        if (bue->type & BLOCK_FLAG_DATA) {
+        if (bue->type & BLOCK_FLAG_DATA)
             data_size += bue->size;
-        }
 
-        if (bue->type & BLOCK_FLAG_METADATA) {
+        if (bue->type & BLOCK_FLAG_METADATA)
             metadata_size += bue->size;
-        }
 
         if (bue->next_entry > 0)
             bue = (btrfs_usage*)((uint8_t*)bue + bue->next_entry);
@@ -269,94 +253,66 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
 
     // device size
 
-    if (!LoadStringW(module, IDS_USAGE_DEV_SIZE, u, sizeof(u) / sizeof(WCHAR))) {
+    if (!load_string(module, IDS_USAGE_DEV_SIZE, u)) {
         ShowError(hwndDlg, GetLastError());
-        goto end;
+        return;
     }
 
-    format_size(dev_size, v, sizeof(v) / sizeof(WCHAR), false);
+    format_size(dev_size, v, false);
 
-    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    wstring_sprintf(t, u, v.c_str());
 
-    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
-
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    s += t + L"\r\n";
 
     // device allocated
 
-    if (!LoadStringW(module, IDS_USAGE_DEV_ALLOC, u, sizeof(u) / sizeof(WCHAR))) {
+    if (!load_string(module, IDS_USAGE_DEV_ALLOC, u)) {
         ShowError(hwndDlg, GetLastError());
-        goto end;
+        return;
     }
 
-    format_size(dev_alloc, v, sizeof(v) / sizeof(WCHAR), false);
+    format_size(dev_alloc, v, false);
 
-    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    wstring_sprintf(t, u, v.c_str());
 
-    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
-
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    s += t + L"\r\n"s;
 
     // device unallocated
 
-    if (!LoadStringW(module, IDS_USAGE_DEV_UNALLOC, u, sizeof(u) / sizeof(WCHAR))) {
+    if (!load_string(module, IDS_USAGE_DEV_UNALLOC, u)) {
         ShowError(hwndDlg, GetLastError());
-        goto end;
+        return;
     }
 
-    format_size(dev_size - dev_alloc, v, sizeof(v) / sizeof(WCHAR), false);
+    format_size(dev_size - dev_alloc, v, false);
 
-    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, v) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    wstring_sprintf(t, u, v.c_str());
 
-    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
-
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    s += t + L"\r\n"s;
 
     // data ratio
 
     if (data_alloc > 0) {
-        if (!LoadStringW(module, IDS_USAGE_DATA_RATIO, u, sizeof(u) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_USAGE_DATA_RATIO, u)) {
             ShowError(hwndDlg, GetLastError());
-            goto end;
+            return;
         }
 
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, (float)data_alloc / (float)data_size) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        wstring_sprintf(t, u, (float)data_alloc / (float)data_size);
 
-        if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
-
-        if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        s += t + L"\r\n"s;
     }
 
     // metadata ratio
 
-    if (!LoadStringW(module, IDS_USAGE_METADATA_RATIO, u, sizeof(u) / sizeof(WCHAR))) {
+    if (!load_string(module, IDS_USAGE_METADATA_RATIO, u)) {
         ShowError(hwndDlg, GetLastError());
-        goto end;
+        return;
     }
 
-    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, (float)metadata_alloc / (float)metadata_size) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    wstring_sprintf(t, u, (float)metadata_alloc / (float)metadata_size);
 
-    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
-
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
-
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    s += t + L"\r\n\r\n";
 
     for (i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
         for (j = 0; j < sizeof(duptypes) / sizeof(duptypes[0]); j++) {
@@ -366,49 +322,37 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
                 if ((bue->type & types[i]) == types[i] &&
                     ((duptypes[j] == 0 && (bue->type & (BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1 | BLOCK_FLAG_RAID10 | BLOCK_FLAG_RAID5 | BLOCK_FLAG_RAID6)) == 0)
                     || bue->type & duptypes[j])) {
-                    WCHAR typestring[255], dupstring[255], sizestring[255], usedstring[255];
+                    wstring sizestring, usedstring, typestring, dupstring;
 
                     if (bue->type & BLOCK_FLAG_DATA && bue->type & BLOCK_FLAG_METADATA && (types[i] == BLOCK_FLAG_DATA || types[i] == BLOCK_FLAG_METADATA))
                         break;
 
-                    if (!LoadStringW(module, typestrings[i], typestring, sizeof(typestring) / sizeof(WCHAR))) {
+                    if (!load_string(module, typestrings[i], typestring)) {
                         ShowError(hwndDlg, GetLastError());
-                        goto end;
+                        return;
                     }
 
-                    if (!LoadStringW(module, dupstrings[j], dupstring, sizeof(dupstring) / sizeof(WCHAR))) {
+                    if (!load_string(module, dupstrings[j], dupstring)) {
                         ShowError(hwndDlg, GetLastError());
-                        goto end;
+                        return;
                     }
 
-                    format_size(bue->size, sizestring, sizeof(sizestring) / sizeof(WCHAR), false);
-                    format_size(bue->used, usedstring, sizeof(usedstring) / sizeof(WCHAR), false);
+                    format_size(bue->size, sizestring, false);
+                    format_size(bue->used, usedstring, false);
 
-                    if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), typestring, dupstring, sizestring, usedstring) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
+                    wstring_sprintf(t, typestring, dupstring.c_str(), sizestring.c_str(), usedstring.c_str());
 
-                    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
+                    s += t + L"\r\n";
 
-                    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-
-                    for (k = 0; k < bue->num_devices; k++) {
+                    for (uint64_t k = 0; k < bue->num_devices; k++) {
                         uint64_t l;
                         bool found = false;
 
-                        format_size(bue->devices[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), false);
+                        format_size(bue->devices[k].alloc, sizestring, false);
 
                         for (l = 0; l < num_devs; l++) {
                             if (devs[l].dev_id == bue->devices[k].dev_id) {
-                                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), L"%s\t%s", devs[l].name, sizestring) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                    goto end;
-
-                                if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                    goto end;
-
-                                if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                    goto end;
+                                s += devs[l].name + L"\t" + sizestring + L"\r\n";
 
                                 devs[l].alloc += bue->devices[k].alloc;
 
@@ -418,30 +362,18 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
                         }
 
                         if (!found) {
-                            if (!LoadStringW(module, IDS_UNKNOWN_DEVICE, typestring, sizeof(typestring) / sizeof(WCHAR))) {
+                            if (!load_string(module, IDS_UNKNOWN_DEVICE, typestring)) {
                                 ShowError(hwndDlg, GetLastError());
-                                goto end;
+                                return;
                             }
 
-                            if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), typestring, bue->devices[k].dev_id) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                goto end;
+                            wstring_sprintf(t, typestring, bue->devices[k].dev_id);
 
-                            if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                goto end;
-
-                            if (StringCchCatW(s, size, L"\t") == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                goto end;
-
-                            if (StringCchCatW(s, size, sizestring) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                goto end;
-
-                            if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                goto end;
+                            s += t + L"\t"s + sizestring + L"\r\n"s;
                         }
                     }
 
-                    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
+                    s += L"\r\n";
 
                     break;
                 }
@@ -454,45 +386,25 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, WCHAR* s, ULONG size, btrfs_us
         }
     }
 
-    if (!LoadStringW(module, IDS_USAGE_UNALLOC, t, sizeof(t) / sizeof(WCHAR))) {
+    if (!load_string(module, IDS_USAGE_UNALLOC, t)) {
         ShowError(hwndDlg, GetLastError());
-        goto end;
+        return;
     }
 
-    if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    s += t + L"\r\n"s;
 
-    if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-        goto end;
+    for (uint64_t k = 0; k < num_devs; k++) {
+        wstring sizestring;
 
-    for (k = 0; k < num_devs; k++) {
-        WCHAR sizestring[255];
+        format_size(devs[k].size - devs[k].alloc, sizestring, false);
 
-        format_size(devs[k].size - devs[k].alloc, sizestring, sizeof(sizestring) / sizeof(WCHAR), false);
-
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), L"%s\t%s", devs[k].name, sizestring) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
-
-        if (StringCchCatW(s, size, t) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
-
-        if (StringCchCatW(s, size, L"\r\n") == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
-    }
-
-end:
-    if (devs) {
-        for (k = 0; k < num_devs; k++) {
-            if (devs[k].name) free(devs[k].name);
-        }
-
-        free(devs);
+        s += devs[k].name + L"\t" + sizestring + L"\r\n";
     }
 }
 
 void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     HANDLE h;
-    WCHAR s[4096];
+    wstring s;
     btrfs_usage* usage;
 
     h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -562,9 +474,9 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     } else
         return;
 
-    FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR), usage);
+    FormatUsage(hwndDlg, s, usage);
 
-    SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+    SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s.c_str());
 
     free(usage);
 }
@@ -573,7 +485,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
     switch (uMsg) {
         case WM_INITDIALOG:
         {
-            WCHAR s[4096];
+            wstring s;
             int i;
             ULONG usagesize;
             NTSTATUS Status;
@@ -617,9 +529,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
                 CloseHandle(h);
 
-                FormatUsage(hwndDlg, s, sizeof(s) / sizeof(WCHAR), usage);
+                FormatUsage(hwndDlg, s, usage);
 
-                SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s);
+                SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s.c_str());
 
                 free(usage);
             }
