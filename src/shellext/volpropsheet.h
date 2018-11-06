@@ -102,6 +102,6 @@ private:
     bool ignore;
     STGMEDIUM stgm;
     bool stgm_set;
-    WCHAR fn[MAX_PATH];
+    wstring fn;
     uint64_t stats_dev;
 };

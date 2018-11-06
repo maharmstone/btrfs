@@ -50,6 +50,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     ULONG num_files;
     FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     HDROP hdrop;
+    WCHAR fnbuf[MAX_PATH];
 
     if (pidlFolder)
         return E_FAIL;
@@ -79,8 +80,10 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
         return E_FAIL;
     }
 
-    if (DragQueryFileW((HDROP)stgm.hGlobal, 0, fn, sizeof(fn) / sizeof(MAX_PATH))) {
-        h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+    if (DragQueryFileW((HDROP)stgm.hGlobal, 0, fnbuf, sizeof(fnbuf) / sizeof(MAX_PATH))) {
+        fn = fnbuf;
+
+        h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
         if (h != INVALID_HANDLE_VALUE) {
@@ -492,8 +495,8 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     WCHAR s[4096];
     btrfs_usage* usage;
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
@@ -579,8 +582,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+            h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
             if (h != INVALID_HANDLE_VALUE) {
                 btrfs_usage* usage;
@@ -723,8 +726,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     int i;
     uint64_t num_rw_devices;
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(GetParent(devlist), GetLastError());
@@ -904,17 +907,15 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
 
 void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
     HANDLE h;
-    WCHAR t[MAX_PATH + 100], sel[10];
+    wstring t;
+    WCHAR modfn[MAX_PATH], sel[10];
     SHELLEXECUTEINFOW sei;
 
     _itow(stats_dev, sel, 10);
 
-    t[0] = '"';
-    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-    wcscat(t, L"\",ResetStats ");
-    wcscat(t, fn);
-    wcscat(t, L"|");
-    wcscat(t, sel);
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+    t = L"\""s + modfn + L"\",ResetStats " + fn + L"|" + sel;
 
     RtlZeroMemory(&sei, sizeof(sei));
 
@@ -922,7 +923,7 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
     sei.hwnd = hwndDlg;
     sei.lpVerb = L"runas";
     sei.lpFile = L"rundll32.exe";
-    sei.lpParameters = t;
+    sei.lpParameters = t.c_str();
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -934,8 +935,8 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
@@ -1108,13 +1109,13 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                         case IDC_DEVICE_ADD:
                         {
-                            WCHAR t[MAX_PATH + 100];
+                            wstring t;
+                            WCHAR modfn[MAX_PATH];
                             SHELLEXECUTEINFOW sei;
 
-                            t[0] = '"';
-                            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-                            wcscat(t, L"\",AddDevice ");
-                            wcscat(t, fn);
+                            GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+                            t = L"\""s + modfn + L"\",AddDevice "s + fn;
 
                             RtlZeroMemory(&sei, sizeof(sei));
 
@@ -1122,7 +1123,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             sei.hwnd = hwndDlg;
                             sei.lpVerb = L"runas";
                             sei.lpFile = L"rundll32.exe";
-                            sei.lpParameters = t;
+                            sei.lpParameters = t.c_str();
                             sei.nShow = SW_SHOW;
                             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -1171,7 +1172,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                         case IDC_DEVICE_REMOVE:
                         {
-                            WCHAR t[2*MAX_PATH + 100], sel[MAX_PATH], sel2[MAX_PATH], mess[255], mess2[255], title[255];
+                            wstring t;
+                            WCHAR modfn[MAX_PATH], sel[MAX_PATH], sel2[MAX_PATH], mess[255], mess2[255], title[255];
                             HWND devlist;
                             SHELLEXECUTEINFOW sei;
                             int index;
@@ -1213,12 +1215,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             if (MessageBoxW(hwndDlg, mess2, title, MB_YESNO) != IDYES)
                                 return true;
 
-                            t[0] = '"';
-                            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-                            wcscat(t, L"\",RemoveDevice ");
-                            wcscat(t, fn);
-                            wcscat(t, L"|");
-                            wcscat(t, sel);
+                            GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+                            t = L"\""s + modfn + L"\",RemoveDevice "s + fn + L"|"s + sel;
 
                             RtlZeroMemory(&sei, sizeof(sei));
 
@@ -1226,7 +1225,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             sei.hwnd = hwndDlg;
                             sei.lpVerb = L"runas";
                             sei.lpFile = L"rundll32.exe";
-                            sei.lpParameters = t;
+                            sei.lpParameters = t.c_str();
                             sei.nShow = SW_SHOW;
                             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -1248,7 +1247,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             HWND devlist;
                             int index;
                             LVITEMW lvi;
-                            WCHAR sel[100], t[2*MAX_PATH + 100];
+                            wstring t;
+                            WCHAR modfn[MAX_PATH], sel[100];
                             SHELLEXECUTEINFOW sei;
 
                             devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
@@ -1266,12 +1266,9 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
                             SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
 
-                            t[0] = '"';
-                            GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-                            wcscat(t, L"\",ResizeDevice ");
-                            wcscat(t, fn);
-                            wcscat(t, L"|");
-                            wcscat(t, sel);
+                            GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+                            t = L"\""s + modfn + L"\",ResizeDevice "s + fn + L"|"s + sel;
 
                             RtlZeroMemory(&sei, sizeof(sei));
 
@@ -1279,7 +1276,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             sei.hwnd = hwndDlg;
                             sei.lpVerb = L"runas";
                             sei.lpFile = L"rundll32.exe";
-                            sei.lpParameters = t;
+                            sei.lpParameters = t.c_str();
                             sei.nShow = SW_SHOW;
                             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
@@ -1373,13 +1370,13 @@ void BtrfsVolPropSheet::ShowDevices(HWND hwndDlg) {
 }
 
 void BtrfsVolPropSheet::ShowScrub(HWND hwndDlg) {
-    WCHAR t[MAX_PATH + 100];
+    wstring t;
+    WCHAR modfn[MAX_PATH];
     SHELLEXECUTEINFOW sei;
 
-    t[0] = '"';
-    GetModuleFileNameW(module, t + 1, (sizeof(t) / sizeof(WCHAR)) - 1);
-    wcscat(t, L"\",ShowScrub ");
-    wcscat(t, fn);
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+    t = L"\""s + modfn + L"\",ShowScrub "s + fn;
 
     RtlZeroMemory(&sei, sizeof(sei));
 
@@ -1387,7 +1384,7 @@ void BtrfsVolPropSheet::ShowScrub(HWND hwndDlg) {
     sei.hwnd = hwndDlg;
     sei.lpVerb = L"runas";
     sei.lpFile = L"rundll32.exe";
-    sei.lpParameters = t;
+    sei.lpParameters = t.c_str();
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
