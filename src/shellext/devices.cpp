@@ -714,7 +714,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
     IO_STATUS_BLOCK iosb;
     btrfs_resize br;
 
-    h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
@@ -772,7 +772,7 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
             StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id);
             SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t);
 
-            h = CreateFileW(fn, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
             if (h != INVALID_HANDLE_VALUE) {
@@ -898,9 +898,9 @@ static INT_PTR CALLBACK stub_DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         return FALSE;
 }
 
-void BtrfsDeviceResize::ShowDialog(HWND hwnd, WCHAR* fn, uint64_t dev_id) {
+void BtrfsDeviceResize::ShowDialog(HWND hwnd, const wstring& fn, uint64_t dev_id) {
     this->dev_id = dev_id;
-    wcscpy(this->fn, fn);
+    this->fn = fn;
 
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RESIZE), hwnd, stub_DeviceResizeDlgProc, (LPARAM)this);
 }
