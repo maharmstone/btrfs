@@ -467,14 +467,13 @@ end:
     return ret;
 }
 
-static bool unreg_icon_overlay(const WCHAR* name) {
-    WCHAR path[MAX_PATH];
+static bool unreg_icon_overlay(const wstring& name) {
+    wstring path;
     LONG l;
 
-    wcscpy(path, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\");
-    wcscat(path, name);
+    path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
 
-    l = RegDeleteTreeW(HKEY_LOCAL_MACHINE, path);
+    l = RegDeleteTreeW(HKEY_LOCAL_MACHINE, path.c_str());
 
     if (l != ERROR_SUCCESS) {
         WCHAR s[255];
