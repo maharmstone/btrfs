@@ -233,6 +233,103 @@ void format_size(uint64_t size, WCHAR* s, ULONG len, bool show_bytes) {
     }
 }
 
+void format_size(uint64_t size, wstring& s, bool show_bytes) {
+    wstring t, bytes, kb;
+    WCHAR nb[255], nb2[255];
+    ULONG sr;
+    float f;
+    NUMBERFMTW fmt;
+    WCHAR thou[4], grouping[64], *c;
+
+    _i64tow(size, nb, 10);
+
+    GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, thou, sizeof(thou) / sizeof(WCHAR));
+
+    fmt.NumDigits = 0;
+    fmt.LeadingZero = 1;
+    fmt.lpDecimalSep = L"."; // not used
+    fmt.lpThousandSep = thou;
+    fmt.NegativeOrder = 0;
+
+    // Grouping code copied from dlls/shlwapi/string.c in Wine - thank you
+
+    fmt.Grouping = 0;
+    GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SGROUPING, grouping, sizeof(grouping) / sizeof(WCHAR));
+
+    c = grouping;
+    while (*c) {
+        if (*c >= '0' && *c < '9') {
+            fmt.Grouping *= 10;
+            fmt.Grouping += *c - '0';
+        }
+
+        c++;
+    }
+
+    if (fmt.Grouping % 10 == 0)
+        fmt.Grouping /= 10;
+    else
+        fmt.Grouping *= 10;
+
+    GetNumberFormatW(LOCALE_USER_DEFAULT, 0, nb, &fmt, nb2, sizeof(nb2) / sizeof(WCHAR));
+
+    if (size < 1024) {
+        if (!load_string(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t)) {
+            ShowError(nullptr, GetLastError());
+            return;
+        }
+
+        wstring_sprintf(s, t, nb2);
+        return;
+    }
+
+    if (show_bytes) {
+        if (!load_string(module, IDS_SIZE_BYTES, t)) {
+            ShowError(nullptr, GetLastError());
+            return;
+        }
+
+        wstring_sprintf(bytes, t, nb2);
+    }
+
+    if (size >= 1152921504606846976) {
+        sr = IDS_SIZE_EB;
+        f = (float)size / 1152921504606846976.0f;
+    } else if (size >= 1125899906842624) {
+        sr = IDS_SIZE_PB;
+        f = (float)size / 1125899906842624.0f;
+    } else if (size >= 1099511627776) {
+        sr = IDS_SIZE_TB;
+        f = (float)size / 1099511627776.0f;
+    } else if (size >= 1073741824) {
+        sr = IDS_SIZE_GB;
+        f = (float)size / 1073741824.0f;
+    } else if (size >= 1048576) {
+        sr = IDS_SIZE_MB;
+        f = (float)size / 1048576.0f;
+    } else {
+        sr = IDS_SIZE_KB;
+        f = (float)size / 1024.0f;
+    }
+
+    if (!load_string(module, sr, t)) {
+        ShowError(nullptr, GetLastError());
+        return;
+    }
+
+    if (show_bytes) {
+        wstring_sprintf(kb, t, f);
+
+        if (!load_string(module, IDS_SIZE_LARGE, t)) {
+            ShowError(nullptr, GetLastError());
+            return;
+        }
+
+        wstring_sprintf(s, t, kb.c_str(), bytes.c_str());
+    } else
+        wstring_sprintf(s, t, f);
+}
+
 wstring format_message(ULONG last_error) {
     WCHAR* buf;
     wstring s;

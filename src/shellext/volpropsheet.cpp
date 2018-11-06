@@ -804,7 +804,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
     i = 0;
     while (true) {
         LVITEMW lvi;
-        WCHAR s[255], u[255];
+        wstring s, u;
         uint64_t alloc;
 
         // ID
@@ -814,8 +814,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
         lvi.lParam = bd->dev_id;
 
-        StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%llu", bd->dev_id);
-        lvi.pszText = s;
+        s = to_wstring(bd->dev_id);
+        lvi.pszText = (LPWSTR)s.c_str();
 
         SendMessageW(devlist, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
 
@@ -825,42 +825,37 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         lvi.iSubItem = 1;
 
         if (bd->missing) {
-            if (!LoadStringW(module, IDS_MISSING, u, sizeof(u) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_MISSING, s)) {
+                ShowError(GetParent(devlist), GetLastError());
+                break;
+            }
+        } else if (bd->device_number == 0xffffffff)
+            s = wstring(bd->name, bd->namelen / sizeof(WCHAR));
+        else if (bd->partition_number == 0) {
+            if (!load_string(module, IDS_DISK_NUM, u)) {
                 ShowError(GetParent(devlist), GetLastError());
                 break;
             }
 
-            wcscpy(s, u);
-        } else if (bd->device_number == 0xffffffff) {
-            memcpy(s, bd->name, bd->namelen);
-            s[bd->namelen / sizeof(WCHAR)] = 0;
-        } else if (bd->partition_number == 0) {
-            if (!LoadStringW(module, IDS_DISK_NUM, u, sizeof(u) / sizeof(WCHAR))) {
-                ShowError(GetParent(devlist), GetLastError());
-                break;
-            }
-
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), u, bd->device_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                break;
+            wstring_sprintf(s, u, bd->device_number);
         } else {
-            if (!LoadStringW(module, IDS_DISK_PART_NUM, u, sizeof(u) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_DISK_PART_NUM, u)) {
                 ShowError(GetParent(devlist), GetLastError());
                 break;
             }
 
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), u, bd->device_number, bd->partition_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                break;
+            wstring_sprintf(s, u, bd->device_number, bd->partition_number);
         }
 
-        lvi.pszText = s;
+        lvi.pszText = (LPWSTR)s.c_str();
 
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
         // readonly
 
         lvi.iSubItem = 2;
-        LoadStringW(module, bd->readonly ? IDS_DEVLIST_READONLY_YES : IDS_DEVLIST_READONLY_NO, s, sizeof(s) / sizeof(WCHAR));
-        lvi.pszText = s;
+        load_string(module, bd->readonly ? IDS_DEVLIST_READONLY_YES : IDS_DEVLIST_READONLY_NO, s);
+        lvi.pszText = (LPWSTR)s.c_str();
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
         if (!bd->readonly)
@@ -869,8 +864,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         // size
 
         lvi.iSubItem = 3;
-        format_size(bd->size, s, sizeof(s) / sizeof(WCHAR), false);
-        lvi.pszText = s;
+        format_size(bd->size, s, false);
+        lvi.pszText = (LPWSTR)s.c_str();
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
         // alloc
@@ -878,15 +873,15 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         alloc = find_dev_alloc(bd->dev_id, usage);
 
         lvi.iSubItem = 4;
-        format_size(alloc, s, sizeof(s) / sizeof(WCHAR), false);
-        lvi.pszText = s;
+        format_size(alloc, s, false);
+        lvi.pszText = (LPWSTR)s.c_str();
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
         // alloc %
 
-        StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), L"%1.1f%%", (float)alloc * 100.0f / (float)bd->size);
+        wstring_sprintf(s, L"%1.1f%%", (float)alloc * 100.0f / (float)bd->size);
         lvi.iSubItem = 5;
-        lvi.pszText = s;
+        lvi.pszText = (LPWSTR)s.c_str();
         SendMessageW(devlist, LVM_SETITEMW, 0, (LPARAM)&lvi);
 
         i++;
