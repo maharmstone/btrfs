@@ -1079,8 +1079,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                         case IDC_DEVICE_REMOVE:
                         {
-                            wstring t;
-                            WCHAR modfn[MAX_PATH], sel[MAX_PATH], sel2[MAX_PATH], mess[255], mess2[255], title[255];
+                            wstring t, mess, mess2, title;
+                            WCHAR modfn[MAX_PATH], sel[MAX_PATH], sel2[MAX_PATH];
                             HWND devlist;
                             SHELLEXECUTEINFOW sei;
                             int index;
@@ -1106,20 +1106,19 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             lvi.cchTextMax = sizeof(sel2) / sizeof(WCHAR);
                             SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
 
-                            if (!LoadStringW(module, IDS_REMOVE_DEVICE_CONFIRMATION, mess, sizeof(mess) / sizeof(WCHAR))) {
+                            if (!load_string(module, IDS_REMOVE_DEVICE_CONFIRMATION, mess)) {
                                 ShowError(hwndDlg, GetLastError());
                                 return true;
                             }
 
-                            if (StringCchPrintfW(mess2, sizeof(mess2) / sizeof(WCHAR), mess, sel, sel2) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                                return true;
+                            wstring_sprintf(mess2, mess, sel, sel2);
 
-                            if (!LoadStringW(module, IDS_CONFIRMATION_TITLE, title, sizeof(title) / sizeof(WCHAR))) {
+                            if (!load_string(module, IDS_CONFIRMATION_TITLE, title)) {
                                 ShowError(hwndDlg, GetLastError());
                                 return true;
                             }
 
-                            if (MessageBoxW(hwndDlg, mess2, title, MB_YESNO) != IDYES)
+                            if (MessageBoxW(hwndDlg, mess2.c_str(), title.c_str(), MB_YESNO) != IDYES)
                                 return true;
 
                             GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
