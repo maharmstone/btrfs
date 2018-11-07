@@ -516,7 +516,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
 }
 
 void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
-    WCHAR mess[255], title[255];
+    wstring mess, title;
     NTSTATUS Status;
     UNICODE_STRING vn;
     OBJECT_ATTRIBUTES attr;
@@ -529,28 +529,27 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     }
 
     if (sel->fstype != L"") {
-        WCHAR s[255];
+        wstring s;
 
-        if (!LoadStringW(module, IDS_ADD_DEVICE_CONFIRMATION_FS, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_ADD_DEVICE_CONFIRMATION_FS, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        if (StringCchPrintfW(mess, sizeof(mess) / sizeof(WCHAR), s, sel->fstype.c_str()) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
+        wstring_sprintf(mess, s, sel->fstype.c_str());
     } else {
-        if (!LoadStringW(module, IDS_ADD_DEVICE_CONFIRMATION, mess, sizeof(mess) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_ADD_DEVICE_CONFIRMATION, mess)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
     }
 
-    if (!LoadStringW(module, IDS_CONFIRMATION_TITLE, title, sizeof(title) / sizeof(WCHAR))) {
+    if (!load_string(module, IDS_CONFIRMATION_TITLE, title)) {
         ShowError(hwndDlg, GetLastError());
         return;
     }
 
-    if (MessageBoxW(hwndDlg, mess, title, MB_YESNO) != IDYES)
+    if (MessageBoxW(hwndDlg, mess.c_str(), title.c_str(), MB_YESNO) != IDYES)
         return;
 
     h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -576,22 +575,21 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     if (!sel->is_disk) {
         Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            WCHAR t[255], u[255];
+            wstring t, u, title;
 
-            if (!LoadStringW(module, IDS_LOCK_FAILED, t, sizeof(t) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_LOCK_FAILED, t)) {
                 ShowError(hwnd, GetLastError());
                 return;
             }
 
-            if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, Status) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return;
+            wstring_sprintf(u, t, Status);
 
-            if (!LoadStringW(module, IDS_ERROR, title, sizeof(title) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_ERROR, title)) {
                 ShowError(hwndDlg, GetLastError());
                 return;
             }
 
-            MessageBoxW(hwndDlg, u, title, MB_ICONERROR);
+            MessageBoxW(hwndDlg, u.c_str(), title.c_str(), MB_ICONERROR);
 
             NtClose(h2);
             CloseHandle(h);
