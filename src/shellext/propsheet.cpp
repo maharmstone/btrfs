@@ -617,19 +617,17 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    WCHAR size_on_disk[1024], s[1024], old_text[1024];
+    wstring s, size_on_disk;
+    WCHAR old_text[1024];
 
-    format_size(totalsize, size_on_disk, sizeof(size_on_disk) / sizeof(WCHAR), true);
+    format_size(totalsize, size_on_disk, true);
 
-    if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), size_format, size_on_disk) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-        ShowError(hwndDlg, ERROR_INSUFFICIENT_BUFFER);
-        return;
-    }
+    wstring_sprintf(s, size_format, size_on_disk.c_str());
 
     GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, old_text, sizeof(old_text) / sizeof(WCHAR));
 
-    if (wcscmp(s, old_text))
-        SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s);
+    if (s != old_text)
+        SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s.c_str());
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
