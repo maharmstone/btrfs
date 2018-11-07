@@ -736,12 +736,12 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
     CloseHandle(h);
 
     if (Status != STATUS_MORE_PROCESSING_REQUIRED) {
-        WCHAR s[255], t[255], u[255];
+        wstring s, t, u;
 
-        LoadStringW(module, IDS_RESIZE_SUCCESSFUL, s, sizeof(s) / sizeof(WCHAR));
-        format_size(new_size, u, sizeof(u) / sizeof(WCHAR), true);
-        StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id, u);
-        MessageBoxW(hwndDlg, t, L"", MB_OK);
+        load_string(module, IDS_RESIZE_SUCCESSFUL, s);
+        format_size(new_size, u, true);
+        wstring_sprintf(t, s, dev_id, u.c_str());
+        MessageBoxW(hwndDlg, t.c_str(), L"", MB_OK);
 
         EndDialog(hwndDlg, 0);
     } else {
