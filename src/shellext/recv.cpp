@@ -1929,32 +1929,31 @@ DWORD BtrfsRecv::recv_thread() {
     CloseHandle(f);
 
     if (b && hwnd) {
-        WCHAR s[255];
+        wstring s;
 
         SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
 
         if (num_received == 1) {
-            if (!LoadStringW(module, IDS_RECV_SUCCESS, s, sizeof(s) / sizeof(WCHAR)))
+            if (!load_string(module, IDS_RECV_SUCCESS, s))
                 ShowError(hwnd, GetLastError());
             else
-                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
+                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s.c_str());
         } else {
-            if (!LoadStringW(module, IDS_RECV_SUCCESS_PLURAL, s, sizeof(s) / sizeof(WCHAR)))
+            if (!load_string(module, IDS_RECV_SUCCESS_PLURAL, s))
                 ShowError(hwnd, GetLastError());
             else {
-                WCHAR t[255];
+                wstring t;
 
-                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, num_received) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    ShowError(hwnd, ERROR_INSUFFICIENT_BUFFER);
-                else
-                    SetDlgItemTextW(hwnd, IDC_RECV_MSG, t);
+                wstring_sprintf(t, s, num_received);
+
+                SetDlgItemTextW(hwnd, IDC_RECV_MSG, t.c_str());
             }
         }
 
-        if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
+        if (!load_string(module, IDS_RECV_BUTTON_OK, s))
             ShowError(hwnd, GetLastError());
         else
-            SetDlgItemTextW(hwnd, IDCANCEL, s);
+            SetDlgItemTextW(hwnd, IDCANCEL, s.c_str());
     }
 
 end:
