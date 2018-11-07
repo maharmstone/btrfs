@@ -530,7 +530,7 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
             btrfs_balance_opts* opts;
             static int convtypes[] = { IDS_SINGLE2, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID5, IDS_RAID6, IDS_RAID10, 0 };
             int i, num_devices = 0, num_writeable_devices = 0;
-            WCHAR s[255], u[255];
+            wstring s, u;
             bool balance_started = balance_status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED);
 
             switch (opts_type) {
@@ -554,40 +554,36 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             devcb = GetDlgItem(hwndDlg, IDC_DEVID_COMBO);
 
-            if (!LoadStringW(module, IDS_DEVID_LIST, u, sizeof(u) / sizeof(WCHAR))) {
+            if (!load_string(module, IDS_DEVID_LIST, u)) {
                 ShowError(hwndDlg, GetLastError());
                 return true;
             }
 
             bd = devices;
             while (true) {
-                WCHAR t[255], v[255];
+                wstring t, v;
 
-                if (bd->device_number == 0xffffffff) {
-                    memcpy(s, bd->name, bd->namelen);
-                    s[bd->namelen / sizeof(WCHAR)] = 0;
-                } else if (bd->partition_number == 0) {
-                    if (!LoadStringW(module, IDS_DISK_NUM, v, sizeof(v) / sizeof(WCHAR))) {
+                if (bd->device_number == 0xffffffff)
+                    s = wstring(bd->name, bd->namelen);
+                else if (bd->partition_number == 0) {
+                    if (!load_string(module, IDS_DISK_NUM, v)) {
                         ShowError(hwndDlg, GetLastError());
                         return true;
                     }
 
-                    if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), v, bd->device_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        break;
+                    wstring_sprintf(s, v, bd->device_number);
                 } else {
-                    if (!LoadStringW(module, IDS_DISK_PART_NUM, v, sizeof(v) / sizeof(WCHAR))) {
+                    if (!load_string(module, IDS_DISK_PART_NUM, v)) {
                         ShowError(hwndDlg, GetLastError());
                         return true;
                     }
 
-                    if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), v, bd->device_number, bd->partition_number) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        break;
+                    wstring_sprintf(s, v, bd->device_number, bd->partition_number);
                 }
 
-                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), u, bd->dev_id, s) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    break;
+                wstring_sprintf(t, u, bd->dev_id, s.c_str());
 
-                SendMessage(devcb, CB_ADDSTRING, 0, (LPARAM)t);
+                SendMessage(devcb, CB_ADDSTRING, 0, (LPARAM)t.c_str());
 
                 if (opts->devid == bd->dev_id)
                     SendMessage(devcb, CB_SETCURSEL, num_devices, 0);
@@ -610,12 +606,12 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             i = 0;
             while (convtypes[i] != 0) {
-                if (!LoadStringW(module, convtypes[i], s, sizeof(s) / sizeof(WCHAR))) {
+                if (!load_string(module, convtypes[i], s)) {
                     ShowError(hwndDlg, GetLastError());
                     break;
                 }
 
-                SendMessage(convcb, CB_ADDSTRING, 0, (LPARAM)s);
+                SendMessage(convcb, CB_ADDSTRING, 0, (LPARAM)s.c_str());
 
                 if (opts->convert == convtypes2[i])
                     SendMessage(convcb, CB_SETCURSEL, i, 0);
@@ -654,12 +650,12 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             CheckDlgButton(hwndDlg, IDC_USAGE, opts->flags & BTRFS_BALANCE_OPTS_USAGE ? BST_CHECKED : BST_UNCHECKED);
 
-            _itow(opts->usage_start, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_USAGE_START, s);
+            s = to_wstring(opts->usage_start);
+            SetDlgItemTextW(hwndDlg, IDC_USAGE_START, s.c_str());
             SendMessageW(GetDlgItem(hwndDlg, IDC_USAGE_START_SPINNER), UDM_SETRANGE32, 0, 100);
 
-            _itow(opts->usage_end, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_USAGE_END, s);
+            s = to_wstring(opts->usage_end);
+            SetDlgItemTextW(hwndDlg, IDC_USAGE_END, s.c_str());
             SendMessageW(GetDlgItem(hwndDlg, IDC_USAGE_END_SPINNER), UDM_SETRANGE32, 0, 100);
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_USAGE_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_USAGE ? true : false);
@@ -680,11 +676,11 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             CheckDlgButton(hwndDlg, IDC_DRANGE, opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? BST_CHECKED : BST_UNCHECKED);
 
-            _itow(opts->drange_start, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_DRANGE_START, s);
+            s = to_wstring(opts->drange_start);
+            SetDlgItemTextW(hwndDlg, IDC_DRANGE_START, s.c_str());
 
-            _itow(opts->drange_end, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_DRANGE_END, s);
+            s = to_wstring(opts->drange_end);
+            SetDlgItemTextW(hwndDlg, IDC_DRANGE_END, s.c_str());
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? true : false);
             EnableWindow(GetDlgItem(hwndDlg, IDC_DRANGE_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_DRANGE ? true : false);
@@ -694,11 +690,11 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             CheckDlgButton(hwndDlg, IDC_VRANGE, opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? BST_CHECKED : BST_UNCHECKED);
 
-            _itow(opts->vrange_start, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_VRANGE_START, s);
+            s = to_wstring(opts->vrange_start);
+            SetDlgItemTextW(hwndDlg, IDC_VRANGE_START, s.c_str());
 
-            _itow(opts->vrange_end, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_VRANGE_END, s);
+            s = to_wstring(opts->vrange_end);
+            SetDlgItemTextW(hwndDlg, IDC_VRANGE_END, s.c_str());
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? true : false);
             EnableWindow(GetDlgItem(hwndDlg, IDC_VRANGE_END), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_VRANGE ? true : false);
@@ -708,12 +704,12 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             CheckDlgButton(hwndDlg, IDC_LIMIT, opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? BST_CHECKED : BST_UNCHECKED);
 
-            _itow(opts->limit_start, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_LIMIT_START, s);
+            s = to_wstring(opts->limit_start);
+            SetDlgItemTextW(hwndDlg, IDC_LIMIT_START, s.c_str());
             SendMessageW(GetDlgItem(hwndDlg, IDC_LIMIT_START_SPINNER), UDM_SETRANGE32, 0, 0x7fffffff);
 
-            _itow(opts->limit_end, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_LIMIT_END, s);
+            s = to_wstring(opts->limit_end);
+            SetDlgItemTextW(hwndDlg, IDC_LIMIT_END, s.c_str());
             SendMessageW(GetDlgItem(hwndDlg, IDC_LIMIT_END_SPINNER), UDM_SETRANGE32, 0, 0x7fffffff);
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_LIMIT_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_LIMIT ? true : false);
@@ -726,12 +722,12 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
             CheckDlgButton(hwndDlg, IDC_STRIPES, opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? BST_CHECKED : BST_UNCHECKED);
 
-            _itow(opts->stripes_start, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_STRIPES_START, s);
+            s = to_wstring(opts->stripes_start);
+            SetDlgItemTextW(hwndDlg, IDC_STRIPES_START, s.c_str());
             SendMessageW(GetDlgItem(hwndDlg, IDC_STRIPES_START_SPINNER), UDM_SETRANGE32, 0, 0xffff);
 
-            _itow(opts->stripes_end, s, 10);
-            SetDlgItemTextW(hwndDlg, IDC_STRIPES_END, s);
+            s = to_wstring(opts->stripes_end);
+            SetDlgItemTextW(hwndDlg, IDC_STRIPES_END, s.c_str());
             SendMessageW(GetDlgItem(hwndDlg, IDC_STRIPES_END_SPINNER), UDM_SETRANGE32, 0, 0xffff);
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_STRIPES_START), !balance_started && opts->flags & BTRFS_BALANCE_OPTS_STRIPES ? true : false);
