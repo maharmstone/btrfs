@@ -34,8 +34,8 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     btrfs_query_scrub* bqs2 = nullptr;
     bool alloc_bqs2 = false;
     NTSTATUS Status;
-    wstring s;
-    WCHAR t[255], u[255], dt[255], tm[255];
+    wstring s, t, u;
+    WCHAR dt[255], tm[255];
     FILETIME filetime;
     SYSTEMTIME systime;
     uint64_t recoverable_errors = 0, unrecoverable_errors = 0;
@@ -78,8 +78,6 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     } else
         bqs2 = bqs;
 
-    s[0] = 0;
-
     // "scrub started"
     if (bqs2->start_time.QuadPart > 0) {
         filetime.dwLowDateTime = bqs2->start_time.LowPart;
@@ -95,7 +93,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             goto end;
         }
 
-        if (!LoadStringW(module, IDS_SCRUB_MSG_STARTED, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_SCRUB_MSG_STARTED, t)) {
             ShowError(hwndDlg, GetLastError());
             goto end;
         }
@@ -110,8 +108,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             goto end;
         }
 
-        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        wstring_sprintf(u, t, dt, tm);
 
         s += u;
         s += L"\r\n";
@@ -128,13 +125,12 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
                 unrecoverable_errors++;
 
             if (bse->parity) {
-                if (!LoadStringW(module, IDS_SCRUB_MSG_RECOVERABLE_PARITY, t, sizeof(t) / sizeof(WCHAR))) {
+                if (!load_string(module, IDS_SCRUB_MSG_RECOVERABLE_PARITY, t)) {
                     ShowError(hwndDlg, GetLastError());
                     goto end;
                 }
 
-                if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    goto end;
+                wstring_sprintf(u, t, bse->address, bse->device);
             } else if (bse->is_metadata) {
                 int message;
 
@@ -145,24 +141,18 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
                 else
                     message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM;
 
-                if (!LoadStringW(module, message, t, sizeof(t) / sizeof(WCHAR))) {
+                if (!load_string(module, message, t)) {
                     ShowError(hwndDlg, GetLastError());
                     goto end;
                 }
 
-                if (bse->recovered) {
-                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-                } else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0) {
-                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device,
-                        bse->metadata.root, bse->metadata.level) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-                } else {
-                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device,
-                        bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.obj_id, bse->metadata.firstitem.obj_type,
-                        bse->metadata.firstitem.offset) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-                }
+                if (bse->recovered)
+                    wstring_sprintf(u, t, bse->address, bse->device);
+                else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
+                    wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level);
+                else
+                    wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.obj_id,
+                                    bse->metadata.firstitem.obj_type, bse->metadata.firstitem.offset);
             } else {
                 int message;
 
@@ -173,23 +163,19 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
                 else
                     message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA;
 
-                if (!LoadStringW(module, message, t, sizeof(t) / sizeof(WCHAR))) {
+                if (!load_string(module, message, t)) {
                     ShowError(hwndDlg, GetLastError());
                     goto end;
                 }
 
-                if (bse->recovered) {
-                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-                } else if (bse->data.subvol != 0) {
-                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device, bse->data.subvol,
-                        bse->data.filename_length / sizeof(WCHAR), bse->data.filename, bse->data.offset) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-                } else {
-                    if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, bse->address, bse->device, bse->data.filename_length / sizeof(WCHAR),
-                        bse->data.filename, bse->data.offset) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                        goto end;
-                }
+                if (bse->recovered)
+                    wstring_sprintf(u, t, bse->address, bse->device);
+                else if (bse->data.subvol != 0)
+                    wstring_sprintf(u, t, bse->address, bse->device, bse->data.subvol,
+                        bse->data.filename_length / sizeof(WCHAR), bse->data.filename, bse->data.offset);
+                else
+                    wstring_sprintf(u, t, bse->address, bse->device, bse->data.filename_length / sizeof(WCHAR),
+                        bse->data.filename, bse->data.offset);
             }
 
             s += u;
@@ -203,7 +189,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     }
 
     if (bqs2->finish_time.QuadPart > 0) {
-        WCHAR d1[255], d2[255];
+        wstring d1, d2;
         float speed;
 
         // "scrub finished"
@@ -221,7 +207,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             goto end;
         }
 
-        if (!LoadStringW(module, IDS_SCRUB_MSG_FINISHED, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_SCRUB_MSG_FINISHED, t)) {
             ShowError(hwndDlg, GetLastError());
             goto end;
         }
@@ -236,53 +222,49 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
             goto end;
         }
 
-        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, dt, tm) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        wstring_sprintf(u, t, dt, tm);
 
         s += u;
         s += L"\r\n";
 
         // summary
 
-        if (!LoadStringW(module, IDS_SCRUB_MSG_SUMMARY, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_SCRUB_MSG_SUMMARY, t)) {
             ShowError(hwndDlg, GetLastError());
             goto end;
         }
 
-        format_size(bqs2->data_scrubbed, d1, sizeof(d1) / sizeof(WCHAR), false);
+        format_size(bqs2->data_scrubbed, d1, false);
 
         speed = (float)bqs2->data_scrubbed / ((float)bqs2->duration / 10000000.0f);
 
-        format_size((uint64_t)speed, d2, sizeof(d2) / sizeof(WCHAR), false);
+        format_size((uint64_t)speed, d2, false);
 
-        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, d1, bqs2->duration / 10000000, d2) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        wstring_sprintf(u, t, d1.c_str(), bqs2->duration / 10000000, d2.c_str());
 
         s += u;
         s += L"\r\n";
 
         // recoverable errors
 
-        if (!LoadStringW(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE, t)) {
             ShowError(hwndDlg, GetLastError());
             goto end;
         }
 
-        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, recoverable_errors) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        wstring_sprintf(u, t, recoverable_errors);
 
         s += u;
         s += L"\r\n";
 
         // unrecoverable errors
 
-        if (!LoadStringW(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE, t, sizeof(t) / sizeof(WCHAR))) {
+        if (!load_string(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE, t)) {
             ShowError(hwndDlg, GetLastError());
             goto end;
         }
 
-        if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, unrecoverable_errors) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            goto end;
+        wstring_sprintf(u, t, unrecoverable_errors);
 
         s += u;
         s += L"\r\n";
