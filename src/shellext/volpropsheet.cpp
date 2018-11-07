@@ -1446,10 +1446,13 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     TOKEN_PRIVILEGES tp;
     LUID luid;
     uint64_t devid;
-    WCHAR *s, *vol, *dev;
+    wstring cmdline, vol, dev;
+    size_t pipe;
     IO_STATUS_BLOCK iosb;
 
     set_dpi_aware();
+
+    cmdline = lpszCmdLine;
 
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
         ShowError(hwnd, GetLastError());
@@ -1470,20 +1473,19 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         goto end;
     }
 
-    s = wcsstr(lpszCmdLine, L"|");
-    if (!s)
+    pipe = cmdline.find(L"|");
+
+    if (pipe == string::npos)
         goto end;
 
-    s[0] = 0;
+    vol = cmdline.substr(0, pipe);
+    dev = cmdline.substr(pipe + 1);
 
-    vol = lpszCmdLine;
-    dev = &s[1];
-
-    devid = _wtoi(dev);
+    devid = _wtoi(dev.c_str());
     if (devid == 0)
         goto end;
 
-    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+    h = CreateFileW(vol.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
