@@ -764,13 +764,14 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
         case WM_INITDIALOG:
         {
             HANDLE h;
-            WCHAR s[255], t[255], u[255];
+            WCHAR s[255];
+            wstring t, u;
 
             EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
             GetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
-            StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, dev_id);
-            SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t);
+            wstring_sprintf(t, s, dev_id);
+            SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t.c_str());
 
             h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
@@ -828,15 +829,15 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
                 CloseHandle(h);
 
                 GetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, s, sizeof(s) / sizeof(WCHAR));
-                format_size(dev_info.size, u, sizeof(u) / sizeof(WCHAR), true);
-                StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, u);
-                SetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, t);
+                format_size(dev_info.size, u, true);
+                wstring_sprintf(t, s, u.c_str());
+                SetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, t.c_str());
 
                 new_size = dev_info.size;
 
                 GetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, new_size_text, sizeof(new_size_text) / sizeof(WCHAR));
-                StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), new_size_text, u);
-                SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
+                wstring_sprintf(t, new_size_text, u.c_str());
+                SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t.c_str());
 
                 slider = GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER);
                 SendMessageW(slider, TBM_SETRANGEMIN, false, 0);
@@ -866,13 +867,13 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
 
         case WM_HSCROLL:
         {
-            WCHAR t[255], u[255];
+            wstring t, u;
 
             new_size = UInt32x32To64(SendMessageW(GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER), TBM_GETPOS, 0, 0), 1048576);
 
-            format_size(new_size, u, sizeof(u) / sizeof(WCHAR), true);
-            StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), new_size_text, u);
-            SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t);
+            format_size(new_size, u, true);
+            wstring_sprintf(t, new_size_text, u.c_str());
+            SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t.c_str());
 
             EnableWindow(GetDlgItem(hwndDlg, IDOK), new_size > 0 ? true : false);
 
