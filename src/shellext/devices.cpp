@@ -408,8 +408,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         if (!device_list[i].ignore) {
             TVINSERTSTRUCTW tis;
             HTREEITEM item;
-            wstring name;
-            WCHAR size[255];
+            wstring name, size;
 
             if (device_list[i].disk_num != 0xffffffff && device_list[i].disk_num == last_disk_num)
                 tis.hParent = diskitem;
@@ -493,7 +492,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                 name += L", ";
             }
 
-            format_size(device_list[i].size, size, sizeof(size) / sizeof(WCHAR), false);
+            format_size(device_list[i].size, size, false);
             name += size;
 
             name += L")";
