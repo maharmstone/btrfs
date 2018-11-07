@@ -1074,13 +1074,13 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             HANDLE h;
             IO_STATUS_BLOCK iosb;
             NTSTATUS Status;
-            ULONG searchpathlen, pathend, bcslen;
-            WCHAR name[MAX_PATH], *searchpath;
+            ULONG bcslen;
+            wstring name, nameorig, searchpath;
             btrfs_create_subvol* bcs;
             HANDLE fff;
             WIN32_FIND_DATAW wfd;
 
-            if (!LoadStringW(module, IDS_NEW_SUBVOL_FILENAME, name, MAX_PATH)) {
+            if (!load_string(module, IDS_NEW_SUBVOL_FILENAME, name)) {
                 ShowError(pici->hwnd, GetLastError());
                 return E_FAIL;
             }
@@ -1092,46 +1092,35 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 return E_FAIL;
             }
 
-            searchpathlen = path.size() + wcslen(name) + 10;
-            searchpath = (WCHAR*)malloc(searchpathlen * sizeof(WCHAR));
+            searchpath = path + L"\\" + name;
+            nameorig = name;
 
-            StringCchCopyW(searchpath, searchpathlen, path.c_str());
-            StringCchCatW(searchpath, searchpathlen, L"\\");
-            pathend = wcslen(searchpath);
-
-            StringCchCatW(searchpath, searchpathlen, name);
-
-            fff = FindFirstFileW(searchpath, &wfd);
+            fff = FindFirstFileW(searchpath.c_str(), &wfd);
 
             if (fff != INVALID_HANDLE_VALUE) {
-                ULONG i = wcslen(searchpath), num = 2;
+                ULONG num = 2;
 
                 do {
                     FindClose(fff);
 
-                    searchpath[i] = 0;
-                    if (StringCchPrintfW(searchpath, searchpathlen, L"%s (%u)", searchpath, num) == STRSAFE_E_INSUFFICIENT_BUFFER) {
-                        MessageBoxW(pici->hwnd, L"Filename too long.\n", L"Error", MB_ICONERROR);
-                        CloseHandle(h);
-                        return E_FAIL;
-                    }
+                    name = nameorig + L" (" + to_wstring(num) + L")";
+                    searchpath = path + L"\\" + name;
 
-                    fff = FindFirstFileW(searchpath, &wfd);
+                    fff = FindFirstFileW(searchpath.c_str(), &wfd);
                     num++;
                 } while (fff != INVALID_HANDLE_VALUE);
             }
 
-            bcslen = offsetof(btrfs_create_subvol, name[0]) + (wcslen(&searchpath[pathend]) * sizeof(WCHAR));
+            bcslen = offsetof(btrfs_create_subvol, name[0]) + (name.length() * sizeof(WCHAR));
             bcs = (btrfs_create_subvol*)malloc(bcslen);
 
             bcs->readonly = false;
             bcs->posix = false;
-            bcs->namelen = wcslen(&searchpath[pathend]) * sizeof(WCHAR);
-            memcpy(bcs->name, &searchpath[pathend], bcs->namelen);
+            bcs->namelen = name.length() * sizeof(WCHAR);
+            memcpy(bcs->name, name.c_str(), name.length() * sizeof(WCHAR));
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
 
-            free(searchpath);
             free(bcs);
 
             if (!NT_SUCCESS(Status)) {
