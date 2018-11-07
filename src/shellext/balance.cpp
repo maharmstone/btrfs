@@ -187,7 +187,7 @@ void BtrfsBalance::StopBalance(HWND hwndDlg) {
 void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, bool first) {
     HANDLE h;
     bool balancing = false;
-    WCHAR s[255], t[255];
+    wstring s, t;
 
     h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
@@ -246,15 +246,14 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, bool first) {
                 else
                     resid = IDS_BALANCE_FAILED;
 
-                if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
+                if (!load_string(module, resid, s)) {
                     ShowError(hwndDlg, GetLastError());
                     return;
                 }
 
-                if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.error, format_ntstatus(bqb.error).c_str()) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return;
+                wstring_sprintf(t, s, bqb.error, format_ntstatus(bqb.error).c_str());
 
-                SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
+                SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t.c_str());
             } else {
                 if (cancelling)
                     resid = removing ? IDS_BALANCE_CANCELLED_REMOVAL : (shrinking ? IDS_BALANCE_CANCELLED_SHRINK : IDS_BALANCE_CANCELLED);
@@ -263,12 +262,12 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, bool first) {
                 else
                     resid = IDS_NO_BALANCE;
 
-                if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
+                if (!load_string(module, resid, s)) {
                     ShowError(hwndDlg, GetLastError());
                     return;
                 }
 
-                SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s);
+                SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, s.c_str());
             }
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_BALANCE), !readonly && (IsDlgButtonChecked(hwndDlg, IDC_DATA) == BST_CHECKED ||
@@ -311,44 +310,41 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, bool first) {
     balance_status = bqb.status;
 
     if (bqb.status & BTRFS_BALANCE_REMOVAL) {
-        if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED_REMOVAL : IDS_BALANCE_RUNNING_REMOVAL, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED_REMOVAL : IDS_BALANCE_RUNNING_REMOVAL, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.data_opts.devid, bqb.total_chunks - bqb.chunks_left,
-            bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
+        wstring_sprintf(t, s, bqb.data_opts.devid, bqb.total_chunks - bqb.chunks_left, bqb.total_chunks,
+                        (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks);
 
         removing = true;
         shrinking = false;
     } else if (bqb.status & BTRFS_BALANCE_SHRINKING) {
-        if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED_SHRINK : IDS_BALANCE_RUNNING_SHRINK, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED_SHRINK : IDS_BALANCE_RUNNING_SHRINK, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.data_opts.devid, bqb.total_chunks - bqb.chunks_left,
-            bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
+        wstring_sprintf(t, s, bqb.data_opts.devid, bqb.total_chunks - bqb.chunks_left, bqb.total_chunks,
+                        (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks);
 
         removing = false;
         shrinking = true;
     } else {
-        if (!LoadStringW(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED : IDS_BALANCE_RUNNING, s, sizeof(s) / sizeof(WCHAR))) {
+        if (!load_string(module, balance_status & BTRFS_BALANCE_PAUSED ? IDS_BALANCE_PAUSED : IDS_BALANCE_RUNNING, s)) {
             ShowError(hwndDlg, GetLastError());
             return;
         }
 
-        if (StringCchPrintfW(t, sizeof(t) / sizeof(WCHAR), s, bqb.total_chunks - bqb.chunks_left,
-            bqb.total_chunks, (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks) == STRSAFE_E_INSUFFICIENT_BUFFER)
-            return;
+        wstring_sprintf(t, s, bqb.total_chunks - bqb.chunks_left, bqb.total_chunks,
+                        (float)(bqb.total_chunks - bqb.chunks_left) * 100.0f / (float)bqb.total_chunks);
 
         removing = false;
         shrinking = false;
     }
 
-    SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t);
+    SetDlgItemTextW(hwndDlg, IDC_BALANCE_STATUS, t.c_str());
 }
 
 void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
