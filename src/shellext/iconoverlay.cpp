@@ -33,12 +33,11 @@ HRESULT __stdcall BtrfsIconOverlay::QueryInterface(REFIID riid, void **ppObj) {
 }
 
 HRESULT __stdcall BtrfsIconOverlay::GetOverlayInfo(PWSTR pwszIconFile, int cchMax, int* pIndex, DWORD* pdwFlags) {
-    WCHAR dllpath[MAX_PATH];
+    if (GetModuleFileNameW(module, pwszIconFile, cchMax) == 0)
+        return E_FAIL;
 
-    GetModuleFileNameW(module, dllpath, sizeof(dllpath));
-
-    if (cchMax < wcslen(dllpath))
-        return E_INVALIDARG;
+    if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+        return E_FAIL;
 
     if (!pIndex)
         return E_INVALIDARG;
@@ -46,7 +45,6 @@ HRESULT __stdcall BtrfsIconOverlay::GetOverlayInfo(PWSTR pwszIconFile, int cchMa
     if (!pdwFlags)
         return E_INVALIDARG;
 
-    wcscpy(pwszIconFile, dllpath);
     *pIndex = 0;
     *pdwFlags = ISIOI_ICONFILE | ISIOI_ICONINDEX;
 
