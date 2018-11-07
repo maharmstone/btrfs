@@ -665,17 +665,18 @@ void BtrfsPropSheet::change_gid(HWND hDlg, uint32_t gid) {
 }
 
 void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
-    WCHAR size[1024], old_text[1024];
+    wstring size;
+    WCHAR old_text[1024];
     int i;
     ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO };
 
     for (i = 0; i < 4; i++) {
-        format_size(sizes[i], size, sizeof(size) / sizeof(WCHAR), true);
+        format_size(sizes[i], size, true);
 
         GetDlgItemTextW(hDlg, items[i], old_text, sizeof(old_text) / sizeof(WCHAR));
 
-        if (wcscmp(size, old_text))
-            SetDlgItemTextW(hDlg, items[i], size);
+        if (size != old_text)
+            SetDlgItemTextW(hDlg, items[i], size.c_str());
     }
 }
 
