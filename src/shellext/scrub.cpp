@@ -302,7 +302,7 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
     }
 
     if (first_time || status != bqs.status || chunks_left != bqs.chunks_left) {
-        WCHAR s[255];
+        wstring s;
 
         if (bqs.status == BTRFS_SCRUB_STOPPED) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), true);
@@ -310,41 +310,39 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), false);
 
             if (bqs.error != STATUS_SUCCESS) {
-                WCHAR t[255];
+                wstring t;
 
-                if (!LoadStringW(module, IDS_SCRUB_FAILED, t, sizeof(t) / sizeof(WCHAR))) {
+                if (!load_string(module, IDS_SCRUB_FAILED, t)) {
                     ShowError(hwndDlg, GetLastError());
                     return;
                 }
 
-                if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bqs.error) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return;
+                wstring_sprintf(s, t, bqs.error);
             } else {
-                if (!LoadStringW(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s, sizeof(s) / sizeof(WCHAR))) {
+                if (!load_string(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s)) {
                     ShowError(hwndDlg, GetLastError());
                     return;
                 }
             }
         } else {
-            WCHAR t[255];
+            wstring t;
             float pc;
 
             EnableWindow(GetDlgItem(hwndDlg, IDC_START_SCRUB), false);
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), true);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), true);
 
-            if (!LoadStringW(module, bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING, t, sizeof(t) / sizeof(WCHAR))) {
+            if (!load_string(module, bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING, t)) {
                 ShowError(hwndDlg, GetLastError());
                 return;
             }
 
             pc = ((float)(bqs.total_chunks - bqs.chunks_left) / (float)bqs.total_chunks) * 100.0f;
 
-            if (StringCchPrintfW(s, sizeof(s) / sizeof(WCHAR), t, bqs.total_chunks - bqs.chunks_left, bqs.total_chunks, pc) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                return;
+            wstring_sprintf(s, t, bqs.total_chunks - bqs.chunks_left, bqs.total_chunks, pc);
         }
 
-        SetDlgItemTextW(hwndDlg, IDC_SCRUB_STATUS, s);
+        SetDlgItemTextW(hwndDlg, IDC_SCRUB_STATUS, s.c_str());
 
         if (first_time || status != bqs.status) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_SCRUB_PROGRESS), bqs.status != BTRFS_SCRUB_STOPPED);
