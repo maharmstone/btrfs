@@ -421,17 +421,14 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             tis.itemex.stateMask = TVIS_EXPANDED;
 
             if (device_list[i].disk_num != 0xffffffff) {
-                WCHAR t[255], u[255];
+                wstring t;
 
-                if (!LoadStringW(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t, sizeof(t) / sizeof(WCHAR))) {
+                if (!load_string(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t)) {
                     ShowError(hwnd, GetLastError());
                     return;
                 }
 
-                if (StringCchPrintfW(u, sizeof(u) / sizeof(WCHAR), t, device_list[i].part_num != 0 ? device_list[i].part_num : device_list[i].disk_num) == STRSAFE_E_INSUFFICIENT_BUFFER)
-                    return;
-
-                name = u;
+                wstring_sprintf(name, t, device_list[i].part_num != 0 ? device_list[i].part_num : device_list[i].disk_num);
             } else
                 name = device_list[i].pnp_name;
 
