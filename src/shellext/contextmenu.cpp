@@ -49,6 +49,8 @@ typedef struct {
     USHORT Reserved;
 } reparse_header;
 
+static void path_remove_file(wstring& path);
+
 // FIXME - don't assume subvol's top inode is 0x100
 
 HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
@@ -106,14 +108,14 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
                     if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
-                        WCHAR parpath[MAX_PATH];
+                        wstring parpath;
                         HANDLE h2;
 
-                        StringCchCopyW(parpath, sizeof(parpath) / sizeof(WCHAR), fn);
+                        parpath = fn;
+                        path_remove_file(parpath);
 
-                        PathRemoveFileSpecW(parpath);
-
-                        h2 = CreateFileW(parpath, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                        h2 = CreateFileW(parpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
                         if (h2 != INVALID_HANDLE_VALUE)
                             allow_snapshot = true;
