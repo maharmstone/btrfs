@@ -582,15 +582,15 @@ void BtrfsVolPropSheet::ShowUsage(HWND hwndDlg) {
 
 static void add_lv_column(HWND list, int string, int cx) {
     LVCOLUMNW lvc;
-    WCHAR s[255];
+    wstring s;
 
-    if (!LoadStringW(module, string, s, sizeof(s) / sizeof(WCHAR))) {
+    if (!load_string(module, string, s)) {
         ShowError(GetParent(list), GetLastError());
         return;
     }
 
     lvc.mask = LVCF_TEXT|LVCF_WIDTH;
-    lvc.pszText = s;
+    lvc.pszText = (WCHAR*)s.c_str();
     lvc.cx = cx;
     SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 }
