@@ -263,6 +263,18 @@
     <ClInclude Include="src\zlib\trees.h" />
     <ClInclude Include="src\zlib\zconf.h" />
     <ClInclude Include="src\zlib\zutil.h" />
+    <ClInclude Include="src\zstd\bitstream.h" />
+    <ClInclude Include="src\zstd\compiler.h" />
+    <ClInclude Include="src\zstd\cpu.h" />
+    <ClInclude Include="src\zstd\debug.h" />
+    <ClInclude Include="src\zstd\error_private.h" />
+    <ClInclude Include="src\zstd\fse.h" />
+    <ClInclude Include="src\zstd\huf.h" />
+    <ClInclude Include="src\zstd\mem.h" />
+    <ClInclude Include="src\zstd\xxhash.h" />
+    <ClInclude Include="src\zstd\zstd.h" />
+    <ClInclude Include="src\zstd\zstd_errors.h" />
+    <ClInclude Include="src\zstd\zstd_internal.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\btrfs.rc" />
@@ -303,6 +315,13 @@
     <ClCompile Include="src\zlib\inftrees.c" />
     <ClCompile Include="src\zlib\trees.c" />
     <ClCompile Include="src\zlib\zutil.c" />
+    <ClCompile Include="src\zstd\entropy_common.c" />
+    <ClCompile Include="src\zstd\error_private.c" />
+    <ClCompile Include="src\zstd\fse_decompress.c" />
+    <ClCompile Include="src\zstd\huf_decompress.c" />
+    <ClCompile Include="src\zstd\xxhash.c" />
+    <ClCompile Include="src\zstd\zstd_common.c" />
+    <ClCompile Include="src\zstd\zstd_decompress.c" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="src\btrfs.inf" />
