@@ -3029,6 +3029,18 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
 
                                 goto exit;
                             }
+                        } else if (ed->compression == BTRFS_COMPRESSION_ZSTD) {
+                            Status = zstd_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen);
+
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("zstd_decompress returned %08x\n", Status);
+                                ExFreePool(buf);
+
+                                if (decomp)
+                                    ExFreePool(decomp);
+
+                                goto exit;
+                            }
                         } else {
                             ERR("unsupported compression type %x\n", ed->compression);
                             Status = STATUS_NOT_SUPPORTED;

@@ -35,6 +35,10 @@
 #include "zlib/inftrees.h"
 #include "zlib/inflate.h"
 
+#define ZSTD_STATIC_LINKING_ONLY
+
+#include "zstd/zstd.h"
+
 #define LINUX_PAGE_SIZE 4096
 
 typedef struct {
@@ -77,6 +81,13 @@ typedef struct {
     m_off > max_offset)
 
 #define LZO_BYTE(x) ((unsigned char) (x))
+
+#define ZSTD_ALLOC_TAG 0x6474737a // "zstd"
+
+static void* zstd_malloc(void* opaque, size_t size);
+static void zstd_free(void* opaque, void* address);
+
+ZSTD_customMem zstd_mem = { .customAlloc = zstd_malloc, .customFree = zstd_free, .opaque = NULL };
 
 static UINT8 lzo_nextbyte(lzo_stream* stream) {
     UINT8 c;
@@ -922,4 +933,64 @@ NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void
         return lzo_write_compressed_bit(fcb, start_data, end_data, data, compressed, Irp, rollback);
     } else
         return zlib_write_compressed_bit(fcb, start_data, end_data, data, compressed, Irp, rollback);
+}
+
+static void* zstd_malloc(void* opaque, size_t size) {
+    UNUSED(opaque);
+
+    return ExAllocatePoolWithTag(PagedPool, size, ZSTD_ALLOC_TAG);
+}
+
+static void zstd_free(void* opaque, void* address) {
+    UNUSED(opaque);
+
+    ExFreePool(address);
+}
+
+NTSTATUS zstd_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen) {
+    NTSTATUS Status;
+    ZSTD_DStream* stream;
+    size_t init_res;
+    ZSTD_inBuffer input;
+    ZSTD_outBuffer output;
+
+    stream = ZSTD_createDStream_advanced(zstd_mem);
+
+    if (!stream) {
+        ERR("ZSTD_createDStream failed.\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    init_res = ZSTD_initDStream(stream);
+
+    if (ZSTD_isError(init_res)) {
+        ERR("ZSTD_initDStream failed: %s\n", ZSTD_getErrorName(init_res));
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+
+    input.src = inbuf;
+    input.size = inlen;
+    input.pos = 0;
+
+    output.dst = outbuf;
+    output.size = outlen;
+    output.pos = 0;
+
+    while (input.pos < input.size && output.pos < output.size) {
+        size_t read = ZSTD_decompressStream(stream, &output, &input);
+
+        if (ZSTD_isError(read)) {
+            ERR("ZSTD_decompressStream failed: %s\n", ZSTD_getErrorName(read));
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
+    }
+
+    Status = STATUS_SUCCESS;
+
+end:
+    ZSTD_freeDStream(stream);
+
+    return Status;
 }
