@@ -2809,7 +2809,7 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                         read = (UINT32)min(min(len, ext->datalen) - off, length);
 
                         RtlCopyMemory(data + bytes_read, &ed->data[off], read);
-                    } else if (ed->compression == BTRFS_COMPRESSION_ZLIB || ed->compression == BTRFS_COMPRESSION_LZO) {
+                    } else if (ed->compression == BTRFS_COMPRESSION_ZLIB || ed->compression == BTRFS_COMPRESSION_LZO || ed->compression == BTRFS_COMPRESSION_ZSTD) {
                         UINT8* decomp;
                         BOOL decomp_alloc;
                         UINT16 inlen = ext->datalen - (UINT16)offsetof(EXTENT_DATA, data[0]);
@@ -2855,6 +2855,13 @@ NTSTATUS read_file(fcb* fcb, UINT8* data, UINT64 start, UINT64 length, ULONG* pb
                             Status = lzo_decompress(ed->data + sizeof(UINT32), inlen, decomp, (UINT32)(read + off), sizeof(UINT32));
                             if (!NT_SUCCESS(Status)) {
                                 ERR("lzo_decompress returned %08x\n", Status);
+                                if (decomp_alloc) ExFreePool(decomp);
+                                goto exit;
+                            }
+                        } else if (ed->compression == BTRFS_COMPRESSION_ZSTD) {
+                            Status = zstd_decompress(ed->data, inlen, decomp, (UINT32)(read + off));
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("zstd_decompress returned %08x\n", Status);
                                 if (decomp_alloc) ExFreePool(decomp);
                                 goto exit;
                             }
