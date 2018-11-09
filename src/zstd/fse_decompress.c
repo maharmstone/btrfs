@@ -79,14 +79,14 @@
 #define FSE_FUNCTION_NAME(X,Y) FSE_CAT(X,Y)
 #define FSE_TYPE_NAME(X,Y) FSE_CAT(X,Y)
 
-#define FSE_ALLOC_TAG 0x32455346 // "FSE "
+#define FSED_ALLOC_TAG 0x64455346 // "FSEd"
 
 
 /* Function templates */
 FSE_DTable* FSE_createDTable (unsigned tableLog)
 {
     if (tableLog > FSE_TABLELOG_ABSOLUTE_MAX) tableLog = FSE_TABLELOG_ABSOLUTE_MAX;
-    return (FSE_DTable*)ExAllocatePoolWithTag(PagedPool, FSE_DTABLE_SIZE_U32(tableLog) * sizeof (U32), FSE_ALLOC_TAG);
+    return (FSE_DTable*)ExAllocatePoolWithTag(PagedPool, FSE_DTABLE_SIZE_U32(tableLog) * sizeof (U32), FSED_ALLOC_TAG);
 }
 
 void FSE_freeDTable (FSE_DTable* dt)

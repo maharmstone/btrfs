@@ -99,6 +99,27 @@
     <ClInclude Include="src\zstd\zstd_internal.h">
       <Filter>Header Files\zstd</Filter>
     </ClInclude>
+    <ClInclude Include="src\zstd\zstd_opt.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\zstd\zstd_ldm.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\zstd\zstd_lazy.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\zstd\zstd_fast.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\zstd\zstd_double_fast.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\zstd\zstd_compress_internal.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\zstd\hist.h">
+      <Filter>Header Files\zstd</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\btrfs.rc">
@@ -230,6 +251,33 @@
       <Filter>Source Files\zstd</Filter>
     </ClCompile>
     <ClCompile Include="src\zstd\zstd_decompress.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\fse_compress.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\hist.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\huf_compress.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\zstd_compress.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\zstd_double_fast.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\zstd_fast.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\zstd_lazy.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\zstd_ldm.c">
+      <Filter>Source Files\zstd</Filter>
+    </ClCompile>
+    <ClCompile Include="src\zstd\zstd_opt.c">
       <Filter>Source Files\zstd</Filter>
     </ClCompile>
   </ItemGroup>
