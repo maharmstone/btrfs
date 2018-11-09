@@ -913,6 +913,166 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     return STATUS_DISK_FULL;
 }
 
+static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    UINT8 compression;
+    UINT32 comp_length;
+    UINT8* comp_data;
+    UINT32 out_left;
+    LIST_ENTRY* le;
+    chunk* c;
+    ZSTD_CStream* stream;
+    size_t init_res, written;
+    ZSTD_inBuffer input;
+    ZSTD_outBuffer output;
+
+    comp_data = ExAllocatePoolWithTag(PagedPool, (UINT32)(end_data - start_data), ALLOC_TAG);
+    if (!comp_data) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        ExFreePool(comp_data);
+        return Status;
+    }
+
+    stream = ZSTD_createCStream_advanced(zstd_mem);
+
+    if (!stream) {
+        ERR("ZSTD_createCStream failed.\n");
+        ExFreePool(comp_data);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    init_res = ZSTD_initCStream(stream, 1); // FIXME - make compression level customizable?
+
+    if (ZSTD_isError(init_res)) {
+        ERR("ZSTD_initCStream failed: %s\n", ZSTD_getErrorName(init_res));
+        ZSTD_freeCStream(stream);
+        ExFreePool(comp_data);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    input.src = data;
+    input.size = (UINT32)(end_data - start_data);
+    input.pos = 0;
+
+    output.dst = comp_data;
+    output.size = (UINT32)(end_data - start_data);
+    output.pos = 0;
+
+    while (input.pos < input.size && output.pos < output.size) {
+        written = ZSTD_compressStream(stream, &output, &input);
+
+        if (ZSTD_isError(written)) {
+            ERR("ZSTD_compressStream failed: %s\n", ZSTD_getErrorName(written));
+            ZSTD_freeCStream(stream);
+            ExFreePool(comp_data);
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    written = ZSTD_endStream(stream, &output);
+    if (ZSTD_isError(written)) {
+        ERR("ZSTD_endStream failed: %s\n", ZSTD_getErrorName(written));
+        ZSTD_freeCStream(stream);
+        ExFreePool(comp_data);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ZSTD_freeCStream(stream);
+
+    out_left = output.size - output.pos;
+
+    if (out_left < fcb->Vcb->superblock.sector_size) { // compressed extent would be larger than or same size as uncompressed extent
+        ExFreePool(comp_data);
+
+        comp_length = (UINT32)(end_data - start_data);
+        comp_data = data;
+        compression = BTRFS_COMPRESSION_NONE;
+
+        *compressed = FALSE;
+    } else {
+        UINT32 cl;
+
+        compression = BTRFS_COMPRESSION_ZSTD;
+        cl = (UINT32)(end_data - start_data - out_left);
+        comp_length = (UINT32)sector_align(cl, fcb->Vcb->superblock.sector_size);
+
+        RtlZeroMemory(comp_data + cl, comp_length - cl);
+
+        *compressed = TRUE;
+    }
+
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
+
+    le = fcb->Vcb->chunks.Flink;
+    while (le != &fcb->Vcb->chunks) {
+        c = CONTAINING_RECORD(le, chunk, list_entry);
+
+        if (!c->readonly && !c->reloc) {
+            ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+            if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+                    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+                    if (compression != BTRFS_COMPRESSION_NONE)
+                        ExFreePool(comp_data);
+
+                    return STATUS_SUCCESS;
+                }
+            }
+
+            ExReleaseResourceLite(&c->lock);
+        }
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, FALSE);
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("alloc_chunk returned %08x\n", Status);
+
+        if (compression != BTRFS_COMPRESSION_NONE)
+            ExFreePool(comp_data);
+
+        return Status;
+    }
+
+    if (c) {
+        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+
+        if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+                if (compression != BTRFS_COMPRESSION_NONE)
+                    ExFreePool(comp_data);
+
+                return STATUS_SUCCESS;
+            }
+        }
+
+        ExReleaseResourceLite(&c->lock);
+    }
+
+    WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
+
+    if (compression != BTRFS_COMPRESSION_NONE)
+        ExFreePool(comp_data);
+
+    return STATUS_DISK_FULL;
+}
+
 NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     UINT8 type;
 
@@ -928,7 +1088,10 @@ NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void
             type = BTRFS_COMPRESSION_ZLIB;
     }
 
-    if (type == BTRFS_COMPRESSION_LZO) {
+    if (type == BTRFS_COMPRESSION_ZSTD) {
+        fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD;
+        return zstd_write_compressed_bit(fcb, start_data, end_data, data, compressed, Irp, rollback);
+    } else if (type == BTRFS_COMPRESSION_LZO) {
         fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO;
         return lzo_write_compressed_bit(fcb, start_data, end_data, data, compressed, Irp, rollback);
     } else
