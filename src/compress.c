@@ -84,6 +84,9 @@ typedef struct {
 
 #define ZSTD_ALLOC_TAG 0x6474737a // "zstd"
 
+// needs to be the same as Linux (fs/btrfs/zstd.c)
+#define ZSTD_BTRFS_MAX_WINDOWLOG 17
+
 static void* zstd_malloc(void* opaque, size_t size);
 static void zstd_free(void* opaque, void* address);
 
@@ -925,6 +928,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     size_t init_res, written;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
+    ZSTD_parameters params;
 
     comp_data = ExAllocatePoolWithTag(PagedPool, (UINT32)(end_data - start_data), ALLOC_TAG);
     if (!comp_data) {
@@ -947,10 +951,15 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         return STATUS_INTERNAL_ERROR;
     }
 
-    init_res = ZSTD_initCStream(stream, 1); // FIXME - make compression level customizable?
+    params = ZSTD_getParams(3, (UINT32)(end_data - start_data), 0); // FIXME - make compression level customizable?
+
+    if (params.cParams.windowLog > ZSTD_BTRFS_MAX_WINDOWLOG)
+        params.cParams.windowLog = ZSTD_BTRFS_MAX_WINDOWLOG;
+
+    init_res = ZSTD_initCStream_advanced(stream, NULL, 0, params, (UINT32)(end_data - start_data));
 
     if (ZSTD_isError(init_res)) {
-        ERR("ZSTD_initCStream failed: %s\n", ZSTD_getErrorName(init_res));
+        ERR("ZSTD_initCStream_advanced failed: %s\n", ZSTD_getErrorName(init_res));
         ZSTD_freeCStream(stream);
         ExFreePool(comp_data);
         return STATUS_INTERNAL_ERROR;
