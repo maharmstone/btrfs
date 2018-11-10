@@ -930,7 +930,6 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     LUID luid;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
-    BtrfsBalance* bb;
 
     set_dpi_aware();
 
@@ -984,11 +983,8 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         return;
     }
 
-    bb = new BtrfsBalance(vol, true);
-
-    bb->ShowBalance(hwnd);
-
-    delete bb;
+    BtrfsBalance bb(vol, true);
+    bb.ShowBalance(hwnd);
 }
 
 void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -997,7 +993,6 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    BtrfsDeviceResize* bdr;
 
     set_dpi_aware();
 
@@ -1033,9 +1028,8 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     if (devid == 0)
         return;
 
-    bdr = new BtrfsDeviceResize;
-    bdr->ShowDialog(hwnd, vol, devid);
-    delete bdr;
+    BtrfsDeviceResize bdr;
+    bdr.ShowDialog(hwnd, vol, devid);
 }
 
 #ifdef __cplusplus

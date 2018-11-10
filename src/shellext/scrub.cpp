@@ -519,7 +519,6 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    BtrfsScrub* scrub;
 
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
         ShowError(hwnd, GetLastError());
@@ -542,11 +541,9 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     set_dpi_aware();
 
-    scrub = new BtrfsScrub(lpszCmdLine);
+    BtrfsScrub scrub(lpszCmdLine);
 
-    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwnd, stub_ScrubDlgProc, (LPARAM)scrub);
-
-    delete scrub;
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwnd, stub_ScrubDlgProc, (LPARAM)&scrub);
 }
 
 void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {

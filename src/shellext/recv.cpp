@@ -2014,7 +2014,6 @@ void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path, bool quiet) {
 void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     OPENFILENAMEW ofn;
     WCHAR file[MAX_PATH];
-    BtrfsRecv* recv;
     win_handle token;
     TOKEN_PRIVILEGES* tp;
     LUID luid;
@@ -2080,11 +2079,9 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameW(&ofn)) {
-        recv = new BtrfsRecv;
+        BtrfsRecv recv;
 
-        recv->Open(hwnd, file, lpszCmdLine, false);
-
-        delete recv;
+        recv.Open(hwnd, file, lpszCmdLine, false);
     }
 
     free(tp);
@@ -2100,7 +2097,6 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         return;
 
     if (num_args >= 2) {
-        BtrfsRecv* br;
         win_handle token;
         TOKEN_PRIVILEGES* tp;
         ULONG tplen;
@@ -2147,10 +2143,8 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
 
         free(tp);
 
-        br = new BtrfsRecv;
-        br->Open(nullptr, args[0], args[1], true);
-
-        delete br;
+        BtrfsRecv br;
+        br.Open(nullptr, args[0], args[1], true);
     }
 
 end:

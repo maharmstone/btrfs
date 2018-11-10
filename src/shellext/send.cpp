@@ -540,7 +540,6 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    BtrfsSend* bs;
 
     set_dpi_aware();
 
@@ -563,11 +562,9 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         return;
     }
 
-    bs = new BtrfsSend;
+    BtrfsSend bs;
 
-    bs->Open(hwnd, lpszCmdLine);
-
-    delete bs;
+    bs.Open(hwnd, lpszCmdLine);
 }
 
 static void send_subvol(const wstring& subvol, const wstring& file, const wstring& parent, const vector<wstring>& clones) {
