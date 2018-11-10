@@ -759,6 +759,7 @@ BEGIN
     IDS_BALANCE_CANCELLED_SHRINK "Device shrinking cancelled."
     IDS_BALANCE_COMPLETE_SHRINK "Device successfully shrunk."
     IDS_BALANCE_FAILED_SHRINK "Device shrinking failed (error %08x, %s)"
+    IDS_COMPRESS_ZSTD       "Zstd"
 END
 
 #endif    // English (United Kingdom) resources

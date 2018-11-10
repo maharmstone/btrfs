@@ -794,7 +794,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     static ULONG perm_controls[] = { IDC_USERR, IDC_USERW, IDC_USERX, IDC_GROUPR, IDC_GROUPW, IDC_GROUPX, IDC_OTHERR, IDC_OTHERW, IDC_OTHERX,
                                      IDC_SETUID, IDC_SETGID, IDC_STICKY, 0 };
     static ULONG perms[] = { S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH, S_ISUID, S_ISGID, S_ISVTX, 0 };
-    static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, 0 };
+    static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, IDS_COMPRESS_ZSTD, 0 };
 
     if (various_subvols) {
         if (!load_string(module, IDS_VARIOUS, s)) {

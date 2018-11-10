@@ -196,6 +196,7 @@
 #define IDS_BALANCE_CANCELLED_SHRINK    278
 #define IDS_BALANCE_COMPLETE_SHRINK     279
 #define IDS_BALANCE_FAILED_SHRINK       280
+#define IDS_COMPRESS_ZSTD               281
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -322,7 +323,7 @@
 #define IDC_RESIZE_NEWSIZE              1073
 
 // Next default values for new objects
-//
+// 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        174
