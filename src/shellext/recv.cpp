@@ -20,7 +20,6 @@
 #include <strsafe.h>
 #include <stddef.h>
 #include <sys/stat.h>
-#include <string>
 #include "recv.h"
 #include "resource.h"
 
@@ -1988,7 +1987,7 @@ static INT_PTR CALLBACK stub_RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
         return false;
 }
 
-void BtrfsRecv::Open(HWND hwnd, WCHAR* file, WCHAR* path, bool quiet) {
+void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool quiet) {
     uint32_t cpuInfo[4];
 
     streamfile = file;
@@ -2088,33 +2087,29 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 }
 
 void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 2) {
+    if (args.size() >= 2) {
         win_handle token;
         TOKEN_PRIVILEGES* tp;
         ULONG tplen;
         LUID luid;
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-            goto end;
+            return;
 
         tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
         tp = (TOKEN_PRIVILEGES*)malloc(tplen);
         if (!tp)
-            goto end;
+            return;
 
         tp->PrivilegeCount = 3;
 
         if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
             free(tp);
-            goto end;
+            return;
         }
 
         tp->Privileges[0].Luid = luid;
@@ -2122,7 +2117,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
 
         if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
             free(tp);
-            goto end;
+            return;
         }
 
         tp->Privileges[1].Luid = luid;
@@ -2130,7 +2125,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
 
         if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
             free(tp);
-            goto end;
+            return;
         }
 
         tp->Privileges[2].Luid = luid;
@@ -2138,7 +2133,7 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
 
         if (!AdjustTokenPrivileges(token, false, tp, tplen, nullptr, nullptr)) {
             free(tp);
-            goto end;
+            return;
         }
 
         free(tp);
@@ -2146,7 +2141,4 @@ void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         BtrfsRecv br;
         br.Open(nullptr, args[0], args[1], true);
     }
-
-end:
-    LocalFree(args);
 }

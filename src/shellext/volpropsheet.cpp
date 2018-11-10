@@ -22,7 +22,6 @@
 #include <windows.h>
 #include <strsafe.h>
 #include <winternl.h>
-#include <vector>
 
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>

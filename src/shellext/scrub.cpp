@@ -24,7 +24,6 @@
 #include <stdio.h>
 #include <strsafe.h>
 #include <winternl.h>
-#include <string>
 
 #define NO_SHLWAPI_STRFCNS
 #include <shlwapi.h>
@@ -547,15 +546,11 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 }
 
 void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 1) {
+    if (args.size() >= 1) {
         LUID luid;
         TOKEN_PRIVILEGES tp;
 
@@ -563,20 +558,20 @@ void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
             win_handle token;
 
             if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-                goto end;
+                return;
 
             if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
-                goto end;
+                return;
 
             tp.PrivilegeCount = 1;
             tp.Privileges[0].Luid = luid;
             tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
             if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
-                goto end;
+                return;
         }
 
-        win_handle h = CreateFileW(args[0], FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        win_handle h = CreateFileW(args[0].c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
             IO_STATUS_BLOCK iosb;
@@ -584,21 +579,14 @@ void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
             NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_START_SCRUB, nullptr, 0, nullptr, 0);
         }
     }
-
-end:
-    LocalFree(args);
 }
 
 void CALLBACK StopScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 1) {
+    if (args.size() >= 1) {
         LUID luid;
         TOKEN_PRIVILEGES tp;
 
@@ -606,20 +594,20 @@ void CALLBACK StopScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
             win_handle token;
 
             if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-                goto end;
+                return;
 
             if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
-                goto end;
+                return;
 
             tp.PrivilegeCount = 1;
             tp.Privileges[0].Luid = luid;
             tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
             if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
-                goto end;
+                return;
         }
 
-        win_handle h = CreateFileW(args[0], FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        win_handle h = CreateFileW(args[0].c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
             IO_STATUS_BLOCK iosb;
@@ -627,7 +615,4 @@ void CALLBACK StopScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
             NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_STOP_SCRUB, nullptr, 0, nullptr, 0);
         }
     }
-
-end:
-    LocalFree(args);
 }

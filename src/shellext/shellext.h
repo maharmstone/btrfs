@@ -26,6 +26,7 @@
 #include <windows.h>
 #include <winternl.h>
 #include <string>
+#include <vector>
 #include <stdint.h>
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
@@ -180,3 +181,4 @@ wstring format_message(ULONG last_error);
 wstring format_ntstatus(NTSTATUS Status);
 bool load_string(HMODULE module, UINT id, wstring& s);
 void wstring_sprintf(wstring& s, wstring fmt, ...);
+void command_line_to_args(LPWSTR cmdline, vector<wstring> args);

@@ -661,18 +661,12 @@ static void create_subvol(const wstring& fn) {
 }
 
 void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 1)
+    if (args.size() >= 1)
         create_subvol(args[0]);
-
-    LocalFree(args);
 }
 
 static void create_snapshot2(const wstring& source, const wstring& fn) {
@@ -714,18 +708,12 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
 }
 
 void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 2)
+    if (args.size() >= 2)
         create_snapshot2(args[0], args[1]);
-
-    LocalFree(args);
 }
 
 #ifdef __cplusplus
@@ -752,4 +740,29 @@ win_handle& win_handle::operator=(const HANDLE nh) {
 
 HANDLE* win_handle::operator&() {
     return &h;
+}
+
+void command_line_to_args(LPWSTR cmdline, vector<wstring> args) {
+    LPWSTR* l;
+    int num_args;
+
+    args.clear();
+
+    l = CommandLineToArgvW(cmdline, &num_args);
+
+    if (!l)
+        return;
+
+    try {
+        args.reserve(num_args);
+
+        for (unsigned int i = 0; i < (unsigned int)num_args; i++) {
+            args.push_back(l[i]);
+        }
+    } catch (...) {
+        LocalFree(l);
+        throw;
+    }
+
+    LocalFree(l);
 }

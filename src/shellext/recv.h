@@ -18,8 +18,6 @@
 #pragma once
 
 #include <shlobj.h>
-#include <string>
-#include <vector>
 #include "../btrfs.h"
 
 extern LONG objs_loaded;
@@ -48,7 +46,7 @@ public:
         cache.clear();
     }
 
-    void Open(HWND hwnd, WCHAR* file, WCHAR* path, bool quiet);
+    void Open(HWND hwnd, const wstring& file, const wstring& path, bool quiet);
     DWORD recv_thread();
     INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 

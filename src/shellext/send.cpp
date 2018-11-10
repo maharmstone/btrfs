@@ -675,41 +675,36 @@ end3:
 }
 
 void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
     wstring subvol = L"", parent = L"", file = L"";
     vector<wstring> clones;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 2) {
+    if (args.size() >= 2) {
         TOKEN_PRIVILEGES tp;
         LUID luid;
-        int i;
 
         {
             win_handle token;
 
             if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-                goto end;
+                return;
 
             if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
-                goto end;
+                return;
 
             tp.PrivilegeCount = 1;
             tp.Privileges[0].Luid = luid;
             tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
             if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
-                goto end;
+                return;
         }
 
-        for (i = 0; i < num_args; i++) {
+        for (unsigned int i = 0; i < args.size(); i++) {
             if (args[i][0] == '-') {
-                if (args[i][2] == 0 && i < num_args - 1) {
+                if (args[i][2] == 0 && i < args.size() - 1) {
                     if (args[i][1] == 'p') {
                         parent = args[i+1];
                         i++;
@@ -729,7 +724,4 @@ void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         if (subvol != L"" && file != L"")
             send_subvol(subvol, file, parent, clones);
     }
-
-end:
-    LocalFree(args);
 }

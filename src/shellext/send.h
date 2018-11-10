@@ -18,8 +18,6 @@
 #pragma once
 
 #include "../btrfs.h"
-#include <string>
-#include <vector>
 
 class BtrfsSend {
 public:

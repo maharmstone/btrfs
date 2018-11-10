@@ -19,7 +19,6 @@
 
 #include <shlobj.h>
 #include <deque>
-#include <string>
 #include "../btrfsioctl.h"
 
 #ifndef S_IRUSR

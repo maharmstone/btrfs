@@ -22,7 +22,6 @@
 #include <stddef.h>
 #include <winternl.h>
 #include <wincodec.h>
-#include <string>
 #include <sstream>
 
 #define NO_SHLWAPI_STRFCNS
@@ -1645,19 +1644,14 @@ end:
 }
 
 void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    LPWSTR* args;
-    int num_args;
+    vector<wstring> args;
 
-    args = CommandLineToArgvW(lpszCmdLine, &num_args);
+    command_line_to_args(lpszCmdLine, args);
 
-    if (!args)
-        return;
-
-    if (num_args >= 2) {
+    if (args.size() >= 2) {
         bool dest_is_dir = false;
-        wstring dest = args[num_args - 1], destdir, destname;
+        wstring dest = args[args.size() - 1], destdir, destname;
         WCHAR volpath2[MAX_PATH];
-        int i;
 
         {
             win_handle destdirh = CreateFileW(dest.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -1689,13 +1683,13 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
         }
 
         if (!GetVolumePathNameW(dest.c_str(), volpath2, sizeof(volpath2) / sizeof(WCHAR)))
-            goto end;
+            return;
 
-        for (i = 0; i < num_args - 1; i++) {
+        for (unsigned int i = 0; i < args.size() - 1; i++) {
             WIN32_FIND_DATAW ffd;
             HANDLE h;
 
-            h = FindFirstFileW(args[i], &ffd);
+            h = FindFirstFileW(args[i].c_str(), &ffd);
             if (h != INVALID_HANDLE_VALUE) {
                 WCHAR volpath1[MAX_PATH];
                 wstring path = args[i];
@@ -1720,7 +1714,4 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
             }
         }
     }
-
-end:
-    LocalFree(args);
 }

@@ -20,8 +20,6 @@
 #include <windows.h>
 #include <winternl.h>
 #include <shlobj.h>
-#include <vector>
-#include <string>
 #include "../btrfsioctl.h"
 
 typedef struct {
