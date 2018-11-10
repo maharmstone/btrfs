@@ -4409,8 +4409,11 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     } else if (bsxa->namelen == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(bsxa->data, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION)) == strlen(EA_PROP_COMPRESSION)) {
         const char lzo[] = "lzo";
         const char zlib[] = "zlib";
+        const char zstd[] = "zstd";
 
-        if (bsxa->valuelen == strlen(lzo) && RtlCompareMemory(bsxa->data + bsxa->namelen, lzo, bsxa->valuelen) == bsxa->valuelen)
+        if (bsxa->valuelen == strlen(zstd) && RtlCompareMemory(bsxa->data + bsxa->namelen, zstd, bsxa->valuelen) == bsxa->valuelen)
+            fcb->prop_compression = PropCompression_ZSTD;
+        else if (bsxa->valuelen == strlen(lzo) && RtlCompareMemory(bsxa->data + bsxa->namelen, lzo, bsxa->valuelen) == bsxa->valuelen)
             fcb->prop_compression = PropCompression_LZO;
         else if (bsxa->valuelen == strlen(zlib) && RtlCompareMemory(bsxa->data + bsxa->namelen, zlib, bsxa->valuelen) == bsxa->valuelen)
             fcb->prop_compression = PropCompression_Zlib;
