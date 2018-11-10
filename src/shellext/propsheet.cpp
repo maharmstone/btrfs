@@ -85,16 +85,17 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
                 if (fh != INVALID_HANDLE_VALUE) {
                     NTSTATUS Status;
                     IO_STATUS_BLOCK iosb;
-                    btrfs_inode_info bii2;
+                    btrfs_inode_info2 bii2;
 
-                    Status = NtFsControlFile(fh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
+                    Status = NtFsControlFile(fh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
                     if (NT_SUCCESS(Status)) {
                         sizes[0] += bii2.inline_length;
                         sizes[1] += bii2.disk_size[0];
                         sizes[2] += bii2.disk_size[1];
                         sizes[3] += bii2.disk_size[2];
-                        totalsize += bii2.inline_length + bii2.disk_size[0] + bii2.disk_size[1] + bii2.disk_size[2];
+                        sizes[4] += bii2.disk_size[3];
+                        totalsize += bii2.inline_length + bii2.disk_size[0] + bii2.disk_size[1] + bii2.disk_size[2] + bii2.disk_size[3];
                     }
 
                     CloseHandle(fh);
@@ -130,7 +131,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
     NTSTATUS Status;
     FILE_ACCESS_INFORMATION fai;
     BY_HANDLE_FILE_INFORMATION bhfi;
-    btrfs_inode_info bii2;
+    btrfs_inode_info2 bii2;
 
     h = CreateFileW(fn.c_str(), MAXIMUM_ALLOWED, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
@@ -155,7 +156,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         search_list.push_back(fn);
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
     if (NT_SUCCESS(Status) && !bii2.top) {
         int j;
@@ -191,7 +192,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
             sizes[0] += bii2.inline_length;
         }
 
-        for (j = 0; j < 3; j++) {
+        for (j = 0; j < 4; j++) {
             if (bii2.disk_size[j] > 0) {
                 totalsize += bii2.disk_size[j];
                 sizes[j + 1] += bii2.disk_size[j];
@@ -253,7 +254,7 @@ HRESULT BtrfsPropSheet::load_file_list() {
     can_change_perms = true;
     can_change_nocow = true;
 
-    sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
+    sizes[0] = sizes[1] = sizes[2] = sizes[3] = sizes[4] = 0;
 
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -326,7 +327,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
     NTSTATUS Status;
     UINT sv = 0;
     BY_HANDLE_FILE_INFORMATION bhfi;
-    btrfs_inode_info bii2;
+    btrfs_inode_info2 bii2;
     FILE_ACCESS_INFORMATION fai;
 
     min_mode = 0;
@@ -360,7 +361,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         search_list.push_back(cmdline);
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
     if (NT_SUCCESS(Status) && !bii2.top) {
         int j;
@@ -379,7 +380,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
             sizes[0] += bii2.inline_length;
         }
 
-        for (j = 0; j < 3; j++) {
+        for (j = 0; j < 4; j++) {
             if (bii2.disk_size[j] > 0) {
                 totalsize += bii2.disk_size[j];
                 sizes[j + 1] += bii2.disk_size[j];
@@ -492,7 +493,7 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     btrfs_set_inode_info bsii;
-    btrfs_inode_info bii2;
+    btrfs_inode_info2 bii2;
     ULONG perms = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
 
     if (flags_changed || ro_changed)
@@ -514,7 +515,7 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
 
     ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hDlg, Status);
@@ -668,9 +669,9 @@ void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
     wstring size;
     WCHAR old_text[1024];
     int i;
-    ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO };
+    ULONG items[] = { IDC_SIZE_INLINE, IDC_SIZE_UNCOMPRESSED, IDC_SIZE_ZLIB, IDC_SIZE_LZO, IDC_SIZE_ZSTD };
 
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 5; i++) {
         format_size(sizes[i], size, true);
 
         GetDlgItemTextW(hDlg, items[i], old_text, sizeof(old_text) / sizeof(WCHAR));

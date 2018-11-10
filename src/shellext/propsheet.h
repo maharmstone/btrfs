@@ -106,7 +106,7 @@ public:
         has_subvols = false;
         filename = L"";
 
-        sizes[0] = sizes[1] = sizes[2] = sizes[3] = 0;
+        sizes[0] = sizes[1] = sizes[2] = sizes[3] = sizes[4] = 0;
         totalsize = 0;
 
         InterlockedIncrement(&objs_loaded);
@@ -179,7 +179,7 @@ private:
     STGMEDIUM stgm;
     bool stgm_set;
     bool flags_changed, perms_changed, uid_changed, gid_changed;
-    uint64_t sizes[4], totalsize;
+    uint64_t sizes[5], totalsize;
     deque<wstring> search_list;
     wstring filename;
 
