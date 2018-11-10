@@ -69,7 +69,6 @@ HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
 }
 
 HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
-    HANDLE h;
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
     NTSTATUS Status;
@@ -102,35 +101,33 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
 
         for (i = 0; i < num_files; i++) {
             if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                win_handle h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
                 if (h != INVALID_HANDLE_VALUE) {
                     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
                     if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
                         wstring parpath;
-                        HANDLE h2;
 
-                        parpath = fn;
-                        path_remove_file(parpath);
+                        {
+                            win_handle h2;
 
-                        h2 = CreateFileW(parpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                                         OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                            parpath = fn;
+                            path_remove_file(parpath);
 
-                        if (h2 != INVALID_HANDLE_VALUE)
-                            allow_snapshot = true;
+                            h2 = CreateFileW(parpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
-                        CloseHandle(h2);
+                            if (h2 != INVALID_HANDLE_VALUE)
+                                allow_snapshot = true;
+                        }
 
                         ignore = false;
                         bg = false;
 
-                        CloseHandle(h);
                         GlobalUnlock(hdrop);
                         return S_OK;
                     }
-
-                    CloseHandle(h);
                 }
             }
         }
@@ -149,23 +146,21 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
         path = pathbuf;
     }
 
-    // check we have permissions to create new subdirectory
+    {
+        // check we have permissions to create new subdirectory
 
-    h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        win_handle h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
-    if (h == INVALID_HANDLE_VALUE)
-        return E_FAIL;
+        if (h == INVALID_HANDLE_VALUE)
+            return E_FAIL;
 
-    // check is Btrfs volume
+        // check is Btrfs volume
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
-    if (!NT_SUCCESS(Status)) {
-        CloseHandle(h);
-        return E_FAIL;
+        if (!NT_SUCCESS(Status))
+            return E_FAIL;
     }
-
-    CloseHandle(h);
 
     ignore = false;
     bg = true;
@@ -436,7 +431,7 @@ static void path_strip_path(wstring& path) {
 }
 
 static void create_snapshot(HWND hwnd, const wstring& fn) {
-    HANDLE h;
+    win_handle h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
@@ -448,7 +443,8 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
 
         if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
             wstring subvolname, parpath, searchpath, temp1, name, nameorig;
-            HANDLE h2, fff;
+            win_handle h2;
+            HANDLE fff;
             btrfs_create_snapshot* bcs;
             ULONG namelen;
             WIN32_FIND_DATAW wfd;
@@ -464,14 +460,11 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
 
             if (h2 == INVALID_HANDLE_VALUE) {
                 ShowError(hwnd, GetLastError());
-                CloseHandle(h);
                 return;
             }
 
             if (!load_string(module, IDS_SNAPSHOT_FILENAME, temp1)) {
                 ShowError(hwnd, GetLastError());
-                CloseHandle(h);
-                CloseHandle(h2);
                 return;
             }
 
@@ -511,11 +504,7 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
 
             if (!NT_SUCCESS(Status))
                 ShowNtStatusError(hwnd, Status);
-
-            CloseHandle(h2);
         }
-
-        CloseHandle(h);
     } else
         ShowError(hwnd, GetLastError());
 }
@@ -528,7 +517,7 @@ static uint64_t __inline sector_align(uint64_t n, uint64_t a) {
 }
 
 bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
-    HANDLE source, dest;
+    win_handle source, dest;
     WCHAR* name, volpath1[255], volpath2[255];
     wstring dirw, newpath;
     bool ret = false;
@@ -576,14 +565,14 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info2));
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwnd, Status);
-        CloseHandle(source);
         return false;
     }
 
     // if subvol, do snapshot instead
     if (bii.inode == SUBVOL_ROOT_INODE) {
         btrfs_create_snapshot* bcs;
-        HANDLE dirh, fff;
+        win_handle dirh;
+        HANDLE fff;
         wstring destname, search;
         WIN32_FIND_DATAW wfd;
         int num = 2;
@@ -591,7 +580,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         dirh = CreateFileW(dir, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE) {
             ShowError(hwnd, GetLastError());
-            CloseHandle(source);
             return false;
         }
 
@@ -631,31 +619,25 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(source);
-            CloseHandle(dirh);
             return false;
         }
 
-        CloseHandle(source);
-        CloseHandle(dirh);
         return true;
     }
 
     if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
         ShowError(hwnd, GetLastError());
-        CloseHandle(source);
         return false;
     }
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
-        HANDLE dirh;
+        win_handle dirh;
         ULONG bmnsize;
         btrfs_mknod* bmn;
 
         dirh = CreateFileW(dir, FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE) {
             ShowError(hwnd, GetLastError());
-            CloseHandle(source);
             return false;
         }
 
@@ -671,13 +653,10 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(dirh);
-            CloseHandle(source);
             free(bmn);
             return false;
         }
 
-        CloseHandle(dirh);
         free(bmn);
 
         dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -695,7 +674,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS && wcscmp(fn, newpath.c_str())) {
             ShowError(hwnd, GetLastError());
-            CloseHandle(source);
             return false;
         }
 
@@ -734,7 +712,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             if (dest == INVALID_HANDLE_VALUE) {
                 if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS) {
                     ShowError(hwnd, GetLastError());
-                    CloseHandle(source);
                     return false;
                 }
 
@@ -886,7 +863,7 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 sn = fsd.cStreamName;
 
                 if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
-                    HANDLE stream;
+                    win_handle stream;
                     uint8_t* data = nullptr;
 
                     if (fsd.StreamSize.QuadPart > 0) {
@@ -911,11 +888,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                             ShowError(hwnd, GetLastError());
                             FindClose(h);
                             free(data);
-                            CloseHandle(stream);
                             goto end;
                         }
-
-                        CloseHandle(stream);
                     }
 
                     stream = CreateFileW((newpath + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, nullptr);
@@ -934,14 +908,11 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                             ShowError(hwnd, GetLastError());
                             FindClose(h);
                             free(data);
-                            CloseHandle(stream);
                             goto end;
                         }
 
                         free(data);
                     }
-
-                    CloseHandle(stream);
                 }
             } while (FindNextStreamW(h, &fsd));
 
@@ -1004,9 +975,6 @@ end:
         if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
             ShowError(hwnd, GetLastError());
     }
-
-    CloseHandle(dest);
-    CloseHandle(source);
 
     return ret;
 }
@@ -1085,7 +1053,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
         }
     } else {
         if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA))) {
-            HANDLE h;
+            win_handle h;
             IO_STATUS_BLOCK iosb;
             NTSTATUS Status;
             ULONG bcslen;
@@ -1138,12 +1106,9 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             free(bcs);
 
             if (!NT_SUCCESS(Status)) {
-                CloseHandle(h);
                 ShowNtStatusError(pici->hwnd, Status);
                 return E_FAIL;
             }
-
-            CloseHandle(h);
 
             return S_OK;
         } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
@@ -1376,7 +1341,7 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
 }
 
 static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const wstring& destname) {
-    HANDLE source, dest;
+    win_handle source, dest;
     bool ret = false;
     FILE_BASIC_INFO fbi;
     FILETIME atime, mtime;
@@ -1392,22 +1357,18 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         return;
 
     Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info2));
-    if (!NT_SUCCESS(Status)) {
-        CloseHandle(source);
+    if (!NT_SUCCESS(Status))
         return;
-    }
 
     // if subvol, do snapshot instead
     if (bii.inode == SUBVOL_ROOT_INODE) {
         ULONG bcslen;
         btrfs_create_snapshot* bcs;
-        HANDLE dirh;
+        win_handle dirh;
 
         dirh = CreateFileW(destdir.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (dirh == INVALID_HANDLE_VALUE) {
-            CloseHandle(source);
+        if (dirh == INVALID_HANDLE_VALUE)
             return;
-        }
 
         bcslen = offsetof(btrfs_create_snapshot, name[0]) + (destname.length() * sizeof(WCHAR));
         bcs = (btrfs_create_snapshot*)malloc(bcslen);
@@ -1419,27 +1380,20 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
         free(bcs);
 
-        CloseHandle(source);
-        CloseHandle(dirh);
-
         return;
     }
 
-    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
-        CloseHandle(source);
+    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
         return;
-    }
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
-        HANDLE dirh;
+        win_handle dirh;
         ULONG bmnsize;
         btrfs_mknod* bmn;
 
         dirh = CreateFileW(destdir.c_str(), FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (dirh == INVALID_HANDLE_VALUE) {
-            CloseHandle(source);
+        if (dirh == INVALID_HANDLE_VALUE)
             return;
-        }
 
         bmnsize = offsetof(btrfs_mknod, name[0]) + (destname.length() * sizeof(WCHAR));
         bmn = (btrfs_mknod*)malloc(bmnsize);
@@ -1452,13 +1406,10 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            CloseHandle(dirh);
-            CloseHandle(source);
             free(bmn);
             return;
         }
 
-        CloseHandle(dirh);
         free(bmn);
 
         dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -1466,15 +1417,13 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         if (CreateDirectoryExW(srcfn.c_str(), (destdir + destname).c_str(), nullptr))
             dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-            else
-                dest = INVALID_HANDLE_VALUE;
+        else
+            dest = INVALID_HANDLE_VALUE;
     } else
         dest = CreateFileW((destdir + destname).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, source);
 
-    if (dest == INVALID_HANDLE_VALUE) {
-        CloseHandle(source);
+    if (dest == INVALID_HANDLE_VALUE)
         return;
-    }
 
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
@@ -1597,7 +1546,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                 sn = fsd.cStreamName;
 
                 if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
-                    HANDLE stream;
+                    win_handle stream;
                     uint8_t* data = nullptr;
 
                     if (fsd.StreamSize.QuadPart > 0) {
@@ -1617,11 +1566,8 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
                         if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             free(data);
-                            CloseHandle(stream);
                             goto end;
                         }
-
-                        CloseHandle(stream);
                     }
 
                     stream = CreateFileW((destdir + destname + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, nullptr);
@@ -1634,14 +1580,11 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                     if (data) {
                         if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             free(data);
-                            CloseHandle(stream);
                             goto end;
                         }
 
                         free(data);
                     }
-
-                    CloseHandle(stream);
                 }
             } while (FindNextStreamW(h, &fsd));
 
@@ -1699,9 +1642,6 @@ end:
         fdi.DeleteFile = true;
         SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
     }
-
-    CloseHandle(dest);
-    CloseHandle(source);
 }
 
 void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -1714,24 +1654,26 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
         return;
 
     if (num_args >= 2) {
-        HANDLE destdirh;
         bool dest_is_dir = false;
         wstring dest = args[num_args - 1], destdir, destname;
         WCHAR volpath2[MAX_PATH];
         int i;
 
-        destdirh = CreateFileW(dest.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (destdirh != INVALID_HANDLE_VALUE) {
-            BY_HANDLE_FILE_INFORMATION bhfi;
+        {
+            win_handle destdirh = CreateFileW(dest.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                              nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
-            if (GetFileInformationByHandle(destdirh, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                dest_is_dir = true;
+            if (destdirh != INVALID_HANDLE_VALUE) {
+                BY_HANDLE_FILE_INFORMATION bhfi;
 
-                destdir = dest;
-                if (destdir.substr(destdir.length() - 1, 1) != L"\\")
-                    destdir += L"\\";
+                if (GetFileInformationByHandle(destdirh, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    dest_is_dir = true;
+
+                    destdir = dest;
+                    if (destdir.substr(destdir.length() - 1, 1) != L"\\")
+                        destdir += L"\\";
+                }
             }
-            CloseHandle(destdirh);
         }
 
         if (!dest_is_dir) {

@@ -518,7 +518,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     UNICODE_STRING vn;
     OBJECT_ATTRIBUTES attr;
     IO_STATUS_BLOCK iosb;
-    HANDLE h, h2;
+    win_handle h;
+    HANDLE h2;
 
     if (!sel) {
         EndDialog(hwndDlg, 0);
@@ -565,7 +566,6 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     Status = NtOpenFile(&h2, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwndDlg, Status);
-        CloseHandle(h);
         return;
     }
 
@@ -589,7 +589,6 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
             MessageBoxW(hwndDlg, u.c_str(), title.c_str(), MB_ICONERROR);
 
             NtClose(h2);
-            CloseHandle(h);
             return;
         }
     }
@@ -598,7 +597,6 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hwndDlg, Status);
         NtClose(h2);
-        CloseHandle(h);
         return;
     }
 
@@ -613,7 +611,6 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     }
 
     NtClose(h2);
-    CloseHandle(h);
 
     EndDialog(hwndDlg, 0);
 }
@@ -703,31 +700,29 @@ BtrfsDeviceAdd::BtrfsDeviceAdd(HINSTANCE hinst, HWND hwnd, WCHAR* cmdline) {
 }
 
 void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
-    HANDLE h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_resize br;
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    {
+        win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowError(hwndDlg, GetLastError());
-        return;
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowError(hwndDlg, GetLastError());
+            return;
+        }
+
+        br.device = dev_id;
+        br.size = new_size;
+
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), nullptr, 0);
+
+        if (Status != STATUS_MORE_PROCESSING_REQUIRED && !NT_SUCCESS(Status)) {
+            ShowNtStatusError(hwndDlg, Status);
+            return;
+        }
     }
-
-    br.device = dev_id;
-    br.size = new_size;
-
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), nullptr, 0);
-
-    if (Status != STATUS_MORE_PROCESSING_REQUIRED && !NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwndDlg, Status);
-        CloseHandle(h);
-        return;
-    }
-
-    CloseHandle(h);
 
     if (Status != STATUS_MORE_PROCESSING_REQUIRED) {
         wstring s, t, u;
@@ -753,7 +748,7 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
     switch (uMsg) {
         case WM_INITDIALOG:
         {
-            HANDLE h;
+            win_handle h;
             WCHAR s[255];
             wstring t, u;
 
@@ -790,7 +785,6 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
 
                 if (!NT_SUCCESS(Status)) {
                     free(devices);
-                    CloseHandle(h);
                     return false;
                 }
 
@@ -811,12 +805,10 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
 
                 if (!found) {
                     free(devices);
-                    CloseHandle(h);
                     return false;
                 }
 
                 free(devices);
-                CloseHandle(h);
 
                 GetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, s, sizeof(s) / sizeof(WCHAR));
                 format_size(dev_info.size, u, true);
@@ -901,7 +893,7 @@ extern "C" {
 #endif
 
 void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    HANDLE token;
+    win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
 
@@ -914,7 +906,6 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        CloseHandle(token);
         return;
     }
 
@@ -924,20 +915,17 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        CloseHandle(token);
         return;
     }
 
     BtrfsDeviceAdd bda(hinst, hwnd, lpszCmdLine);
     bda.ShowDialog();
-
-    CloseHandle(token);
 }
 
 void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     WCHAR *s, *vol, *dev;
     uint64_t devid;
-    HANDLE h, token;
+    win_handle h, token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
     NTSTATUS Status;
@@ -953,7 +941,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -962,12 +950,12 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     s = wcsstr(lpszCmdLine, L"|");
     if (!s)
-        goto end;
+        return;
 
     s[0] = 0;
 
@@ -976,14 +964,14 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     devid = _wtoi(dev);
     if (devid == 0)
-        goto end;
+        return;
 
     h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), nullptr, 0);
@@ -993,26 +981,20 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         else
             ShowNtStatusError(hwnd, Status);
 
-        CloseHandle(h);
-        goto end;
+        return;
     }
-
-    CloseHandle(h);
 
     bb = new BtrfsBalance(vol, true);
 
     bb->ShowBalance(hwnd);
 
     delete bb;
-
-end:
-    CloseHandle(token);
 }
 
 void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     WCHAR *s, *vol, *dev;
     uint64_t devid;
-    HANDLE token;
+    win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
     BtrfsDeviceResize* bdr;
@@ -1026,7 +1008,7 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -1035,12 +1017,12 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     s = wcsstr(lpszCmdLine, L"|");
     if (!s)
-        goto end;
+        return;
 
     s[0] = 0;
 
@@ -1049,14 +1031,11 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     devid = _wtoi(dev);
     if (devid == 0)
-        goto end;
+        return;
 
     bdr = new BtrfsDeviceResize;
     bdr->ShowDialog(hwnd, vol, devid);
     delete bdr;
-
-end:
-    CloseHandle(token);
 }
 
 #ifdef __cplusplus

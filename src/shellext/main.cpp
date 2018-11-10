@@ -630,7 +630,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
 static void create_subvol(const wstring& fn) {
     size_t found = fn.rfind(L"\\");
     wstring path, file;
-    HANDLE h;
+    win_handle h;
     ULONG bcslen;
     btrfs_create_subvol* bcs;
     IO_STATUS_BLOCK iosb;
@@ -658,8 +658,6 @@ static void create_subvol(const wstring& fn) {
     memcpy(bcs->name, file.c_str(), bcs->namelen);
 
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
-
-    CloseHandle(h);
 }
 
 void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -680,7 +678,7 @@ void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 static void create_snapshot2(const wstring& source, const wstring& fn) {
     size_t found = fn.rfind(L"\\");
     wstring path, file;
-    HANDLE h, src;
+    win_handle h, src;
     ULONG bcslen;
     btrfs_create_snapshot* bcs;
     IO_STATUS_BLOCK iosb;
@@ -700,10 +698,8 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
 
     h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
-    if (h == INVALID_HANDLE_VALUE) {
-        CloseHandle(src);
+    if (h == INVALID_HANDLE_VALUE)
         return;
-    }
 
     bcslen = offsetof(btrfs_create_snapshot, name[0]) + (file.length() * sizeof(WCHAR));
     bcs = (btrfs_create_snapshot*)malloc(bcslen);
@@ -715,9 +711,6 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
     bcs->subvol = src;
 
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
-
-    CloseHandle(h);
-    CloseHandle(src);
 }
 
 void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -738,3 +731,25 @@ void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, in
 #ifdef __cplusplus
 }
 #endif
+
+win_handle::~win_handle() {
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+}
+
+win_handle::operator HANDLE() const {
+    return h;
+}
+
+win_handle& win_handle::operator=(const HANDLE nh) {
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+
+    h = nh;
+
+    return *this;
+}
+
+HANDLE* win_handle::operator&() {
+    return &h;
+}

@@ -149,6 +149,27 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 
 #endif
 
+class win_handle {
+public:
+    win_handle() {
+    }
+
+    win_handle(HANDLE nh) {
+        h = nh;
+    }
+
+    ~win_handle();
+
+    operator HANDLE() const;
+
+    win_handle& operator=(const HANDLE nh);
+
+    HANDLE* operator&();
+
+private:
+    HANDLE h = INVALID_HANDLE_VALUE;
+};
+
 extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);

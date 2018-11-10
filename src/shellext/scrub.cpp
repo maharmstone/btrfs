@@ -41,7 +41,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     uint64_t recoverable_errors = 0, unrecoverable_errors = 0;
 
     if (bqs->num_errors > 0) {
-        HANDLE h;
+        win_handle h;
         IO_STATUS_BLOCK iosb;
         ULONG len;
 
@@ -66,15 +66,12 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
 
             if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
                 ShowNtStatusError(hwndDlg, Status);
-                CloseHandle(h);
                 free(bqs2);
                 return;
             }
         } while (Status == STATUS_BUFFER_OVERFLOW);
 
         alloc_bqs2 = true;
-
-        CloseHandle(h);
     } else
         bqs2 = bqs;
 
@@ -278,27 +275,25 @@ end:
 }
 
 void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
-    HANDLE h;
     btrfs_query_scrub bqs;
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-        NTSTATUS Status;
-        IO_STATUS_BLOCK iosb;
+    {
+        win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            NTSTATUS Status;
+            IO_STATUS_BLOCK iosb;
 
-        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, &bqs, sizeof(btrfs_query_scrub));
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, &bqs, sizeof(btrfs_query_scrub));
 
-        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-            ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                ShowNtStatusError(hwndDlg, Status);
+                return;
+            }
+        } else {
+            ShowError(hwndDlg, GetLastError());
             return;
         }
-
-        CloseHandle(h);
-    } else {
-        ShowError(hwndDlg, GetLastError());
-        return;
     }
 
     if (first_time || status != bqs.status || chunks_left != bqs.chunks_left) {
@@ -379,10 +374,9 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
 }
 
 void BtrfsScrub::StartScrub(HWND hwndDlg) {
-    HANDLE h;
+    win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
@@ -397,20 +391,16 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
 
             if (NT_SUCCESS(Status2) && bqb.status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED)) {
                 ShowStringError(hwndDlg, IDS_SCRUB_BALANCE_RUNNING);
-                CloseHandle(h);
                 return;
             }
         }
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
             return;
         }
 
         RefreshScrubDlg(hwndDlg, true);
-
-        CloseHandle(h);
     } else {
         ShowError(hwndDlg, GetLastError());
         return;
@@ -418,11 +408,11 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
 }
 
 void BtrfsScrub::PauseScrub(HWND hwndDlg) {
-    HANDLE h;
     btrfs_query_scrub bqs;
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
@@ -431,7 +421,6 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
 
         if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
             ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
             return;
         }
 
@@ -442,11 +431,8 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
             return;
         }
-
-        CloseHandle(h);
     } else {
         ShowError(hwndDlg, GetLastError());
         return;
@@ -454,10 +440,9 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
 }
 
 void BtrfsScrub::StopScrub(HWND hwndDlg) {
-    HANDLE h;
+    win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     if (h != INVALID_HANDLE_VALUE) {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
@@ -466,11 +451,8 @@ void BtrfsScrub::StopScrub(HWND hwndDlg) {
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
             return;
         }
-
-        CloseHandle(h);
     } else {
         ShowError(hwndDlg, GetLastError());
         return;
@@ -534,7 +516,7 @@ static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
 }
 
 void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    HANDLE token;
+    win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
     BtrfsScrub* scrub;
@@ -546,7 +528,7 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -555,7 +537,7 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     set_dpi_aware();
@@ -565,9 +547,6 @@ void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwnd, stub_ScrubDlgProc, (LPARAM)scrub);
 
     delete scrub;
-
-end:
-    CloseHandle(token);
 }
 
 void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -580,37 +559,32 @@ void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         return;
 
     if (num_args >= 1) {
-        HANDLE h, token;
         LUID luid;
         TOKEN_PRIVILEGES tp;
 
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-            goto end;
+        {
+            win_handle token;
 
-        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-            CloseHandle(token);
-            goto end;
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+                goto end;
+
+            if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+                goto end;
+
+            tp.PrivilegeCount = 1;
+            tp.Privileges[0].Luid = luid;
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+            if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+                goto end;
         }
 
-        tp.PrivilegeCount = 1;
-        tp.Privileges[0].Luid = luid;
-        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-            CloseHandle(token);
-            goto end;
-        }
-
-        CloseHandle(token);
-
-        h = CreateFileW(args[0], FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        win_handle h = CreateFileW(args[0], FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
             IO_STATUS_BLOCK iosb;
 
             NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_START_SCRUB, nullptr, 0, nullptr, 0);
-
-            CloseHandle(h);
         }
     }
 
@@ -628,33 +602,32 @@ void CALLBACK StopScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
         return;
 
     if (num_args >= 1) {
-        HANDLE h, token;
         LUID luid;
         TOKEN_PRIVILEGES tp;
 
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-            goto end;
+        {
+            win_handle token;
 
-        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
-            goto end;
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+                goto end;
 
-        tp.PrivilegeCount = 1;
-        tp.Privileges[0].Luid = luid;
-        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+            if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+                goto end;
 
-        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
-            goto end;
+            tp.PrivilegeCount = 1;
+            tp.Privileges[0].Luid = luid;
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        CloseHandle(token);
+            if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+                goto end;
+        }
 
-        h = CreateFileW(args[0], FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        win_handle h = CreateFileW(args[0], FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
             IO_STATUS_BLOCK iosb;
 
             NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_STOP_SCRUB, nullptr, 0, nullptr, 0);
-
-            CloseHandle(h);
         }
     }
 

@@ -61,7 +61,7 @@ HRESULT __stdcall BtrfsIconOverlay::GetPriority(int *pPriority) {
 }
 
 HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) {
-    HANDLE h;
+    win_handle h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
@@ -73,12 +73,8 @@ HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) 
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
 
-    if (!NT_SUCCESS(Status)) {
-        CloseHandle(h);
+    if (!NT_SUCCESS(Status))
         return S_FALSE;
-    }
-
-    CloseHandle(h);
 
     return (bgfi.inode == 0x100 && !bgfi.top) ? S_OK : S_FALSE;
 }

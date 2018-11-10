@@ -77,10 +77,8 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
             if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
                 search_list.push_back(fn2);
             else {
-                HANDLE fh;
-
-                fh = CreateFileW(fn2.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+                win_handle fh = CreateFileW(fn2.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
                 if (fh != INVALID_HANDLE_VALUE) {
                     NTSTATUS Status;
@@ -97,8 +95,6 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
                         sizes[4] += bii2.disk_size[3];
                         totalsize += bii2.inline_length + bii2.disk_size[0] + bii2.disk_size[1] + bii2.disk_size[2] + bii2.disk_size[3];
                     }
-
-                    CloseHandle(fh);
                 }
             }
         }
@@ -126,7 +122,7 @@ static DWORD WINAPI global_search_list_thread(LPVOID lpParameter) {
 }
 
 HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UINT* sv) {
-    HANDLE h;
+    win_handle h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     FILE_ACCESS_INFORMATION fai;
@@ -140,10 +136,8 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
         return E_FAIL;
 
     Status = NtQueryInformationFile(h, &iosb, &fai, sizeof(FILE_ACCESS_INFORMATION), FileAccessInformation);
-    if (!NT_SUCCESS(Status)) {
-        CloseHandle(h);
+    if (!NT_SUCCESS(Status))
         return E_FAIL;
-    }
 
     if (fai.AccessFlags & FILE_READ_ATTRIBUTES)
         can_change_perms = fai.AccessFlags & WRITE_DAC;
@@ -227,12 +221,8 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
             if (filesize.QuadPart != 0)
                 can_change_nocow = false;
         }
-
-        CloseHandle(h);
-    } else {
-        CloseHandle(h);
+    } else
         return E_FAIL;
-    }
 
     return S_OK;
 }
@@ -322,7 +312,7 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
 }
 
 void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
-    HANDLE h;
+    win_handle h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     UINT sv = 0;
@@ -348,10 +338,8 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
         return;
 
     Status = NtQueryInformationFile(h, &iosb, &fai, sizeof(FILE_ACCESS_INFORMATION), FileAccessInformation);
-    if (!NT_SUCCESS(Status)) {
-        CloseHandle(h);
+    if (!NT_SUCCESS(Status))
         return;
-    }
 
     if (fai.AccessFlags & FILE_READ_ATTRIBUTES)
         can_change_perms = fai.AccessFlags & WRITE_DAC;
@@ -415,12 +403,8 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
             if (filesize.QuadPart != 0)
                 can_change_nocow = false;
         }
-
-        CloseHandle(h);
-    } else {
-        CloseHandle(h);
+    } else
         return;
-    }
 
     min_mode = ~min_mode;
     min_flags = ~min_flags;
@@ -489,7 +473,7 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, uint64_t flag, UINT state) {
 }
 
 void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
-    HANDLE h;
+    win_handle h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     btrfs_set_inode_info bsii;
@@ -519,7 +503,6 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
 
     if (!NT_SUCCESS(Status)) {
         ShowNtStatusError(hDlg, Status);
-        CloseHandle(h);
         return;
     }
 
@@ -541,7 +524,6 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
             fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
 
         if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi))) {
-            CloseHandle(h);
             ShowError(hDlg, GetLastError());
             return;
         }
@@ -575,14 +557,9 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
 
-        if (!NT_SUCCESS(Status)) {
+        if (!NT_SUCCESS(Status))
             ShowNtStatusError(hDlg, Status);
-            CloseHandle(h);
-            return;
-        }
     }
-
-    CloseHandle(h);
 }
 
 void BtrfsPropSheet::apply_changes(HWND hDlg) {

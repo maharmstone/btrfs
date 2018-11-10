@@ -53,8 +53,8 @@ public:
     INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
-    bool cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    bool cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    bool cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent);
+    bool cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent);
     bool cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
     bool cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
     bool cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
@@ -72,9 +72,9 @@ private:
     bool utf8_to_utf16(HWND hwnd, const string& utf8, wstring& utf16);
     void ShowRecvError(int resid, ...);
     bool find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
-    bool do_recv(HANDLE f, uint64_t* pos, uint64_t size);
+    bool do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent);
 
-    HANDLE dir, parent, master, thread, lastwritefile;
+    HANDLE dir, master, thread, lastwritefile;
     HWND hwnd;
     wstring streamfile, dirpath, subvolpath, lastwritepath;
     DWORD lastwriteatt;

@@ -306,7 +306,6 @@ void BtrfsSend::BrowseParent(HWND hwnd) {
     PIDLIST_ABSOLUTE root, pidl;
     HRESULT hr;
     WCHAR parent[MAX_PATH], volpathw[MAX_PATH];
-    HANDLE h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
@@ -338,20 +337,19 @@ void BtrfsSend::BrowseParent(HWND hwnd) {
         return;
     }
 
-    h = CreateFileW(parent, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
-        return;
-    }
+    {
+        win_handle h = CreateFileW(parent, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
+            return;
+        }
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
-    if (!NT_SUCCESS(Status)) {
-        ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
-        CloseHandle(h);
-        return;
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
+        if (!NT_SUCCESS(Status)) {
+            ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
+            return;
+        }
     }
-
-    CloseHandle(h);
 
     if (bgfi.inode != 0x100 || bgfi.top) {
         ShowStringError(hwnd, IDS_NOT_SUBVOL);
@@ -366,7 +364,6 @@ void BtrfsSend::AddClone(HWND hwnd) {
     PIDLIST_ABSOLUTE root, pidl;
     HRESULT hr;
     WCHAR path[MAX_PATH], volpathw[MAX_PATH];
-    HANDLE h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
@@ -398,20 +395,19 @@ void BtrfsSend::AddClone(HWND hwnd) {
         return;
     }
 
-    h = CreateFileW(path, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, path, GetLastError(), format_message(GetLastError()).c_str());
-        return;
-    }
+    {
+        win_handle h = CreateFileW(path, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, path, GetLastError(), format_message(GetLastError()).c_str());
+            return;
+        }
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
-    if (!NT_SUCCESS(Status)) {
-        ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
-        CloseHandle(h);
-        return;
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
+        if (!NT_SUCCESS(Status)) {
+            ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
+            return;
+        }
     }
-
-    CloseHandle(h);
 
     if (bgfi.inode != 0x100 || bgfi.top) {
         ShowStringError(hwnd, IDS_NOT_SUBVOL);
@@ -541,7 +537,7 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
 }
 
 void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    HANDLE token;
+    win_handle token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
     BtrfsSend* bs;
@@ -555,7 +551,6 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        CloseHandle(token);
         return;
     }
 
@@ -565,7 +560,6 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        CloseHandle(token);
         return;
     }
 
@@ -574,13 +568,11 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     bs->Open(hwnd, lpszCmdLine);
 
     delete bs;
-
-    CloseHandle(token);
 }
 
 static void send_subvol(const wstring& subvol, const wstring& file, const wstring& parent, const vector<wstring>& clones) {
     char* buf;
-    HANDLE dirh, stream;
+    win_handle dirh, stream;
     ULONG bss_size, i;
     btrfs_send_subvol* bss;
     IO_STATUS_BLOCK iosb;
@@ -596,10 +588,8 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
         goto end3;
 
     stream = CreateFileW(file.c_str(), FILE_WRITE_DATA | DELETE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (stream == INVALID_HANDLE_VALUE) {
-        CloseHandle(dirh);
+    if (stream == INVALID_HANDLE_VALUE)
         goto end3;
-    }
 
     bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
     bss = (btrfs_send_subvol*)malloc(bss_size);
@@ -683,9 +673,6 @@ end2:
         SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
     }
 
-    CloseHandle(dirh);
-    CloseHandle(stream);
-
 end3:
     free(buf);
 }
@@ -702,25 +689,26 @@ void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
         return;
 
     if (num_args >= 2) {
-        HANDLE token;
         TOKEN_PRIVILEGES tp;
         LUID luid;
         int i;
 
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-            goto end;
+        {
+            win_handle token;
 
-        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
-            goto end;
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+                goto end;
 
-        tp.PrivilegeCount = 1;
-        tp.Privileges[0].Luid = luid;
-        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+            if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+                goto end;
 
-        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
-            goto end;
+            tp.PrivilegeCount = 1;
+            tp.Privileges[0].Luid = luid;
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-        CloseHandle(token);
+            if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+                goto end;
+        }
 
         for (i = 0; i < num_args; i++) {
             if (args[i][0] == '-') {

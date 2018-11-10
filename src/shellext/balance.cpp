@@ -185,28 +185,27 @@ void BtrfsBalance::StopBalance(HWND hwndDlg) {
 }
 
 void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, bool first) {
-    HANDLE h;
     bool balancing = false;
     wstring s, t;
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-        NTSTATUS Status;
-        IO_STATUS_BLOCK iosb;
+    {
+        win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb, sizeof(btrfs_query_balance));
+        if (h != INVALID_HANDLE_VALUE) {
+            NTSTATUS Status;
+            IO_STATUS_BLOCK iosb;
 
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwndDlg, Status);
-            CloseHandle(h);
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb, sizeof(btrfs_query_balance));
+
+            if (!NT_SUCCESS(Status)) {
+                ShowNtStatusError(hwndDlg, Status);
+                return;
+            }
+        } else {
+            ShowError(hwndDlg, GetLastError());
             return;
         }
-
-        CloseHandle(h);
-    } else {
-        ShowError(hwndDlg, GetLastError());
-        return;
     }
 
     if (cancelling)
@@ -979,7 +978,6 @@ static INT_PTR CALLBACK stub_BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPar
 }
 
 void BtrfsBalance::ShowBalance(HWND hwndDlg) {
-    HANDLE h;
     btrfs_device* bd;
 
     if (devices) {
@@ -987,45 +985,44 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
         devices = nullptr;
     }
 
-    h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    {
+        win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                   OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    if (h != INVALID_HANDLE_VALUE) {
-        NTSTATUS Status;
-        IO_STATUS_BLOCK iosb;
-        ULONG devsize, i;
+        if (h != INVALID_HANDLE_VALUE) {
+            NTSTATUS Status;
+            IO_STATUS_BLOCK iosb;
+            ULONG devsize, i;
 
-        i = 0;
-        devsize = 1024;
+            i = 0;
+            devsize = 1024;
 
-        devices = (btrfs_device*)malloc(devsize);
+            devices = (btrfs_device*)malloc(devsize);
 
-        while (true) {
-            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
-            if (Status == STATUS_BUFFER_OVERFLOW) {
-                if (i < 8) {
-                    devsize += 1024;
+            while (true) {
+                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
+                if (Status == STATUS_BUFFER_OVERFLOW) {
+                    if (i < 8) {
+                        devsize += 1024;
 
-                    free(devices);
-                    devices = (btrfs_device*)malloc(devsize);
+                        free(devices);
+                        devices = (btrfs_device*)malloc(devsize);
 
-                    i++;
+                        i++;
+                    } else
+                        return;
                 } else
-                    return;
-            } else
-                break;
-        }
+                    break;
+            }
 
-        if (!NT_SUCCESS(Status)) {
-            CloseHandle(h);
-            ShowNtStatusError(hwndDlg, Status);
+            if (!NT_SUCCESS(Status)) {
+                ShowNtStatusError(hwndDlg, Status);
+                return;
+            }
+        } else {
+            ShowError(hwndDlg, GetLastError());
             return;
         }
-
-        CloseHandle(h);
-    } else {
-        ShowError(hwndDlg, GetLastError());
-        return;
     }
 
     readonly = true;
@@ -1071,7 +1068,7 @@ static void unserialize(void* data, ULONG len, WCHAR* s) {
 
 void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     WCHAR *s, *vol, *block;
-    HANDLE h, token;
+    win_handle h, token;
     btrfs_start_balance bsb;
     TOKEN_PRIVILEGES tp;
     LUID luid;
@@ -1095,7 +1092,7 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -1104,7 +1101,7 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     h = CreateFileW(vol, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -1124,29 +1121,20 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
             if ((NT_SUCCESS(Status2) || Status2 == STATUS_BUFFER_OVERFLOW) && bqs.status != BTRFS_SCRUB_STOPPED) {
                 ShowStringError(hwnd, IDS_BALANCE_SCRUB_RUNNING);
-                CloseHandle(h);
-                goto end;
+                return;
             }
         }
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(h);
-            goto end;
+            return;
         }
-
-        CloseHandle(h);
-    } else {
+    } else
         ShowError(hwnd, GetLastError());
-        goto end;
-    }
-
-end:
-    CloseHandle(token);
 }
 
 void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    HANDLE h, token;
+    win_handle h, token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
 
@@ -1157,7 +1145,7 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -1166,7 +1154,7 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     h = CreateFileW(lpszCmdLine, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -1180,37 +1168,28 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb2, sizeof(btrfs_query_balance));
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(h);
-            goto end;
+            return;
         }
 
         if (bqb2.status & BTRFS_BALANCE_PAUSED)
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESUME_BALANCE, nullptr, 0, nullptr, 0);
         else if (bqb2.status & BTRFS_BALANCE_RUNNING)
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_PAUSE_BALANCE, nullptr, 0, nullptr, 0);
-        else {
-            CloseHandle(h);
-            goto end;
-        }
+        else
+            return;
 
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(h);
-            goto end;
+            return;
         }
-
-        CloseHandle(h);
     } else {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
-
-end:
-    CloseHandle(token);
 }
 
 void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    HANDLE h, token;
+    win_handle h, token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
 
@@ -1221,7 +1200,7 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -1230,7 +1209,7 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        return;
     }
 
     h = CreateFileW(lpszCmdLine, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -1244,29 +1223,16 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb2, sizeof(btrfs_query_balance));
         if (!NT_SUCCESS(Status)) {
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(h);
-            goto end;
+            return;
         }
 
         if (bqb2.status & BTRFS_BALANCE_PAUSED || bqb2.status & BTRFS_BALANCE_RUNNING)
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_STOP_BALANCE, nullptr, 0, nullptr, 0);
-        else {
-            CloseHandle(h);
-            goto end;
-        }
+        else
+            return;
 
-        if (!NT_SUCCESS(Status)) {
+        if (!NT_SUCCESS(Status))
             ShowNtStatusError(hwnd, Status);
-            CloseHandle(h);
-            goto end;
-        }
-
-        CloseHandle(h);
-    } else {
+    } else
         ShowError(hwnd, GetLastError());
-        goto end;
-    }
-
-end:
-    CloseHandle(token);
 }
