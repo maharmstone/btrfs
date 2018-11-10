@@ -1387,7 +1387,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
 
-    if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESSION_LZO)
+    if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESSION_ZSTD)
         return STATUS_INVALID_PARAMETER;
 
     if (fcb->ads)
@@ -1449,6 +1449,10 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
 
             case BTRFS_COMPRESSION_LZO:
                 fcb->prop_compression = PropCompression_LZO;
+            break;
+
+            case BTRFS_COMPRESSION_ZSTD:
+                fcb->prop_compression = PropCompression_ZSTD;
             break;
         }
 

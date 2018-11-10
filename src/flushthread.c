@@ -5035,6 +5035,15 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 ERR("set_xattr returned %08x\n", Status);
                 goto end;
             }
+        } else if (fcb->prop_compression == PropCompression_ZSTD) {
+            const char zstd[] = "zstd";
+
+            Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, (UINT16)strlen(EA_PROP_COMPRESSION),
+                               EA_PROP_COMPRESSION_HASH, (UINT8*)zstd, (UINT16)strlen(zstd));
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_xattr returned %08x\n", Status);
+                goto end;
+            }
         }
 
         fcb->prop_compression_changed = FALSE;
