@@ -1122,7 +1122,7 @@ static void zstd_free(void* opaque, void* address) {
 NTSTATUS zstd_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen) {
     NTSTATUS Status;
     ZSTD_DStream* stream;
-    size_t init_res;
+    size_t init_res, read;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
 
@@ -1149,14 +1149,12 @@ NTSTATUS zstd_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outle
     output.size = outlen;
     output.pos = 0;
 
-    while (input.pos < input.size && output.pos < output.size) {
-        size_t read = ZSTD_decompressStream(stream, &output, &input);
+    read = ZSTD_decompressStream(stream, &output, &input);
 
-        if (ZSTD_isError(read)) {
-            ERR("ZSTD_decompressStream failed: %s\n", ZSTD_getErrorName(read));
-            Status = STATUS_INTERNAL_ERROR;
-            goto end;
-        }
+    if (ZSTD_isError(read)) {
+        ERR("ZSTD_decompressStream failed: %s\n", ZSTD_getErrorName(read));
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
     }
 
     Status = STATUS_SUCCESS;
