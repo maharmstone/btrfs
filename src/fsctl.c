@@ -1161,35 +1161,7 @@ end2:
     return Status;
 }
 
-static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
-    btrfs_inode_info* bii = data;
-    fcb* fcb;
-    ccb* ccb;
-
-    if (length < sizeof(btrfs_inode_info))
-        return STATUS_BUFFER_OVERFLOW;
-
-    if (!FileObject)
-        return STATUS_INVALID_PARAMETER;
-
-    fcb = FileObject->FsContext;
-
-    if (!fcb)
-        return STATUS_INVALID_PARAMETER;
-
-    ccb = FileObject->FsContext2;
-
-    if (!ccb)
-        return STATUS_INVALID_PARAMETER;
-
-    if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
-        WARN("insufficient privileges\n");
-        return STATUS_ACCESS_DENIED;
-    }
-
-    if (fcb->ads)
-        fcb = ccb->fileref->parent->fcb;
-
+static NTSTATUS get_inode_info_old(fcb* fcb, btrfs_inode_info* bii) {
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
 
     bii->subvol = fcb->subvol->id;
@@ -1226,13 +1198,131 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
                     // FIXME - compressed extents with a hole in them are counted more than once
-                    if (ed2->size != 0) {
-                        if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
+                    switch (ext->extent_data.compression) {
+                        case BTRFS_COMPRESSION_NONE:
                             bii->disk_size[0] += ed2->num_bytes;
-                        } else if (ext->extent_data.compression == BTRFS_COMPRESSION_ZLIB) {
+                            break;
+
+                        case BTRFS_COMPRESSION_ZLIB:
                             bii->disk_size[1] += ed2->size;
-                        } else if (ext->extent_data.compression == BTRFS_COMPRESSION_LZO) {
+                            break;
+
+                        case BTRFS_COMPRESSION_LZO:
                             bii->disk_size[2] += ed2->size;
+                            break;
+                    }
+                }
+            }
+
+            le = le->Flink;
+        }
+    }
+
+    switch (fcb->prop_compression) {
+        case PropCompression_Zlib:
+            bii->compression_type = BTRFS_COMPRESSION_ZLIB;
+            break;
+
+        case PropCompression_LZO:
+            bii->compression_type = BTRFS_COMPRESSION_LZO;
+            break;
+
+        default:
+            bii->compression_type = BTRFS_COMPRESSION_ANY;
+            break;
+    }
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
+    btrfs_inode_info2* bii = data;
+    fcb* fcb;
+    ccb* ccb;
+
+    if (length < sizeof(btrfs_inode_info))
+        return STATUS_BUFFER_OVERFLOW;
+
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb = FileObject->FsContext;
+
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    ccb = FileObject->FsContext2;
+
+    if (!ccb)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!(ccb->access & FILE_READ_ATTRIBUTES)) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    if (fcb->ads)
+        fcb = ccb->fileref->parent->fcb;
+
+    if (length < sizeof(btrfs_inode_info2))
+        return get_inode_info_old(fcb, (btrfs_inode_info*)data);
+
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+
+    bii->subvol = fcb->subvol->id;
+    bii->inode = fcb->inode;
+    bii->top = fcb->Vcb->root_fileref->fcb == fcb ? TRUE : FALSE;
+    bii->type = fcb->type;
+    bii->st_uid = fcb->inode_item.st_uid;
+    bii->st_gid = fcb->inode_item.st_gid;
+    bii->st_mode = fcb->inode_item.st_mode;
+
+    if (fcb->inode_item.st_rdev == 0)
+        bii->st_rdev = 0;
+    else
+        bii->st_rdev = makedev((fcb->inode_item.st_rdev & 0xFFFFFFFFFFF) >> 20, fcb->inode_item.st_rdev & 0xFFFFF);
+
+    bii->flags = fcb->inode_item.flags;
+
+    bii->inline_length = 0;
+    bii->disk_size[0] = 0;
+    bii->disk_size[1] = 0;
+    bii->disk_size[2] = 0;
+    bii->disk_size[3] = 0;
+
+    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+        LIST_ENTRY* le;
+
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+            if (!ext->ignore) {
+                if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                    bii->inline_length += ext->datalen - (UINT16)offsetof(EXTENT_DATA, data[0]);
+                } else {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+
+                    // FIXME - compressed extents with a hole in them are counted more than once
+                    if (ed2->size != 0) {
+                        switch (ext->extent_data.compression) {
+                            case BTRFS_COMPRESSION_NONE:
+                                bii->disk_size[0] += ed2->num_bytes;
+                                break;
+
+                            case BTRFS_COMPRESSION_ZLIB:
+                                bii->disk_size[1] += ed2->size;
+                                break;
+
+                            case BTRFS_COMPRESSION_LZO:
+                                bii->disk_size[2] += ed2->size;
+                                break;
+
+                            case BTRFS_COMPRESSION_ZSTD:
+                                bii->disk_size[3] += ed2->size;
+                                break;
                         }
                     }
                 }
@@ -1245,15 +1335,19 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     switch (fcb->prop_compression) {
         case PropCompression_Zlib:
             bii->compression_type = BTRFS_COMPRESSION_ZLIB;
-        break;
+            break;
 
         case PropCompression_LZO:
             bii->compression_type = BTRFS_COMPRESSION_LZO;
-        break;
+            break;
+
+        case PropCompression_ZSTD:
+            bii->compression_type = BTRFS_COMPRESSION_ZSTD;
+            break;
 
         default:
             bii->compression_type = BTRFS_COMPRESSION_ANY;
-        break;
+            break;
     }
 
     ExReleaseResourceLite(fcb->Header.Resource);

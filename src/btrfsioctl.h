@@ -63,6 +63,7 @@ typedef struct {
 #define BTRFS_COMPRESSION_ANY   0
 #define BTRFS_COMPRESSION_ZLIB  1
 #define BTRFS_COMPRESSION_LZO   2
+#define BTRFS_COMPRESSION_ZSTD  3
 
 typedef struct {
     UINT64 subvol;
@@ -78,6 +79,21 @@ typedef struct {
     UINT64 disk_size[3];
     UINT8 compression_type;
 } btrfs_inode_info;
+
+typedef struct {
+    UINT64 subvol;
+    UINT64 inode;
+    BOOL top;
+    UINT8 type;
+    UINT32 st_uid;
+    UINT32 st_gid;
+    UINT32 st_mode;
+    UINT64 st_rdev;
+    UINT64 flags;
+    UINT32 inline_length;
+    UINT64 disk_size[4];
+    UINT8 compression_type;
+} btrfs_inode_info2;
 
 typedef struct {
     UINT64 flags;
