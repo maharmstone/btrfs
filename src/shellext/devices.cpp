@@ -739,17 +739,13 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
 
         EndDialog(hwndDlg, 0);
     } else {
-        BtrfsBalance* bb;
         HWND par;
 
         par = GetParent(hwndDlg);
         EndDialog(hwndDlg, 0);
 
-        bb = new BtrfsBalance(fn, false, true);
-
-        bb->ShowBalance(par);
-
-        delete bb;
+        BtrfsBalance bb(fn, false, true);
+        bb.ShowBalance(par);
     }
 }
 
