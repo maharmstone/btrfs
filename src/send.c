@@ -2187,7 +2187,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
             if (se->data.compression == BTRFS_COMPRESSION_NONE)
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, se->data.data, (UINT16)se->data.decoded_size);
-            else if (se->data.compression == BTRFS_COMPRESSION_ZLIB || se->data.compression == BTRFS_COMPRESSION_LZO) {
+            else if (se->data.compression == BTRFS_COMPRESSION_ZLIB || se->data.compression == BTRFS_COMPRESSION_LZO || se->data.compression == BTRFS_COMPRESSION_ZSTD) {
                 ULONG inlen = se->datalen - (ULONG)offsetof(EXTENT_DATA, data[0]);
 
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, (UINT16)se->data.decoded_size);
@@ -2213,6 +2213,14 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     Status = lzo_decompress(se->data.data + sizeof(UINT32), inlen, &context->data[context->datalen - se->data.decoded_size], (UINT32)se->data.decoded_size, sizeof(UINT32));
                     if (!NT_SUCCESS(Status)) {
                         ERR("lzo_decompress returned %08x\n", Status);
+                        ExFreePool(se);
+                        if (se2) ExFreePool(se2);
+                        return Status;
+                    }
+                } else if (se->data.compression == BTRFS_COMPRESSION_ZSTD) {
+                    Status = zstd_decompress(se->data.data, inlen, &context->data[context->datalen - se->data.decoded_size], (UINT32)se->data.decoded_size);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("zlib_decompress returned %08x\n", Status);
                         ExFreePool(se);
                         if (se2) ExFreePool(se2);
                         return Status;
@@ -2459,6 +2467,16 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     if (se2) ExFreePool(se2);
                     return Status;
                 }
+            } else if (se->data.compression == BTRFS_COMPRESSION_ZSTD) {
+                Status = zstd_decompress(compbuf, (UINT32)ed2->size, buf, (UINT32)se->data.decoded_size);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zstd_decompress returned %08x\n", Status);
+                    ExFreePool(compbuf);
+                    ExFreePool(buf);
+                    ExFreePool(se);
+                    if (se2) ExFreePool(se2);
+                    return Status;
+                }
             }
 
             ExFreePool(compbuf);
@@ -2639,7 +2657,8 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->compression != BTRFS_COMPRESSION_NONE && ed->compression != BTRFS_COMPRESSION_ZLIB && ed->compression != BTRFS_COMPRESSION_LZO) {
+        if (ed->compression != BTRFS_COMPRESSION_NONE && ed->compression != BTRFS_COMPRESSION_ZLIB &&
+            ed->compression != BTRFS_COMPRESSION_LZO && ed->compression != BTRFS_COMPRESSION_ZSTD) {
             ERR("unknown compression type %u\n", ed->compression);
             return STATUS_INTERNAL_ERROR;
         }
@@ -2697,7 +2716,8 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->compression != BTRFS_COMPRESSION_NONE && ed->compression != BTRFS_COMPRESSION_ZLIB && ed->compression != BTRFS_COMPRESSION_LZO) {
+        if (ed->compression != BTRFS_COMPRESSION_NONE && ed->compression != BTRFS_COMPRESSION_ZLIB &&
+            ed->compression != BTRFS_COMPRESSION_LZO && ed->compression != BTRFS_COMPRESSION_ZSTD) {
             ERR("unknown compression type %u\n", ed->compression);
             return STATUS_INTERNAL_ERROR;
         }
