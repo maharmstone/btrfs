@@ -2367,7 +2367,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 offset = se->offset + off;
                 send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
 
-                length = min((UINT16)(context->lastinode.size - se->offset - off), length);
+                length = (UINT16)min(context->lastinode.size - se->offset - off, length);
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, buf + skip_start, length);
 
                 send_command_finish(context, pos);
@@ -2494,7 +2494,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 offset = se->offset + off;
                 send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(UINT64));
 
-                length = min((UINT16)(context->lastinode.size - se->offset - off), length);
+                length = (UINT16)min(context->lastinode.size - se->offset - off, length);
                 send_add_tlv(context, BTRFS_SEND_TLV_DATA, &buf[off], length);
 
                 send_command_finish(context, pos);
