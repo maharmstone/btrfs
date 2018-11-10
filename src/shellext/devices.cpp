@@ -904,7 +904,6 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     HANDLE token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    BtrfsDeviceAdd* bda;
 
     set_dpi_aware();
 
@@ -915,7 +914,8 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        CloseHandle(token);
+        return;
     }
 
     tp.PrivilegeCount = 1;
@@ -924,14 +924,13 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
 
     if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
         ShowError(hwnd, GetLastError());
-        goto end;
+        CloseHandle(token);
+        return;
     }
 
-    bda = new BtrfsDeviceAdd(hinst, hwnd, lpszCmdLine);
-    bda->ShowDialog();
-    delete bda;
+    BtrfsDeviceAdd bda(hinst, hwnd, lpszCmdLine);
+    bda.ShowDialog();
 
-end:
     CloseHandle(token);
 }
 
