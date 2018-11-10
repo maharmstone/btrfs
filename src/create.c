@@ -904,11 +904,14 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     if (di->m > 0) {
                         const char lzo[] = "lzo";
                         const char zlib[] = "zlib";
+                        const char zstd[] = "zstd";
 
                         if (di->m == strlen(lzo) && RtlCompareMemory(&di->name[di->n], lzo, di->m) == di->m)
                             fcb->prop_compression = PropCompression_LZO;
                         else if (di->m == strlen(zlib) && RtlCompareMemory(&di->name[di->n], zlib, di->m) == di->m)
                             fcb->prop_compression = PropCompression_Zlib;
+                        else if (di->m == strlen(zstd) && RtlCompareMemory(&di->name[di->n], zstd, di->m) == di->m)
+                            fcb->prop_compression = PropCompression_ZSTD;
                         else
                             fcb->prop_compression = PropCompression_None;
                     }

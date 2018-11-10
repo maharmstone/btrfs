@@ -219,7 +219,8 @@ typedef struct {
 enum prop_compression_type {
     PropCompression_None,
     PropCompression_Zlib,
-    PropCompression_LZO
+    PropCompression_LZO,
+    PropCompression_ZSTD
 };
 
 typedef struct {
