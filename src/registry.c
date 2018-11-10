@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include "zstd/zstd.h"
 
 extern UNICODE_STRING log_device, log_file, registry_path;
 extern LIST_ENTRY uid_map_list, gid_map_list;
@@ -36,7 +37,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
     mount_options* options = &Vcb->options;
     UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus,
-                   maxinlineus, subvolidus, skipbalanceus, nobarrierus, notrimus, clearcacheus, allowdegradedus;
+                   maxinlineus, subvolidus, skipbalanceus, nobarrierus, notrimus, clearcacheus, allowdegradedus, zstdlevelus;
     OBJECT_ATTRIBUTES oa;
     NTSTATUS Status;
     ULONG i, j, kvfilen, index, retlen;
@@ -48,6 +49,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     options->compress_type = mount_compress_type > BTRFS_COMPRESSION_ZSTD ? 0 : mount_compress_type;
     options->readonly = mount_readonly;
     options->zlib_level = mount_zlib_level;
+    options->zstd_level = mount_zstd_level;
     options->flush_interval = mount_flush_interval;
     options->max_inline = min(mount_max_inline, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
     options->skip_balance = mount_skip_balance;
@@ -118,6 +120,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     RtlInitUnicodeString(&notrimus, L"NoTrim");
     RtlInitUnicodeString(&clearcacheus, L"ClearCache");
     RtlInitUnicodeString(&allowdegradedus, L"AllowDegraded");
+    RtlInitUnicodeString(&zstdlevelus, L"ZstdLevel");
 
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueFullInformation, kvfi, kvfilen, &retlen);
@@ -186,6 +189,10 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
                 DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
 
                 options->allow_degraded = *val;
+            } else if (FsRtlAreNamesEqual(&zstdlevelus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
+                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+
+                options->zstd_level = *val;
             }
         } else if (Status != STATUS_NO_MORE_ENTRIES) {
             ERR("ZwEnumerateValueKey returned %08x\n", Status);
@@ -198,6 +205,9 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
 
     if (options->zlib_level > 9)
         options->zlib_level = 9;
+
+    if (options->zstd_level > (UINT32)ZSTD_maxCLevel())
+        options->zstd_level = ZSTD_maxCLevel();
 
     if (options->flush_interval == 0)
         options->flush_interval = mount_flush_interval;
@@ -794,6 +804,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     get_registry_value(h, L"ClearCache", REG_DWORD, &mount_clear_cache, sizeof(mount_clear_cache));
     get_registry_value(h, L"AllowDegraded", REG_DWORD, &mount_allow_degraded, sizeof(mount_allow_degraded));
     get_registry_value(h, L"Readonly", REG_DWORD, &mount_readonly, sizeof(mount_readonly));
+    get_registry_value(h, L"ZstdLevel", REG_DWORD, &mount_zstd_level, sizeof(mount_zstd_level));
 
     if (!refresh)
         get_registry_value(h, L"NoPNP", REG_DWORD, &no_pnp, sizeof(no_pnp));

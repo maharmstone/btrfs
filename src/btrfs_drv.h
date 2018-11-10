@@ -592,6 +592,7 @@ typedef struct {
     UINT8 compress_type;
     BOOL readonly;
     UINT32 zlib_level;
+    UINT32 zstd_level;
     UINT32 flush_interval;
     UINT32 max_inline;
     UINT64 subvol_id;
@@ -1105,6 +1106,7 @@ extern UINT32 mount_compress;
 extern UINT32 mount_compress_force;
 extern UINT32 mount_compress_type;
 extern UINT32 mount_zlib_level;
+extern UINT32 mount_zstd_level;
 extern UINT32 mount_flush_interval;
 extern UINT32 mount_max_inline;
 extern UINT32 mount_skip_balance;

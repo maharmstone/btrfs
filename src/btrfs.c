@@ -67,6 +67,7 @@ UINT32 mount_compress = 0;
 UINT32 mount_compress_force = 0;
 UINT32 mount_compress_type = 0;
 UINT32 mount_zlib_level = 3;
+UINT32 mount_zstd_level = 3;
 UINT32 mount_flush_interval = 30;
 UINT32 mount_max_inline = 2048;
 UINT32 mount_skip_balance = 0;

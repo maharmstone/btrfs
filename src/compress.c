@@ -951,7 +951,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         return STATUS_INTERNAL_ERROR;
     }
 
-    params = ZSTD_getParams(3, (UINT32)(end_data - start_data), 0); // FIXME - make compression level customizable?
+    params = ZSTD_getParams(fcb->Vcb->options.zstd_level, (UINT32)(end_data - start_data), 0);
 
     if (params.cParams.windowLog > ZSTD_BTRFS_MAX_WINDOWLOG)
         params.cParams.windowLog = ZSTD_BTRFS_MAX_WINDOWLOG;
