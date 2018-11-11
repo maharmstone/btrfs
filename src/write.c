@@ -400,10 +400,6 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
         return STATUS_INTERNAL_ERROR;
     }
 
-    max_chunk_size = min(max_chunk_size, total_size / 10); // cap at 10%
-
-    TRACE("would allocate a new chunk of %llx bytes and stripe %llx\n", max_chunk_size, max_stripe_size);
-
     if (flags & BLOCK_FLAG_DUPLICATE) {
         min_stripes = 2;
         max_stripes = 2;
@@ -447,6 +443,13 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
         type = 0;
         allowed_missing = 0;
     }
+
+    if (max_chunk_size > total_size / 10) {  // cap at 10%
+        max_chunk_size = total_size / 10;
+        max_stripe_size = max_chunk_size / min_stripes;
+    }
+
+    TRACE("would allocate a new chunk of %llx bytes and stripe %llx\n", max_chunk_size, max_stripe_size);
 
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * max_stripes, ALLOC_TAG);
     if (!stripes) {
