@@ -2955,6 +2955,8 @@ static NTSTATUS try_consolidation(device_extension* Vcb, UINT64 flags, chunk** n
             ERR("do_write returned %08x\n", Status);
             return Status;
         }
+
+        free_trees(Vcb);
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, TRUE);
