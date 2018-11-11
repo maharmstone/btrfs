@@ -2784,7 +2784,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     ULONG fn_offset = 0;
     file_ref *related, *fileref = NULL;
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
-    ACCESS_MASK granted_access;
+    ACCESS_MASK granted_access = 0;
     BOOL loaded_related = FALSE;
     UNICODE_STRING fn;
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -3543,6 +3543,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         open_type = 2;
 #endif
         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
+        granted_access = 0;
         release_fcb_lock(Vcb);
 
         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
