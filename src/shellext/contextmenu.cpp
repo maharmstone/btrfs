@@ -443,7 +443,6 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
         if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
             wstring subvolname, parpath, searchpath, temp1, name, nameorig;
             win_handle h2;
-            HANDLE fff;
             btrfs_create_snapshot* bcs;
             ULONG namelen;
             WIN32_FIND_DATAW wfd;
@@ -474,14 +473,12 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
 
             searchpath = parpath + L"\\" + name;
 
-            fff = FindFirstFileW(searchpath.c_str(), &wfd);
+            fff_handle fff = FindFirstFileW(searchpath.c_str(), &wfd);
 
             if (fff != INVALID_HANDLE_VALUE) {
                 ULONG num = 2;
 
                 do {
-                    FindClose(fff);
-
                     name = nameorig + L" (" + to_wstring(num) + L")";
                     searchpath = parpath + L"\\" + name;
 
@@ -571,7 +568,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     if (bii.inode == SUBVOL_ROOT_INODE) {
         btrfs_create_snapshot* bcs;
         win_handle dirh;
-        HANDLE fff;
         wstring destname, search;
         WIN32_FIND_DATAW wfd;
         int num = 2;
@@ -586,13 +582,11 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         search += name;
         destname = name;
 
-        fff = FindFirstFileW(search.c_str(), &wfd);
+        fff_handle fff = FindFirstFileW(search.c_str(), &wfd);
 
         if (fff != INVALID_HANDLE_VALUE) {
             do {
                 wstringstream ss;
-
-                FindClose(fff);
 
                 ss << name;
                 ss << L" (";
@@ -738,7 +732,7 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
     if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-            HANDLE h;
+            fff_handle h;
             WIN32_FIND_DATAW fff;
             wstring qs;
 
@@ -760,14 +754,11 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
                         goto end;
                 } while (FindNextFileW(h, &fff));
-
-                FindClose(h);
             }
         }
 
         // CreateDirectoryExW also copies streams, no need to do it here
     } else {
-        HANDLE h;
         WIN32_FIND_STREAM_DATA fsd;
 
         if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -854,7 +845,7 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             }
         }
 
-        h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
+        fff_handle h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
         if (h != INVALID_HANDLE_VALUE) {
             do {
                 wstring sn;
@@ -875,7 +866,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                         if (stream == INVALID_HANDLE_VALUE) {
                             ShowError(hwnd, GetLastError());
-                            FindClose(h);
                             goto end;
                         }
 
@@ -885,7 +875,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                         if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             ShowError(hwnd, GetLastError());
-                            FindClose(h);
                             free(data);
                             goto end;
                         }
@@ -896,7 +885,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     if (stream == INVALID_HANDLE_VALUE) {
                         ShowError(hwnd, GetLastError());
 
-                        FindClose(h);
                         if (data) free(data);
 
                         goto end;
@@ -905,7 +893,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     if (data) {
                         if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                             ShowError(hwnd, GetLastError());
-                            FindClose(h);
                             free(data);
                             goto end;
                         }
@@ -914,8 +901,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     }
                 }
             } while (FindNextStreamW(h, &fsd));
-
-            FindClose(h);
         }
     }
 
@@ -1058,7 +1043,6 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             ULONG bcslen;
             wstring name, nameorig, searchpath;
             btrfs_create_subvol* bcs;
-            HANDLE fff;
             WIN32_FIND_DATAW wfd;
 
             if (!load_string(module, IDS_NEW_SUBVOL_FILENAME, name)) {
@@ -1076,20 +1060,20 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
             searchpath = path + L"\\" + name;
             nameorig = name;
 
-            fff = FindFirstFileW(searchpath.c_str(), &wfd);
+            {
+                fff_handle fff = FindFirstFileW(searchpath.c_str(), &wfd);
 
-            if (fff != INVALID_HANDLE_VALUE) {
-                ULONG num = 2;
+                if (fff != INVALID_HANDLE_VALUE) {
+                    ULONG num = 2;
 
-                do {
-                    FindClose(fff);
+                    do {
+                        name = nameorig + L" (" + to_wstring(num) + L")";
+                        searchpath = path + L"\\" + name;
 
-                    name = nameorig + L" (" + to_wstring(num) + L")";
-                    searchpath = path + L"\\" + name;
-
-                    fff = FindFirstFileW(searchpath.c_str(), &wfd);
-                    num++;
-                } while (fff != INVALID_HANDLE_VALUE);
+                        fff = FindFirstFileW(searchpath.c_str(), &wfd);
+                        num++;
+                    } while (fff != INVALID_HANDLE_VALUE);
+                }
             }
 
             bcslen = offsetof(btrfs_create_subvol, name[0]) + (name.length() * sizeof(WCHAR));
@@ -1440,14 +1424,13 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
     if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-            HANDLE h;
             WIN32_FIND_DATAW fff;
             wstring qs;
 
             qs = srcfn;
             qs += L"\\*";
 
-            h = FindFirstFileW(qs.c_str(), &fff);
+            fff_handle h = FindFirstFileW(qs.c_str(), &fff);
             if (h != INVALID_HANDLE_VALUE) {
                 do {
                     wstring fn2;
@@ -1461,14 +1444,11 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
                     reflink_copy2(fn2, destdir + destname + L"\\", fff.cFileName);
                 } while (FindNextFileW(h, &fff));
-
-                FindClose(h);
             }
         }
 
         // CreateDirectoryExW also copies streams, no need to do it here
     } else {
-        HANDLE h;
         WIN32_FIND_STREAM_DATA fsd;
 
         if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -1537,7 +1517,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
             }
         }
 
-        h = FindFirstStreamW(srcfn.c_str(), FindStreamInfoStandard, &fsd, 0);
+        fff_handle h = FindFirstStreamW(srcfn.c_str(), FindStreamInfoStandard, &fsd, 0);
         if (h != INVALID_HANDLE_VALUE) {
             do {
                 wstring sn;
@@ -1586,8 +1566,6 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                     }
                 }
             } while (FindNextStreamW(h, &fsd));
-
-            FindClose(h);
         }
     }
 
@@ -1687,9 +1665,8 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
 
         for (unsigned int i = 0; i < args.size() - 1; i++) {
             WIN32_FIND_DATAW ffd;
-            HANDLE h;
 
-            h = FindFirstFileW(args[i].c_str(), &ffd);
+            fff_handle h = FindFirstFileW(args[i].c_str(), &ffd);
             if (h != INVALID_HANDLE_VALUE) {
                 WCHAR volpath1[MAX_PATH];
                 wstring path = args[i];
@@ -1709,8 +1686,6 @@ void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
                         } while (FindNextFileW(h, &ffd));
                     }
                 }
-
-                FindClose(h);
             }
         }
     }

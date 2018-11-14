@@ -1566,10 +1566,9 @@ void BtrfsRecv::ShowRecvError(int resid, ...) {
 }
 
 static void delete_directory(const wstring& dir) {
-    HANDLE h;
     WIN32_FIND_DATAW fff;
 
-    h = FindFirstFileW((dir + L"*").c_str(), &fff);
+    fff_handle h = FindFirstFileW((dir + L"*").c_str(), &fff);
 
     if (h == INVALID_HANDLE_VALUE)
         return;
@@ -1592,8 +1591,6 @@ static void delete_directory(const wstring& dir) {
                 DeleteFileW((dir + file).c_str());
         }
     } while (FindNextFileW(h, &fff));
-
-    FindClose(h);
 
     RemoveDirectoryW(dir.c_str());
 }

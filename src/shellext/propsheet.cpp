@@ -58,13 +58,12 @@ HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
 }
 
 void BtrfsPropSheet::do_search(const wstring& fn) {
-    HANDLE h;
     wstring ss;
     WIN32_FIND_DATAW ffd;
 
     ss = fn + L"\\*"s;
 
-    h = FindFirstFileW(ss.c_str(), &ffd);
+    fff_handle h = FindFirstFileW(ss.c_str(), &ffd);
     if (h == INVALID_HANDLE_VALUE)
         return;
 
@@ -99,8 +98,6 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
             }
         }
     } while (FindNextFileW(h, &ffd));
-
-    FindClose(h);
 }
 
 DWORD BtrfsPropSheet::search_list_thread() {

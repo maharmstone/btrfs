@@ -720,28 +720,6 @@ void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, in
 }
 #endif
 
-win_handle::~win_handle() {
-    if (h != INVALID_HANDLE_VALUE)
-        CloseHandle(h);
-}
-
-win_handle::operator HANDLE() const {
-    return h;
-}
-
-win_handle& win_handle::operator=(const HANDLE nh) {
-    if (h != INVALID_HANDLE_VALUE)
-        CloseHandle(h);
-
-    h = nh;
-
-    return *this;
-}
-
-HANDLE* win_handle::operator&() {
-    return &h;
-}
-
 void command_line_to_args(LPWSTR cmdline, vector<wstring> args) {
     LPWSTR* l;
     int num_args;

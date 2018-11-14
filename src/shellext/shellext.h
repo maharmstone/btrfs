@@ -159,13 +159,62 @@ public:
         h = nh;
     }
 
-    ~win_handle();
+    ~win_handle() {
+        if (h != INVALID_HANDLE_VALUE)
+            CloseHandle(h);
+    }
 
-    operator HANDLE() const;
+    operator HANDLE() const {
+        return h;
+    }
 
-    win_handle& operator=(const HANDLE nh);
+    win_handle& operator=(const HANDLE nh) {
+        if (h != INVALID_HANDLE_VALUE)
+            CloseHandle(h);
 
-    HANDLE* operator&();
+        h = nh;
+
+        return *this;
+    }
+
+    HANDLE* operator&() {
+        return &h;
+    }
+
+private:
+    HANDLE h = INVALID_HANDLE_VALUE;
+};
+
+class fff_handle {
+public:
+    fff_handle() {
+    }
+
+    fff_handle(HANDLE nh) {
+        h = nh;
+    }
+
+    ~fff_handle() {
+        if (h != INVALID_HANDLE_VALUE)
+            CloseHandle(h);
+    }
+
+    operator HANDLE() const {
+        return h;
+    }
+
+    fff_handle& operator=(const HANDLE nh) {
+        if (h != INVALID_HANDLE_VALUE)
+            FindClose(h);
+
+        h = nh;
+
+        return *this;
+    }
+
+    HANDLE* operator&() {
+        return &h;
+    }
 
 private:
     HANDLE h = INVALID_HANDLE_VALUE;
