@@ -755,6 +755,16 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
     }
 }
 
+static void error_message(HWND hwnd, const char* msg) {
+    wstring title, wmsg;
+
+    load_string(module, IDS_ERROR, title);
+
+    utf8_to_utf16(msg, wmsg);
+
+    MessageBoxW(hwnd, wmsg.c_str(), title.c_str(), MB_ICONERROR);
+}
+
 // based on functions in sys/sysmacros.h
 #define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((uint32_t)((rdev) >> 32) & ~0xFFF))
 #define minor(rdev) (((rdev) & 0xFF) | ((uint32_t)((rdev) >> 12) & ~0xFF))
@@ -771,20 +781,16 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     static ULONG comp_types[] = { IDS_COMPRESS_ANY, IDS_COMPRESS_ZLIB, IDS_COMPRESS_LZO, IDS_COMPRESS_ZSTD, 0 };
 
     if (various_subvols) {
-        if (!load_string(module, IDS_VARIOUS, s)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_VARIOUS, s))
+            throw last_error(GetLastError());
     } else
         wstring_sprintf(s, L"%llx", subvol);
 
     SetDlgItemTextW(hwndDlg, IDC_SUBVOL, s.c_str());
 
     if (various_inodes) {
-        if (!load_string(module, IDS_VARIOUS, s)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_VARIOUS, s))
+            throw last_error(GetLastError());
     } else
         wstring_sprintf(s, L"%llx", inode);
 
@@ -805,26 +811,20 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     if (sr == IDS_INODE_UNKNOWN) {
         wstring t;
 
-        if (!load_string(module, sr, t)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, sr, t))
+            throw last_error(GetLastError());
 
         wstring_sprintf(s, t, type);
     } else if (sr == IDS_INODE_CHAR || sr == IDS_INODE_BLOCK) {
         wstring t;
 
-        if (!load_string(module, sr, t)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, sr, t))
+            throw last_error(GetLastError());
 
         wstring_sprintf(s, t, major(rdev), minor(rdev));
     } else {
-        if (!load_string(module, sr, s)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, sr, s))
+            throw last_error(GetLastError());
     }
 
     SetDlgItemTextW(hwndDlg, IDC_TYPE, s.c_str());
@@ -849,10 +849,8 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     while (comp_types[i] != 0) {
         wstring t;
 
-        if (!load_string(module, comp_types[i], t)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, comp_types[i], t))
+            throw last_error(GetLastError());
 
         SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)t.c_str());
 
@@ -873,10 +871,8 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     }
 
     if (various_uids) {
-        if (!load_string(module, IDS_VARIOUS, s)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_VARIOUS, s))
+            throw last_error(GetLastError());
 
         EnableWindow(GetDlgItem(hwndDlg, IDC_UID), 0);
     } else
@@ -885,10 +881,8 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     SetDlgItemTextW(hwndDlg, IDC_UID, s.c_str());
 
     if (various_gids) {
-        if (!load_string(module, IDS_VARIOUS, s)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_VARIOUS, s))
+            throw last_error(GetLastError());
 
         EnableWindow(GetDlgItem(hwndDlg, IDC_GID), 0);
     } else
@@ -930,211 +924,215 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 }
 
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
-            BtrfsPropSheet* bps = (BtrfsPropSheet*)psp->lParam;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)psp->lParam;
 
-            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+                EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+                SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
-            bps->init_propsheet(hwndDlg);
+                bps->init_propsheet(hwndDlg);
 
-            return false;
-        }
+                return false;
+            }
 
-        case WM_COMMAND:
-        {
-            BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+            case WM_COMMAND:
+            {
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
 
-            if (bps && !bps->readonly) {
-                switch (HIWORD(wParam)) {
-                    case BN_CLICKED: {
-                        switch (LOWORD(wParam)) {
-                            case IDC_NODATACOW:
-                                bps->change_inode_flag(hwndDlg, BTRFS_INODE_NODATACOW, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                if (bps && !bps->readonly) {
+                    switch (HIWORD(wParam)) {
+                        case BN_CLICKED: {
+                            switch (LOWORD(wParam)) {
+                                case IDC_NODATACOW:
+                                    bps->change_inode_flag(hwndDlg, BTRFS_INODE_NODATACOW, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_COMPRESS:
+                                    bps->change_inode_flag(hwndDlg, BTRFS_INODE_COMPRESS, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+
+                                    EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE), IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) != BST_UNCHECKED);
+                                break;
+
+                                case IDC_USERR:
+                                    bps->change_perm_flag(hwndDlg, S_IRUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_USERW:
+                                    bps->change_perm_flag(hwndDlg, S_IWUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_USERX:
+                                    bps->change_perm_flag(hwndDlg, S_IXUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_GROUPR:
+                                    bps->change_perm_flag(hwndDlg, S_IRGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_GROUPW:
+                                    bps->change_perm_flag(hwndDlg, S_IWGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_GROUPX:
+                                    bps->change_perm_flag(hwndDlg, S_IXGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_OTHERR:
+                                    bps->change_perm_flag(hwndDlg, S_IROTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_OTHERW:
+                                    bps->change_perm_flag(hwndDlg, S_IWOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_OTHERX:
+                                    bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_SETUID:
+                                    bps->change_perm_flag(hwndDlg, S_ISUID, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_SETGID:
+                                    bps->change_perm_flag(hwndDlg, S_ISGID, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_STICKY:
+                                    bps->change_perm_flag(hwndDlg, S_ISVTX, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                                break;
+
+                                case IDC_SUBVOL_RO:
+                                    switch (IsDlgButtonChecked(hwndDlg, LOWORD(wParam))) {
+                                        case BST_CHECKED:
+                                            bps->ro_subvol = true;
+                                            bps->ro_changed = true;
+                                        break;
+
+                                        case BST_UNCHECKED:
+                                            bps->ro_subvol = false;
+                                            bps->ro_changed = true;
+                                        break;
+
+                                        case BST_INDETERMINATE:
+                                            bps->ro_changed = false;
+                                        break;
+                                    }
+
+                                    SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
+                                break;
+
+                                case IDC_OPEN_ADMIN:
+                                    bps->open_as_admin(hwndDlg);
+                                break;
+                            }
+
                             break;
+                        }
 
-                            case IDC_COMPRESS:
-                                bps->change_inode_flag(hwndDlg, BTRFS_INODE_COMPRESS, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
+                        case EN_CHANGE: {
+                            switch (LOWORD(wParam)) {
+                                case IDC_UID: {
+                                    WCHAR s[255];
 
-                                EnableWindow(GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE), IsDlgButtonChecked(hwndDlg, LOWORD(wParam)) != BST_UNCHECKED);
-                            break;
+                                    GetDlgItemTextW(hwndDlg, LOWORD(wParam), s, sizeof(s) / sizeof(WCHAR));
 
-                            case IDC_USERR:
-                                bps->change_perm_flag(hwndDlg, S_IRUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_USERW:
-                                bps->change_perm_flag(hwndDlg, S_IWUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_USERX:
-                                bps->change_perm_flag(hwndDlg, S_IXUSR, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_GROUPR:
-                                bps->change_perm_flag(hwndDlg, S_IRGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_GROUPW:
-                                bps->change_perm_flag(hwndDlg, S_IWGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_GROUPX:
-                                bps->change_perm_flag(hwndDlg, S_IXGRP, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_OTHERR:
-                                bps->change_perm_flag(hwndDlg, S_IROTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_OTHERW:
-                                bps->change_perm_flag(hwndDlg, S_IWOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_OTHERX:
-                                bps->change_perm_flag(hwndDlg, S_IXOTH, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_SETUID:
-                                bps->change_perm_flag(hwndDlg, S_ISUID, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_SETGID:
-                                bps->change_perm_flag(hwndDlg, S_ISGID, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_STICKY:
-                                bps->change_perm_flag(hwndDlg, S_ISVTX, IsDlgButtonChecked(hwndDlg, LOWORD(wParam)));
-                            break;
-
-                            case IDC_SUBVOL_RO:
-                                switch (IsDlgButtonChecked(hwndDlg, LOWORD(wParam))) {
-                                    case BST_CHECKED:
-                                        bps->ro_subvol = true;
-                                        bps->ro_changed = true;
-                                    break;
-
-                                    case BST_UNCHECKED:
-                                        bps->ro_subvol = false;
-                                        bps->ro_changed = true;
-                                    break;
-
-                                    case BST_INDETERMINATE:
-                                        bps->ro_changed = false;
+                                    bps->change_uid(hwndDlg, _wtoi(s));
                                     break;
                                 }
 
-                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
-                            break;
+                                case IDC_GID: {
+                                    WCHAR s[255];
 
-                            case IDC_OPEN_ADMIN:
-                                bps->open_as_admin(hwndDlg);
+                                    GetDlgItemTextW(hwndDlg, LOWORD(wParam), s, sizeof(s) / sizeof(WCHAR));
+
+                                    bps->change_gid(hwndDlg, _wtoi(s));
+                                    break;
+                                }
+                            }
+
                             break;
                         }
 
-                        break;
-                    }
+                        case CBN_SELCHANGE: {
+                            switch (LOWORD(wParam)) {
+                                case IDC_COMPRESS_TYPE: {
+                                    int sel = SendMessageW(GetDlgItem(hwndDlg, LOWORD(wParam)), CB_GETCURSEL, 0, 0);
 
-                    case EN_CHANGE: {
-                        switch (LOWORD(wParam)) {
-                            case IDC_UID: {
-                                WCHAR s[255];
-
-                                GetDlgItemTextW(hwndDlg, LOWORD(wParam), s, sizeof(s) / sizeof(WCHAR));
-
-                                bps->change_uid(hwndDlg, _wtoi(s));
-                                break;
-                            }
-
-                            case IDC_GID: {
-                                WCHAR s[255];
-
-                                GetDlgItemTextW(hwndDlg, LOWORD(wParam), s, sizeof(s) / sizeof(WCHAR));
-
-                                bps->change_gid(hwndDlg, _wtoi(s));
-                                break;
-                            }
-                        }
-
-                        break;
-                    }
-
-                    case CBN_SELCHANGE: {
-                        switch (LOWORD(wParam)) {
-                            case IDC_COMPRESS_TYPE: {
-                                int sel = SendMessageW(GetDlgItem(hwndDlg, LOWORD(wParam)), CB_GETCURSEL, 0, 0);
-
-                                if (bps->min_compression_type != bps->max_compression_type) {
-                                    if (sel == 0)
-                                        bps->compress_type_changed = false;
-                                    else {
-                                        bps->compress_type = sel - 1;
+                                    if (bps->min_compression_type != bps->max_compression_type) {
+                                        if (sel == 0)
+                                            bps->compress_type_changed = false;
+                                        else {
+                                            bps->compress_type = sel - 1;
+                                            bps->compress_type_changed = true;
+                                        }
+                                    } else {
+                                        bps->compress_type = sel;
                                         bps->compress_type_changed = true;
                                     }
-                                } else {
-                                    bps->compress_type = sel;
-                                    bps->compress_type_changed = true;
+
+                                    SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
+
+                                    break;
                                 }
-
-                                SendMessageW(GetParent(hwndDlg), PSM_CHANGED, (WPARAM)hwndDlg, 0);
-
-                                break;
                             }
-                        }
 
+                            break;
+                        }
+                    }
+                }
+
+                break;
+            }
+
+            case WM_NOTIFY:
+            {
+                switch (((LPNMHDR)lParam)->code) {
+                    case PSN_KILLACTIVE:
+                        SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, false);
+                    break;
+
+                    case PSN_APPLY: {
+                        BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+
+                        bps->apply_changes(hwndDlg);
+                        SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
+                        break;
+                    }
+
+                    case NM_CLICK:
+                    case NM_RETURN: {
+                        if (((LPNMHDR)lParam)->hwndFrom == GetDlgItem(hwndDlg, IDC_SIZE_ON_DISK)) {
+                            PNMLINK pNMLink = (PNMLINK)lParam;
+
+                            if (pNMLink->item.iLink == 0)
+                                DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SIZE_DETAILS), hwndDlg, SizeDetailsDlgProc, GetWindowLongPtr(hwndDlg, GWLP_USERDATA));
+                        }
                         break;
                     }
                 }
             }
 
-            break;
-        }
+            case WM_TIMER:
+            {
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
 
-        case WM_NOTIFY:
-        {
-            switch (((LPNMHDR)lParam)->code) {
-                case PSN_KILLACTIVE:
-                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, false);
+                if (bps) {
+                    bps->set_size_on_disk(hwndDlg);
+
+                    if (!bps->thread)
+                        KillTimer(hwndDlg, 1);
+                }
+
                 break;
-
-                case PSN_APPLY: {
-                    BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
-
-                    bps->apply_changes(hwndDlg);
-                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
-                    break;
-                }
-
-                case NM_CLICK:
-                case NM_RETURN: {
-                    if (((LPNMHDR)lParam)->hwndFrom == GetDlgItem(hwndDlg, IDC_SIZE_ON_DISK)) {
-                        PNMLINK pNMLink = (PNMLINK)lParam;
-
-                        if (pNMLink->item.iLink == 0)
-                            DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SIZE_DETAILS), hwndDlg, SizeDetailsDlgProc, GetWindowLongPtr(hwndDlg, GWLP_USERDATA));
-                    }
-                    break;
-                }
             }
         }
-
-        case WM_TIMER:
-        {
-            BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
-
-            if (bps) {
-                bps->set_size_on_disk(hwndDlg);
-
-                if (!bps->thread)
-                    KillTimer(hwndDlg, 1);
-            }
-
-            break;
-        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
