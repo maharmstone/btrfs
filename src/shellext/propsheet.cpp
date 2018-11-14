@@ -267,43 +267,54 @@ HRESULT BtrfsPropSheet::load_file_list() {
 }
 
 HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
-    FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    HDROP hdrop;
-    HRESULT hr;
+    try {
+        FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+        HDROP hdrop;
+        HRESULT hr;
 
-    if (pidlFolder)
+        if (pidlFolder)
+            return E_FAIL;
+
+        if (!pdtobj)
+            return E_FAIL;
+
+        stgm.tymed = TYMED_HGLOBAL;
+
+        if (FAILED(pdtobj->GetData(&format, &stgm)))
+            return E_INVALIDARG;
+
+        stgm_set = true;
+
+        hdrop = (HDROP)GlobalLock(stgm.hGlobal);
+
+        if (!hdrop) {
+            ReleaseStgMedium(&stgm);
+            stgm_set = false;
+            return E_INVALIDARG;
+        }
+
+        try {
+            hr = load_file_list();
+            if (FAILED(hr))
+                return hr;
+
+            if (search_list.size() > 0) {
+                thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
+
+                if (!thread)
+                    throw last_error(GetLastError());
+            }
+        } catch (...) {
+            GlobalUnlock(hdrop);
+            throw;
+        }
+
+        GlobalUnlock(hdrop);
+    } catch (const exception& e) {
+        error_message(nullptr, e.what());
+
         return E_FAIL;
-
-    if (!pdtobj)
-        return E_FAIL;
-
-    stgm.tymed = TYMED_HGLOBAL;
-
-    if (FAILED(pdtobj->GetData(&format, &stgm)))
-        return E_INVALIDARG;
-
-    stgm_set = true;
-
-    hdrop = (HDROP)GlobalLock(stgm.hGlobal);
-
-    if (!hdrop) {
-        ReleaseStgMedium(&stgm);
-        stgm_set = false;
-        return E_INVALIDARG;
     }
-
-    hr = load_file_list();
-    if (FAILED(hr))
-        return hr;
-
-    if (search_list.size() > 0) {
-        thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
-
-        if (!thread)
-            ShowError(nullptr, GetLastError());
-    }
-
-    GlobalUnlock(hdrop);
 
     return S_OK;
 }
@@ -416,7 +427,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
         thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
 
         if (!thread)
-            ShowError(nullptr, GetLastError());
+            throw last_error(GetLastError());
     }
 
     this->filename = cmdline;
@@ -489,10 +500,8 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
     h = CreateFileW(fn.c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowError(hDlg, GetLastError());
-        return;
-    }
+    if (h == INVALID_HANDLE_VALUE)
+        throw last_error(GetLastError());
 
     ZeroMemory(&bsii, sizeof(btrfs_set_inode_info));
 
@@ -507,10 +516,8 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
         BY_HANDLE_FILE_INFORMATION bhfi;
         FILE_BASIC_INFO fbi;
 
-        if (!GetFileInformationByHandle(h, &bhfi)) {
-            ShowError(hDlg, GetLastError());
-            return;
-        }
+        if (!GetFileInformationByHandle(h, &bhfi))
+            throw last_error(GetLastError());
 
         memset(&fbi, 0, sizeof(fbi));
         fbi.FileAttributes = bhfi.dwFileAttributes;
@@ -520,10 +527,8 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
         else
             fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
 
-        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi))) {
-            ShowError(hDlg, GetLastError());
-            return;
-        }
+        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi)))
+            throw last_error(GetLastError());
     }
 
     if (flags_changed || perms_changed || uid_changed || gid_changed || compress_type_changed) {
@@ -741,10 +746,8 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
             sei.nShow = SW_SHOW;
             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-            if (!ShellExecuteExW(&sei)) {
-                ShowError(hwndDlg, GetLastError());
-                return;
-            }
+            if (!ShellExecuteExW(&sei))
+                throw last_error(GetLastError());
 
             WaitForSingleObject(sei.hProcess, INFINITE);
             CloseHandle(sei.hProcess);
@@ -753,16 +756,6 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
             init_propsheet(hwndDlg);
         }
     }
-}
-
-static void error_message(HWND hwnd, const char* msg) {
-    wstring title, wmsg;
-
-    load_string(module, IDS_ERROR, title);
-
-    utf8_to_utf16(msg, wmsg);
-
-    MessageBoxW(hwnd, wmsg.c_str(), title.c_str(), MB_ICONERROR);
 }
 
 // based on functions in sys/sysmacros.h
@@ -1187,39 +1180,43 @@ extern "C" {
 #endif
 
 void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    BtrfsPropSheet* bps;
-    PROPSHEETPAGEW psp;
-    PROPSHEETHEADERW psh;
-    WCHAR title[255];
+    try {
+        BtrfsPropSheet* bps;
+        PROPSHEETPAGEW psp;
+        PROPSHEETHEADERW psh;
+        WCHAR title[255];
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    LoadStringW(module, IDS_STANDALONE_PROPSHEET_TITLE, title, sizeof(title) / sizeof(WCHAR));
+        LoadStringW(module, IDS_STANDALONE_PROPSHEET_TITLE, title, sizeof(title) / sizeof(WCHAR));
 
-    bps = new BtrfsPropSheet;
-    bps->set_cmdline(lpszCmdLine);
+        bps = new BtrfsPropSheet;
+        bps->set_cmdline(lpszCmdLine);
 
-    psp.dwSize = sizeof(psp);
-    psp.dwFlags = PSP_USETITLE;
-    psp.hInstance = module;
-    psp.pszTemplate = MAKEINTRESOURCEW(IDD_PROP_SHEET);
-    psp.hIcon = 0;
-    psp.pszTitle = MAKEINTRESOURCEW(IDS_PROP_SHEET_TITLE);
-    psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
-    psp.pfnCallback = nullptr;
-    psp.lParam = (LPARAM)bps;
+        psp.dwSize = sizeof(psp);
+        psp.dwFlags = PSP_USETITLE;
+        psp.hInstance = module;
+        psp.pszTemplate = MAKEINTRESOURCEW(IDD_PROP_SHEET);
+        psp.hIcon = 0;
+        psp.pszTitle = MAKEINTRESOURCEW(IDS_PROP_SHEET_TITLE);
+        psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
+        psp.pfnCallback = nullptr;
+        psp.lParam = (LPARAM)bps;
 
-    memset(&psh, 0, sizeof(PROPSHEETHEADERW));
+        memset(&psh, 0, sizeof(PROPSHEETHEADERW));
 
-    psh.dwSize = sizeof(PROPSHEETHEADERW);
-    psh.dwFlags = PSH_PROPSHEETPAGE;
-    psh.hwndParent = hwnd;
-    psh.hInstance = psp.hInstance;
-    psh.pszCaption = title;
-    psh.nPages = 1;
-    psh.ppsp = &psp;
+        psh.dwSize = sizeof(PROPSHEETHEADERW);
+        psh.dwFlags = PSH_PROPSHEETPAGE;
+        psh.hwndParent = hwnd;
+        psh.hInstance = psp.hInstance;
+        psh.pszCaption = title;
+        psh.nPages = 1;
+        psh.ppsp = &psp;
 
-    PropertySheetW(&psh);
+        PropertySheetW(&psh);
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
+    }
 }
 
 #ifdef __cplusplus

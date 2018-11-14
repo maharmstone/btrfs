@@ -456,15 +456,11 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
 
             h2 = CreateFileW(parpath.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
-            if (h2 == INVALID_HANDLE_VALUE) {
-                ShowError(hwnd, GetLastError());
-                return;
-            }
+            if (h2 == INVALID_HANDLE_VALUE)
+                throw last_error(GetLastError());
 
-            if (!load_string(module, IDS_SNAPSHOT_FILENAME, temp1)) {
-                ShowError(hwnd, GetLastError());
-                return;
-            }
+            if (!load_string(module, IDS_SNAPSHOT_FILENAME, temp1))
+                throw last_error(GetLastError());
 
             GetLocalTime(&time);
 
@@ -502,7 +498,7 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
                 ShowNtStatusError(hwnd, Status);
         }
     } else
-        ShowError(hwnd, GetLastError());
+        throw last_error(GetLastError());
 }
 
 static uint64_t __inline sector_align(uint64_t n, uint64_t a) {
@@ -539,24 +535,18 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     newpath = dirw;
     newpath += name;
 
-    if (!get_volume_path_parent(fn, volpath1, sizeof(volpath1) / sizeof(WCHAR))) {
-        ShowError(hwnd, GetLastError());
-        return false;
-    }
+    if (!get_volume_path_parent(fn, volpath1, sizeof(volpath1) / sizeof(WCHAR)))
+        throw last_error(GetLastError());
 
-    if (!GetVolumePathNameW(dir, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
-        ShowError(hwnd, GetLastError());
-        return false;
-    }
+    if (!GetVolumePathNameW(dir, volpath2, sizeof(volpath2) / sizeof(WCHAR)))
+        throw last_error(GetLastError());
 
     if (wcscmp(volpath1, volpath2)) // different filesystems
         return false;
 
     source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
-    if (source == INVALID_HANDLE_VALUE) {
-        ShowError(hwnd, GetLastError());
-        return false;
-    }
+    if (source == INVALID_HANDLE_VALUE)
+        throw last_error(GetLastError());
 
     Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info2));
     if (!NT_SUCCESS(Status)) {
@@ -573,10 +563,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         int num = 2;
 
         dirh = CreateFileW(dir, FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (dirh == INVALID_HANDLE_VALUE) {
-            ShowError(hwnd, GetLastError());
-            return false;
-        }
+        if (dirh == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
         search = dirw;
         search += name;
@@ -618,10 +606,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         return true;
     }
 
-    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
-        ShowError(hwnd, GetLastError());
-        return false;
-    }
+    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
+        throw last_error(GetLastError());
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
         win_handle dirh;
@@ -629,10 +615,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         btrfs_mknod* bmn;
 
         dirh = CreateFileW(dir, FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (dirh == INVALID_HANDLE_VALUE) {
-            ShowError(hwnd, GetLastError());
-            return false;
-        }
+        if (dirh == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
         bmnsize = offsetof(btrfs_mknod, name[0]) + (wcslen(name) * sizeof(WCHAR));
         bmn = (btrfs_mknod*)malloc(bmnsize);
@@ -665,10 +649,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     if (dest == INVALID_HANDLE_VALUE) {
         int num = 2;
 
-        if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS && wcscmp(fn, newpath.c_str())) {
-            ShowError(hwnd, GetLastError());
-            return false;
-        }
+        if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS && wcscmp(fn, newpath.c_str()))
+            throw last_error(GetLastError());
 
         do {
             WCHAR* ext;
@@ -703,10 +685,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 dest = CreateFileW(newpath.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, source);
 
             if (dest == INVALID_HANDLE_VALUE) {
-                if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS) {
-                    ShowError(hwnd, GetLastError());
-                    return false;
-                }
+                if (GetLastError() != ERROR_FILE_EXISTS && GetLastError() != ERROR_ALREADY_EXISTS)
+                    throw last_error(GetLastError());
 
                 num++;
             } else
@@ -714,239 +694,224 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         } while (true);
     }
 
-    memset(&bsii, 0, sizeof(btrfs_set_inode_info));
+    try {
+        memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
-    bsii.flags_changed = true;
-    bsii.flags = bii.flags;
+        bsii.flags_changed = true;
+        bsii.flags = bii.flags;
 
-    if (bii.flags & BTRFS_INODE_COMPRESS) {
-        bsii.compression_type_changed = true;
-        bsii.compression_type = bii.compression_type;
-    }
-
-    Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwnd, Status);
-        goto end;
-    }
-
-    if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-            fff_handle h;
-            WIN32_FIND_DATAW fff;
-            wstring qs;
-
-            qs = fn;
-            qs += L"\\*";
-
-            h = FindFirstFileW(qs.c_str(), &fff);
-            if (h != INVALID_HANDLE_VALUE) {
-                do {
-                    wstring fn2;
-
-                    if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
-                        continue;
-
-                    fn2 = fn;
-                    fn2 += L"\\";
-                    fn2 += fff.cFileName;
-
-                    if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
-                        goto end;
-                } while (FindNextFileW(h, &fff));
-            }
+        if (bii.flags & BTRFS_INODE_COMPRESS) {
+            bsii.compression_type_changed = true;
+            bsii.compression_type = bii.compression_type;
         }
 
-        // CreateDirectoryExW also copies streams, no need to do it here
-    } else {
-        WIN32_FIND_STREAM_DATA fsd;
-
-        if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-            reparse_header rh;
-            ULONG rplen;
-            uint8_t* rp;
-
-            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, &rh, sizeof(reparse_header), &bytesret, nullptr)) {
-                if (GetLastError() != ERROR_MORE_DATA) {
-                    ShowError(hwnd, GetLastError());
-                    goto end;
-                }
-            }
-
-            rplen = sizeof(reparse_header) + rh.ReparseDataLength;
-            rp = (uint8_t*)malloc(rplen);
-
-            if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, rplen, &bytesret, nullptr)) {
-                ShowError(hwnd, GetLastError());
-                goto end;
-            }
-
-            if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, nullptr, 0, &bytesret, nullptr)) {
-                ShowError(hwnd, GetLastError());
-                goto end;
-            }
-
-            free(rp);
-        } else {
-            FILE_STANDARD_INFO fsi;
-            FILE_END_OF_FILE_INFO feofi;
-            FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
-            FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
-            DUPLICATE_EXTENTS_DATA ded;
-            uint64_t offset, alloc_size;
-            ULONG maxdup;
-
-            if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO))) {
-                ShowError(hwnd, GetLastError());
-                goto end;
-            }
-
-            if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, nullptr, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, nullptr)) {
-                ShowError(hwnd, GetLastError());
-                goto end;
-            }
-
-            if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
-                if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesret, nullptr)) {
-                    ShowError(hwnd, GetLastError());
-                    goto end;
-                }
-            }
-
-            fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
-            fsiib.Reserved = 0;
-            fsiib.Flags = fgiib.Flags;
-            if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), nullptr, 0, &bytesret, nullptr)) {
-                ShowError(hwnd, GetLastError());
-                goto end;
-            }
-
-            feofi.EndOfFile = fsi.EndOfFile;
-            if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO))){
-                ShowError(hwnd, GetLastError());
-                goto end;
-            }
-
-            ded.FileHandle = source;
-            maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
-
-            alloc_size = sector_align(fsi.EndOfFile.QuadPart, fgiib.ClusterSizeInBytes);
-
-            offset = 0;
-            while (offset < alloc_size) {
-                ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
-                ded.ByteCount.QuadPart = maxdup < (alloc_size - offset) ? maxdup : (alloc_size - offset);
-                if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), nullptr, 0, &bytesret, nullptr)) {
-                    ShowError(hwnd, GetLastError());
-                    goto end;
-                }
-
-                offset += ded.ByteCount.QuadPart;
-            }
-        }
-
-        fff_handle h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
-        if (h != INVALID_HANDLE_VALUE) {
-            do {
-                wstring sn;
-
-                sn = fsd.cStreamName;
-
-                if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
-                    win_handle stream;
-                    uint8_t* data = nullptr;
-
-                    if (fsd.StreamSize.QuadPart > 0) {
-                        wstring fn2;
-
-                        fn2 = fn;
-                        fn2 += sn;
-
-                        stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-
-                        if (stream == INVALID_HANDLE_VALUE) {
-                            ShowError(hwnd, GetLastError());
-                            goto end;
-                        }
-
-                        // We can get away with this because our streams are guaranteed to be below 64 KB -
-                        // don't do this on NTFS!
-                        data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
-
-                        if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
-                            ShowError(hwnd, GetLastError());
-                            free(data);
-                            goto end;
-                        }
-                    }
-
-                    stream = CreateFileW((newpath + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, nullptr);
-
-                    if (stream == INVALID_HANDLE_VALUE) {
-                        ShowError(hwnd, GetLastError());
-
-                        if (data) free(data);
-
-                        goto end;
-                    }
-
-                    if (data) {
-                        if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
-                            ShowError(hwnd, GetLastError());
-                            free(data);
-                            goto end;
-                        }
-
-                        free(data);
-                    }
-                }
-            } while (FindNextStreamW(h, &fsd));
-        }
-    }
-
-    atime.dwLowDateTime = fbi.LastAccessTime.LowPart;
-    atime.dwHighDateTime = fbi.LastAccessTime.HighPart;
-    mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
-    mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
-    SetFileTime(dest, nullptr, &atime, &mtime);
-
-    Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, &bsxa, sizeof(btrfs_set_xattr));
-
-    if (Status == STATUS_BUFFER_OVERFLOW || (NT_SUCCESS(Status) && bsxa.valuelen > 0)) {
-        ULONG xalen = 0;
-        btrfs_set_xattr *xa = nullptr, *xa2;
-
-        do {
-            xalen += 1024;
-
-            if (xa) free(xa);
-            xa = (btrfs_set_xattr*)malloc(xalen);
-
-            Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, xa, xalen);
-        } while (Status == STATUS_BUFFER_OVERFLOW);
-
+        Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            free(xa);
             ShowNtStatusError(hwnd, Status);
             goto end;
         }
 
-        xa2 = xa;
-        while (xa2->valuelen > 0) {
-            Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
-                                     offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
+        if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                fff_handle h;
+                WIN32_FIND_DATAW fff;
+                wstring qs;
+
+                qs = fn;
+                qs += L"\\*";
+
+                h = FindFirstFileW(qs.c_str(), &fff);
+                if (h != INVALID_HANDLE_VALUE) {
+                    do {
+                        wstring fn2;
+
+                        if (fff.cFileName[0] == '.' && (fff.cFileName[1] == 0 || (fff.cFileName[1] == '.' && fff.cFileName[2] == 0)))
+                            continue;
+
+                        fn2 = fn;
+                        fn2 += L"\\";
+                        fn2 += fff.cFileName;
+
+                        if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
+                            goto end;
+                    } while (FindNextFileW(h, &fff));
+                }
+            }
+
+            // CreateDirectoryExW also copies streams, no need to do it here
+        } else {
+            WIN32_FIND_STREAM_DATA fsd;
+
+            if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+                reparse_header rh;
+                ULONG rplen;
+                uint8_t* rp;
+
+                if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, &rh, sizeof(reparse_header), &bytesret, nullptr)) {
+                    if (GetLastError() != ERROR_MORE_DATA)
+                        throw last_error(GetLastError());
+                }
+
+                rplen = sizeof(reparse_header) + rh.ReparseDataLength;
+                rp = (uint8_t*)malloc(rplen);
+
+                if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, rplen, &bytesret, nullptr))
+                    throw last_error(GetLastError());
+
+                if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, nullptr, 0, &bytesret, nullptr))
+                    throw last_error(GetLastError());
+
+                free(rp);
+            } else {
+                FILE_STANDARD_INFO fsi;
+                FILE_END_OF_FILE_INFO feofi;
+                FSCTL_GET_INTEGRITY_INFORMATION_BUFFER fgiib;
+                FSCTL_SET_INTEGRITY_INFORMATION_BUFFER fsiib;
+                DUPLICATE_EXTENTS_DATA ded;
+                uint64_t offset, alloc_size;
+                ULONG maxdup;
+
+                if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO)))
+                    throw last_error(GetLastError());
+
+                if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, nullptr, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, nullptr))
+                    throw last_error(GetLastError());
+
+                if (fbi.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) {
+                    if (!DeviceIoControl(dest, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytesret, nullptr))
+                        throw last_error(GetLastError());
+                }
+
+                fsiib.ChecksumAlgorithm = fgiib.ChecksumAlgorithm;
+                fsiib.Reserved = 0;
+                fsiib.Flags = fgiib.Flags;
+                if (!DeviceIoControl(dest, FSCTL_SET_INTEGRITY_INFORMATION, &fsiib, sizeof(FSCTL_SET_INTEGRITY_INFORMATION_BUFFER), nullptr, 0, &bytesret, nullptr))
+                    throw last_error(GetLastError());
+
+                feofi.EndOfFile = fsi.EndOfFile;
+                if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO)))
+                    throw last_error(GetLastError());
+
+                ded.FileHandle = source;
+                maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
+
+                alloc_size = sector_align(fsi.EndOfFile.QuadPart, fgiib.ClusterSizeInBytes);
+
+                offset = 0;
+                while (offset < alloc_size) {
+                    ded.SourceFileOffset.QuadPart = ded.TargetFileOffset.QuadPart = offset;
+                    ded.ByteCount.QuadPart = maxdup < (alloc_size - offset) ? maxdup : (alloc_size - offset);
+                    if (!DeviceIoControl(dest, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA), nullptr, 0, &bytesret, nullptr))
+                        throw last_error(GetLastError());
+
+                    offset += ded.ByteCount.QuadPart;
+                }
+            }
+
+            fff_handle h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
+            if (h != INVALID_HANDLE_VALUE) {
+                do {
+                    wstring sn;
+
+                    sn = fsd.cStreamName;
+
+                    if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
+                        win_handle stream;
+                        uint8_t* data = nullptr;
+
+                        if (fsd.StreamSize.QuadPart > 0) {
+                            wstring fn2;
+
+                            fn2 = fn;
+                            fn2 += sn;
+
+                            stream = CreateFileW(fn2.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+                            if (stream == INVALID_HANDLE_VALUE)
+                                throw last_error(GetLastError());
+
+                            // We can get away with this because our streams are guaranteed to be below 64 KB -
+                            // don't do this on NTFS!
+                            data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
+
+                            if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                                free(data);
+                                throw last_error(GetLastError());
+                            }
+                        }
+
+                        stream = CreateFileW((newpath + sn).c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW, 0, nullptr);
+
+                        if (stream == INVALID_HANDLE_VALUE) {
+                            if (data) free(data);
+                            throw last_error(GetLastError());
+                        }
+
+                        if (data) {
+                            if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                                free(data);
+                                throw last_error(GetLastError());
+                            }
+
+                            free(data);
+                        }
+                    }
+                } while (FindNextStreamW(h, &fsd));
+            }
+        }
+
+        atime.dwLowDateTime = fbi.LastAccessTime.LowPart;
+        atime.dwHighDateTime = fbi.LastAccessTime.HighPart;
+        mtime.dwLowDateTime = fbi.LastWriteTime.LowPart;
+        mtime.dwHighDateTime = fbi.LastWriteTime.HighPart;
+        SetFileTime(dest, nullptr, &atime, &mtime);
+
+        Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, &bsxa, sizeof(btrfs_set_xattr));
+
+        if (Status == STATUS_BUFFER_OVERFLOW || (NT_SUCCESS(Status) && bsxa.valuelen > 0)) {
+            ULONG xalen = 0;
+            btrfs_set_xattr *xa = nullptr, *xa2;
+
+            do {
+                xalen += 1024;
+
+                if (xa) free(xa);
+                xa = (btrfs_set_xattr*)malloc(xalen);
+
+                Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_XATTRS, nullptr, 0, xa, xalen);
+            } while (Status == STATUS_BUFFER_OVERFLOW);
+
             if (!NT_SUCCESS(Status)) {
                 free(xa);
                 ShowNtStatusError(hwnd, Status);
                 goto end;
             }
-            xa2 = (btrfs_set_xattr*)&xa2->data[xa2->namelen + xa2->valuelen];
-        }
 
-        free(xa);
-    } else if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwnd, Status);
-        goto end;
+            xa2 = xa;
+            while (xa2->valuelen > 0) {
+                Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
+                                        offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
+                if (!NT_SUCCESS(Status)) {
+                    free(xa);
+                    ShowNtStatusError(hwnd, Status);
+                    goto end;
+                }
+                xa2 = (btrfs_set_xattr*)&xa2->data[xa2->namelen + xa2->valuelen];
+            }
+
+            free(xa);
+        } else if (!NT_SUCCESS(Status)) {
+            ShowNtStatusError(hwnd, Status);
+            goto end;
+        }
+    } catch (...) {
+        FILE_DISPOSITION_INFO fdi;
+
+        fdi.DeleteFile = true;
+        if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
+            throw last_error(GetLastError());
+
+        throw;
     }
 
     ret = true;
@@ -957,7 +922,7 @@ end:
 
         fdi.DeleteFile = true;
         if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
-            ShowError(hwnd, GetLastError());
+            throw last_error(GetLastError());
     }
 
     return ret;
@@ -966,207 +931,201 @@ end:
 HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
     LPCMINVOKECOMMANDINFOEX pici = (LPCMINVOKECOMMANDINFOEX)picia;
 
-    if (ignore)
-        return E_INVALIDARG;
+    try {
+        if (ignore)
+            return E_INVALIDARG;
 
-    if (!bg) {
-        if ((IS_INTRESOURCE(pici->lpVerb) && allow_snapshot && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
-            UINT num_files, i;
-            WCHAR fn[MAX_PATH];
+        if (!bg) {
+            if ((IS_INTRESOURCE(pici->lpVerb) && allow_snapshot && pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SNAPSHOT_VERBA))) {
+                UINT num_files, i;
+                WCHAR fn[MAX_PATH];
 
-            if (!stgm_set)
-                return E_FAIL;
+                if (!stgm_set)
+                    return E_FAIL;
 
-            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
+                num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
-            if (num_files == 0)
-                return E_FAIL;
+                if (num_files == 0)
+                    return E_FAIL;
 
-            for (i = 0; i < num_files; i++) {
-                if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                    create_snapshot(pici->hwnd, fn);
-                }
-            }
-
-            return S_OK;
-        } else if ((IS_INTRESOURCE(pici->lpVerb) && ((allow_snapshot && (ULONG_PTR)pici->lpVerb == 1) || (!allow_snapshot && (ULONG_PTR)pici->lpVerb == 0))) ||
-                   (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SEND_VERBA))) {
-            UINT num_files, i;
-            WCHAR dll[MAX_PATH], fn[MAX_PATH];
-            wstring t;
-            SHELLEXECUTEINFOW sei;
-
-            GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
-
-            if (!stgm_set)
-                return E_FAIL;
-
-            num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
-
-            if (num_files == 0)
-                return E_FAIL;
-
-            for (i = 0; i < num_files; i++) {
-                if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                    t = L"\"";
-                    t += dll;
-                    t += L"\",SendSubvolGUI ";
-                    t += fn;
-
-                    RtlZeroMemory(&sei, sizeof(sei));
-
-                    sei.cbSize = sizeof(sei);
-                    sei.hwnd = pici->hwnd;
-                    sei.lpVerb = L"runas";
-                    sei.lpFile = L"rundll32.exe";
-                    sei.lpParameters = t.c_str();
-                    sei.nShow = SW_SHOW;
-                    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-                    if (!ShellExecuteExW(&sei)) {
-                        ShowError(pici->hwnd, GetLastError());
-                        return E_FAIL;
+                for (i = 0; i < num_files; i++) {
+                    if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                        create_snapshot(pici->hwnd, fn);
                     }
-
-                    WaitForSingleObject(sei.hProcess, INFINITE);
-                    CloseHandle(sei.hProcess);
                 }
-            }
 
-            return S_OK;
-        }
-    } else {
-        if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA))) {
-            win_handle h;
-            IO_STATUS_BLOCK iosb;
-            NTSTATUS Status;
-            ULONG bcslen;
-            wstring name, nameorig, searchpath;
-            btrfs_create_subvol* bcs;
-            WIN32_FIND_DATAW wfd;
-
-            if (!load_string(module, IDS_NEW_SUBVOL_FILENAME, name)) {
-                ShowError(pici->hwnd, GetLastError());
-                return E_FAIL;
-            }
-
-            h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-
-            if (h == INVALID_HANDLE_VALUE) {
-                ShowError(pici->hwnd, GetLastError());
-                return E_FAIL;
-            }
-
-            searchpath = path + L"\\" + name;
-            nameorig = name;
-
-            {
-                fff_handle fff = FindFirstFileW(searchpath.c_str(), &wfd);
-
-                if (fff != INVALID_HANDLE_VALUE) {
-                    ULONG num = 2;
-
-                    do {
-                        name = nameorig + L" (" + to_wstring(num) + L")";
-                        searchpath = path + L"\\" + name;
-
-                        fff = FindFirstFileW(searchpath.c_str(), &wfd);
-                        num++;
-                    } while (fff != INVALID_HANDLE_VALUE);
-                }
-            }
-
-            bcslen = offsetof(btrfs_create_subvol, name[0]) + (name.length() * sizeof(WCHAR));
-            bcs = (btrfs_create_subvol*)malloc(bcslen);
-
-            bcs->readonly = false;
-            bcs->posix = false;
-            bcs->namelen = name.length() * sizeof(WCHAR);
-            memcpy(bcs->name, name.c_str(), name.length() * sizeof(WCHAR));
-
-            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
-
-            free(bcs);
-
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(pici->hwnd, Status);
-                return E_FAIL;
-            }
-
-            return S_OK;
-        } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
-            WCHAR dll[MAX_PATH];
-            wstring t;
-            SHELLEXECUTEINFOW sei;
-
-            GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
-
-            t = L"\"";
-            t += dll;
-            t += L"\",RecvSubvolGUI ";
-            t += path;
-
-            RtlZeroMemory(&sei, sizeof(sei));
-
-            sei.cbSize = sizeof(sei);
-            sei.hwnd = pici->hwnd;
-            sei.lpVerb = L"runas";
-            sei.lpFile = L"rundll32.exe";
-            sei.lpParameters = t.c_str();
-            sei.nShow = SW_SHOW;
-            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-            if (!ShellExecuteExW(&sei)) {
-                ShowError(pici->hwnd, GetLastError());
-                return E_FAIL;
-            }
-
-            WaitForSingleObject(sei.hProcess, INFINITE);
-            CloseHandle(sei.hProcess);
-
-            return S_OK;
-        } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
-            HDROP hdrop;
-
-            if (!IsClipboardFormatAvailable(CF_HDROP))
                 return S_OK;
+            } else if ((IS_INTRESOURCE(pici->lpVerb) && ((allow_snapshot && (ULONG_PTR)pici->lpVerb == 1) || (!allow_snapshot && (ULONG_PTR)pici->lpVerb == 0))) ||
+                    (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, SEND_VERBA))) {
+                UINT num_files, i;
+                WCHAR dll[MAX_PATH], fn[MAX_PATH];
+                wstring t;
+                SHELLEXECUTEINFOW sei;
 
-            if (!OpenClipboard(pici->hwnd)) {
-                ShowError(pici->hwnd, GetLastError());
-                return E_FAIL;
+                GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
+
+                if (!stgm_set)
+                    return E_FAIL;
+
+                num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
+
+                if (num_files == 0)
+                    return E_FAIL;
+
+                for (i = 0; i < num_files; i++) {
+                    if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                        t = L"\"";
+                        t += dll;
+                        t += L"\",SendSubvolGUI ";
+                        t += fn;
+
+                        RtlZeroMemory(&sei, sizeof(sei));
+
+                        sei.cbSize = sizeof(sei);
+                        sei.hwnd = pici->hwnd;
+                        sei.lpVerb = L"runas";
+                        sei.lpFile = L"rundll32.exe";
+                        sei.lpParameters = t.c_str();
+                        sei.nShow = SW_SHOW;
+                        sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+                        if (!ShellExecuteExW(&sei))
+                            throw last_error(GetLastError());
+
+                        WaitForSingleObject(sei.hProcess, INFINITE);
+                        CloseHandle(sei.hProcess);
+                    }
+                }
+
+                return S_OK;
             }
+        } else {
+            if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 0) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, NEW_SUBVOL_VERBA))) {
+                win_handle h;
+                IO_STATUS_BLOCK iosb;
+                NTSTATUS Status;
+                ULONG bcslen;
+                wstring name, nameorig, searchpath;
+                btrfs_create_subvol* bcs;
+                WIN32_FIND_DATAW wfd;
 
-            hdrop = (HDROP)GetClipboardData(CF_HDROP);
+                if (!load_string(module, IDS_NEW_SUBVOL_FILENAME, name))
+                    throw last_error(GetLastError());
 
-            if (hdrop) {
-                HANDLE lh;
+                h = CreateFileW(path.c_str(), FILE_ADD_SUBDIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
-                lh = GlobalLock(hdrop);
+                if (h == INVALID_HANDLE_VALUE)
+                    throw last_error(GetLastError());
 
-                if (lh) {
-                    ULONG num_files, i;
-                    WCHAR fn[MAX_PATH];
+                searchpath = path + L"\\" + name;
+                nameorig = name;
 
-                    num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+                {
+                    fff_handle fff = FindFirstFileW(searchpath.c_str(), &wfd);
 
-                    for (i = 0; i < num_files; i++) {
-                        if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                            if (!reflink_copy(pici->hwnd, fn, pici->lpDirectoryW)) {
-                                GlobalUnlock(lh);
-                                CloseClipboard();
-                                return E_FAIL;
+                    if (fff != INVALID_HANDLE_VALUE) {
+                        ULONG num = 2;
+
+                        do {
+                            name = nameorig + L" (" + to_wstring(num) + L")";
+                            searchpath = path + L"\\" + name;
+
+                            fff = FindFirstFileW(searchpath.c_str(), &wfd);
+                            num++;
+                        } while (fff != INVALID_HANDLE_VALUE);
+                    }
+                }
+
+                bcslen = offsetof(btrfs_create_subvol, name[0]) + (name.length() * sizeof(WCHAR));
+                bcs = (btrfs_create_subvol*)malloc(bcslen);
+
+                bcs->readonly = false;
+                bcs->posix = false;
+                bcs->namelen = name.length() * sizeof(WCHAR);
+                memcpy(bcs->name, name.c_str(), name.length() * sizeof(WCHAR));
+
+                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
+
+                free(bcs);
+
+                if (!NT_SUCCESS(Status)) {
+                    ShowNtStatusError(pici->hwnd, Status);
+                    return E_FAIL;
+                }
+
+                return S_OK;
+            } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {
+                WCHAR dll[MAX_PATH];
+                wstring t;
+                SHELLEXECUTEINFOW sei;
+
+                GetModuleFileNameW(module, dll, sizeof(dll) / sizeof(WCHAR));
+
+                t = L"\"";
+                t += dll;
+                t += L"\",RecvSubvolGUI ";
+                t += path;
+
+                RtlZeroMemory(&sei, sizeof(sei));
+
+                sei.cbSize = sizeof(sei);
+                sei.hwnd = pici->hwnd;
+                sei.lpVerb = L"runas";
+                sei.lpFile = L"rundll32.exe";
+                sei.lpParameters = t.c_str();
+                sei.nShow = SW_SHOW;
+                sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+                if (!ShellExecuteExW(&sei))
+                    throw last_error(GetLastError());
+
+                WaitForSingleObject(sei.hProcess, INFINITE);
+                CloseHandle(sei.hProcess);
+
+                return S_OK;
+            } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
+                HDROP hdrop;
+
+                if (!IsClipboardFormatAvailable(CF_HDROP))
+                    return S_OK;
+
+                if (!OpenClipboard(pici->hwnd))
+                    throw last_error(GetLastError());
+
+                hdrop = (HDROP)GetClipboardData(CF_HDROP);
+
+                if (hdrop) {
+                    HANDLE lh;
+
+                    lh = GlobalLock(hdrop);
+
+                    if (lh) {
+                        ULONG num_files, i;
+                        WCHAR fn[MAX_PATH];
+
+                        num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+
+                        for (i = 0; i < num_files; i++) {
+                            if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                                if (!reflink_copy(pici->hwnd, fn, pici->lpDirectoryW)) {
+                                    GlobalUnlock(lh);
+                                    CloseClipboard();
+                                    return E_FAIL;
+                                }
                             }
                         }
+
+                        GlobalUnlock(lh);
                     }
-
-                    GlobalUnlock(lh);
                 }
+
+                CloseClipboard();
+
+                return S_OK;
             }
-
-            CloseClipboard();
-
-            return S_OK;
         }
+    } catch (const exception& e) {
+        error_message(pici->hwnd, e.what());
     }
 
     return E_FAIL;

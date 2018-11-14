@@ -839,3 +839,13 @@ last_error::last_error(DWORD errnum) {
 
     LocalFree(buf);
 }
+
+void error_message(HWND hwnd, const char* msg) {
+    wstring title, wmsg;
+
+    load_string(module, IDS_ERROR, title);
+
+    utf8_to_utf16(msg, wmsg);
+
+    MessageBoxW(hwnd, wmsg.c_str(), title.c_str(), MB_ICONERROR);
+}

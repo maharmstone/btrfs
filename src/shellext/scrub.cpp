@@ -39,236 +39,208 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     SYSTEMTIME systime;
     uint64_t recoverable_errors = 0, unrecoverable_errors = 0;
 
-    if (bqs->num_errors > 0) {
-        win_handle h;
-        IO_STATUS_BLOCK iosb;
-        ULONG len;
+    try {
+        if (bqs->num_errors > 0) {
+            win_handle h;
+            IO_STATUS_BLOCK iosb;
+            ULONG len;
 
-        h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+            h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+            if (h == INVALID_HANDLE_VALUE)
+                throw last_error(GetLastError());
 
-        len = 0;
+            len = 0;
 
-        do {
-            len += 1024;
+            do {
+                len += 1024;
 
-            if (bqs2)
-                free(bqs2);
+                if (bqs2)
+                    free(bqs2);
 
-            bqs2 = (btrfs_query_scrub*)malloc(len);
+                bqs2 = (btrfs_query_scrub*)malloc(len);
 
-            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, bqs2, len);
+                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, bqs2, len);
 
-            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                ShowNtStatusError(hwndDlg, Status);
-                free(bqs2);
-                return;
-            }
-        } while (Status == STATUS_BUFFER_OVERFLOW);
-
-        alloc_bqs2 = true;
-    } else
-        bqs2 = bqs;
-
-    // "scrub started"
-    if (bqs2->start_time.QuadPart > 0) {
-        filetime.dwLowDateTime = bqs2->start_time.LowPart;
-        filetime.dwHighDateTime = bqs2->start_time.HighPart;
-
-        if (!FileTimeToSystemTime(&filetime, &systime)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!SystemTimeToTzSpecificLocalTime(nullptr, &systime, &systime)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!load_string(module, IDS_SCRUB_MSG_STARTED, t)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &systime, nullptr, dt, sizeof(dt) / sizeof(WCHAR))) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &systime, nullptr, tm, sizeof(tm) / sizeof(WCHAR))) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        wstring_sprintf(u, t, dt, tm);
-
-        s += u;
-        s += L"\r\n";
-    }
-
-    // errors
-    if (bqs2->num_errors > 0) {
-        btrfs_scrub_error* bse = &bqs2->errors;
-
-        do {
-            if (bse->recovered)
-                recoverable_errors++;
-            else
-                unrecoverable_errors++;
-
-            if (bse->parity) {
-                if (!load_string(module, IDS_SCRUB_MSG_RECOVERABLE_PARITY, t)) {
-                    ShowError(hwndDlg, GetLastError());
-                    goto end;
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                    ShowNtStatusError(hwndDlg, Status);
+                    free(bqs2);
+                    return;
                 }
+            } while (Status == STATUS_BUFFER_OVERFLOW);
 
-                wstring_sprintf(u, t, bse->address, bse->device);
-            } else if (bse->is_metadata) {
-                int message;
+            alloc_bqs2 = true;
+        } else
+            bqs2 = bqs;
 
+        // "scrub started"
+        if (bqs2->start_time.QuadPart > 0) {
+            filetime.dwLowDateTime = bqs2->start_time.LowPart;
+            filetime.dwHighDateTime = bqs2->start_time.HighPart;
+
+            if (!FileTimeToSystemTime(&filetime, &systime))
+                throw last_error(GetLastError());
+
+            if (!SystemTimeToTzSpecificLocalTime(nullptr, &systime, &systime))
+                throw last_error(GetLastError());
+
+            if (!load_string(module, IDS_SCRUB_MSG_STARTED, t))
+                throw last_error(GetLastError());
+
+            if (!GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &systime, nullptr, dt, sizeof(dt) / sizeof(WCHAR)))
+                throw last_error(GetLastError());
+
+            if (!GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &systime, nullptr, tm, sizeof(tm) / sizeof(WCHAR)))
+                throw last_error(GetLastError());
+
+            wstring_sprintf(u, t, dt, tm);
+
+            s += u;
+            s += L"\r\n";
+        }
+
+        // errors
+        if (bqs2->num_errors > 0) {
+            btrfs_scrub_error* bse = &bqs2->errors;
+
+            do {
                 if (bse->recovered)
-                    message = IDS_SCRUB_MSG_RECOVERABLE_METADATA;
-                else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
-                    message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA;
+                    recoverable_errors++;
                 else
-                    message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM;
+                    unrecoverable_errors++;
 
-                if (!load_string(module, message, t)) {
-                    ShowError(hwndDlg, GetLastError());
-                    goto end;
-                }
+                if (bse->parity) {
+                    if (!load_string(module, IDS_SCRUB_MSG_RECOVERABLE_PARITY, t))
+                        throw last_error(GetLastError());
 
-                if (bse->recovered)
                     wstring_sprintf(u, t, bse->address, bse->device);
-                else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
-                    wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level);
-                else
-                    wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.obj_id,
-                                    bse->metadata.firstitem.obj_type, bse->metadata.firstitem.offset);
-            } else {
-                int message;
+                } else if (bse->is_metadata) {
+                    int message;
 
-                if (bse->recovered)
-                    message = IDS_SCRUB_MSG_RECOVERABLE_DATA;
-                else if (bse->data.subvol != 0)
-                    message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA_SUBVOL;
-                else
-                    message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA;
+                    if (bse->recovered)
+                        message = IDS_SCRUB_MSG_RECOVERABLE_METADATA;
+                    else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
+                        message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA;
+                    else
+                        message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM;
 
-                if (!load_string(module, message, t)) {
-                    ShowError(hwndDlg, GetLastError());
-                    goto end;
+                    if (!load_string(module, message, t))
+                        throw last_error(GetLastError());
+
+                    if (bse->recovered)
+                        wstring_sprintf(u, t, bse->address, bse->device);
+                    else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
+                        wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level);
+                    else
+                        wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.obj_id,
+                                        bse->metadata.firstitem.obj_type, bse->metadata.firstitem.offset);
+                } else {
+                    int message;
+
+                    if (bse->recovered)
+                        message = IDS_SCRUB_MSG_RECOVERABLE_DATA;
+                    else if (bse->data.subvol != 0)
+                        message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA_SUBVOL;
+                    else
+                        message = IDS_SCRUB_MSG_UNRECOVERABLE_DATA;
+
+                    if (!load_string(module, message, t))
+                        throw last_error(GetLastError());
+
+                    if (bse->recovered)
+                        wstring_sprintf(u, t, bse->address, bse->device);
+                    else if (bse->data.subvol != 0)
+                        wstring_sprintf(u, t, bse->address, bse->device, bse->data.subvol,
+                            bse->data.filename_length / sizeof(WCHAR), bse->data.filename, bse->data.offset);
+                    else
+                        wstring_sprintf(u, t, bse->address, bse->device, bse->data.filename_length / sizeof(WCHAR),
+                            bse->data.filename, bse->data.offset);
                 }
 
-                if (bse->recovered)
-                    wstring_sprintf(u, t, bse->address, bse->device);
-                else if (bse->data.subvol != 0)
-                    wstring_sprintf(u, t, bse->address, bse->device, bse->data.subvol,
-                        bse->data.filename_length / sizeof(WCHAR), bse->data.filename, bse->data.offset);
+                s += u;
+                s += L"\r\n";
+
+                if (bse->next_entry == 0)
+                    break;
                 else
-                    wstring_sprintf(u, t, bse->address, bse->device, bse->data.filename_length / sizeof(WCHAR),
-                        bse->data.filename, bse->data.offset);
-            }
+                    bse = (btrfs_scrub_error*)((uint8_t*)bse + bse->next_entry);
+            } while (true);
+        }
+
+        if (bqs2->finish_time.QuadPart > 0) {
+            wstring d1, d2;
+            float speed;
+
+            // "scrub finished"
+
+            filetime.dwLowDateTime = bqs2->finish_time.LowPart;
+            filetime.dwHighDateTime = bqs2->finish_time.HighPart;
+
+            if (!FileTimeToSystemTime(&filetime, &systime))
+                throw last_error(GetLastError());
+
+            if (!SystemTimeToTzSpecificLocalTime(nullptr, &systime, &systime))
+                throw last_error(GetLastError());
+
+            if (!load_string(module, IDS_SCRUB_MSG_FINISHED, t))
+                throw last_error(GetLastError());
+
+            if (!GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &systime, nullptr, dt, sizeof(dt) / sizeof(WCHAR)))
+                throw last_error(GetLastError());
+
+            if (!GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &systime, nullptr, tm, sizeof(tm) / sizeof(WCHAR)))
+                throw last_error(GetLastError());
+
+            wstring_sprintf(u, t, dt, tm);
 
             s += u;
             s += L"\r\n";
 
-            if (bse->next_entry == 0)
-                break;
-            else
-                bse = (btrfs_scrub_error*)((uint8_t*)bse + bse->next_entry);
-        } while (true);
+            // summary
+
+            if (!load_string(module, IDS_SCRUB_MSG_SUMMARY, t))
+                throw last_error(GetLastError());
+
+            format_size(bqs2->data_scrubbed, d1, false);
+
+            speed = (float)bqs2->data_scrubbed / ((float)bqs2->duration / 10000000.0f);
+
+            format_size((uint64_t)speed, d2, false);
+
+            wstring_sprintf(u, t, d1.c_str(), bqs2->duration / 10000000, d2.c_str());
+
+            s += u;
+            s += L"\r\n";
+
+            // recoverable errors
+
+            if (!load_string(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE, t))
+                throw last_error(GetLastError());
+
+            wstring_sprintf(u, t, recoverable_errors);
+
+            s += u;
+            s += L"\r\n";
+
+            // unrecoverable errors
+
+            if (!load_string(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE, t))
+                throw last_error(GetLastError());
+
+            wstring_sprintf(u, t, unrecoverable_errors);
+
+            s += u;
+            s += L"\r\n";
+        }
+
+        SetWindowTextW(GetDlgItem(hwndDlg, IDC_SCRUB_INFO), s.c_str());
+    } catch (...) {
+        if (alloc_bqs2)
+            free(bqs2);
+
+        throw;
     }
 
-    if (bqs2->finish_time.QuadPart > 0) {
-        wstring d1, d2;
-        float speed;
-
-        // "scrub finished"
-
-        filetime.dwLowDateTime = bqs2->finish_time.LowPart;
-        filetime.dwHighDateTime = bqs2->finish_time.HighPart;
-
-        if (!FileTimeToSystemTime(&filetime, &systime)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!SystemTimeToTzSpecificLocalTime(nullptr, &systime, &systime)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!load_string(module, IDS_SCRUB_MSG_FINISHED, t)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, &systime, nullptr, dt, sizeof(dt) / sizeof(WCHAR))) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        if (!GetTimeFormatW(LOCALE_USER_DEFAULT, 0, &systime, nullptr, tm, sizeof(tm) / sizeof(WCHAR))) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        wstring_sprintf(u, t, dt, tm);
-
-        s += u;
-        s += L"\r\n";
-
-        // summary
-
-        if (!load_string(module, IDS_SCRUB_MSG_SUMMARY, t)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        format_size(bqs2->data_scrubbed, d1, false);
-
-        speed = (float)bqs2->data_scrubbed / ((float)bqs2->duration / 10000000.0f);
-
-        format_size((uint64_t)speed, d2, false);
-
-        wstring_sprintf(u, t, d1.c_str(), bqs2->duration / 10000000, d2.c_str());
-
-        s += u;
-        s += L"\r\n";
-
-        // recoverable errors
-
-        if (!load_string(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE, t)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        wstring_sprintf(u, t, recoverable_errors);
-
-        s += u;
-        s += L"\r\n";
-
-        // unrecoverable errors
-
-        if (!load_string(module, IDS_SCRUB_MSG_SUMMARY_ERRORS_UNRECOVERABLE, t)) {
-            ShowError(hwndDlg, GetLastError());
-            goto end;
-        }
-
-        wstring_sprintf(u, t, unrecoverable_errors);
-
-        s += u;
-        s += L"\r\n";
-    }
-
-    SetWindowTextW(GetDlgItem(hwndDlg, IDC_SCRUB_INFO), s.c_str());
-
-end:
     if (alloc_bqs2)
         free(bqs2);
 }
@@ -289,10 +261,8 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
                 ShowNtStatusError(hwndDlg, Status);
                 return;
             }
-        } else {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        } else
+            throw last_error(GetLastError());
     }
 
     if (first_time || status != bqs.status || chunks_left != bqs.chunks_left) {
@@ -306,17 +276,13 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
             if (bqs.error != STATUS_SUCCESS) {
                 wstring t;
 
-                if (!load_string(module, IDS_SCRUB_FAILED, t)) {
-                    ShowError(hwndDlg, GetLastError());
-                    return;
-                }
+                if (!load_string(module, IDS_SCRUB_FAILED, t))
+                    throw last_error(GetLastError());
 
                 wstring_sprintf(s, t, bqs.error);
             } else {
-                if (!load_string(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s)) {
-                    ShowError(hwndDlg, GetLastError());
-                    return;
-                }
+                if (!load_string(module, bqs.total_chunks == 0 ? IDS_NO_SCRUB : IDS_SCRUB_FINISHED, s))
+                    throw last_error(GetLastError());
             }
         } else {
             wstring t;
@@ -326,10 +292,8 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
             EnableWindow(GetDlgItem(hwndDlg, IDC_PAUSE_SCRUB), true);
             EnableWindow(GetDlgItem(hwndDlg, IDC_CANCEL_SCRUB), true);
 
-            if (!load_string(module, bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING, t)) {
-                ShowError(hwndDlg, GetLastError());
-                return;
-            }
+            if (!load_string(module, bqs.status == BTRFS_SCRUB_PAUSED ? IDS_SCRUB_PAUSED : IDS_SCRUB_RUNNING, t))
+                throw last_error(GetLastError());
 
             pc = ((float)(bqs.total_chunks - bqs.chunks_left) / (float)bqs.total_chunks) * 100.0f;
 
@@ -400,10 +364,8 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
         }
 
         RefreshScrubDlg(hwndDlg, true);
-    } else {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    } else
+        throw last_error(GetLastError());
 }
 
 void BtrfsScrub::PauseScrub(HWND hwndDlg) {
@@ -432,10 +394,8 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
             ShowNtStatusError(hwndDlg, Status);
             return;
         }
-    } else {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    } else
+        throw last_error(GetLastError());
 }
 
 void BtrfsScrub::StopScrub(HWND hwndDlg) {
@@ -452,47 +412,49 @@ void BtrfsScrub::StopScrub(HWND hwndDlg) {
             ShowNtStatusError(hwndDlg, Status);
             return;
         }
-    } else {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    } else
+        throw last_error(GetLastError());
 }
 
 INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-            RefreshScrubDlg(hwndDlg, true);
-            SetTimer(hwndDlg, 1, 1000, nullptr);
-        break;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+                RefreshScrubDlg(hwndDlg, true);
+                SetTimer(hwndDlg, 1, 1000, nullptr);
+            break;
 
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                        case IDCANCEL:
-                            EndDialog(hwndDlg, 0);
-                        return true;
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                            case IDCANCEL:
+                                EndDialog(hwndDlg, 0);
+                            return true;
 
-                        case IDC_START_SCRUB:
-                            StartScrub(hwndDlg);
-                        return true;
+                            case IDC_START_SCRUB:
+                                StartScrub(hwndDlg);
+                            return true;
 
-                        case IDC_PAUSE_SCRUB:
-                            PauseScrub(hwndDlg);
-                        return true;
+                            case IDC_PAUSE_SCRUB:
+                                PauseScrub(hwndDlg);
+                            return true;
 
-                        case IDC_CANCEL_SCRUB:
-                            StopScrub(hwndDlg);
-                        return true;
-                    }
-                break;
-            }
-        break;
+                            case IDC_CANCEL_SCRUB:
+                                StopScrub(hwndDlg);
+                            return true;
+                        }
+                    break;
+                }
+            break;
 
-        case WM_TIMER:
-            RefreshScrubDlg(hwndDlg, false);
-        break;
+            case WM_TIMER:
+                RefreshScrubDlg(hwndDlg, false);
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -515,34 +477,32 @@ static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
 }
 
 void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    win_handle token;
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
+    try {
+        win_handle token;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+            throw last_error(GetLastError());
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+            throw last_error(GetLastError());
+
+        set_dpi_aware();
+
+        BtrfsScrub scrub(lpszCmdLine);
+
+        DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwnd, stub_ScrubDlgProc, (LPARAM)&scrub);
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    set_dpi_aware();
-
-    BtrfsScrub scrub(lpszCmdLine);
-
-    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SCRUB), hwnd, stub_ScrubDlgProc, (LPARAM)&scrub);
 }
 
 void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {

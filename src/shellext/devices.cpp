@@ -323,10 +323,8 @@ nextitem2:
         } while (SetupDiEnumDeviceInterfaces(h, nullptr, guid, index, &did));
 
         SetupDiDestroyDeviceInfoList(h);
-    } else {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
+    } else
+        throw last_error(GetLastError());
 }
 
 static bool sort_devices(device i, device j) {
@@ -423,10 +421,8 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             if (device_list[i].disk_num != 0xffffffff) {
                 wstring t;
 
-                if (!load_string(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t)) {
-                    ShowError(hwnd, GetLastError());
-                    return;
-                }
+                if (!load_string(module, device_list[i].part_num != 0 ? IDS_PARTITION : IDS_DISK_NUM, t))
+                    throw last_error(GetLastError());
 
                 wstring_sprintf(name, t, device_list[i].part_num != 0 ? device_list[i].part_num : device_list[i].disk_num);
             } else
@@ -529,23 +525,17 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     if (sel->fstype != L"") {
         wstring s;
 
-        if (!load_string(module, IDS_ADD_DEVICE_CONFIRMATION_FS, s)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_ADD_DEVICE_CONFIRMATION_FS, s))
+            throw last_error(GetLastError());
 
         wstring_sprintf(mess, s, sel->fstype.c_str());
     } else {
-        if (!load_string(module, IDS_ADD_DEVICE_CONFIRMATION, mess)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_ADD_DEVICE_CONFIRMATION, mess))
+            throw last_error(GetLastError());
     }
 
-    if (!load_string(module, IDS_CONFIRMATION_TITLE, title)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!load_string(module, IDS_CONFIRMATION_TITLE, title))
+        throw last_error(GetLastError());
 
     if (MessageBoxW(hwndDlg, mess.c_str(), title.c_str(), MB_YESNO) != IDYES)
         return;
@@ -553,10 +543,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (h == INVALID_HANDLE_VALUE)
+        throw last_error(GetLastError());
 
     vn.Length = vn.MaximumLength = sel->pnp_name.length() * sizeof(WCHAR);
     vn.Buffer = (WCHAR*)sel->pnp_name.c_str();
@@ -575,15 +563,15 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
             wstring t, u, title;
 
             if (!load_string(module, IDS_LOCK_FAILED, t)) {
-                ShowError(hwnd, GetLastError());
-                return;
+                NtClose(h2);
+                throw last_error(GetLastError());
             }
 
             wstring_sprintf(u, t, Status);
 
             if (!load_string(module, IDS_ERROR, title)) {
-                ShowError(hwndDlg, GetLastError());
-                return;
+                NtClose(h2);
+                throw last_error(GetLastError());
             }
 
             MessageBoxW(hwndDlg, u.c_str(), title.c_str(), MB_ICONERROR);
@@ -616,56 +604,60 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
 }
 
 INT_PTR CALLBACK BtrfsDeviceAdd::DeviceAddDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
-            populate_device_tree(GetDlgItem(hwndDlg, IDC_DEVICE_TREE));
-            EnableWindow(GetDlgItem(hwndDlg, IDOK), false);
-            break;
-        }
-
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                            AddDevice(hwndDlg);
-                        return true;
-
-                        case IDCANCEL:
-                            EndDialog(hwndDlg, 0);
-                        return true;
-                    }
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+                populate_device_tree(GetDlgItem(hwndDlg, IDC_DEVICE_TREE));
+                EnableWindow(GetDlgItem(hwndDlg, IDOK), false);
                 break;
             }
-        break;
 
-        case WM_NOTIFY:
-            switch (((LPNMHDR)lParam)->code) {
-                case TVN_SELCHANGEDW:
-                {
-                    NMTREEVIEWW* nmtv = (NMTREEVIEWW*)lParam;
-                    TVITEMW tvi;
-                    bool enable = false;
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                                AddDevice(hwndDlg);
+                            return true;
 
-                    RtlZeroMemory(&tvi, sizeof(TVITEMW));
-                    tvi.hItem = nmtv->itemNew.hItem;
-                    tvi.mask = TVIF_PARAM | TVIF_HANDLE;
-
-                    if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
-                        sel = tvi.lParam == 0 ? nullptr : (device*)tvi.lParam;
-                    else
-                        sel = nullptr;
-
-                    if (sel)
-                        enable = (!sel->is_disk || !sel->has_parts) && !sel->multi_device;
-
-                    EnableWindow(GetDlgItem(hwndDlg, IDOK), enable);
+                            case IDCANCEL:
+                                EndDialog(hwndDlg, 0);
+                            return true;
+                        }
                     break;
                 }
-            }
-        break;
+            break;
+
+            case WM_NOTIFY:
+                switch (((LPNMHDR)lParam)->code) {
+                    case TVN_SELCHANGEDW:
+                    {
+                        NMTREEVIEWW* nmtv = (NMTREEVIEWW*)lParam;
+                        TVITEMW tvi;
+                        bool enable = false;
+
+                        RtlZeroMemory(&tvi, sizeof(TVITEMW));
+                        tvi.hItem = nmtv->itemNew.hItem;
+                        tvi.mask = TVIF_PARAM | TVIF_HANDLE;
+
+                        if (SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_TREE), TVM_GETITEMW, 0, (LPARAM)&tvi))
+                            sel = tvi.lParam == 0 ? nullptr : (device*)tvi.lParam;
+                        else
+                            sel = nullptr;
+
+                        if (sel)
+                            enable = (!sel->is_disk || !sel->has_parts) && !sel->multi_device;
+
+                        EnableWindow(GetDlgItem(hwndDlg, IDOK), enable);
+                        break;
+                    }
+                }
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -708,10 +700,8 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
         win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
         br.device = dev_id;
         br.size = new_size;
@@ -745,122 +735,126 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
 }
 
 INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            win_handle h;
-            WCHAR s[255];
-            wstring t, u;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                win_handle h;
+                WCHAR s[255];
+                wstring t, u;
 
-            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+                EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            GetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
-            wstring_sprintf(t, s, dev_id);
-            SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t.c_str());
+                GetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
+                wstring_sprintf(t, s, dev_id);
+                SetDlgItemTextW(hwndDlg, IDC_RESIZE_DEVICE_ID, t.c_str());
 
-            h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                            OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+                h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-            if (h != INVALID_HANDLE_VALUE) {
-                NTSTATUS Status;
-                IO_STATUS_BLOCK iosb;
-                btrfs_device *devices, *bd;
-                ULONG devsize;
-                bool found = false;
-                HWND slider;
+                if (h != INVALID_HANDLE_VALUE) {
+                    NTSTATUS Status;
+                    IO_STATUS_BLOCK iosb;
+                    btrfs_device *devices, *bd;
+                    ULONG devsize;
+                    bool found = false;
+                    HWND slider;
 
-                devsize = 1024;
-                devices = (btrfs_device*)malloc(devsize);
+                    devsize = 1024;
+                    devices = (btrfs_device*)malloc(devsize);
 
-                while (true) {
-                    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
-                    if (Status == STATUS_BUFFER_OVERFLOW) {
-                        devsize += 1024;
+                    while (true) {
+                        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_DEVICES, nullptr, 0, devices, devsize);
+                        if (Status == STATUS_BUFFER_OVERFLOW) {
+                            devsize += 1024;
 
-                        free(devices);
-                        devices = (btrfs_device*)malloc(devsize);
-                    } else
-                        break;
-                }
-
-                if (!NT_SUCCESS(Status)) {
-                    free(devices);
-                    return false;
-                }
-
-                bd = devices;
-
-                while (true) {
-                    if (bd->dev_id == dev_id) {
-                        memcpy(&dev_info, bd, sizeof(btrfs_device));
-                        found = true;
-                        break;
+                            free(devices);
+                            devices = (btrfs_device*)malloc(devsize);
+                        } else
+                            break;
                     }
 
-                    if (bd->next_entry > 0)
-                        bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
-                    else
-                        break;
-                }
+                    if (!NT_SUCCESS(Status)) {
+                        free(devices);
+                        return false;
+                    }
 
-                if (!found) {
+                    bd = devices;
+
+                    while (true) {
+                        if (bd->dev_id == dev_id) {
+                            memcpy(&dev_info, bd, sizeof(btrfs_device));
+                            found = true;
+                            break;
+                        }
+
+                        if (bd->next_entry > 0)
+                            bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
+                        else
+                            break;
+                    }
+
+                    if (!found) {
+                        free(devices);
+                        return false;
+                    }
+
                     free(devices);
+
+                    GetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, s, sizeof(s) / sizeof(WCHAR));
+                    format_size(dev_info.size, u, true);
+                    wstring_sprintf(t, s, u.c_str());
+                    SetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, t.c_str());
+
+                    new_size = dev_info.size;
+
+                    GetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, new_size_text, sizeof(new_size_text) / sizeof(WCHAR));
+                    wstring_sprintf(t, new_size_text, u.c_str());
+                    SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t.c_str());
+
+                    slider = GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER);
+                    SendMessageW(slider, TBM_SETRANGEMIN, false, 0);
+                    SendMessageW(slider, TBM_SETRANGEMAX, false, dev_info.max_size / 1048576);
+                    SendMessageW(slider, TBM_SETPOS, true, new_size / 1048576);
+                } else
                     return false;
+
+                break;
+            }
+
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                                do_resize(hwndDlg);
+                                return true;
+
+                            case IDCANCEL:
+                                EndDialog(hwndDlg, 0);
+                                return true;
+                        }
+                    break;
                 }
+            break;
 
-                free(devices);
+            case WM_HSCROLL:
+            {
+                wstring t, u;
 
-                GetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, s, sizeof(s) / sizeof(WCHAR));
-                format_size(dev_info.size, u, true);
-                wstring_sprintf(t, s, u.c_str());
-                SetDlgItemTextW(hwndDlg, IDC_RESIZE_CURSIZE, t.c_str());
+                new_size = UInt32x32To64(SendMessageW(GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER), TBM_GETPOS, 0, 0), 1048576);
 
-                new_size = dev_info.size;
-
-                GetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, new_size_text, sizeof(new_size_text) / sizeof(WCHAR));
+                format_size(new_size, u, true);
                 wstring_sprintf(t, new_size_text, u.c_str());
                 SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t.c_str());
 
-                slider = GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER);
-                SendMessageW(slider, TBM_SETRANGEMIN, false, 0);
-                SendMessageW(slider, TBM_SETRANGEMAX, false, dev_info.max_size / 1048576);
-                SendMessageW(slider, TBM_SETPOS, true, new_size / 1048576);
-            } else
-                return false;
+                EnableWindow(GetDlgItem(hwndDlg, IDOK), new_size > 0 ? true : false);
 
-            break;
-        }
-
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                            do_resize(hwndDlg);
-                            return true;
-
-                        case IDCANCEL:
-                            EndDialog(hwndDlg, 0);
-                            return true;
-                    }
                 break;
             }
-        break;
-
-        case WM_HSCROLL:
-        {
-            wstring t, u;
-
-            new_size = UInt32x32To64(SendMessageW(GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER), TBM_GETPOS, 0, 0), 1048576);
-
-            format_size(new_size, u, true);
-            wstring_sprintf(t, new_size_text, u.c_str());
-            SetDlgItemTextW(hwndDlg, IDC_RESIZE_NEWSIZE, t.c_str());
-
-            EnableWindow(GetDlgItem(hwndDlg, IDOK), new_size > 0 ? true : false);
-
-            break;
         }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -893,143 +887,135 @@ extern "C" {
 #endif
 
 void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    win_handle token;
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
+    try {
+        win_handle token;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+            throw last_error(GetLastError());
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+            throw last_error(GetLastError());
+
+        BtrfsDeviceAdd bda(hinst, hwnd, lpszCmdLine);
+        bda.ShowDialog();
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    BtrfsDeviceAdd bda(hinst, hwnd, lpszCmdLine);
-    bda.ShowDialog();
 }
 
 void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    WCHAR *s, *vol, *dev;
-    uint64_t devid;
-    win_handle h, token;
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
-    NTSTATUS Status;
-    IO_STATUS_BLOCK iosb;
+    try {
+        WCHAR *s, *vol, *dev;
+        uint64_t devid;
+        win_handle h, token;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+            throw last_error(GetLastError());
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+            throw last_error(GetLastError());
+
+        s = wcsstr(lpszCmdLine, L"|");
+        if (!s)
+            return;
+
+        s[0] = 0;
+
+        vol = lpszCmdLine;
+        dev = &s[1];
+
+        devid = _wtoi(dev);
+        if (devid == 0)
+            return;
+
+        h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+
+        if (h == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
+
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), nullptr, 0);
+        if (!NT_SUCCESS(Status)) {
+            if (Status == STATUS_CANNOT_DELETE)
+                ShowStringError(hwnd, IDS_CANNOT_REMOVE_RAID);
+            else
+                ShowNtStatusError(hwnd, Status);
+
+            return;
+        }
+
+        BtrfsBalance bb(vol, true);
+        bb.ShowBalance(hwnd);
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    s = wcsstr(lpszCmdLine, L"|");
-    if (!s)
-        return;
-
-    s[0] = 0;
-
-    vol = lpszCmdLine;
-    dev = &s[1];
-
-    devid = _wtoi(dev);
-    if (devid == 0)
-        return;
-
-    h = CreateFileW(vol, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        if (Status == STATUS_CANNOT_DELETE)
-            ShowStringError(hwnd, IDS_CANNOT_REMOVE_RAID);
-        else
-            ShowNtStatusError(hwnd, Status);
-
-        return;
-    }
-
-    BtrfsBalance bb(vol, true);
-    bb.ShowBalance(hwnd);
 }
 
 void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    WCHAR *s, *vol, *dev;
-    uint64_t devid;
-    win_handle token;
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
+    try {
+        WCHAR *s, *vol, *dev;
+        uint64_t devid;
+        win_handle token;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+            throw last_error(GetLastError());
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+            throw last_error(GetLastError());
+
+        s = wcsstr(lpszCmdLine, L"|");
+        if (!s)
+            return;
+
+        s[0] = 0;
+
+        vol = lpszCmdLine;
+        dev = &s[1];
+
+        devid = _wtoi(dev);
+        if (devid == 0)
+            return;
+
+        BtrfsDeviceResize bdr;
+        bdr.ShowDialog(hwnd, vol, devid);
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    s = wcsstr(lpszCmdLine, L"|");
-    if (!s)
-        return;
-
-    s[0] = 0;
-
-    vol = lpszCmdLine;
-    dev = &s[1];
-
-    devid = _wtoi(dev);
-    if (devid == 0)
-        return;
-
-    BtrfsDeviceResize bdr;
-    bdr.ShowDialog(hwnd, vol, devid);
 }
 
 #ifdef __cplusplus

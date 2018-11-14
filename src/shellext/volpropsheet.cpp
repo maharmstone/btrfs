@@ -179,24 +179,18 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
         dev d;
 
         if (bd->missing) {
-            if (!load_string(module, IDS_MISSING, d.name)) {
-                ShowError(hwndDlg, GetLastError());
-                return;
-            }
+            if (!load_string(module, IDS_MISSING, d.name))
+                throw last_error(GetLastError());
         } else if (bd->device_number == 0xffffffff)
             d.name = wstring(bd->name, bd->namelen / sizeof(WCHAR));
         else if (bd->partition_number == 0) {
-            if (!load_string(module, IDS_DISK_NUM, u)) {
-                ShowError(hwndDlg, GetLastError());
-                return;
-            }
+            if (!load_string(module, IDS_DISK_NUM, u))
+                throw last_error(GetLastError());
 
             wstring_sprintf(d.name, u, bd->device_number);
         } else {
-            if (!load_string(module, IDS_DISK_PART_NUM, u)) {
-                ShowError(hwndDlg, GetLastError());
-                return;
-            }
+            if (!load_string(module, IDS_DISK_PART_NUM, u))
+                throw last_error(GetLastError());
 
             wstring_sprintf(d.name, u, bd->device_number, bd->partition_number);
         }
@@ -247,10 +241,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
 
     // device size
 
-    if (!load_string(module, IDS_USAGE_DEV_SIZE, u)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!load_string(module, IDS_USAGE_DEV_SIZE, u))
+        throw last_error(GetLastError());
 
     format_size(dev_size, v, false);
 
@@ -260,10 +252,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
 
     // device allocated
 
-    if (!load_string(module, IDS_USAGE_DEV_ALLOC, u)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!load_string(module, IDS_USAGE_DEV_ALLOC, u))
+        throw last_error(GetLastError());
 
     format_size(dev_alloc, v, false);
 
@@ -273,10 +263,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
 
     // device unallocated
 
-    if (!load_string(module, IDS_USAGE_DEV_UNALLOC, u)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!load_string(module, IDS_USAGE_DEV_UNALLOC, u))
+        throw last_error(GetLastError());
 
     format_size(dev_size - dev_alloc, v, false);
 
@@ -287,10 +275,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
     // data ratio
 
     if (data_alloc > 0) {
-        if (!load_string(module, IDS_USAGE_DATA_RATIO, u)) {
-            ShowError(hwndDlg, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_USAGE_DATA_RATIO, u))
+            throw last_error(GetLastError());
 
         wstring_sprintf(t, u, (float)data_alloc / (float)data_size);
 
@@ -299,10 +285,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
 
     // metadata ratio
 
-    if (!load_string(module, IDS_USAGE_METADATA_RATIO, u)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!load_string(module, IDS_USAGE_METADATA_RATIO, u))
+        throw last_error(GetLastError());
 
     wstring_sprintf(t, u, (float)metadata_alloc / (float)metadata_size);
 
@@ -321,15 +305,11 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
                     if (bue->type & BLOCK_FLAG_DATA && bue->type & BLOCK_FLAG_METADATA && (types[i] == BLOCK_FLAG_DATA || types[i] == BLOCK_FLAG_METADATA))
                         break;
 
-                    if (!load_string(module, typestrings[i], typestring)) {
-                        ShowError(hwndDlg, GetLastError());
-                        return;
-                    }
+                    if (!load_string(module, typestrings[i], typestring))
+                        throw last_error(GetLastError());
 
-                    if (!load_string(module, dupstrings[j], dupstring)) {
-                        ShowError(hwndDlg, GetLastError());
-                        return;
-                    }
+                    if (!load_string(module, dupstrings[j], dupstring))
+                        throw last_error(GetLastError());
 
                     format_size(bue->size, sizestring, false);
                     format_size(bue->used, usedstring, false);
@@ -356,10 +336,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
                         }
 
                         if (!found) {
-                            if (!load_string(module, IDS_UNKNOWN_DEVICE, typestring)) {
-                                ShowError(hwndDlg, GetLastError());
-                                return;
-                            }
+                            if (!load_string(module, IDS_UNKNOWN_DEVICE, typestring))
+                                throw last_error(GetLastError());
 
                             wstring_sprintf(t, typestring, bue->devices[k].dev_id);
 
@@ -380,10 +358,8 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
         }
     }
 
-    if (!load_string(module, IDS_USAGE_UNALLOC, t)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!load_string(module, IDS_USAGE_UNALLOC, t))
+        throw last_error(GetLastError());
 
     s += t + L"\r\n"s;
 
@@ -470,75 +446,79 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
 }
 
 INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            wstring s;
-            int i;
-            ULONG usagesize;
-            NTSTATUS Status;
-            IO_STATUS_BLOCK iosb;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                wstring s;
+                int i;
+                ULONG usagesize;
+                NTSTATUS Status;
+                IO_STATUS_BLOCK iosb;
 
-            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+                EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                                       OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+                win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-            if (h != INVALID_HANDLE_VALUE) {
-                btrfs_usage* usage;
+                if (h != INVALID_HANDLE_VALUE) {
+                    btrfs_usage* usage;
 
-                i = 0;
-                usagesize = 1024;
+                    i = 0;
+                    usagesize = 1024;
 
-                usage = (btrfs_usage*)malloc(usagesize);
+                    usage = (btrfs_usage*)malloc(usagesize);
 
-                while (true) {
-                    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
-                    if (Status == STATUS_BUFFER_OVERFLOW) {
-                        if (i < 8) {
-                            usagesize += 1024;
+                    while (true) {
+                        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_USAGE, nullptr, 0, usage, usagesize);
+                        if (Status == STATUS_BUFFER_OVERFLOW) {
+                            if (i < 8) {
+                                usagesize += 1024;
 
-                            free(usage);
-                            usage = (btrfs_usage*)malloc(usagesize);
+                                free(usage);
+                                usage = (btrfs_usage*)malloc(usagesize);
 
-                            i++;
+                                i++;
+                            } else
+                                break;
                         } else
                             break;
-                    } else
-                        break;
-                }
-
-                if (!NT_SUCCESS(Status)) {
-                    free(usage);
-                    break;
-                }
-
-                FormatUsage(hwndDlg, s, usage);
-
-                SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s.c_str());
-
-                free(usage);
-            }
-
-            break;
-        }
-
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                        case IDCANCEL:
-                            EndDialog(hwndDlg, 0);
-                        return true;
-
-                        case IDC_USAGE_REFRESH:
-                            RefreshUsage(hwndDlg);
-                        return true;
                     }
+
+                    if (!NT_SUCCESS(Status)) {
+                        free(usage);
+                        break;
+                    }
+
+                    FormatUsage(hwndDlg, s, usage);
+
+                    SetDlgItemTextW(hwndDlg, IDC_USAGE_BOX, s.c_str());
+
+                    free(usage);
+                }
+
                 break;
             }
-        break;
+
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                            case IDCANCEL:
+                                EndDialog(hwndDlg, 0);
+                            return true;
+
+                            case IDC_USAGE_REFRESH:
+                                RefreshUsage(hwndDlg);
+                            return true;
+                        }
+                    break;
+                }
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -568,10 +548,8 @@ static void add_lv_column(HWND list, int string, int cx) {
     LVCOLUMNW lvc;
     wstring s;
 
-    if (!load_string(module, string, s)) {
-        ShowError(GetParent(list), GetLastError());
-        return;
-    }
+    if (!load_string(module, string, s))
+        throw last_error(GetLastError());
 
     lvc.mask = LVCF_TEXT|LVCF_WIDTH;
     lvc.pszText = (WCHAR*)s.c_str();
@@ -624,10 +602,8 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowError(GetParent(devlist), GetLastError());
-            return;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
         i = 0;
         devsize = 1024;
@@ -715,24 +691,18 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         lvi.iSubItem = 1;
 
         if (bd->missing) {
-            if (!load_string(module, IDS_MISSING, s)) {
-                ShowError(GetParent(devlist), GetLastError());
-                break;
-            }
+            if (!load_string(module, IDS_MISSING, s))
+                throw last_error(GetLastError());
         } else if (bd->device_number == 0xffffffff)
             s = wstring(bd->name, bd->namelen / sizeof(WCHAR));
         else if (bd->partition_number == 0) {
-            if (!load_string(module, IDS_DISK_NUM, u)) {
-                ShowError(GetParent(devlist), GetLastError());
-                break;
-            }
+            if (!load_string(module, IDS_DISK_NUM, u))
+                throw last_error(GetLastError());
 
             wstring_sprintf(s, u, bd->device_number);
         } else {
-            if (!load_string(module, IDS_DISK_PART_NUM, u)) {
-                ShowError(GetParent(devlist), GetLastError());
-                break;
-            }
+            if (!load_string(module, IDS_DISK_PART_NUM, u))
+                throw last_error(GetLastError());
 
             wstring_sprintf(s, u, bd->device_number, bd->partition_number);
         }
@@ -811,10 +781,8 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-    if (!ShellExecuteExW(&sei)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!ShellExecuteExW(&sei))
+        throw last_error(GetLastError());
 
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
@@ -854,72 +822,76 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
 }
 
 INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            WCHAR s[255];
-            wstring t;
-            btrfs_device *bd, *dev = nullptr;
-            int i;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                WCHAR s[255];
+                wstring t;
+                btrfs_device *bd, *dev = nullptr;
+                int i;
 
-            static int stat_ids[] = { IDC_WRITE_ERRS, IDC_READ_ERRS, IDC_FLUSH_ERRS, IDC_CORRUPTION_ERRS, IDC_GENERATION_ERRS };
+                static int stat_ids[] = { IDC_WRITE_ERRS, IDC_READ_ERRS, IDC_FLUSH_ERRS, IDC_CORRUPTION_ERRS, IDC_GENERATION_ERRS };
 
-            bd = devices;
+                bd = devices;
 
-            while (true) {
-                if (bd->dev_id == stats_dev) {
-                    dev = bd;
-                    break;
+                while (true) {
+                    if (bd->dev_id == stats_dev) {
+                        dev = bd;
+                        break;
+                    }
+
+                    if (bd->next_entry > 0)
+                        bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
+                    else
+                        break;
                 }
 
-                if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
-                else
-                    break;
-            }
+                if (!dev) {
+                    EndDialog(hwndDlg, 0);
+                    ShowStringError(hwndDlg, IDS_CANNOT_FIND_DEVICE);
+                    return false;
+                }
 
-            if (!dev) {
-                EndDialog(hwndDlg, 0);
-                ShowStringError(hwndDlg, IDS_CANNOT_FIND_DEVICE);
-                return false;
-            }
+                GetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
 
-            GetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));
+                wstring_sprintf(t, s, dev->dev_id);
 
-            wstring_sprintf(t, s, dev->dev_id);
+                SetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, t.c_str());
 
-            SetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, t.c_str());
+                for (i = 0; i < 5; i++) {
+                    GetDlgItemTextW(hwndDlg, stat_ids[i], s, sizeof(s) / sizeof(WCHAR));
 
-            for (i = 0; i < 5; i++) {
-                GetDlgItemTextW(hwndDlg, stat_ids[i], s, sizeof(s) / sizeof(WCHAR));
+                    wstring_sprintf(t, s, dev->stats[i]);
 
-                wstring_sprintf(t, s, dev->stats[i]);
+                    SetDlgItemTextW(hwndDlg, stat_ids[i], t.c_str());
+                }
 
-                SetDlgItemTextW(hwndDlg, stat_ids[i], t.c_str());
-            }
+                SendMessageW(GetDlgItem(hwndDlg, IDC_RESET_STATS), BCM_SETSHIELD, 0, true);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_RESET_STATS), !readonly);
 
-            SendMessageW(GetDlgItem(hwndDlg, IDC_RESET_STATS), BCM_SETSHIELD, 0, true);
-            EnableWindow(GetDlgItem(hwndDlg, IDC_RESET_STATS), !readonly);
-
-            break;
-        }
-
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                        case IDCANCEL:
-                            EndDialog(hwndDlg, 0);
-                        return true;
-
-                        case IDC_RESET_STATS:
-                            ResetStats(hwndDlg);
-                        return true;
-                    }
                 break;
             }
-        break;
+
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                            case IDCANCEL:
+                                EndDialog(hwndDlg, 0);
+                            return true;
+
+                            case IDC_RESET_STATS:
+                                ResetStats(hwndDlg);
+                            return true;
+                        }
+                    break;
+                }
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -948,282 +920,276 @@ void BtrfsVolPropSheet::ShowStats(HWND hwndDlg, uint64_t devid) {
 }
 
 INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            HWND devlist;
-            RECT rect;
-            ULONG w;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                HWND devlist;
+                RECT rect;
+                ULONG w;
 
-            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+                EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+                devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
-            GetClientRect(devlist, &rect);
-            w = rect.right - rect.left;
+                GetClientRect(devlist, &rect);
+                w = rect.right - rect.left;
 
-            add_lv_column(devlist, IDS_DEVLIST_ALLOC_PC, w * 5 / 44);
-            add_lv_column(devlist, IDS_DEVLIST_ALLOC, w * 6 / 44);
-            add_lv_column(devlist, IDS_DEVLIST_SIZE, w * 6 / 44);
-            add_lv_column(devlist, IDS_DEVLIST_READONLY, w * 7 / 44);
-            add_lv_column(devlist, IDS_DEVLIST_DESC, w * 16 / 44);
-            add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
+                add_lv_column(devlist, IDS_DEVLIST_ALLOC_PC, w * 5 / 44);
+                add_lv_column(devlist, IDS_DEVLIST_ALLOC, w * 6 / 44);
+                add_lv_column(devlist, IDS_DEVLIST_SIZE, w * 6 / 44);
+                add_lv_column(devlist, IDS_DEVLIST_READONLY, w * 7 / 44);
+                add_lv_column(devlist, IDS_DEVLIST_DESC, w * 16 / 44);
+                add_lv_column(devlist, IDS_DEVLIST_ID, w * 4 / 44);
 
-            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, true);
-            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_REMOVE), BCM_SETSHIELD, 0, true);
-            SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), BCM_SETSHIELD, 0, true);
+                SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_ADD), BCM_SETSHIELD, 0, true);
+                SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_REMOVE), BCM_SETSHIELD, 0, true);
+                SendMessageW(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), BCM_SETSHIELD, 0, true);
 
-            RefreshDevList(devlist);
+                RefreshDevList(devlist);
 
-            break;
-        }
-
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                        case IDCANCEL:
-                            KillTimer(hwndDlg, 1);
-                            EndDialog(hwndDlg, 0);
-                        return true;
-
-                        case IDC_DEVICE_ADD:
-                        {
-                            wstring t;
-                            WCHAR modfn[MAX_PATH];
-                            SHELLEXECUTEINFOW sei;
-
-                            GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
-
-                            t = L"\""s + modfn + L"\",AddDevice "s + fn;
-
-                            RtlZeroMemory(&sei, sizeof(sei));
-
-                            sei.cbSize = sizeof(sei);
-                            sei.hwnd = hwndDlg;
-                            sei.lpVerb = L"runas";
-                            sei.lpFile = L"rundll32.exe";
-                            sei.lpParameters = t.c_str();
-                            sei.nShow = SW_SHOW;
-                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-                            if (!ShellExecuteExW(&sei)) {
-                                ShowError(hwndDlg, GetLastError());
-                                return true;
-                            }
-
-                            WaitForSingleObject(sei.hProcess, INFINITE);
-                            CloseHandle(sei.hProcess);
-
-                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
-
-                            return true;
-                        }
-
-                        case IDC_DEVICE_REFRESH:
-                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
-                            return true;
-
-                        case IDC_DEVICE_SHOW_STATS:
-                        {
-                            WCHAR sel[MAX_PATH];
-                            HWND devlist;
-                            int index;
-                            LVITEMW lvi;
-
-                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
-
-                            index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
-
-                            if (index == -1)
-                                return true;
-
-                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
-                            lvi.mask = LVIF_TEXT;
-                            lvi.iItem = index;
-                            lvi.iSubItem = 0;
-                            lvi.pszText = sel;
-                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
-                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
-
-                            ShowStats(hwndDlg, _wtoi(sel));
-                            return true;
-                        }
-
-                        case IDC_DEVICE_REMOVE:
-                        {
-                            wstring t, mess, mess2, title;
-                            WCHAR modfn[MAX_PATH], sel[MAX_PATH], sel2[MAX_PATH];
-                            HWND devlist;
-                            SHELLEXECUTEINFOW sei;
-                            int index;
-                            LVITEMW lvi;
-
-                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
-
-                            index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
-
-                            if (index == -1)
-                                return true;
-
-                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
-                            lvi.mask = LVIF_TEXT;
-                            lvi.iItem = index;
-                            lvi.iSubItem = 0;
-                            lvi.pszText = sel;
-                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
-                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
-
-                            lvi.iSubItem = 1;
-                            lvi.pszText = sel2;
-                            lvi.cchTextMax = sizeof(sel2) / sizeof(WCHAR);
-                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
-
-                            if (!load_string(module, IDS_REMOVE_DEVICE_CONFIRMATION, mess)) {
-                                ShowError(hwndDlg, GetLastError());
-                                return true;
-                            }
-
-                            wstring_sprintf(mess2, mess, sel, sel2);
-
-                            if (!load_string(module, IDS_CONFIRMATION_TITLE, title)) {
-                                ShowError(hwndDlg, GetLastError());
-                                return true;
-                            }
-
-                            if (MessageBoxW(hwndDlg, mess2.c_str(), title.c_str(), MB_YESNO) != IDYES)
-                                return true;
-
-                            GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
-
-                            t = L"\""s + modfn + L"\",RemoveDevice "s + fn + L"|"s + sel;
-
-                            RtlZeroMemory(&sei, sizeof(sei));
-
-                            sei.cbSize = sizeof(sei);
-                            sei.hwnd = hwndDlg;
-                            sei.lpVerb = L"runas";
-                            sei.lpFile = L"rundll32.exe";
-                            sei.lpParameters = t.c_str();
-                            sei.nShow = SW_SHOW;
-                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-                            if (!ShellExecuteExW(&sei)) {
-                                ShowError(hwndDlg, GetLastError());
-                                return true;
-                            }
-
-                            WaitForSingleObject(sei.hProcess, INFINITE);
-                            CloseHandle(sei.hProcess);
-
-                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
-
-                            return true;
-                        }
-
-                        case IDC_DEVICE_RESIZE:
-                        {
-                            HWND devlist;
-                            int index;
-                            LVITEMW lvi;
-                            wstring t;
-                            WCHAR modfn[MAX_PATH], sel[100];
-                            SHELLEXECUTEINFOW sei;
-
-                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
-
-                            index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
-
-                            if (index == -1)
-                                return true;
-
-                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
-                            lvi.mask = LVIF_TEXT;
-                            lvi.iItem = index;
-                            lvi.iSubItem = 0;
-                            lvi.pszText = sel;
-                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
-                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
-
-                            GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
-
-                            t = L"\""s + modfn + L"\",ResizeDevice "s + fn + L"|"s + sel;
-
-                            RtlZeroMemory(&sei, sizeof(sei));
-
-                            sei.cbSize = sizeof(sei);
-                            sei.hwnd = hwndDlg;
-                            sei.lpVerb = L"runas";
-                            sei.lpFile = L"rundll32.exe";
-                            sei.lpParameters = t.c_str();
-                            sei.nShow = SW_SHOW;
-                            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-                            if (!ShellExecuteExW(&sei)) {
-                                ShowError(hwndDlg, GetLastError());
-                                return true;
-                            }
-
-                            WaitForSingleObject(sei.hProcess, INFINITE);
-                            CloseHandle(sei.hProcess);
-
-                            RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
-                        }
-                    }
                 break;
             }
-        break;
 
-        case WM_NOTIFY:
-            switch (((LPNMHDR)lParam)->code) {
-                case LVN_ITEMCHANGED:
-                {
-                    NMLISTVIEW* nmv = (NMLISTVIEW*)lParam;
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                            case IDCANCEL:
+                                KillTimer(hwndDlg, 1);
+                                EndDialog(hwndDlg, 0);
+                            return true;
 
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_SHOW_STATS), nmv->uNewState & LVIS_SELECTED);
+                            case IDC_DEVICE_ADD:
+                            {
+                                wstring t;
+                                WCHAR modfn[MAX_PATH];
+                                SHELLEXECUTEINFOW sei;
 
-                    if (nmv->uNewState & LVIS_SELECTED && !readonly) {
-                        HWND devlist;
-                        btrfs_device* bd;
-                        bool device_readonly = false;
-                        LVITEMW lvi;
-                        WCHAR sel[MAX_PATH];
-                        uint64_t devid;
+                                GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
 
-                        devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+                                t = L"\""s + modfn + L"\",AddDevice "s + fn;
 
-                        RtlZeroMemory(&lvi, sizeof(LVITEMW));
-                        lvi.mask = LVIF_TEXT;
-                        lvi.iItem = nmv->iItem;
-                        lvi.iSubItem = 0;
-                        lvi.pszText = sel;
-                        lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
-                        SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
-                        devid = _wtoi(sel);
+                                RtlZeroMemory(&sei, sizeof(sei));
 
-                        bd = devices;
+                                sei.cbSize = sizeof(sei);
+                                sei.hwnd = hwndDlg;
+                                sei.lpVerb = L"runas";
+                                sei.lpFile = L"rundll32.exe";
+                                sei.lpParameters = t.c_str();
+                                sei.nShow = SW_SHOW;
+                                sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-                        while (true) {
-                            if (bd->dev_id == devid) {
-                                device_readonly = bd->readonly;
-                                break;
+                                if (!ShellExecuteExW(&sei))
+                                    throw last_error(GetLastError());
+
+                                WaitForSingleObject(sei.hProcess, INFINITE);
+                                CloseHandle(sei.hProcess);
+
+                                RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
+
+                                return true;
                             }
 
-                            if (bd->next_entry > 0)
-                                bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
-                            else
-                                break;
+                            case IDC_DEVICE_REFRESH:
+                                RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
+                                return true;
+
+                            case IDC_DEVICE_SHOW_STATS:
+                            {
+                                WCHAR sel[MAX_PATH];
+                                HWND devlist;
+                                int index;
+                                LVITEMW lvi;
+
+                                devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+
+                                index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+
+                                if (index == -1)
+                                    return true;
+
+                                RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                                lvi.mask = LVIF_TEXT;
+                                lvi.iItem = index;
+                                lvi.iSubItem = 0;
+                                lvi.pszText = sel;
+                                lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                                SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+
+                                ShowStats(hwndDlg, _wtoi(sel));
+                                return true;
+                            }
+
+                            case IDC_DEVICE_REMOVE:
+                            {
+                                wstring t, mess, mess2, title;
+                                WCHAR modfn[MAX_PATH], sel[MAX_PATH], sel2[MAX_PATH];
+                                HWND devlist;
+                                SHELLEXECUTEINFOW sei;
+                                int index;
+                                LVITEMW lvi;
+
+                                devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+
+                                index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+
+                                if (index == -1)
+                                    return true;
+
+                                RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                                lvi.mask = LVIF_TEXT;
+                                lvi.iItem = index;
+                                lvi.iSubItem = 0;
+                                lvi.pszText = sel;
+                                lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                                SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+
+                                lvi.iSubItem = 1;
+                                lvi.pszText = sel2;
+                                lvi.cchTextMax = sizeof(sel2) / sizeof(WCHAR);
+                                SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+
+                                if (!load_string(module, IDS_REMOVE_DEVICE_CONFIRMATION, mess))
+                                    throw last_error(GetLastError());
+
+                                wstring_sprintf(mess2, mess, sel, sel2);
+
+                                if (!load_string(module, IDS_CONFIRMATION_TITLE, title))
+                                    throw last_error(GetLastError());
+
+                                if (MessageBoxW(hwndDlg, mess2.c_str(), title.c_str(), MB_YESNO) != IDYES)
+                                    return true;
+
+                                GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+                                t = L"\""s + modfn + L"\",RemoveDevice "s + fn + L"|"s + sel;
+
+                                RtlZeroMemory(&sei, sizeof(sei));
+
+                                sei.cbSize = sizeof(sei);
+                                sei.hwnd = hwndDlg;
+                                sei.lpVerb = L"runas";
+                                sei.lpFile = L"rundll32.exe";
+                                sei.lpParameters = t.c_str();
+                                sei.nShow = SW_SHOW;
+                                sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+                                if (!ShellExecuteExW(&sei))
+                                    throw last_error(GetLastError());
+
+                                WaitForSingleObject(sei.hProcess, INFINITE);
+                                CloseHandle(sei.hProcess);
+
+                                RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
+
+                                return true;
+                            }
+
+                            case IDC_DEVICE_RESIZE:
+                            {
+                                HWND devlist;
+                                int index;
+                                LVITEMW lvi;
+                                wstring t;
+                                WCHAR modfn[MAX_PATH], sel[100];
+                                SHELLEXECUTEINFOW sei;
+
+                                devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+
+                                index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+
+                                if (index == -1)
+                                    return true;
+
+                                RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                                lvi.mask = LVIF_TEXT;
+                                lvi.iItem = index;
+                                lvi.iSubItem = 0;
+                                lvi.pszText = sel;
+                                lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                                SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+
+                                GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+                                t = L"\""s + modfn + L"\",ResizeDevice "s + fn + L"|"s + sel;
+
+                                RtlZeroMemory(&sei, sizeof(sei));
+
+                                sei.cbSize = sizeof(sei);
+                                sei.hwnd = hwndDlg;
+                                sei.lpVerb = L"runas";
+                                sei.lpFile = L"rundll32.exe";
+                                sei.lpParameters = t.c_str();
+                                sei.nShow = SW_SHOW;
+                                sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+                                if (!ShellExecuteExW(&sei))
+                                    throw last_error(GetLastError());
+
+                                WaitForSingleObject(sei.hProcess, INFINITE);
+                                CloseHandle(sei.hProcess);
+
+                                RefreshDevList(GetDlgItem(hwndDlg, IDC_DEVLIST));
+                            }
                         }
-
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), !device_readonly);
-                    } else
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), false);
-
                     break;
                 }
-            }
-        break;
+            break;
+
+            case WM_NOTIFY:
+                switch (((LPNMHDR)lParam)->code) {
+                    case LVN_ITEMCHANGED:
+                    {
+                        NMLISTVIEW* nmv = (NMLISTVIEW*)lParam;
+
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_SHOW_STATS), nmv->uNewState & LVIS_SELECTED);
+
+                        if (nmv->uNewState & LVIS_SELECTED && !readonly) {
+                            HWND devlist;
+                            btrfs_device* bd;
+                            bool device_readonly = false;
+                            LVITEMW lvi;
+                            WCHAR sel[MAX_PATH];
+                            uint64_t devid;
+
+                            devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
+
+                            RtlZeroMemory(&lvi, sizeof(LVITEMW));
+                            lvi.mask = LVIF_TEXT;
+                            lvi.iItem = nmv->iItem;
+                            lvi.iSubItem = 0;
+                            lvi.pszText = sel;
+                            lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
+                            SendMessageW(devlist, LVM_GETITEMW, 0, (LPARAM)&lvi);
+                            devid = _wtoi(sel);
+
+                            bd = devices;
+
+                            while (true) {
+                                if (bd->dev_id == devid) {
+                                    device_readonly = bd->readonly;
+                                    break;
+                                }
+
+                                if (bd->next_entry > 0)
+                                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
+                                else
+                                    break;
+                            }
+
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), !device_readonly);
+                        } else
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEVICE_RESIZE), false);
+
+                        break;
+                    }
+                }
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -1268,101 +1234,103 @@ void BtrfsVolPropSheet::ShowScrub(HWND hwndDlg) {
     sei.nShow = SW_SHOW;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-    if (!ShellExecuteExW(&sei)) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
+    if (!ShellExecuteExW(&sei))
+        throw last_error(GetLastError());
 
     WaitForSingleObject(sei.hProcess, INFINITE);
     CloseHandle(sei.hProcess);
 }
 
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
-            BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)psp->lParam;
-            btrfs_device* bd;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
+                BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)psp->lParam;
+                btrfs_device* bd;
 
-            EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
+                EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+                SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
-            bps->readonly = true;
-            bd = bps->devices;
+                bps->readonly = true;
+                bd = bps->devices;
 
-            while (true) {
-                if (!bd->readonly) {
-                    bps->readonly = false;
-                    break;
+                while (true) {
+                    if (!bd->readonly) {
+                        bps->readonly = false;
+                        break;
+                    }
+
+                    if (bd->next_entry > 0)
+                        bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
+                    else
+                        break;
                 }
 
-                if (bd->next_entry > 0)
-                    bd = (btrfs_device*)((uint8_t*)bd + bd->next_entry);
-                else
-                    break;
+                if (bps->uuid_set) {
+                    WCHAR s[255];
+                    wstring t;
+
+                    GetDlgItemTextW(hwndDlg, IDC_UUID, s, sizeof(s) / sizeof(WCHAR));
+
+                    wstring_sprintf(t, s, bps->uuid.uuid[0], bps->uuid.uuid[1], bps->uuid.uuid[2], bps->uuid.uuid[3], bps->uuid.uuid[4], bps->uuid.uuid[5],
+                                    bps->uuid.uuid[6], bps->uuid.uuid[7], bps->uuid.uuid[8], bps->uuid.uuid[9], bps->uuid.uuid[10], bps->uuid.uuid[11],
+                                    bps->uuid.uuid[12], bps->uuid.uuid[13], bps->uuid.uuid[14], bps->uuid.uuid[15]);
+
+                    SetDlgItemTextW(hwndDlg, IDC_UUID, t.c_str());
+                } else
+                    SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
+
+                SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_SCRUB), BCM_SETSHIELD, 0, true);
+
+                return false;
             }
 
-            if (bps->uuid_set) {
-                WCHAR s[255];
-                wstring t;
-
-                GetDlgItemTextW(hwndDlg, IDC_UUID, s, sizeof(s) / sizeof(WCHAR));
-
-                wstring_sprintf(t, s, bps->uuid.uuid[0], bps->uuid.uuid[1], bps->uuid.uuid[2], bps->uuid.uuid[3], bps->uuid.uuid[4], bps->uuid.uuid[5],
-                                bps->uuid.uuid[6], bps->uuid.uuid[7], bps->uuid.uuid[8], bps->uuid.uuid[9], bps->uuid.uuid[10], bps->uuid.uuid[11],
-                                bps->uuid.uuid[12], bps->uuid.uuid[13], bps->uuid.uuid[14], bps->uuid.uuid[15]);
-
-                SetDlgItemTextW(hwndDlg, IDC_UUID, t.c_str());
-            } else
-                SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
-
-            SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_SCRUB), BCM_SETSHIELD, 0, true);
-
-            return false;
-        }
-
-        case WM_NOTIFY:
-        {
-            switch (((LPNMHDR)lParam)->code) {
-                case PSN_KILLACTIVE:
-                    SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, false);
+            case WM_NOTIFY:
+            {
+                switch (((LPNMHDR)lParam)->code) {
+                    case PSN_KILLACTIVE:
+                        SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, false);
+                    break;
+                }
                 break;
             }
-            break;
-        }
 
-        case WM_COMMAND:
-        {
-            BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+            case WM_COMMAND:
+            {
+                BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
 
-            if (bps) {
-                switch (HIWORD(wParam)) {
-                    case BN_CLICKED: {
-                        switch (LOWORD(wParam)) {
-                            case IDC_VOL_SHOW_USAGE:
-                                bps->ShowUsage(hwndDlg);
-                            break;
+                if (bps) {
+                    switch (HIWORD(wParam)) {
+                        case BN_CLICKED: {
+                            switch (LOWORD(wParam)) {
+                                case IDC_VOL_SHOW_USAGE:
+                                    bps->ShowUsage(hwndDlg);
+                                break;
 
-                            case IDC_VOL_BALANCE:
-                                bps->balance->ShowBalance(hwndDlg);
-                            break;
+                                case IDC_VOL_BALANCE:
+                                    bps->balance->ShowBalance(hwndDlg);
+                                break;
 
-                            case IDC_VOL_DEVICES:
-                                bps->ShowDevices(hwndDlg);
-                            break;
+                                case IDC_VOL_DEVICES:
+                                    bps->ShowDevices(hwndDlg);
+                                break;
 
-                            case IDC_VOL_SCRUB:
-                                bps->ShowScrub(hwndDlg);
-                            break;
+                                case IDC_VOL_SCRUB:
+                                    bps->ShowScrub(hwndDlg);
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            break;
+                break;
+            }
         }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
@@ -1416,62 +1384,58 @@ extern "C" {
 #endif
 
 void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    win_handle token;
-    NTSTATUS Status;
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
-    uint64_t devid;
-    wstring cmdline, vol, dev;
-    size_t pipe;
-    IO_STATUS_BLOCK iosb;
+    try {
+        win_handle token;
+        NTSTATUS Status;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
+        uint64_t devid;
+        wstring cmdline, vol, dev;
+        size_t pipe;
+        IO_STATUS_BLOCK iosb;
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    cmdline = lpszCmdLine;
+        cmdline = lpszCmdLine;
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
 
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+            throw last_error(GetLastError());
 
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+            throw last_error(GetLastError());
 
-    pipe = cmdline.find(L"|");
+        pipe = cmdline.find(L"|");
 
-    if (pipe == string::npos)
-        return;
+        if (pipe == string::npos)
+            return;
 
-    vol = cmdline.substr(0, pipe);
-    dev = cmdline.substr(pipe + 1);
+        vol = cmdline.substr(0, pipe);
+        dev = cmdline.substr(pipe + 1);
 
-    devid = _wtoi(dev.c_str());
-    if (devid == 0)
-        return;
+        devid = _wtoi(dev.c_str());
+        if (devid == 0)
+            return;
 
-    win_handle h = CreateFileW(vol.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        win_handle h = CreateFileW(vol.c_str(), FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
+        if (h == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(uint64_t), nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwnd, Status);
-        return;
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(uint64_t), nullptr, 0);
+        if (!NT_SUCCESS(Status)) {
+            ShowNtStatusError(hwnd, Status);
+            return;
+        }
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
 }
 

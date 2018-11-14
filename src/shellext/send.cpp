@@ -537,34 +537,32 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
 }
 
 void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    win_handle token;
-    TOKEN_PRIVILEGES tp;
-    LUID luid;
+    try {
+        win_handle token;
+        TOKEN_PRIVILEGES tp;
+        LUID luid;
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid))
+            throw last_error(GetLastError());
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr))
+            throw last_error(GetLastError());
+
+        BtrfsSend bs;
+
+        bs.Open(hwnd, lpszCmdLine);
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    tp.PrivilegeCount = 1;
-    tp.Privileges[0].Luid = luid;
-    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    BtrfsSend bs;
-
-    bs.Open(hwnd, lpszCmdLine);
 }
 
 static void send_subvol(const wstring& subvol, const wstring& file, const wstring& parent, const vector<wstring>& clones) {

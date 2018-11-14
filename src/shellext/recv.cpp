@@ -2008,79 +2008,77 @@ void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool q
 }
 
 void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    OPENFILENAMEW ofn;
-    WCHAR file[MAX_PATH];
-    win_handle token;
-    TOKEN_PRIVILEGES* tp;
-    LUID luid;
-    ULONG tplen;
+    try {
+        OPENFILENAMEW ofn;
+        WCHAR file[MAX_PATH];
+        win_handle token;
+        TOKEN_PRIVILEGES* tp;
+        LUID luid;
+        ULONG tplen;
 
-    set_dpi_aware();
+        set_dpi_aware();
 
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            throw last_error(GetLastError());
 
-    tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
-    tp = (TOKEN_PRIVILEGES*)malloc(tplen);
-    if (!tp) {
-        ShowStringError(hwnd, IDS_OUT_OF_MEMORY);
-        return;
-    }
+        tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
+        tp = (TOKEN_PRIVILEGES*)malloc(tplen);
+        if (!tp) {
+            ShowStringError(hwnd, IDS_OUT_OF_MEMORY);
+            return;
+        }
 
-    tp->PrivilegeCount = 3;
+        tp->PrivilegeCount = 3;
 
-    if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
+        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
+            free(tp);
+            throw last_error(GetLastError());
+        }
+
+        tp->Privileges[0].Luid = luid;
+        tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
+            free(tp);
+            throw last_error(GetLastError());
+        }
+
+        tp->Privileges[1].Luid = luid;
+        tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
+            free(tp);
+            throw last_error(GetLastError());
+        }
+
+        tp->Privileges[2].Luid = luid;
+        tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(token, false, tp, tplen, nullptr, nullptr)) {
+            free(tp);
+            throw last_error(GetLastError());
+        }
+
+        file[0] = 0;
+
+        memset(&ofn, 0, sizeof(OPENFILENAMEW));
+        ofn.lStructSize = sizeof(OPENFILENAMEW);
+        ofn.hwndOwner = hwnd;
+        ofn.hInstance = module;
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+
+        if (GetOpenFileNameW(&ofn)) {
+            BtrfsRecv recv;
+
+            recv.Open(hwnd, file, lpszCmdLine, false);
+        }
+
         free(tp);
-        return;
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
-
-    tp->Privileges[0].Luid = luid;
-    tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        free(tp);
-        return;
-    }
-
-    tp->Privileges[1].Luid = luid;
-    tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
-        ShowError(hwnd, GetLastError());
-        free(tp);
-        return;
-    }
-
-    tp->Privileges[2].Luid = luid;
-    tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(token, false, tp, tplen, nullptr, nullptr)) {
-        ShowError(hwnd, GetLastError());
-        free(tp);
-        return;
-    }
-
-    file[0] = 0;
-
-    memset(&ofn, 0, sizeof(OPENFILENAMEW));
-    ofn.lStructSize = sizeof(OPENFILENAMEW);
-    ofn.hwndOwner = hwnd;
-    ofn.hInstance = module;
-    ofn.lpstrFile = file;
-    ofn.nMaxFile = sizeof(file) / sizeof(WCHAR);
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-
-    if (GetOpenFileNameW(&ofn)) {
-        BtrfsRecv recv;
-
-        recv.Open(hwnd, file, lpszCmdLine, false);
-    }
-
-    free(tp);
 }
 
 void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
