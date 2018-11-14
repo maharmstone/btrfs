@@ -20,6 +20,7 @@
 #include <commctrl.h>
 #include <strsafe.h>
 #include <stddef.h>
+#include <stdexcept>
 #include "factory.h"
 #include "resource.h"
 
@@ -743,4 +744,81 @@ void command_line_to_args(LPWSTR cmdline, vector<wstring> args) {
     }
 
     LocalFree(l);
+}
+
+string_error::string_error(int resno, ...) {
+    wstring fmt, s;
+    int len;
+    va_list args;
+
+    if (!load_string(module, resno, fmt))
+        throw runtime_error("LoadString failed."); // FIXME
+
+    va_start(args, resno);
+    len = _vsnwprintf(nullptr, 0, fmt.c_str(), args);
+
+    if (len == 0)
+        s = L"";
+    else {
+        s.resize(len);
+        _vsnwprintf((wchar_t*)s.c_str(), len, fmt.c_str(), args);
+    }
+
+    va_end(args);
+
+    utf16_to_utf8(s, msg);
+}
+
+void utf8_to_utf16(const string& utf8, wstring& utf16) {
+    NTSTATUS Status;
+    ULONG utf16len;
+    WCHAR* buf;
+
+    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.c_str(), utf8.length());
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
+
+    buf = (WCHAR*)malloc(utf16len + sizeof(WCHAR));
+
+    if (!buf)
+        throw string_error(IDS_OUT_OF_MEMORY);
+
+    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.c_str(), utf8.length());
+    if (!NT_SUCCESS(Status)) {
+        free(buf);
+        throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
+    }
+
+    buf[utf16len / sizeof(WCHAR)] = 0;
+
+    utf16 = buf;
+
+    free(buf);
+}
+
+void utf16_to_utf8(const wstring& utf16, string& utf8) {
+    NTSTATUS Status;
+    ULONG utf8len;
+    char* buf;
+
+    Status = RtlUnicodeToUTF8N(nullptr, 0, &utf8len, utf16.c_str(), utf16.length() * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
+
+    buf = (char*)malloc(utf8len + sizeof(char));
+
+    if (!buf)
+        throw string_error(IDS_OUT_OF_MEMORY);
+
+    Status = RtlUnicodeToUTF8N(buf, utf8len, &utf8len, utf16.c_str(), utf16.length() * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status)) {
+        free(buf);
+        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
+    }
+
+    buf[utf8len] = 0;
+
+    utf8 = buf;
+
+    free(buf);
 }

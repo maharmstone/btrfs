@@ -197,6 +197,7 @@
 #define IDS_BALANCE_COMPLETE_SHRINK     279
 #define IDS_BALANCE_FAILED_SHRINK       280
 #define IDS_COMPRESS_ZSTD               281
+#define IDS_RECV_RTLUNICODETOUTF8N_FAILED 282
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

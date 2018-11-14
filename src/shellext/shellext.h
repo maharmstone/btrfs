@@ -80,6 +80,11 @@ NTSTATUS WINAPI RtlUTF8ToUnicodeN(PWSTR UnicodeStringDestination, ULONG UnicodeS
                                   PULONG UnicodeStringActualWCharCount, PCCH UTF8StringSource,
                                   ULONG UTF8StringByteCount);
 
+NTSTATUS NTAPI RtlUnicodeToUTF8N(PCHAR UTF8StringDestination, ULONG UTF8StringMaxByteCount,
+                                  PULONG UTF8StringActualByteCount, PCWCH UnicodeStringSource,
+                                  ULONG UnicodeStringByteCount);
+
+
 NTSTATUS WINAPI NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length);
 
 NTSTATUS WINAPI NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation, PSECURITY_DESCRIPTOR SecurityDescriptor);
@@ -220,6 +225,18 @@ private:
     HANDLE h = INVALID_HANDLE_VALUE;
 };
 
+class string_error : public exception {
+public:
+    string_error(int resno, ...);
+
+    const char* what() const noexcept {
+        return msg.c_str();
+    }
+
+private:
+    string msg;
+};
+
 extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
@@ -231,3 +248,5 @@ wstring format_ntstatus(NTSTATUS Status);
 bool load_string(HMODULE module, UINT id, wstring& s);
 void wstring_sprintf(wstring& s, wstring fmt, ...);
 void command_line_to_args(LPWSTR cmdline, vector<wstring> args);
+void utf8_to_utf16(const string& utf8, wstring& utf16);
+void utf16_to_utf8(const wstring& utf16, string& utf8);
