@@ -822,3 +822,20 @@ void utf16_to_utf8(const wstring& utf16, string& utf8) {
 
     free(buf);
 }
+
+last_error::last_error(DWORD errnum) {
+    WCHAR* buf;
+
+    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+        errnum, 0, (WCHAR*)&buf, 0, nullptr) == 0)
+        throw runtime_error("FormatMessage failed");
+
+    try {
+        utf16_to_utf8(buf, msg);
+    } catch (...) {
+        LocalFree(buf);
+        throw;
+    }
+
+    LocalFree(buf);
+}

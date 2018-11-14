@@ -237,6 +237,19 @@ private:
     string msg;
 };
 
+
+class last_error : public exception {
+public:
+    last_error(DWORD errnum);
+
+    const char* what() const noexcept {
+        return msg.c_str();
+    }
+
+private:
+    string msg;
+};
+
 extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);
