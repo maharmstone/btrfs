@@ -32,7 +32,7 @@
 
 DEFINE_GUID(GUID_DEVINTERFACE_HIDDEN_VOLUME, 0x7f108a28L, 0x9833, 0x4b3b, 0xb7, 0x80, 0x2c, 0x6b, 0x5f, 0xa5, 0xc0, 0x62);
 
-static wstring get_mountdev_name(HANDLE h) {
+static wstring get_mountdev_name(const nt_handle& h ) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     MOUNTDEV_NAME mdn, *mdn2;
@@ -62,7 +62,7 @@ static wstring get_mountdev_name(HANDLE h) {
     return name;
 }
 
-static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<device>& device_list) {
+static void find_devices(HWND hwnd, const GUID* guid, const nt_handle& mountmgr, vector<device>& device_list) {
     HDEVINFO h;
 
     static WCHAR dosdevices[] = L"\\DosDevices\\";
@@ -94,7 +94,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
             if (SetupDiGetDeviceInterfaceDetailW(h, &did, detail, size, &size, &dd)) {
                 NTSTATUS Status;
-                HANDLE file;
+                nt_handle file;
                 device dev;
                 STORAGE_DEVICE_NUMBER sdn;
                 IO_STATUS_BLOCK iosb;
@@ -121,7 +121,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
 
                 Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_DISK_GET_LENGTH_INFO, nullptr, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
                 if (!NT_SUCCESS(Status))
-                    goto nextitem;
+                    continue;
 
                 dev.size = gli.Length.QuadPart;
 
@@ -160,7 +160,7 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                         sdd2 = (STORAGE_DEVICE_DESCRIPTOR*)malloc(sdd.Size);
 
                         Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
-                                                    &spq, sizeof(STORAGE_PROPERTY_QUERY), sdd2, sdd.Size);
+                                                       &spq, sizeof(STORAGE_PROPERTY_QUERY), sdd2, sdd.Size);
                         if (NT_SUCCESS(Status)) {
                             string desc2;
 
@@ -311,9 +311,6 @@ static void find_devices(HWND hwnd, const GUID* guid, HANDLE mountmgr, vector<de
                 }
 
                 device_list.push_back(dev);
-
-nextitem:
-                NtClose(file);
             }
 
 nextitem2:
@@ -346,59 +343,63 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
     OBJECT_ATTRIBUTES attr;
     UNICODE_STRING us;
     IO_STATUS_BLOCK iosb;
-    HANDLE mountmgr, btrfsh;
     btrfs_filesystem* bfs = nullptr;
 
     static WCHAR btrfs[] = L"\\Btrfs";
 
     device_list.clear();
 
-    RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
-    InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
+    {
+        nt_handle mountmgr;
 
-    Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
-                        FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
-    if (!NT_SUCCESS(Status)) {
-        MessageBoxW(hwnd, L"Could not get handle to mount manager.", L"Error", MB_ICONERROR);
-        return;
-    }
+        RtlInitUnicodeString(&us, MOUNTMGR_DEVICE_NAME);
+        InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
 
-    us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
-    us.Buffer = btrfs;
-
-    InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
-
-    Status = NtOpenFile(&btrfsh, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &attr, &iosb,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
-    if (NT_SUCCESS(Status)) {
-        ULONG bfssize = 0;
-
-        do {
-            bfssize += 1024;
-
-            if (bfs) free(bfs);
-            bfs = (btrfs_filesystem*)malloc(bfssize);
-
-            Status = NtDeviceIoControlFile(btrfsh, nullptr, nullptr, nullptr, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, nullptr, 0, bfs, bfssize);
-            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                free(bfs);
-                bfs = nullptr;
-                break;
-            }
-        } while (Status == STATUS_BUFFER_OVERFLOW);
-
-        if (bfs && bfs->num_devices == 0) { // no mounted filesystems found
-            free(bfs);
-            bfs = nullptr;
+        Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
+                            FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
+        if (!NT_SUCCESS(Status)) {
+            MessageBoxW(hwnd, L"Could not get handle to mount manager.", L"Error", MB_ICONERROR);
+            return;
         }
+
+        {
+            nt_handle btrfsh;
+
+            us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+            us.Buffer = btrfs;
+
+            InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
+
+            Status = NtOpenFile(&btrfsh, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &attr, &iosb,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
+            if (NT_SUCCESS(Status)) {
+                ULONG bfssize = 0;
+
+                do {
+                    bfssize += 1024;
+
+                    if (bfs) free(bfs);
+                    bfs = (btrfs_filesystem*)malloc(bfssize);
+
+                    Status = NtDeviceIoControlFile(btrfsh, nullptr, nullptr, nullptr, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, nullptr, 0, bfs, bfssize);
+                    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
+                        free(bfs);
+                        bfs = nullptr;
+                        break;
+                    }
+                } while (Status == STATUS_BUFFER_OVERFLOW);
+
+                if (bfs && bfs->num_devices == 0) { // no mounted filesystems found
+                    free(bfs);
+                    bfs = nullptr;
+                }
+            }
+        }
+
+        find_devices(hwnd, &GUID_DEVINTERFACE_DISK, mountmgr, device_list);
+        find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, mountmgr, device_list);
+        find_devices(hwnd, &GUID_DEVINTERFACE_HIDDEN_VOLUME, mountmgr, device_list);
     }
-    NtClose(btrfsh);
-
-    find_devices(hwnd, &GUID_DEVINTERFACE_DISK, mountmgr, device_list);
-    find_devices(hwnd, &GUID_DEVINTERFACE_VOLUME, mountmgr, device_list);
-    find_devices(hwnd, &GUID_DEVINTERFACE_HIDDEN_VOLUME, mountmgr, device_list);
-
-    NtClose(mountmgr);
 
     sort(device_list.begin(), device_list.end(), sort_devices);
 
@@ -514,8 +515,6 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     UNICODE_STRING vn;
     OBJECT_ATTRIBUTES attr;
     IO_STATUS_BLOCK iosb;
-    win_handle h;
-    HANDLE h2;
 
     if (!sel) {
         EndDialog(hwndDlg, 0);
@@ -540,63 +539,57 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     if (MessageBoxW(hwndDlg, mess.c_str(), title.c_str(), MB_YESNO) != IDYES)
         return;
 
-    h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    win_handle h = CreateFileW(cmdline, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
         throw last_error(GetLastError());
 
-    vn.Length = vn.MaximumLength = sel->pnp_name.length() * sizeof(WCHAR);
-    vn.Buffer = (WCHAR*)sel->pnp_name.c_str();
+    {
+        nt_handle h2;
 
-    InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, nullptr, nullptr);
+        vn.Length = vn.MaximumLength = sel->pnp_name.length() * sizeof(WCHAR);
+        vn.Buffer = (WCHAR*)sel->pnp_name.c_str();
 
-    Status = NtOpenFile(&h2, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
-    if (!NT_SUCCESS(Status))
-        throw ntstatus_error(Status);
+        InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, nullptr, nullptr);
 
-    if (!sel->is_disk) {
-        Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            wstring t, u, title;
+        Status = NtOpenFile(&h2, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
-            if (!load_string(module, IDS_LOCK_FAILED, t)) {
-                NtClose(h2);
-                throw last_error(GetLastError());
+        if (!sel->is_disk) {
+            Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0);
+            if (!NT_SUCCESS(Status)) {
+                wstring t, u, title;
+
+                if (!load_string(module, IDS_LOCK_FAILED, t))
+                    throw last_error(GetLastError());
+
+                wstring_sprintf(u, t, Status);
+
+                if (!load_string(module, IDS_ERROR, title))
+                    throw last_error(GetLastError());
+
+                MessageBoxW(hwndDlg, u.c_str(), title.c_str(), MB_ICONERROR);
+
+                return;
             }
+        }
 
-            wstring_sprintf(u, t, Status);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_ADD_DEVICE, &h2, sizeof(HANDLE), nullptr, 0);
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
-            if (!load_string(module, IDS_ERROR, title)) {
-                NtClose(h2);
-                throw last_error(GetLastError());
-            }
+        if (!sel->is_disk) {
+            Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0);
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
 
-            MessageBoxW(hwndDlg, u.c_str(), title.c_str(), MB_ICONERROR);
-
-            NtClose(h2);
-            return;
+            Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_UNLOCK_VOLUME, nullptr, 0, nullptr, 0);
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
         }
     }
-
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_ADD_DEVICE, &h2, sizeof(HANDLE), nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwndDlg, Status);
-        NtClose(h2);
-        return;
-    }
-
-    if (!sel->is_disk) {
-        Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_DISMOUNT_VOLUME, nullptr, 0, nullptr, 0);
-        if (!NT_SUCCESS(Status))
-            ShowNtStatusError(hwndDlg, Status);
-
-        Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_UNLOCK_VOLUME, nullptr, 0, nullptr, 0);
-        if (!NT_SUCCESS(Status))
-            ShowNtStatusError(hwndDlg, Status);
-    }
-
-    NtClose(h2);
 
     EndDialog(hwndDlg, 0);
 }

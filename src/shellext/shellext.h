@@ -201,7 +201,7 @@ public:
 
     ~fff_handle() {
         if (h != INVALID_HANDLE_VALUE)
-            CloseHandle(h);
+            FindClose(h);
     }
 
     operator HANDLE() const {
@@ -211,6 +211,41 @@ public:
     fff_handle& operator=(const HANDLE nh) {
         if (h != INVALID_HANDLE_VALUE)
             FindClose(h);
+
+        h = nh;
+
+        return *this;
+    }
+
+    HANDLE* operator&() {
+        return &h;
+    }
+
+private:
+    HANDLE h = INVALID_HANDLE_VALUE;
+};
+
+class nt_handle {
+public:
+    nt_handle() {
+    }
+
+    nt_handle(HANDLE nh) {
+        h = nh;
+    }
+
+    ~nt_handle() {
+        if (h != INVALID_HANDLE_VALUE)
+            NtClose(h);
+    }
+
+    operator HANDLE() const {
+        return h;
+    }
+
+    nt_handle& operator=(const HANDLE nh) {
+        if (h != INVALID_HANDLE_VALUE)
+            NtClose(h);
 
         h = nh;
 
