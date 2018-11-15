@@ -20,6 +20,7 @@
 #include "resource.h"
 #include <stddef.h>
 #include <shlobj.h>
+#include <iostream>
 
 #define SEND_BUFFER_LEN 1048576
 
@@ -554,101 +555,105 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
     NTSTATUS Status;
     btrfs_send_header header;
     btrfs_send_command end;
-    bool success = false;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
-    dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-    if (dirh == INVALID_HANDLE_VALUE)
-        goto end3;
+    try {
+        dirh = CreateFileW(subvol.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        if (dirh == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
-    stream = CreateFileW(file.c_str(), FILE_WRITE_DATA | DELETE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (stream == INVALID_HANDLE_VALUE)
-        goto end3;
+        stream = CreateFileW(file.c_str(), FILE_WRITE_DATA | DELETE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (stream == INVALID_HANDLE_VALUE)
+            throw last_error(GetLastError());
 
-    bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
-    bss = (btrfs_send_subvol*)malloc(bss_size);
-    memset(bss, 0, bss_size);
+        try {
+            bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
+            bss = (btrfs_send_subvol*)malloc(bss_size);
+            memset(bss, 0, bss_size);
 
-    if (parent != L"") {
-        HANDLE parenth;
+            if (parent != L"") {
+                HANDLE parenth;
 
-        parenth = CreateFileW(parent.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (parenth == INVALID_HANDLE_VALUE)
-            goto end2;
+                parenth = CreateFileW(parent.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                if (parenth == INVALID_HANDLE_VALUE)
+                    throw last_error(GetLastError());
 
-        bss->parent = parenth;
-    } else
-        bss->parent = nullptr;
+                bss->parent = parenth;
+            } else
+                bss->parent = nullptr;
 
-    bss->num_clones = clones.size();
+            bss->num_clones = clones.size();
 
-    for (i = 0; i < bss->num_clones; i++) {
-        HANDLE h;
+            for (i = 0; i < bss->num_clones; i++) {
+                HANDLE h;
 
-        h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ULONG j;
+                h = CreateFileW(clones[i].c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+                if (h == INVALID_HANDLE_VALUE) {
+                    auto le = GetLastError();
+                    ULONG j;
 
-            for (j = 0; j < i; j++) {
-                CloseHandle(bss->clones[j]);
+                    for (j = 0; j < i; j++) {
+                        CloseHandle(bss->clones[j]);
+                    }
+
+                    if (bss->parent) CloseHandle(bss->parent);
+
+                    throw last_error(le);
+                }
+
+                bss->clones[i] = h;
+            }
+
+            Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, nullptr, 0);
+
+            for (i = 0; i < bss->num_clones; i++) {
+                CloseHandle(bss->clones[i]);
             }
 
             if (bss->parent) CloseHandle(bss->parent);
-            goto end2;
+
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
+
+            memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic));
+            header.version = 1;
+
+            if (!WriteFile(stream, &header, sizeof(header), nullptr, nullptr))
+                throw last_error(GetLastError());
+
+            do {
+                Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, nullptr, 0, buf, SEND_BUFFER_LEN);
+
+                if (NT_SUCCESS(Status))
+                    WriteFile(stream, buf, iosb.Information, nullptr, nullptr);
+            } while (NT_SUCCESS(Status));
+
+            if (Status != STATUS_END_OF_FILE)
+                throw ntstatus_error(Status);
+
+            end.length = 0;
+            end.cmd = BTRFS_SEND_CMD_END;
+            end.csum = 0x9dc96c50;
+
+            if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
+                throw last_error(GetLastError());
+
+            SetEndOfFile(stream);
+        } catch (...) {
+            FILE_DISPOSITION_INFO fdi;
+
+            fdi.DeleteFile = true;
+
+            SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+
+            throw;
         }
-
-        bss->clones[i] = h;
+    } catch (...) {
+        free(buf);
+        throw;
     }
 
-    Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, nullptr, 0);
-
-    for (i = 0; i < bss->num_clones; i++) {
-        CloseHandle(bss->clones[i]);
-    }
-
-    if (bss->parent) CloseHandle(bss->parent);
-
-    if (!NT_SUCCESS(Status))
-        goto end2;
-
-    memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic));
-    header.version = 1;
-
-    if (!WriteFile(stream, &header, sizeof(header), nullptr, nullptr))
-        goto end2;
-
-    do {
-        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, nullptr, 0, buf, SEND_BUFFER_LEN);
-
-        if (NT_SUCCESS(Status))
-            WriteFile(stream, buf, iosb.Information, nullptr, nullptr);
-    } while (NT_SUCCESS(Status));
-
-    if (Status != STATUS_END_OF_FILE)
-        goto end2;
-
-    end.length = 0;
-    end.cmd = BTRFS_SEND_CMD_END;
-    end.csum = 0x9dc96c50;
-
-    if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
-        goto end2;
-
-    SetEndOfFile(stream);
-
-    success = true;
-
-end2:
-    if (!success) {
-        FILE_DISPOSITION_INFO fdi;
-
-        fdi.DeleteFile = true;
-
-        SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
-    }
-
-end3:
     free(buf);
 }
 
@@ -699,7 +704,12 @@ void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
             }
         }
 
-        if (subvol != L"" && file != L"")
-            send_subvol(subvol, file, parent, clones);
+        if (subvol != L"" && file != L"") {
+            try {
+                send_subvol(subvol, file, parent, clones);
+            } catch (const exception& e) {
+                cerr << "Error: " << e.what() << endl;
+            }
+        }
     }
 }
