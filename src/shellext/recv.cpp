@@ -2023,10 +2023,8 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 
         tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
         tp = (TOKEN_PRIVILEGES*)malloc(tplen);
-        if (!tp) {
-            ShowStringError(hwnd, IDS_OUT_OF_MEMORY);
-            return;
-        }
+        if (!tp)
+            throw string_error(IDS_OUT_OF_MEMORY);
 
         tp->PrivilegeCount = 3;
 

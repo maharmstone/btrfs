@@ -352,10 +352,8 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
 
             Status2 = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb, sizeof(btrfs_query_balance));
 
-            if (NT_SUCCESS(Status2) && bqb.status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED)) {
-                ShowStringError(hwndDlg, IDS_SCRUB_BALANCE_RUNNING);
-                return;
-            }
+            if (NT_SUCCESS(Status2) && bqb.status & (BTRFS_BALANCE_RUNNING | BTRFS_BALANCE_PAUSED))
+                throw string_error(IDS_SCRUB_BALANCE_RUNNING);
         }
 
         if (!NT_SUCCESS(Status)) {

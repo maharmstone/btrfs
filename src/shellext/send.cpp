@@ -310,16 +310,12 @@ void BtrfsSend::BrowseParent(HWND hwnd) {
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
 
-    if (!GetVolumePathNameW(subvol.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
-        ShowStringError(hwnd, IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return;
-    }
+    if (!GetVolumePathNameW(subvol.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1))
+        throw string_error(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     hr = SHParseDisplayName(volpathw, 0, &root, 0, 0);
-    if (FAILED(hr)) {
-        ShowStringError(hwnd, IDS_SHPARSEDISPLAYNAME_FAILED);
-        return;
-    }
+    if (FAILED(hr))
+        throw string_error(IDS_SHPARSEDISPLAYNAME_FAILED);
 
     memset(&bi, 0, sizeof(BROWSEINFOW));
 
@@ -332,29 +328,21 @@ void BtrfsSend::BrowseParent(HWND hwnd) {
     if (!pidl)
         return;
 
-    if (!SHGetPathFromIDListW(pidl, parent)) {
-        ShowStringError(hwnd, IDS_SHGETPATHFROMIDLIST_FAILED);
-        return;
-    }
+    if (!SHGetPathFromIDListW(pidl, parent))
+        throw string_error(IDS_SHGETPATHFROMIDLIST_FAILED);
 
     {
         win_handle h = CreateFileW(parent, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
-            return;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_SEND_CANT_OPEN_DIR, parent, GetLastError(), format_message(GetLastError()).c_str());
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
-        if (!NT_SUCCESS(Status)) {
-            ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
-            return;
-        }
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
     }
 
-    if (bgfi.inode != 0x100 || bgfi.top) {
-        ShowStringError(hwnd, IDS_NOT_SUBVOL);
-        return;
-    }
+    if (bgfi.inode != 0x100 || bgfi.top)
+        throw string_error(IDS_NOT_SUBVOL);
 
     SetDlgItemTextW(hwnd, IDC_PARENT_SUBVOL, parent);
 }
@@ -368,16 +356,12 @@ void BtrfsSend::AddClone(HWND hwnd) {
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
 
-    if (!GetVolumePathNameW(subvol.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
-        ShowStringError(hwnd, IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return;
-    }
+    if (!GetVolumePathNameW(subvol.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1))
+        throw string_error(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     hr = SHParseDisplayName(volpathw, 0, &root, 0, 0);
-    if (FAILED(hr)) {
-        ShowStringError(hwnd, IDS_SHPARSEDISPLAYNAME_FAILED);
-        return;
-    }
+    if (FAILED(hr))
+        throw string_error(IDS_SHPARSEDISPLAYNAME_FAILED);
 
     memset(&bi, 0, sizeof(BROWSEINFOW));
 
@@ -390,29 +374,21 @@ void BtrfsSend::AddClone(HWND hwnd) {
     if (!pidl)
         return;
 
-    if (!SHGetPathFromIDListW(pidl, path)) {
-        ShowStringError(hwnd, IDS_SHGETPATHFROMIDLIST_FAILED);
-        return;
-    }
+    if (!SHGetPathFromIDListW(pidl, path))
+        throw string_error(IDS_SHGETPATHFROMIDLIST_FAILED);
 
     {
         win_handle h = CreateFileW(path, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowStringError(hwnd, IDS_SEND_CANT_OPEN_DIR, path, GetLastError(), format_message(GetLastError()).c_str());
-            return;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_SEND_CANT_OPEN_DIR, path, GetLastError(), format_message(GetLastError()).c_str());
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_FILE_IDS, nullptr, 0, &bgfi, sizeof(btrfs_get_file_ids));
-        if (!NT_SUCCESS(Status)) {
-            ShowStringError(hwnd, IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
-            return;
-        }
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_GET_FILE_IDS_FAILED, Status, format_ntstatus(Status).c_str());
     }
 
-    if (bgfi.inode != 0x100 || bgfi.top) {
-        ShowStringError(hwnd, IDS_NOT_SUBVOL);
-        return;
-    }
+    if (bgfi.inode != 0x100 || bgfi.top)
+        throw string_error(IDS_NOT_SUBVOL);
 
     SendMessageW(GetDlgItem(hwnd, IDC_CLONE_LIST), LB_ADDSTRING, 0, (LPARAM)path);
 }
@@ -433,82 +409,86 @@ void BtrfsSend::RemoveClone(HWND hwnd) {
 }
 
 INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-            this->hwnd = hwndDlg;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+                this->hwnd = hwndDlg;
 
-            GetDlgItemTextW(hwndDlg, IDCANCEL, closetext, sizeof(closetext) / sizeof(WCHAR));
-        break;
+                GetDlgItemTextW(hwndDlg, IDCANCEL, closetext, sizeof(closetext) / sizeof(WCHAR));
+            break;
 
-        case WM_COMMAND:
-            switch (HIWORD(wParam)) {
-                case BN_CLICKED:
-                    switch (LOWORD(wParam)) {
-                        case IDOK:
-                            StartSend(hwndDlg);
-                        return true;
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                                StartSend(hwndDlg);
+                            return true;
 
-                        case IDCANCEL:
-                            if (started) {
-                                TerminateThread(thread, 0);
+                            case IDCANCEL:
+                                if (started) {
+                                    TerminateThread(thread, 0);
 
-                                if (stream != INVALID_HANDLE_VALUE) {
-                                    FILE_DISPOSITION_INFO fdi;
+                                    if (stream != INVALID_HANDLE_VALUE) {
+                                        FILE_DISPOSITION_INFO fdi;
 
-                                    fdi.DeleteFile = true;
+                                        fdi.DeleteFile = true;
 
-                                    SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
-                                    CloseHandle(stream);
-                                }
+                                        SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+                                        CloseHandle(stream);
+                                    }
 
-                                if (dirh != INVALID_HANDLE_VALUE)
-                                    CloseHandle(dirh);
+                                    if (dirh != INVALID_HANDLE_VALUE)
+                                        CloseHandle(dirh);
 
-                                started = false;
+                                    started = false;
 
-                                SetDlgItemTextW(hwndDlg, IDCANCEL, closetext);
+                                    SetDlgItemTextW(hwndDlg, IDCANCEL, closetext);
 
-                                EnableWindow(GetDlgItem(hwnd, IDOK), true);
-                                EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), true);
-                                EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), true);
-                            } else
-                                EndDialog(hwndDlg, 1);
-                        return true;
+                                    EnableWindow(GetDlgItem(hwnd, IDOK), true);
+                                    EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), true);
+                                    EnableWindow(GetDlgItem(hwnd, IDC_BROWSE), true);
+                                } else
+                                    EndDialog(hwndDlg, 1);
+                            return true;
 
-                        case IDC_BROWSE:
-                            Browse(hwndDlg);
-                        return true;
+                            case IDC_BROWSE:
+                                Browse(hwndDlg);
+                            return true;
 
-                        case IDC_INCREMENTAL:
-                            incremental = IsDlgButtonChecked(hwndDlg, LOWORD(wParam));
+                            case IDC_INCREMENTAL:
+                                incremental = IsDlgButtonChecked(hwndDlg, LOWORD(wParam));
 
-                            EnableWindow(GetDlgItem(hwnd, IDC_PARENT_SUBVOL), incremental);
-                            EnableWindow(GetDlgItem(hwnd, IDC_PARENT_BROWSE), incremental);
-                        return true;
+                                EnableWindow(GetDlgItem(hwnd, IDC_PARENT_SUBVOL), incremental);
+                                EnableWindow(GetDlgItem(hwnd, IDC_PARENT_BROWSE), incremental);
+                            return true;
 
-                        case IDC_PARENT_BROWSE:
-                            BrowseParent(hwndDlg);
-                        return true;
+                            case IDC_PARENT_BROWSE:
+                                BrowseParent(hwndDlg);
+                            return true;
 
-                        case IDC_CLONE_ADD:
-                            AddClone(hwndDlg);
-                        return true;
+                            case IDC_CLONE_ADD:
+                                AddClone(hwndDlg);
+                            return true;
 
-                        case IDC_CLONE_REMOVE:
-                            RemoveClone(hwndDlg);
-                        return true;
-                    }
-                break;
+                            case IDC_CLONE_REMOVE:
+                                RemoveClone(hwndDlg);
+                            return true;
+                        }
+                    break;
 
-                case LBN_SELCHANGE:
-                    switch (LOWORD(wParam)) {
-                        case IDC_CLONE_LIST:
-                            EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), true);
-                        return true;
-                    }
-                break;
-            }
-        break;
+                    case LBN_SELCHANGE:
+                        switch (LOWORD(wParam)) {
+                            case IDC_CLONE_LIST:
+                                EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), true);
+                            return true;
+                        }
+                    break;
+                }
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwnd, e.what());
     }
 
     return false;

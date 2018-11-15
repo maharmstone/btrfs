@@ -961,7 +961,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_REMOVE_DEVICE, &devid, sizeof(uint64_t), nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_CANNOT_DELETE)
-                ShowStringError(hwnd, IDS_CANNOT_REMOVE_RAID);
+                throw string_error(IDS_CANNOT_REMOVE_RAID);
             else
                 ShowNtStatusError(hwnd, Status);
 

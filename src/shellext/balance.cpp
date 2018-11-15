@@ -405,10 +405,8 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_DRANGE_END), s, sizeof(s) / sizeof(WCHAR));
         opts->drange_end = _wtoi64(s);
 
-        if (opts->drange_end < opts->drange_start) {
-            ShowStringError(hwndDlg, IDS_DRANGE_END_BEFORE_START);
-            return;
-        }
+        if (opts->drange_end < opts->drange_start)
+            throw string_error(IDS_DRANGE_END_BEFORE_START);
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_VRANGE) == BST_CHECKED) {
@@ -422,10 +420,8 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_VRANGE_END), s, sizeof(s) / sizeof(WCHAR));
         opts->vrange_end = _wtoi64(s);
 
-        if (opts->vrange_end < opts->vrange_start) {
-            ShowStringError(hwndDlg, IDS_VRANGE_END_BEFORE_START);
-            return;
-        }
+        if (opts->vrange_end < opts->vrange_start)
+            throw string_error(IDS_VRANGE_END_BEFORE_START);
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_LIMIT) == BST_CHECKED) {
@@ -439,10 +435,8 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_LIMIT_END), s, sizeof(s) / sizeof(WCHAR));
         opts->limit_end = _wtoi64(s);
 
-        if (opts->limit_end < opts->limit_start) {
-            ShowStringError(hwndDlg, IDS_LIMIT_END_BEFORE_START);
-            return;
-        }
+        if (opts->limit_end < opts->limit_start)
+            throw string_error(IDS_LIMIT_END_BEFORE_START);
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_STRIPES) == BST_CHECKED) {
@@ -456,10 +450,8 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_STRIPES_END), s, sizeof(s) / sizeof(WCHAR));
         opts->stripes_end = _wtoi(s);
 
-        if (opts->stripes_end < opts->stripes_start) {
-            ShowStringError(hwndDlg, IDS_STRIPES_END_BEFORE_START);
-            return;
-        }
+        if (opts->stripes_end < opts->stripes_start)
+            throw string_error(IDS_STRIPES_END_BEFORE_START);
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_USAGE) == BST_CHECKED) {
@@ -473,10 +465,8 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_USAGE_END), s, sizeof(s) / sizeof(WCHAR));
         opts->usage_end = _wtoi(s);
 
-        if (opts->usage_end < opts->usage_start) {
-            ShowStringError(hwndDlg, IDS_USAGE_END_BEFORE_START);
-            return;
-        }
+        if (opts->usage_end < opts->usage_start)
+            throw string_error(IDS_USAGE_END_BEFORE_START);
     }
 
     if (IsDlgButtonChecked(hwndDlg, IDC_CONVERT) == BST_CHECKED) {
@@ -1094,10 +1084,8 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
 
                 Status2 = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, &bqs, sizeof(btrfs_query_scrub));
 
-                if ((NT_SUCCESS(Status2) || Status2 == STATUS_BUFFER_OVERFLOW) && bqs.status != BTRFS_SCRUB_STOPPED) {
-                    ShowStringError(hwnd, IDS_BALANCE_SCRUB_RUNNING);
-                    return;
-                }
+                if ((NT_SUCCESS(Status2) || Status2 == STATUS_BUFFER_OVERFLOW) && bqs.status != BTRFS_SCRUB_STOPPED)
+                    throw string_error(IDS_BALANCE_SCRUB_RUNNING);
             }
 
             if (!NT_SUCCESS(Status)) {

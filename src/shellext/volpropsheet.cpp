@@ -849,8 +849,7 @@ INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 
                 if (!dev) {
                     EndDialog(hwndDlg, 0);
-                    ShowStringError(hwndDlg, IDS_CANNOT_FIND_DEVICE);
-                    return false;
+                    throw string_error(IDS_CANNOT_FIND_DEVICE);
                 }
 
                 GetDlgItemTextW(hwndDlg, IDC_DEVICE_ID, s, sizeof(s) / sizeof(WCHAR));

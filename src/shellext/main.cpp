@@ -61,28 +61,6 @@ void ShowError(HWND hwnd, ULONG err) {
     LocalFree(buf);
 }
 
-void ShowStringError(HWND hwndDlg, int num, ...) {
-    WCHAR title[255], s[1024], t[1024];
-    va_list ap;
-
-    if (!LoadStringW(module, IDS_ERROR, title, sizeof(title) / sizeof(WCHAR))) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
-
-    if (!LoadStringW(module, num, s, sizeof(s) / sizeof(WCHAR))) {
-        ShowError(hwndDlg, GetLastError());
-        return;
-    }
-
-    va_start(ap, num);
-    vswprintf(t, sizeof(t) / sizeof(WCHAR), s, ap);
-
-    MessageBoxW(hwndDlg, t, title, MB_ICONERROR);
-
-    va_end(ap);
-}
-
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
     _RtlNtStatusToDosError RtlNtStatusToDosError;
     HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
