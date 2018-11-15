@@ -163,41 +163,7 @@ bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** val
     return false;
 }
 
-bool BtrfsRecv::utf8_to_utf16(HWND hwnd, const string& utf8, wstring& utf16) {
-    NTSTATUS Status;
-    ULONG utf16len;
-    WCHAR* buf;
-
-    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.c_str(), utf8.length());
-    if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
-        return false;
-    }
-
-    buf = (WCHAR*)malloc(utf16len + sizeof(WCHAR));
-
-    if (!buf) {
-        ShowRecvError(IDS_OUT_OF_MEMORY);
-        return false;
-    }
-
-    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.c_str(), utf8.length());
-    if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
-        free(buf);
-        return false;
-    }
-
-    buf[utf16len / sizeof(WCHAR)] = 0;
-
-    utf16 = buf;
-
-    free(buf);
-
-    return true;
-}
-
-bool BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
+void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
     string name;
     BTRFS_UUID* uuid;
     uint64_t* gen;
@@ -211,39 +177,28 @@ bool BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
         char* namebuf;
         ULONG namelen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&namebuf, &namelen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&namebuf, &namelen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
         name = string(namebuf, namelen);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
 
-    if (uuidlen < sizeof(BTRFS_UUID)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
-        return false;
-    }
+    if (uuidlen < sizeof(BTRFS_UUID))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"transid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"transid");
 
-    if (genlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
-        return false;
-    }
+    if (genlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
 
     this->subvol_uuid = *uuid;
     this->stransid = *gen;
 
-    if (!utf8_to_utf16(hwnd, name, nameu))
-        return false;
+    utf8_to_utf16(name, nameu);
 
     bcslen = offsetof(btrfs_create_subvol, name[0]) + (nameu.length() * sizeof(WCHAR));
     bcs = (btrfs_create_subvol*)malloc(bcslen);
@@ -254,10 +209,8 @@ bool BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
     Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        return false;
-    }
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
     subvolpath = dirpath;
     subvolpath += L"\\";
@@ -271,32 +224,24 @@ bool BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
 
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (master == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (master == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        return false;
-    }
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
     dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
                       FILE_SHARE_READ | FILE_SHARE_WRITE,
                       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (dir == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (dir == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     subvolpath += L"\\";
 
     add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
 
     num_received++;
-
-    return true;
 }
 
 void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path) {
@@ -309,7 +254,7 @@ void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstrin
     cache.push_back(sc);
 }
 
-bool BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
+void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
     string name;
     BTRFS_UUID *uuid, *parent_uuid;
     uint64_t *gen, *parent_transid;
@@ -325,77 +270,53 @@ bool BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
         char* namebuf;
         ULONG namelen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&namebuf, &namelen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&namebuf, &namelen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
         name = string(namebuf, namelen);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
 
-    if (uuidlen < sizeof(BTRFS_UUID)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
-        return false;
-    }
+    if (uuidlen < sizeof(BTRFS_UUID))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"transid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"transid");
 
-    if (genlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
-        return false;
-    }
+    if (genlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&parent_uuid, &paruuidlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&parent_uuid, &paruuidlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
 
-    if (paruuidlen < sizeof(BTRFS_UUID)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", paruuidlen, sizeof(BTRFS_UUID));
-        return false;
-    }
+    if (paruuidlen < sizeof(BTRFS_UUID))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", paruuidlen, sizeof(BTRFS_UUID));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&parent_transid, &partransidlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&parent_transid, &partransidlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
 
-    if (partransidlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(uint64_t));
-        return false;
-    }
+    if (partransidlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(uint64_t));
 
     this->subvol_uuid = *uuid;
     this->stransid = *gen;
 
-    if (!utf8_to_utf16(hwnd, name, nameu))
-        return false;
+    utf8_to_utf16(name, nameu);
 
     bfs.uuid = *parent_uuid;
     bfs.ctransid = *parent_transid;
 
     Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
                              parpathw, sizeof(parpathw));
-    if (Status == STATUS_NOT_FOUND) {
-        ShowRecvError(IDS_RECV_CANT_FIND_PARENT_SUBVOL);
-        return false;
-    } else if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_FIND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        return false;
-    }
+    if (Status == STATUS_NOT_FOUND)
+        throw string_error(IDS_RECV_CANT_FIND_PARENT_SUBVOL);
+    else if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_FIND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
-    if (!GetVolumePathNameW(dirpath.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
-        ShowRecvError(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (!GetVolumePathNameW(dirpath.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1))
+        throw string_error(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     parpath = volpathw;
     if (parpath.substr(parpath.length() - 1) == L"\\")
@@ -406,10 +327,8 @@ bool BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
     {
         win_handle subvol = CreateFileW(parpath.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                         nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        if (subvol == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_PATH, parpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (subvol == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_PATH, parpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         bcslen = offsetof(btrfs_create_snapshot, name[0]) + (nameu.length() * sizeof(WCHAR));
         bcs = (btrfs_create_snapshot*)malloc(bcslen);
@@ -421,10 +340,8 @@ bool BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
         memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
         Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_CREATE_SNAPSHOT_FAILED, Status, format_ntstatus(Status).c_str());
-            return false;
-        }
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_RECV_CREATE_SNAPSHOT_FAILED, Status, format_ntstatus(Status).c_str());
     }
 
     subvolpath = dirpath;
@@ -439,35 +356,27 @@ bool BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
 
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (master == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (master == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        return false;
-    }
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
     dir = CreateFileW(subvolpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE,
                       FILE_SHARE_READ | FILE_SHARE_WRITE,
                       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (dir == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (dir == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     subvolpath += L"\\";
 
     add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
 
     num_received++;
-
-    return true;
 }
 
-bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t *inode, *rdev = nullptr, *mode = nullptr;
     ULONG inodelen, bmnsize;
     NTSTATUS Status;
@@ -479,58 +388,40 @@ bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* name;
         ULONG namelen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&name, &namelen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&name, &namelen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(name, namelen), nameu))
-            return false;
+        utf8_to_utf16(string(name, namelen), nameu);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_INODE, (void**)&inode, &inodelen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"inode");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_INODE, (void**)&inode, &inodelen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"inode");
 
-    if (inodelen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"inode", inodelen, sizeof(uint64_t));
-        return false;
-    }
+    if (inodelen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"inode", inodelen, sizeof(uint64_t));
 
     if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
         ULONG rdevlen, modelen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_RDEV, (void**)&rdev, &rdevlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"rdev");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_RDEV, (void**)&rdev, &rdevlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"rdev");
 
-        if (rdevlen < sizeof(uint64_t)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdev, sizeof(uint64_t));
-            return false;
-        }
+        if (rdevlen < sizeof(uint64_t))
+            throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdev, sizeof(uint64_t));
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"mode");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"mode");
 
-        if (modelen < sizeof(uint64_t)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
-            return false;
-        }
+        if (modelen < sizeof(uint64_t))
+            throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
     } else if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
         char* pathlink;
         ULONG pathlinklen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_LINK, (void**)&pathlink, &pathlinklen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path_link");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_LINK, (void**)&pathlink, &pathlinklen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path_link");
 
-        if (!utf8_to_utf16(hwnd, string(pathlink, pathlinklen), pathlinku))
-            return false;
+        utf8_to_utf16(string(pathlink, pathlinklen), pathlinku);
     }
 
     bmnsize = sizeof(btrfs_mknod) - sizeof(WCHAR) + (nameu.length() * sizeof(WCHAR));
@@ -555,9 +446,8 @@ bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
     Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_MKNOD_FAILED, Status, format_ntstatus(Status).c_str());
         free(bmn);
-        return false;
+        throw string_error(IDS_RECV_MKNOD_FAILED, Status, format_ntstatus(Status).c_str());
     }
 
     free(bmn);
@@ -587,16 +477,14 @@ bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         win_handle h = CreateFileW((subvolpath + nameu).c_str(), GENERIC_WRITE | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
             free(rdb);
-            return false;
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         }
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
             free(rdb);
-            return false;
+            throw string_error(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
         }
 
         free(rdb);
@@ -607,10 +495,8 @@ bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         bsii.st_mode = 0777;
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
-            return false;
-        }
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
     } else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
         uint64_t* mode;
         ULONG modelen;
@@ -618,17 +504,13 @@ bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
             btrfs_set_inode_info bsii;
 
-            if (modelen < sizeof(uint64_t)) {
-                ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
-                return false;
-            }
+            if (modelen < sizeof(uint64_t))
+                throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
 
             win_handle h = CreateFileW((subvolpath + nameu).c_str(), WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-            if (h == INVALID_HANDLE_VALUE) {
-                ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (h == INVALID_HANDLE_VALUE)
+                throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
             memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
@@ -636,91 +518,67 @@ bool BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
             bsii.st_mode = *mode;
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
-            if (!NT_SUCCESS(Status)) {
-                ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
-                return false;
-            }
+            if (!NT_SUCCESS(Status))
+                throw string_error(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
         }
     }
-
-    return true;
 }
 
-bool BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu, path_tou;
 
     {
         char* path;
         ULONG path_len;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &path_len)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &path_len))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, path_len), pathu))
-            return false;
+        utf8_to_utf16(string(path, path_len), pathu);
     }
 
     {
         char* path_to;
         ULONG path_to_len;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_TO, (void**)&path_to, &path_to_len)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path_to");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_TO, (void**)&path_to, &path_to_len))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path_to");
 
-        if (!utf8_to_utf16(hwnd, string(path_to, path_to_len), path_tou))
-            return false;
+        utf8_to_utf16(string(path_to, path_to_len), path_tou);
     }
 
-    if (!MoveFileW((subvolpath + pathu).c_str(), (subvolpath + path_tou).c_str())) {
-        ShowRecvError(IDS_RECV_MOVEFILE_FAILED, pathu.c_str(), path_tou.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
-
-    return true;
+    if (!MoveFileW((subvolpath + pathu).c_str(), (subvolpath + path_tou).c_str()))
+        throw string_error(IDS_RECV_MOVEFILE_FAILED, pathu.c_str(), path_tou.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-bool BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu, path_linku;
 
     {
         char* path;
         ULONG path_len;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &path_len)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &path_len))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, path_len), pathu))
-            return false;
+        utf8_to_utf16(string(path, path_len), pathu);
     }
 
     {
         char* path_link;
         ULONG path_link_len;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_LINK, (void**)&path_link, &path_link_len)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path_link");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH_LINK, (void**)&path_link, &path_link_len))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path_link");
 
-        if (!utf8_to_utf16(hwnd, string(path_link, path_link_len), path_linku))
-            return false;
+        utf8_to_utf16(string(path_link, path_link_len), path_linku);
     }
 
-    if (!CreateHardLinkW((subvolpath + pathu).c_str(), (subvolpath + path_linku).c_str(), nullptr)) {
-        ShowRecvError(IDS_RECV_CREATEHARDLINK_FAILED, pathu.c_str(), path_linku.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
-
-    return true;
+    if (!CreateHardLinkW((subvolpath + pathu).c_str(), (subvolpath + path_linku).c_str(), nullptr))
+        throw string_error(IDS_RECV_CREATEHARDLINK_FAILED, pathu.c_str(), path_linku.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-bool BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     ULONG att;
 
@@ -728,37 +586,26 @@ bool BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
     att = GetFileAttributesW((subvolpath + pathu).c_str());
-    if (att == INVALID_FILE_ATTRIBUTES) {
-        ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (att == INVALID_FILE_ATTRIBUTES)
+        throw string_error(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     if (att & FILE_ATTRIBUTE_READONLY) {
-        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
-            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY))
+            throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
     }
 
-    if (!DeleteFileW((subvolpath + pathu).c_str())) {
-        ShowRecvError(IDS_RECV_DELETEFILE_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
-
-    return true;
+    if (!DeleteFileW((subvolpath + pathu).c_str()))
+        throw string_error(IDS_RECV_DELETEFILE_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-bool BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     ULONG att;
 
@@ -766,37 +613,26 @@ bool BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
     att = GetFileAttributesW((subvolpath + pathu).c_str());
-    if (att == INVALID_FILE_ATTRIBUTES) {
-        ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (att == INVALID_FILE_ATTRIBUTES)
+        throw string_error(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     if (att & FILE_ATTRIBUTE_READONLY) {
-        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
-            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY))
+            throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
     }
 
-    if (!RemoveDirectoryW((subvolpath + pathu).c_str())) {
-        ShowRecvError(IDS_RECV_REMOVEDIRECTORY_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
-
-    return true;
+    if (!RemoveDirectoryW((subvolpath + pathu).c_str()))
+        throw string_error(IDS_RECV_REMOVEDIRECTORY_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-bool BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     string xattrname;
     uint8_t* xattrdata;
     ULONG xattrdatalen;
@@ -806,74 +642,56 @@ bool BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
     {
         char* xattrnamebuf;
         ULONG xattrnamelen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_NAME, (void**)&xattrnamebuf, &xattrnamelen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"xattr_name");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_NAME, (void**)&xattrnamebuf, &xattrnamelen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"xattr_name");
 
         xattrname = string(xattrnamebuf, xattrnamelen);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_DATA, (void**)&xattrdata, &xattrdatalen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"xattr_data");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_DATA, (void**)&xattrdata, &xattrdatalen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"xattr_data");
 
     if (xattrname.length() > XATTR_USER.length() && xattrname.substr(0, XATTR_USER.length()) == XATTR_USER &&
         xattrname != EA_DOSATTRIB && xattrname != EA_EA && xattrname != EA_REPARSE) {
         wstring streamname;
         ULONG att;
 
-        if (!utf8_to_utf16(hwnd, xattrname, streamname))
-            return false;
+        utf8_to_utf16(xattrname, streamname);
 
         att = GetFileAttributesW((subvolpath + pathu).c_str());
-        if (att == INVALID_FILE_ATTRIBUTES) {
-            ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (att == INVALID_FILE_ATTRIBUTES)
+            throw string_error(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         if (att & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY))
+                throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
 
         streamname = streamname.substr(XATTR_USER.length());
 
         win_handle h = CreateFileW((subvolpath + pathu + L":" + streamname).c_str(), GENERIC_WRITE, 0,
                                    nullptr, CREATE_ALWAYS, FILE_FLAG_POSIX_SEMANTICS, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_CREATE_FILE, (pathu + L":" + streamname).c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_CREATE_FILE, (pathu + L":" + streamname).c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         if (xattrdatalen > 0) {
-            if (!WriteFile(h, xattrdata, xattrdatalen, nullptr, nullptr)) {
-                ShowRecvError(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!WriteFile(h, xattrdata, xattrdatalen, nullptr, nullptr))
+                throw string_error(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
 
         if (att & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att))
+                throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
     } else {
         IO_STATUS_BLOCK iosb;
@@ -888,17 +706,13 @@ bool BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
 
         win_handle h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrname.length() + xattrdatalen;
         bsxa = (btrfs_set_xattr*)malloc(bsxalen);
-        if (!bsxa) {
-            ShowRecvError(IDS_OUT_OF_MEMORY);
-            return false;
-        }
+        if (!bsxa)
+            throw string_error(IDS_OUT_OF_MEMORY);
 
         bsxa->namelen = xattrname.length();
         bsxa->valuelen = xattrdatalen;
@@ -907,18 +721,15 @@ bool BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
             free(bsxa);
-            return false;
+            throw string_error(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
         }
 
         free(bsxa);
     }
-
-    return true;
 }
 
-bool BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     string xattrname;
 
@@ -926,23 +737,18 @@ bool BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
     {
         char* xattrnamebuf;
         ULONG xattrnamelen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_NAME, (void**)&xattrnamebuf, &xattrnamelen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"xattr_name");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_XATTR_NAME, (void**)&xattrnamebuf, &xattrnamelen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"xattr_name");
 
         xattrname = string(xattrnamebuf, xattrnamelen);
     }
@@ -951,34 +757,25 @@ bool BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
         ULONG att;
         wstring streamname;
 
-        if (!utf8_to_utf16(hwnd, xattrname, streamname))
-            return false;
+        utf8_to_utf16(xattrname, streamname);
 
         streamname = streamname.substr(XATTR_USER.length());
 
         att = GetFileAttributesW((subvolpath + pathu).c_str());
-        if (att == INVALID_FILE_ATTRIBUTES) {
-            ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (att == INVALID_FILE_ATTRIBUTES)
+            throw string_error(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         if (att & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY))
+                throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
 
-        if (!DeleteFileW((subvolpath + pathu + L":" + streamname).c_str())) {
-            ShowRecvError(IDS_RECV_DELETEFILE_FAILED, (pathu + L":" + streamname).c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!DeleteFileW((subvolpath + pathu + L":" + streamname).c_str()))
+            throw string_error(IDS_RECV_DELETEFILE_FAILED, (pathu + L":" + streamname).c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         if (att & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), att))
+                throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
     } else {
         IO_STATUS_BLOCK iosb;
@@ -993,17 +790,13 @@ bool BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
 
         win_handle h = CreateFileW((subvolpath + pathu).c_str(), perms, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrname.length();
         bsxa = (btrfs_set_xattr*)malloc(bsxalen);
-        if (!bsxa) {
-            ShowRecvError(IDS_OUT_OF_MEMORY);
-            return false;
-        }
+        if (!bsxa)
+            throw string_error(IDS_OUT_OF_MEMORY);
 
         bsxa->namelen = xattrname.length();
         bsxa->valuelen = 0;
@@ -1011,18 +804,15 @@ bool BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
             free(bsxa);
-            return false;
+            throw string_error(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
         }
 
         free(bsxa);
     }
-
-    return true;
 }
 
-bool BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t* offset;
     uint8_t* writedata;
     ULONG offsetlen, datalen;
@@ -1034,61 +824,44 @@ bool BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_OFFSET, (void**)&offset, &offsetlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"offset");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_OFFSET, (void**)&offset, &offsetlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"offset");
 
-    if (offsetlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(uint64_t));
-        return false;
-    }
+    if (offsetlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(uint64_t));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_DATA, (void**)&writedata, &datalen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"data");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_DATA, (void**)&writedata, &datalen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"data");
 
     if (lastwritepath != pathu) {
         FILE_BASIC_INFO fbi;
 
         if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt))
+                throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
 
         CloseHandle(lastwritefile);
 
         lastwriteatt = GetFileAttributesW((subvolpath + pathu).c_str());
-        if (lastwriteatt == INVALID_FILE_ATTRIBUTES) {
-            ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (lastwriteatt == INVALID_FILE_ATTRIBUTES)
+            throw string_error(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + pathu).c_str(), lastwriteatt & ~FILE_ATTRIBUTE_READONLY)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetFileAttributesW((subvolpath + pathu).c_str(), lastwriteatt & ~FILE_ATTRIBUTE_READONLY))
+                throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
 
         h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES, 0, nullptr, OPEN_EXISTING,
                         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         lastwritepath = pathu;
         lastwritefile = h;
@@ -1097,29 +870,21 @@ bool BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
         fbi.LastWriteTime.QuadPart = -1;
 
-        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
-            ShowRecvError(IDS_RECV_SETFILEINFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
+            throw string_error(IDS_RECV_SETFILEINFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
     } else
         h = lastwritefile;
 
     offli.QuadPart = *offset;
 
-    if (SetFilePointer(h, offli.LowPart, &offli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-        ShowRecvError(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (SetFilePointer(h, offli.LowPart, &offli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+        throw string_error(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
-    if (!WriteFile(h, writedata, datalen, nullptr, nullptr)) {
-        ShowRecvError(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
-
-    return true;
+    if (!WriteFile(h, writedata, datalen, nullptr, nullptr))
+        throw string_error(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 }
 
-bool BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t *offset, *cloneoffset, *clonetransid, *clonelen;
     BTRFS_UUID* cloneuuid;
     ULONG i, offsetlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
@@ -1132,81 +897,55 @@ bool BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     LARGE_INTEGER filesize;
     bool found = false;
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_OFFSET, (void**)&offset, &offsetlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"offset");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_OFFSET, (void**)&offset, &offsetlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"offset");
 
-    if (offsetlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(uint64_t));
-        return false;
-    }
+    if (offsetlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"offset", offsetlen, sizeof(uint64_t));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_LENGTH, (void**)&clonelen, &clonelenlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_len");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_LENGTH, (void**)&clonelen, &clonelenlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_len");
 
-    if (clonelenlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_len", clonelenlen, sizeof(uint64_t));
-        return false;
-    }
+    if (clonelenlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_len", clonelenlen, sizeof(uint64_t));
 
     {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&cloneuuid, &cloneuuidlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&cloneuuid, &cloneuuidlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
 
-    if (cloneuuidlen < sizeof(BTRFS_UUID)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", cloneuuidlen, sizeof(BTRFS_UUID));
-        return false;
-    }
+    if (cloneuuidlen < sizeof(BTRFS_UUID))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", cloneuuidlen, sizeof(BTRFS_UUID));
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&clonetransid, &clonetransidlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&clonetransid, &clonetransidlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
 
-    if (clonetransidlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", clonetransidlen, sizeof(uint64_t));
-        return false;
-    }
+    if (clonetransidlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", clonetransidlen, sizeof(uint64_t));
 
     {
         char* clonepath;
         ULONG clonepathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_PATH, (void**)&clonepath, &clonepathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_PATH, (void**)&clonepath, &clonepathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_path");
 
-        if (!utf8_to_utf16(hwnd, string(clonepath, clonepathlen), clonepathu))
-            return false;
+        utf8_to_utf16(string(clonepath, clonepathlen), clonepathu);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_OFFSET, (void**)&cloneoffset, &cloneoffsetlen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"clone_offset");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_OFFSET, (void**)&cloneoffset, &cloneoffsetlen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_offset");
 
-    if (cloneoffsetlen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"clone_offset", cloneoffsetlen, sizeof(uint64_t));
-        return false;
-    }
+    if (cloneoffsetlen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_offset", cloneoffsetlen, sizeof(uint64_t));
 
     for (i = 0; i < cache.size(); i++) {
         if (!memcmp(cloneuuid, &cache[i].uuid, sizeof(BTRFS_UUID)) && *clonetransid == cache[i].transid) {
@@ -1224,18 +963,13 @@ bool BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
         Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
                                  cloneparw, sizeof(cloneparw));
-        if (Status == STATUS_NOT_FOUND) {
-            ShowRecvError(IDS_RECV_CANT_FIND_CLONE_SUBVOL);
-            return false;
-        } else if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_FIND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-            return false;
-        }
+        if (Status == STATUS_NOT_FOUND)
+            throw string_error(IDS_RECV_CANT_FIND_CLONE_SUBVOL);
+        else if (!NT_SUCCESS(Status))
+            throw string_error(IDS_RECV_FIND_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
-        if (!GetVolumePathNameW(dirpath.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1)) {
-            ShowRecvError(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!GetVolumePathNameW(dirpath.c_str(), volpathw, (sizeof(volpathw) / sizeof(WCHAR)) - 1))
+            throw string_error(IDS_RECV_GETVOLUMEPATHNAME_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         clonepar = volpathw;
         if (clonepar.substr(clonepar.length() - 1) == L"\\")
@@ -1250,37 +984,27 @@ bool BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     {
         win_handle src = CreateFileW((clonepar + clonepathu).c_str(), FILE_READ_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-        if (src == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, (clonepar + clonepathu).c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (src == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, (clonepar + clonepathu).c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         win_handle dest = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-        if (dest == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (dest == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
-        if (!GetFileSizeEx(dest, &filesize)) {
-            ShowRecvError(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!GetFileSizeEx(dest, &filesize))
+            throw string_error(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         if ((uint64_t)filesize.QuadPart < *offset + *clonelen) {
             LARGE_INTEGER sizeli;
 
             sizeli.QuadPart = *offset + *clonelen;
 
-            if (SetFilePointer(dest, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-                ShowRecvError(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (SetFilePointer(dest, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+                throw string_error(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
-            if (!SetEndOfFile(dest)) {
-                ShowRecvError(IDS_RECV_SETENDOFFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            if (!SetEndOfFile(dest))
+                throw string_error(IDS_RECV_SETENDOFFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
         }
 
         ded.FileHandle = src;
@@ -1289,17 +1013,13 @@ bool BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         ded.ByteCount.QuadPart = *clonelen;
 
         Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_DUPLICATE_EXTENTS_TO_FILE, &ded, sizeof(DUPLICATE_EXTENTS_DATA),
-                                nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_DUPLICATE_EXTENTS_FAILED, Status, format_ntstatus(Status).c_str());
-            return false;
-        }
+                                 nullptr, 0);
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_RECV_DUPLICATE_EXTENTS_FAILED, Status, format_ntstatus(Status).c_str());
     }
-
-    return true;
 }
 
-bool BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t* size;
     ULONG sizelen;
     wstring pathu;
@@ -1310,71 +1030,50 @@ bool BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_SIZE, (void**)&size, &sizelen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"size");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_SIZE, (void**)&size, &sizelen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"size");
 
-    if (sizelen < sizeof(uint64_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"size", sizelen, sizeof(uint64_t));
-        return false;
-    }
+    if (sizelen < sizeof(uint64_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"size", sizelen, sizeof(uint64_t));
 
     att = GetFileAttributesW((subvolpath + pathu).c_str());
-    if (att == INVALID_FILE_ATTRIBUTES) {
-        ShowRecvError(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (att == INVALID_FILE_ATTRIBUTES)
+        throw string_error(IDS_RECV_GETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     if (att & FILE_ATTRIBUTE_READONLY) {
-        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY)) {
-            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att & ~FILE_ATTRIBUTE_READONLY))
+            throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
     }
 
     {
         win_handle h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_DATA, 0, nullptr, OPEN_EXISTING,
                                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
 
-        if (h == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (h == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
         sizeli.QuadPart = *size;
 
-        if (SetFilePointer(h, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-            ShowRecvError(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (SetFilePointer(h, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+            throw string_error(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
-        if (!SetEndOfFile(h)) {
-            ShowRecvError(IDS_RECV_SETENDOFFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!SetEndOfFile(h))
+            throw string_error(IDS_RECV_SETENDOFFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
     }
 
     if (att & FILE_ATTRIBUTE_READONLY) {
-        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att)) {
-            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            return false;
-        }
+        if (!SetFileAttributesW((subvolpath + pathu).c_str(), att))
+            throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
     }
-
-    return true;
 }
 
-bool BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     win_handle h;
     uint32_t* mode;
     ULONG modelen;
@@ -1387,31 +1086,22 @@ bool BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
-    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen)) {
-        ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"mode");
-        return false;
-    }
+    if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_MODE, (void**)&mode, &modelen))
+        throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"mode");
 
-    if (modelen < sizeof(uint32_t)) {
-        ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint32_t));
-        return false;
-    }
+    if (modelen < sizeof(uint32_t))
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint32_t));
 
     h = CreateFileW((subvolpath + pathu).c_str(), WRITE_DAC, 0, nullptr, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (h == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
@@ -1419,15 +1109,11 @@ bool BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     bsii.st_mode = *mode;
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
-    if (!NT_SUCCESS(Status)) {
-        ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
-        return false;
-    }
-
-    return true;
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
 }
 
-bool BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     win_handle h;
     uint32_t *uid, *gid;
     ULONG uidlen, gidlen;
@@ -1438,39 +1124,30 @@ bool BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES | WRITE_OWNER | WRITE_DAC, 0, nullptr, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (h == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_UID, (void**)&uid, &uidlen)) {
-        if (uidlen < sizeof(uint32_t)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"uid", uidlen, sizeof(uint32_t));
-            return false;
-        }
+        if (uidlen < sizeof(uint32_t))
+            throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uid", uidlen, sizeof(uint32_t));
 
         bsii.uid_changed = true;
         bsii.st_uid = *uid;
     }
 
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_GID, (void**)&gid, &gidlen)) {
-        if (gidlen < sizeof(uint32_t)) {
-            ShowRecvError(IDS_RECV_SHORT_PARAM, funcname, L"gid", gidlen, sizeof(uint32_t));
-            return false;
-        }
+        if (gidlen < sizeof(uint32_t))
+            throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"gid", gidlen, sizeof(uint32_t));
 
         bsii.gid_changed = true;
         bsii.st_gid = *gid;
@@ -1481,20 +1158,16 @@ bool BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         IO_STATUS_BLOCK iosb;
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
-            return false;
-        }
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
     }
-
-    return true;
 }
 
 static __inline uint64_t unix_time_to_win(BTRFS_TIME* t) {
     return (t->seconds * 10000000) + (t->nanoseconds / 100) + 116444736000000000;
 }
 
-bool BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     win_handle h;
     FILE_BASIC_INFO fbi;
@@ -1505,21 +1178,16 @@ bool BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         char* path;
         ULONG pathlen;
 
-        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen)) {
-            ShowRecvError(IDS_RECV_MISSING_PARAM, funcname, L"path");
-            return false;
-        }
+        if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_PATH, (void**)&path, &pathlen))
+            throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"path");
 
-        if (!utf8_to_utf16(hwnd, string(path, pathlen), pathu))
-            return false;
+        utf8_to_utf16(string(path, pathlen), pathu);
     }
 
     h = CreateFileW((subvolpath + pathu).c_str(), FILE_WRITE_ATTRIBUTES, 0, nullptr, OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+    if (h == INVALID_HANDLE_VALUE)
+        throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
     memset(&fbi, 0, sizeof(FILE_BASIC_INFO));
 
@@ -1535,34 +1203,8 @@ bool BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_CTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
         fbi.ChangeTime.QuadPart = unix_time_to_win(time);
 
-    if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO))) {
-        ShowRecvError(IDS_RECV_SETFILEINFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
-
-    return true;
-}
-
-void BtrfsRecv::ShowRecvError(int resid, ...) {
-    WCHAR s[1024], t[1024];
-    va_list ap;
-
-    if (!hwnd)
-        return;
-
-    if (!LoadStringW(module, resid, s, sizeof(s) / sizeof(WCHAR))) {
-        ShowError(hwnd, GetLastError());
-        return;
-    }
-
-    va_start(ap, resid);
-    vswprintf(t, sizeof(t) / sizeof(WCHAR), s, ap);
-
-    SetDlgItemTextW(hwnd, IDC_RECV_MSG, t);
-
-    va_end(ap);
-
-    SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
+    if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
+        throw string_error(IDS_RECV_SETFILEINFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 }
 
 static void delete_directory(const wstring& dir) {
@@ -1608,275 +1250,247 @@ static bool check_csum(btrfs_send_command* cmd, uint8_t* data) {
     return calc == crc32 ? true : false;
 }
 
-bool BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent) {
-    btrfs_send_header header;
-    bool b = true, ended = false;
+void BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent) {
+    try {
+        btrfs_send_header header;
+        bool ended = false;
 
-    if (!ReadFile(f, &header, sizeof(btrfs_send_header), nullptr, nullptr)) {
-        ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        return false;
-    }
+        if (!ReadFile(f, &header, sizeof(btrfs_send_header), nullptr, nullptr))
+            throw string_error(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
-    *pos += sizeof(btrfs_send_header);
+        *pos += sizeof(btrfs_send_header);
 
-    if (memcmp(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic))) {
-        ShowRecvError(IDS_RECV_NOT_A_SEND_STREAM);
-        return false;
-    }
+        if (memcmp(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic)))
+            throw string_error(IDS_RECV_NOT_A_SEND_STREAM);
 
-    if (header.version > 1) {
-        ShowRecvError(IDS_RECV_UNSUPPORTED_VERSION, header.version);
-        return false;
-    }
+        if (header.version > 1)
+            throw string_error(IDS_RECV_UNSUPPORTED_VERSION, header.version);
 
-    SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)65536);
+        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETRANGE32, 0, (LPARAM)65536);
 
-    lastwritefile = INVALID_HANDLE_VALUE;
-    lastwritepath = L"";
-    lastwriteatt = 0;
+        lastwritefile = INVALID_HANDLE_VALUE;
+        lastwritepath = L"";
+        lastwriteatt = 0;
 
-    while (true) {
-        btrfs_send_command cmd;
-        uint8_t* data;
-        ULONG progress;
+        while (true) {
+            btrfs_send_command cmd;
+            uint8_t* data = nullptr;
+            ULONG progress;
 
-        if (cancelling) {
-            b = false;
-            break;
-        }
+            if (cancelling)
+                break;
 
-        progress = (ULONG)((float)*pos * 65536.0f / (float)size);
-        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, progress, 0);
+            progress = (ULONG)((float)*pos * 65536.0f / (float)size);
+            SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, progress, 0);
 
-        if (!ReadFile(f, &cmd, sizeof(btrfs_send_command), nullptr, nullptr)) {
-            if (GetLastError() != ERROR_HANDLE_EOF) {
-                ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            if (!ReadFile(f, &cmd, sizeof(btrfs_send_command), nullptr, nullptr)) {
+                if (GetLastError() != ERROR_HANDLE_EOF)
+                    throw string_error(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+
                 break;
             }
 
-            break;
-        }
+            *pos += sizeof(btrfs_send_command);
 
-        *pos += sizeof(btrfs_send_command);
+            if (cmd.length > 0) {
+                if (*pos + cmd.length > size)
+                    throw string_error(IDS_RECV_FILE_TRUNCATED);
 
-        if (cmd.length > 0) {
-            if (*pos + cmd.length > size) {
-                ShowRecvError(IDS_RECV_FILE_TRUNCATED);
-                b = false;
-                break;
+                data = (uint8_t*)malloc(cmd.length);
+                if (!data)
+                    throw string_error(IDS_OUT_OF_MEMORY);
             }
 
-            data = (uint8_t*)malloc(cmd.length);
-            if (!data) {
-                ShowRecvError(IDS_OUT_OF_MEMORY);
-                b = false;
-                break;
-            }
+            try {
+                if (data) {
+                    if (!ReadFile(f, data, cmd.length, nullptr, nullptr))
+                        throw string_error(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
-            if (!ReadFile(f, data, cmd.length, nullptr, nullptr)) {
-                ShowRecvError(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                free(data);
-                b = false;
-                break;
-            }
-
-            *pos += cmd.length;
-        } else
-            data = nullptr;
-
-        if (!check_csum(&cmd, data)) {
-            ShowRecvError(IDS_RECV_CSUM_ERROR);
-            if (data) free(data);
-            b = false;
-            break;
-        }
-
-        if (cmd.cmd == BTRFS_SEND_CMD_END) {
-            if (data) free(data);
-            ended = true;
-            break;
-        }
-
-        if (lastwritefile != INVALID_HANDLE_VALUE && cmd.cmd != BTRFS_SEND_CMD_WRITE) {
-            if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
-                if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt)) {
-                    ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                    return false;
+                    *pos += cmd.length;
                 }
+
+                if (!check_csum(&cmd, data))
+                    throw string_error(IDS_RECV_CSUM_ERROR);
+
+                if (cmd.cmd == BTRFS_SEND_CMD_END) {
+                    ended = true;
+                    break;
+                }
+
+                if (lastwritefile != INVALID_HANDLE_VALUE && cmd.cmd != BTRFS_SEND_CMD_WRITE) {
+                    if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
+                        if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt))
+                            throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                    }
+
+                    CloseHandle(lastwritefile);
+
+                    lastwritefile = INVALID_HANDLE_VALUE;
+                    lastwritepath = L"";
+                    lastwriteatt = 0;
+                }
+
+                switch (cmd.cmd) {
+                    case BTRFS_SEND_CMD_SUBVOL:
+                        cmd_subvol(hwnd, &cmd, data, parent);
+                    break;
+
+                    case BTRFS_SEND_CMD_SNAPSHOT:
+                        cmd_snapshot(hwnd, &cmd, data, parent);
+                    break;
+
+                    case BTRFS_SEND_CMD_MKFILE:
+                    case BTRFS_SEND_CMD_MKDIR:
+                    case BTRFS_SEND_CMD_MKNOD:
+                    case BTRFS_SEND_CMD_MKFIFO:
+                    case BTRFS_SEND_CMD_MKSOCK:
+                    case BTRFS_SEND_CMD_SYMLINK:
+                        cmd_mkfile(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_RENAME:
+                        cmd_rename(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_LINK:
+                        cmd_link(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_UNLINK:
+                        cmd_unlink(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_RMDIR:
+                        cmd_rmdir(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_SET_XATTR:
+                        cmd_setxattr(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_REMOVE_XATTR:
+                        cmd_removexattr(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_WRITE:
+                        cmd_write(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_CLONE:
+                        cmd_clone(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_TRUNCATE:
+                        cmd_truncate(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_CHMOD:
+                        cmd_chmod(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_CHOWN:
+                        cmd_chown(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_UTIMES:
+                        cmd_utimes(hwnd, &cmd, data);
+                    break;
+
+                    case BTRFS_SEND_CMD_UPDATE_EXTENT:
+                        // does nothing
+                    break;
+
+                    default:
+                        throw string_error(IDS_RECV_UNKNOWN_COMMAND, cmd.cmd);
+                }
+            } catch (...) {
+                if (data) free(data);
+                throw;
+            }
+
+            if (data) free(data);
+        }
+
+        if (lastwritefile != INVALID_HANDLE_VALUE) {
+            if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
+                if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt))
+                    throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
             }
 
             CloseHandle(lastwritefile);
-
-            lastwritefile = INVALID_HANDLE_VALUE;
-            lastwritepath = L"";
-            lastwriteatt = 0;
         }
 
-        switch (cmd.cmd) {
-            case BTRFS_SEND_CMD_SUBVOL:
-                b = cmd_subvol(hwnd, &cmd, data, parent);
-            break;
+        if (!ended && !cancelling)
+            throw string_error(IDS_RECV_FILE_TRUNCATED);
 
-            case BTRFS_SEND_CMD_SNAPSHOT:
-                b = cmd_snapshot(hwnd, &cmd, data, parent);
-            break;
+        if (!cancelling) {
+            NTSTATUS Status;
+            IO_STATUS_BLOCK iosb;
+            btrfs_received_subvol brs;
 
-            case BTRFS_SEND_CMD_MKFILE:
-            case BTRFS_SEND_CMD_MKDIR:
-            case BTRFS_SEND_CMD_MKNOD:
-            case BTRFS_SEND_CMD_MKFIFO:
-            case BTRFS_SEND_CMD_MKSOCK:
-            case BTRFS_SEND_CMD_SYMLINK:
-                b = cmd_mkfile(hwnd, &cmd, data);
-            break;
+            brs.generation = stransid;
+            brs.uuid = subvol_uuid;
 
-            case BTRFS_SEND_CMD_RENAME:
-                b = cmd_rename(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_LINK:
-                b = cmd_link(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_UNLINK:
-                b = cmd_unlink(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_RMDIR:
-                b = cmd_rmdir(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_SET_XATTR:
-                b = cmd_setxattr(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_REMOVE_XATTR:
-                b = cmd_removexattr(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_WRITE:
-                b = cmd_write(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_CLONE:
-                b = cmd_clone(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_TRUNCATE:
-                b = cmd_truncate(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_CHMOD:
-                b = cmd_chmod(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_CHOWN:
-                b = cmd_chown(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_UTIMES:
-                b = cmd_utimes(hwnd, &cmd, data);
-            break;
-
-            case BTRFS_SEND_CMD_UPDATE_EXTENT:
-                // does nothing
-            break;
-
-            default:
-                ShowRecvError(IDS_RECV_UNKNOWN_COMMAND, cmd.cmd);
-                b = false;
-            break;
+            Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
+                                    nullptr, 0);
+            if (!NT_SUCCESS(Status))
+                throw string_error(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
         }
 
-        if (data) free(data);
+        CloseHandle(dir);
 
-        if (!b)
-            break;
-    }
+        if (master != INVALID_HANDLE_VALUE)
+            CloseHandle(master);
+    } catch (...) {
+        if (subvolpath != L"") {
+            ULONG attrib;
 
-    if (lastwritefile != INVALID_HANDLE_VALUE) {
-        if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
-            if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt)) {
-                ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-                return false;
-            }
+            attrib = GetFileAttributesW(subvolpath.c_str());
+            attrib &= ~FILE_ATTRIBUTE_READONLY;
+
+            if (SetFileAttributesW(subvolpath.c_str(), attrib))
+                delete_directory(subvolpath);
         }
 
-        CloseHandle(lastwritefile);
+        throw;
     }
-
-    if (b && !ended) {
-        ShowRecvError(IDS_RECV_FILE_TRUNCATED);
-        b = false;
-    }
-
-    if (b) {
-        NTSTATUS Status;
-        IO_STATUS_BLOCK iosb;
-        btrfs_received_subvol brs;
-
-        brs.generation = stransid;
-        brs.uuid = subvol_uuid;
-
-        Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
-                                 nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowRecvError(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-            b = false;
-        }
-    }
-
-    CloseHandle(dir);
-
-    if (master != INVALID_HANDLE_VALUE)
-        CloseHandle(master);
-
-    if (!b && subvolpath != L"") {
-        ULONG attrib;
-
-        attrib = GetFileAttributesW(subvolpath.c_str());
-        attrib &= ~FILE_ATTRIBUTE_READONLY;
-
-        if (!SetFileAttributesW(subvolpath.c_str(), attrib))
-            ShowRecvError(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-        else
-            delete_directory(subvolpath);
-    }
-
-    return b;
 }
 
 DWORD BtrfsRecv::recv_thread() {
     LARGE_INTEGER size;
     uint64_t pos = 0;
-    bool b;
+    bool b = true;
 
     running = true;
 
-    {
+    try {
         win_handle f = CreateFileW(streamfile.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-        if (f == INVALID_HANDLE_VALUE) {
-            ShowRecvError(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-            goto end;
-        }
+        if (f == INVALID_HANDLE_VALUE)
+            throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, streamfile.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
-        if (!GetFileSizeEx(f, &size)) {
-            ShowRecvError(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
-            goto end;
-        }
+        if (!GetFileSizeEx(f, &size))
+            throw string_error(IDS_RECV_GETFILESIZEEX_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         {
             win_handle parent = CreateFileW(dirpath.c_str(), FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                             nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
-            if (parent == INVALID_HANDLE_VALUE) {
-                ShowRecvError(IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
-                goto end;
-            }
+            if (parent == INVALID_HANDLE_VALUE)
+                throw string_error(IDS_RECV_CANT_OPEN_PATH, dirpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
             do {
-                b = do_recv(f, &pos, size.QuadPart, parent);
-            } while (b && pos < (uint64_t)size.QuadPart);
+                do_recv(f, &pos, size.QuadPart, parent);
+            } while (pos < (uint64_t)size.QuadPart);
         }
+    } catch (const exception& e) {
+        wstring msg;
+
+        utf8_to_utf16(e.what(), msg);
+
+        SetDlgItemTextW(hwnd, IDC_RECV_MSG, msg.c_str());
+
+        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
+
+        b = false;
     }
 
     if (b && hwnd) {
@@ -1907,7 +1521,6 @@ DWORD BtrfsRecv::recv_thread() {
             SetDlgItemTextW(hwnd, IDCANCEL, s.c_str());
     }
 
-end:
     thread = nullptr;
     running = false;
 
@@ -1923,11 +1536,21 @@ static DWORD WINAPI global_recv_thread(LPVOID lpParameter) {
 INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_INITDIALOG:
-            this->hwnd = hwndDlg;
-            thread = CreateThread(nullptr, 0, global_recv_thread, this, 0, nullptr);
+            try {
+                this->hwnd = hwndDlg;
+                thread = CreateThread(nullptr, 0, global_recv_thread, this, 0, nullptr);
 
-            if (!thread)
-                ShowRecvError(IDS_RECV_CREATETHREAD_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+                if (!thread)
+                    throw string_error(IDS_RECV_CREATETHREAD_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+            } catch (const exception& e) {
+                wstring msg;
+
+                utf8_to_utf16(e.what(), msg);
+
+                SetDlgItemTextW(hwnd, IDC_RECV_MSG, msg.c_str());
+
+                SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
+            }
         break;
 
         case WM_COMMAND:
