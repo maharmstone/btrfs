@@ -46,7 +46,6 @@ private:
     void BrowseParent(HWND hwnd);
     void AddClone(HWND hwnd);
     void RemoveClone(HWND hwnd);
-    void ShowSendError(UINT msg, ...);
 
     bool started;
     bool incremental;
