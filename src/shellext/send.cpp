@@ -289,7 +289,7 @@ void BtrfsSend::StartSend(HWND hwnd) {
     thread = CreateThread(nullptr, 0, send_thread, this, 0, nullptr);
 
     if (!thread)
-        ShowError(nullptr, GetLastError());
+        throw last_error(GetLastError());
 }
 
 void BtrfsSend::Browse(HWND hwnd) {
@@ -522,7 +522,7 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
     subvol = path;
 
     if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SEND_SUBVOL), hwnd, stub_SendDlgProc, (LPARAM)this) <= 0)
-        ShowError(hwnd, GetLastError());
+        throw last_error(GetLastError());
 }
 
 void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {

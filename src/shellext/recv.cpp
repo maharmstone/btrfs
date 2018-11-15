@@ -20,6 +20,7 @@
 #include <strsafe.h>
 #include <stddef.h>
 #include <sys/stat.h>
+#include <iostream>
 #include "recv.h"
 #include "resource.h"
 
@@ -1499,26 +1500,21 @@ DWORD BtrfsRecv::recv_thread() {
         SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 65536, 0);
 
         if (num_received == 1) {
-            if (!load_string(module, IDS_RECV_SUCCESS, s))
-                ShowError(hwnd, GetLastError());
-            else
-                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s.c_str());
+            load_string(module, IDS_RECV_SUCCESS, s);
+            SetDlgItemTextW(hwnd, IDC_RECV_MSG, s.c_str());
         } else {
-            if (!load_string(module, IDS_RECV_SUCCESS_PLURAL, s))
-                ShowError(hwnd, GetLastError());
-            else {
-                wstring t;
+            wstring t;
 
-                wstring_sprintf(t, s, num_received);
+            load_string(module, IDS_RECV_SUCCESS_PLURAL, s);
 
-                SetDlgItemTextW(hwnd, IDC_RECV_MSG, t.c_str());
-            }
+            wstring_sprintf(t, s, num_received);
+
+            SetDlgItemTextW(hwnd, IDC_RECV_MSG, t.c_str());
         }
 
-        if (!load_string(module, IDS_RECV_BUTTON_OK, s))
-            ShowError(hwnd, GetLastError());
-        else
-            SetDlgItemTextW(hwnd, IDCANCEL, s.c_str());
+        load_string(module, IDS_RECV_BUTTON_OK, s);
+
+        SetDlgItemTextW(hwnd, IDCANCEL, s.c_str());
     }
 
     thread = nullptr;
@@ -1564,18 +1560,14 @@ INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
 
                                 cancelling = true;
 
-                                if (!LoadStringW(module, IDS_RECV_CANCELLED, s, sizeof(s) / sizeof(WCHAR))) {
-                                    ShowError(hwndDlg, GetLastError());
-                                    return false;
-                                }
+                                if (!LoadStringW(module, IDS_RECV_CANCELLED, s, sizeof(s) / sizeof(WCHAR)))
+                                    throw last_error(GetLastError());
 
                                 SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
                                 SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 0, 0);
 
-                                if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR))) {
-                                    ShowError(hwndDlg, GetLastError());
-                                    return false;
-                                }
+                                if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
+                                    throw last_error(GetLastError());
 
                                 SetDlgItemTextW(hwnd, IDCANCEL, s);
                             } else
@@ -1626,7 +1618,7 @@ void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool q
         recv_thread();
     else {
         if (DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RECV_PROGRESS), hwnd, stub_RecvProgressDlgProc, (LPARAM)this) <= 0)
-            ShowError(hwnd, GetLastError());
+            throw last_error(GetLastError());
     }
 }
 
@@ -1703,58 +1695,62 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 }
 
 void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
-    vector<wstring> args;
+    try {
+        vector<wstring> args;
 
-    command_line_to_args(lpszCmdLine, args);
+        command_line_to_args(lpszCmdLine, args);
 
-    if (args.size() >= 2) {
-        win_handle token;
-        TOKEN_PRIVILEGES* tp;
-        ULONG tplen;
-        LUID luid;
+        if (args.size() >= 2) {
+            win_handle token;
+            TOKEN_PRIVILEGES* tp;
+            ULONG tplen;
+            LUID luid;
 
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
-            return;
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+                return;
 
-        tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
-        tp = (TOKEN_PRIVILEGES*)malloc(tplen);
-        if (!tp)
-            return;
+            tplen = offsetof(TOKEN_PRIVILEGES, Privileges[0]) + (3 * sizeof(LUID_AND_ATTRIBUTES));
+            tp = (TOKEN_PRIVILEGES*)malloc(tplen);
+            if (!tp)
+                return;
 
-        tp->PrivilegeCount = 3;
+            tp->PrivilegeCount = 3;
 
-        if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
+            if (!LookupPrivilegeValueW(nullptr, L"SeManageVolumePrivilege", &luid)) {
+                free(tp);
+                return;
+            }
+
+            tp->Privileges[0].Luid = luid;
+            tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+            if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
+                free(tp);
+                return;
+            }
+
+            tp->Privileges[1].Luid = luid;
+            tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
+
+            if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
+                free(tp);
+                return;
+            }
+
+            tp->Privileges[2].Luid = luid;
+            tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
+
+            if (!AdjustTokenPrivileges(token, false, tp, tplen, nullptr, nullptr)) {
+                free(tp);
+                return;
+            }
+
             free(tp);
-            return;
+
+            BtrfsRecv br;
+            br.Open(nullptr, args[0], args[1], true);
         }
-
-        tp->Privileges[0].Luid = luid;
-        tp->Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-        if (!LookupPrivilegeValueW(nullptr, L"SeSecurityPrivilege", &luid)) {
-            free(tp);
-            return;
-        }
-
-        tp->Privileges[1].Luid = luid;
-        tp->Privileges[1].Attributes = SE_PRIVILEGE_ENABLED;
-
-        if (!LookupPrivilegeValueW(nullptr, L"SeRestorePrivilege", &luid)) {
-            free(tp);
-            return;
-        }
-
-        tp->Privileges[2].Luid = luid;
-        tp->Privileges[2].Attributes = SE_PRIVILEGE_ENABLED;
-
-        if (!AdjustTokenPrivileges(token, false, tp, tplen, nullptr, nullptr)) {
-            free(tp);
-            return;
-        }
-
-        free(tp);
-
-        BtrfsRecv br;
-        br.Open(nullptr, args[0], args[1], true);
+    } catch (const exception& e) {
+        cerr << "Error: " << e.what() << endl;
     }
 }

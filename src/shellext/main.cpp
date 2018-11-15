@@ -47,20 +47,6 @@ typedef HRESULT (WINAPI *_SetProcessDpiAwareness)(PROCESS_DPI_AWARENESS value);
 HMODULE module;
 LONG objs_loaded = 0;
 
-void ShowError(HWND hwnd, ULONG err) {
-    WCHAR* buf;
-
-    if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-                       err, 0, (WCHAR*)&buf, 0, nullptr) == 0) {
-        MessageBoxW(hwnd, L"FormatMessage failed", L"Error", MB_ICONERROR);
-        return;
-    }
-
-    MessageBoxW(hwnd, buf, L"Error", MB_ICONERROR);
-
-    LocalFree(buf);
-}
-
 void set_dpi_aware() {
     _SetProcessDpiAwareness SetProcessDpiAwareness;
     HMODULE shcore = LoadLibraryW(L"shcore.dll");
@@ -117,20 +103,16 @@ void format_size(uint64_t size, wstring& s, bool show_bytes) {
     GetNumberFormatW(LOCALE_USER_DEFAULT, 0, nb, &fmt, nb2, sizeof(nb2) / sizeof(WCHAR));
 
     if (size < 1024) {
-        if (!load_string(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t)) {
-            ShowError(nullptr, GetLastError());
-            return;
-        }
+        if (!load_string(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t))
+            throw last_error(GetLastError());
 
         wstring_sprintf(s, t, nb2);
         return;
     }
 
     if (show_bytes) {
-        if (!load_string(module, IDS_SIZE_BYTES, t)) {
-            ShowError(nullptr, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_SIZE_BYTES, t))
+            throw last_error(GetLastError());
 
         wstring_sprintf(bytes, t, nb2);
     }
@@ -155,18 +137,14 @@ void format_size(uint64_t size, wstring& s, bool show_bytes) {
         f = (float)size / 1024.0f;
     }
 
-    if (!load_string(module, sr, t)) {
-        ShowError(nullptr, GetLastError());
-        return;
-    }
+    if (!load_string(module, sr, t))
+        throw last_error(GetLastError());
 
     if (show_bytes) {
         wstring_sprintf(kb, t, f);
 
-        if (!load_string(module, IDS_SIZE_LARGE, t)) {
-            ShowError(nullptr, GetLastError());
-            return;
-        }
+        if (!load_string(module, IDS_SIZE_LARGE, t))
+            throw last_error(GetLastError());
 
         wstring_sprintf(s, t, kb.c_str(), bytes.c_str());
     } else

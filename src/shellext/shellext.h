@@ -298,7 +298,6 @@ private:
 };
 
 extern HMODULE module;
-void ShowError(HWND hwnd, ULONG err);
 void format_size(uint64_t size, wstring& s, bool show_bytes);
 void set_dpi_aware();
 wstring format_message(ULONG last_error);

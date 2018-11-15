@@ -659,41 +659,45 @@ void BtrfsPropSheet::update_size_details_dialog(HWND hDlg) {
 }
 
 static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_INITDIALOG:
-        {
-            BtrfsPropSheet* bps = (BtrfsPropSheet*)lParam;
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)lParam;
 
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+                SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
-            bps->update_size_details_dialog(hwndDlg);
-
-            if (bps->thread)
-                SetTimer(hwndDlg, 1, 250, nullptr);
-
-            return true;
-        }
-
-        case WM_COMMAND:
-            if (HIWORD(wParam) == BN_CLICKED && (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)) {
-                EndDialog(hwndDlg, 0);
-                return true;
-            }
-        break;
-
-        case WM_TIMER:
-        {
-            BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
-
-            if (bps) {
                 bps->update_size_details_dialog(hwndDlg);
 
-                if (!bps->thread)
-                    KillTimer(hwndDlg, 1);
+                if (bps->thread)
+                    SetTimer(hwndDlg, 1, 250, nullptr);
+
+                return true;
             }
 
+            case WM_COMMAND:
+                if (HIWORD(wParam) == BN_CLICKED && (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)) {
+                    EndDialog(hwndDlg, 0);
+                    return true;
+                }
             break;
+
+            case WM_TIMER:
+            {
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+
+                if (bps) {
+                    bps->update_size_details_dialog(hwndDlg);
+
+                    if (!bps->thread)
+                        KillTimer(hwndDlg, 1);
+                }
+
+                break;
+            }
         }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
     }
 
     return false;
