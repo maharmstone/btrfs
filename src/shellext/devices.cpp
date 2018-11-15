@@ -362,10 +362,9 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
 
         Status = NtOpenFile(&mountmgr, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
                             FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
-        if (!NT_SUCCESS(Status)) {
-            MessageBoxW(hwnd, L"Could not get handle to mount manager.", L"Error", MB_ICONERROR);
-            return;
-        }
+
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_CANT_OPEN_MOUNTMGR);
 
         {
             nt_handle btrfsh;
@@ -501,10 +500,8 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             tis.itemex.lParam = (LPARAM)&device_list[i];
 
             item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);
-            if (!item) {
-                MessageBoxW(hwnd, L"TVM_INSERTITEM failed", L"Error", MB_ICONERROR);
-                return;
-            }
+            if (!item)
+                throw string_error(IDS_TVM_INSERTITEM_FAILED);
 
             if (device_list[i].part_num == 0) {
                 diskitem = item;
@@ -564,21 +561,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
 
         if (!sel->is_disk) {
             Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0);
-            if (!NT_SUCCESS(Status)) {
-                wstring t, u, title;
-
-                if (!load_string(module, IDS_LOCK_FAILED, t))
-                    throw last_error(GetLastError());
-
-                wstring_sprintf(u, t, Status);
-
-                if (!load_string(module, IDS_ERROR, title))
-                    throw last_error(GetLastError());
-
-                MessageBoxW(hwndDlg, u.c_str(), title.c_str(), MB_ICONERROR);
-
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw string_error(IDS_LOCK_FAILED, Status);
         }
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_ADD_DEVICE, &h2, sizeof(HANDLE), nullptr, 0);

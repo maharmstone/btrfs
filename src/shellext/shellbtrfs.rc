@@ -769,6 +769,13 @@ BEGIN
                             "Cannot create a reflink between two different filesystems."
 END
 
+STRINGTABLE
+BEGIN
+    IDS_INITCOMMONCONTROLSEX_FAILED "InitCommonControlsEx failed."
+    IDS_CANT_OPEN_MOUNTMGR  "Could not get a handle to mount manager."
+    IDS_TVM_INSERTITEM_FAILED "TVM_INSERTITEM failed."
+END
+
 #endif    // English (United Kingdom) resources
 /////////////////////////////////////////////////////////////////////////////
 

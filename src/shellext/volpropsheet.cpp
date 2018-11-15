@@ -1336,40 +1336,44 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 }
 
 HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
-    PROPSHEETPAGE psp;
-    HPROPSHEETPAGE hPage;
-    INITCOMMONCONTROLSEX icex;
+    try {
+        PROPSHEETPAGE psp;
+        HPROPSHEETPAGE hPage;
+        INITCOMMONCONTROLSEX icex;
 
-    if (ignore)
-        return S_OK;
-
-    icex.dwSize = sizeof(icex);
-    icex.dwICC = ICC_LINK_CLASS;
-
-    if (!InitCommonControlsEx(&icex))
-        MessageBoxW(nullptr, L"InitCommonControlsEx failed", L"Error", MB_ICONERROR);
-
-    psp.dwSize = sizeof(psp);
-    psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;
-    psp.hInstance = module;
-    psp.pszTemplate = MAKEINTRESOURCE(IDD_VOL_PROP_SHEET);
-    psp.hIcon = 0;
-    psp.pszTitle = MAKEINTRESOURCE(IDS_VOL_PROP_SHEET_TITLE);
-    psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
-    psp.pcRefParent = (UINT*)&objs_loaded;
-    psp.pfnCallback = nullptr;
-    psp.lParam = (LPARAM)this;
-
-    hPage = CreatePropertySheetPage(&psp);
-
-    if (hPage) {
-        if (pfnAddPage(hPage, lParam)) {
-            this->AddRef();
+        if (ignore)
             return S_OK;
+
+        icex.dwSize = sizeof(icex);
+        icex.dwICC = ICC_LINK_CLASS;
+
+        if (!InitCommonControlsEx(&icex))
+            throw string_error(IDS_INITCOMMONCONTROLSEX_FAILED);
+
+        psp.dwSize = sizeof(psp);
+        psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;
+        psp.hInstance = module;
+        psp.pszTemplate = MAKEINTRESOURCE(IDD_VOL_PROP_SHEET);
+        psp.hIcon = 0;
+        psp.pszTitle = MAKEINTRESOURCE(IDS_VOL_PROP_SHEET_TITLE);
+        psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
+        psp.pcRefParent = (UINT*)&objs_loaded;
+        psp.pfnCallback = nullptr;
+        psp.lParam = (LPARAM)this;
+
+        hPage = CreatePropertySheetPage(&psp);
+
+        if (hPage) {
+            if (pfnAddPage(hPage, lParam)) {
+                this->AddRef();
+                return S_OK;
+            } else
+                DestroyPropertySheetPage(hPage);
         } else
-            DestroyPropertySheetPage(hPage);
-    } else
-        return E_OUTOFMEMORY;
+            return E_OUTOFMEMORY;
+    } catch (const exception& e) {
+        error_message(nullptr, e.what());
+    }
 
     return E_FAIL;
 }

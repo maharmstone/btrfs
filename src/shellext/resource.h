@@ -203,6 +203,9 @@
 #define IDS_REGCLOSEKEY_FAILED          285
 #define IDS_REGDELETETREE_FAILED        286
 #define IDS_CANT_REFLINK_DIFFERENT_FS   287
+#define IDS_INITCOMMONCONTROLSEX_FAILED 288
+#define IDS_CANT_OPEN_MOUNTMGR          289
+#define IDS_TVM_INSERTITEM_FAILED       290
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
