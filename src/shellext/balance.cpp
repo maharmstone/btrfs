@@ -192,10 +192,8 @@ void BtrfsBalance::RefreshBalanceDlg(HWND hwndDlg, bool first) {
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb, sizeof(btrfs_query_balance));
 
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hwndDlg, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
         } else
             throw last_error(GetLastError());
     }
@@ -987,10 +985,8 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
                     break;
             }
 
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hwndDlg, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
         } else
             throw last_error(GetLastError());
     }
@@ -1088,10 +1084,8 @@ void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
                     throw string_error(IDS_BALANCE_SCRUB_RUNNING);
             }
 
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hwnd, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
         } else
             throw last_error(GetLastError());
     } catch (const exception& e) {
@@ -1127,10 +1121,8 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             btrfs_query_balance bqb2;
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb2, sizeof(btrfs_query_balance));
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hwnd, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
 
             if (bqb2.status & BTRFS_BALANCE_PAUSED)
                 Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESUME_BALANCE, nullptr, 0, nullptr, 0);
@@ -1139,10 +1131,8 @@ void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             else
                 return;
 
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hwnd, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
         } else
             throw last_error(GetLastError());
     } catch (const exception& e) {
@@ -1178,10 +1168,8 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
             btrfs_query_balance bqb2;
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_BALANCE, nullptr, 0, &bqb2, sizeof(btrfs_query_balance));
-            if (!NT_SUCCESS(Status)) {
-                ShowNtStatusError(hwnd, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
 
             if (bqb2.status & BTRFS_BALANCE_PAUSED || bqb2.status & BTRFS_BALANCE_RUNNING)
                 Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_STOP_BALANCE, nullptr, 0, nullptr, 0);
@@ -1189,7 +1177,7 @@ void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int n
                 return;
 
             if (!NT_SUCCESS(Status))
-                ShowNtStatusError(hwnd, Status);
+                throw ntstatus_error(Status);
         } else
             throw last_error(GetLastError());
     } catch (const exception& e) {

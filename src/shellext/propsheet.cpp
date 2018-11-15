@@ -507,10 +507,8 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hDlg, Status);
-        return;
-    }
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
 
     if (bii2.inode == SUBVOL_ROOT_INODE && ro_changed) {
         BY_HANDLE_FILE_INFORMATION bhfi;
@@ -560,7 +558,7 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
 
         if (!NT_SUCCESS(Status))
-            ShowNtStatusError(hDlg, Status);
+            throw ntstatus_error(Status);
     }
 }
 

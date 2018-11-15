@@ -52,22 +52,28 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
 
             len = 0;
 
-            do {
-                len += 1024;
+            try {
+                do {
+                    len += 1024;
 
+                    if (bqs2) {
+                        free(bqs2);
+                        bqs2 = nullptr;
+                    }
+
+                    bqs2 = (btrfs_query_scrub*)malloc(len);
+
+                    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, bqs2, len);
+
+                    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+                        throw ntstatus_error(Status);
+                } while (Status == STATUS_BUFFER_OVERFLOW);
+            } catch (...) {
                 if (bqs2)
                     free(bqs2);
 
-                bqs2 = (btrfs_query_scrub*)malloc(len);
-
-                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, bqs2, len);
-
-                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                    ShowNtStatusError(hwndDlg, Status);
-                    free(bqs2);
-                    return;
-                }
-            } while (Status == STATUS_BUFFER_OVERFLOW);
+                throw;
+            }
 
             alloc_bqs2 = true;
         } else
@@ -257,10 +263,8 @@ void BtrfsScrub::RefreshScrubDlg(HWND hwndDlg, bool first_time) {
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, &bqs, sizeof(btrfs_query_scrub));
 
-            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-                ShowNtStatusError(hwndDlg, Status);
-                return;
-            }
+            if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+                throw ntstatus_error(Status);
         } else
             throw last_error(GetLastError());
     }
@@ -356,10 +360,8 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
                 throw string_error(IDS_SCRUB_BALANCE_RUNNING);
         }
 
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwndDlg, Status);
-            return;
-        }
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
         RefreshScrubDlg(hwndDlg, true);
     } else
@@ -378,20 +380,16 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_QUERY_SCRUB, nullptr, 0, &bqs, sizeof(btrfs_query_scrub));
 
-        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-            ShowNtStatusError(hwndDlg, Status);
-            return;
-        }
+        if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+            throw ntstatus_error(Status);
 
         if (bqs.status == BTRFS_SCRUB_PAUSED)
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESUME_SCRUB, nullptr, 0, nullptr, 0);
         else
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_PAUSE_SCRUB, nullptr, 0, nullptr, 0);
 
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwndDlg, Status);
-            return;
-        }
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     } else
         throw last_error(GetLastError());
 }
@@ -406,10 +404,8 @@ void BtrfsScrub::StopScrub(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_STOP_SCRUB, nullptr, 0, nullptr, 0);
 
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwndDlg, Status);
-            return;
-        }
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     } else
         throw last_error(GetLastError());
 }

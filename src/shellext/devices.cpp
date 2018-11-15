@@ -552,10 +552,8 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, nullptr, nullptr);
 
     Status = NtOpenFile(&h2, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb, FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwndDlg, Status);
-        return;
-    }
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
 
     if (!sel->is_disk) {
         Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_LOCK_VOLUME, nullptr, 0, nullptr, 0);
@@ -708,10 +706,8 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESIZE, &br, sizeof(btrfs_resize), nullptr, 0);
 
-        if (Status != STATUS_MORE_PROCESSING_REQUIRED && !NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwndDlg, Status);
-            return;
-        }
+        if (Status != STATUS_MORE_PROCESSING_REQUIRED && !NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     }
 
     if (Status != STATUS_MORE_PROCESSING_REQUIRED) {
@@ -963,7 +959,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
             if (Status == STATUS_CANNOT_DELETE)
                 throw string_error(IDS_CANNOT_REMOVE_RAID);
             else
-                ShowNtStatusError(hwnd, Status);
+                throw ntstatus_error(Status);
 
             return;
         }

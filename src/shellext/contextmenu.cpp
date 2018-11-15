@@ -495,7 +495,7 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
             Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen, nullptr, 0);
 
             if (!NT_SUCCESS(Status))
-                ShowNtStatusError(hwnd, Status);
+                throw ntstatus_error(Status);
         }
     } else
         throw last_error(GetLastError());
@@ -1048,10 +1048,8 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
 
                 free(bcs);
 
-                if (!NT_SUCCESS(Status)) {
-                    ShowNtStatusError(pici->hwnd, Status);
-                    return E_FAIL;
-                }
+                if (!NT_SUCCESS(Status))
+                    throw ntstatus_error(Status);
 
                 return S_OK;
             } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 1) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, RECV_VERBA))) {

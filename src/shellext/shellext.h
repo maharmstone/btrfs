@@ -250,6 +250,18 @@ private:
     string msg;
 };
 
+class ntstatus_error : public exception {
+public:
+    ntstatus_error(NTSTATUS Status);
+
+    const char* what() const noexcept {
+        return msg.c_str();
+    }
+
+private:
+    string msg;
+};
+
 extern HMODULE module;
 void ShowError(HWND hwnd, ULONG err);
 void ShowNtStatusError(HWND hwnd, NTSTATUS Status);

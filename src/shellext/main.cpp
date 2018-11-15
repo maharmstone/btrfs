@@ -738,3 +738,37 @@ void error_message(HWND hwnd, const char* msg) {
 
     MessageBoxW(hwnd, wmsg.c_str(), title.c_str(), MB_ICONERROR);
 }
+
+ntstatus_error::ntstatus_error(NTSTATUS Status) {
+    _RtlNtStatusToDosError RtlNtStatusToDosError;
+    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
+    WCHAR* buf;
+
+    if (!ntdll)
+        throw runtime_error("Error loading ntdll.dll.");
+
+    try {
+        RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+
+        if (!RtlNtStatusToDosError)
+            throw runtime_error("Error loading RtlNtStatusToDosError in ntdll.dll.");
+
+        if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+            RtlNtStatusToDosError(Status), 0, (WCHAR*)&buf, 0, nullptr) == 0)
+            throw runtime_error("FormatMessage failed");
+
+        try {
+            utf16_to_utf8(buf, msg);
+        } catch (...) {
+            LocalFree(buf);
+            throw;
+        }
+
+        LocalFree(buf);
+    } catch (...) {
+        FreeLibrary(ntdll);
+        throw;
+    }
+
+    FreeLibrary(ntdll);
+}

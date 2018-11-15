@@ -1429,10 +1429,8 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
             throw last_error(GetLastError());
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESET_STATS, &devid, sizeof(uint64_t), nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwnd, Status);
-            return;
-        }
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     } catch (const exception& e) {
         error_message(hwnd, e.what());
     }
