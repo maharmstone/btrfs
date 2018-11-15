@@ -318,251 +318,164 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     return CLASS_E_CLASSNOTAVAILABLE;
 }
 
-static bool write_reg_key(HKEY root, const wstring& keyname, const WCHAR* val, const wstring& data) {
+static void write_reg_key(HKEY root, const wstring& keyname, const WCHAR* val, const wstring& data) {
     LONG l;
     HKEY hk;
     DWORD dispos;
 
     l = RegCreateKeyExW(root, keyname.c_str(), 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &hk, &dispos);
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegCreateKey returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
-
-        return false;
-    }
+    if (l != ERROR_SUCCESS)
+        throw string_error(IDS_REGCREATEKEY_FAILED, l);
 
     l = RegSetValueExW(hk, val, 0, REG_SZ, (const BYTE*)data.c_str(), (data.length() + 1) * sizeof(WCHAR));
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegSetValueEx returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
-
-        return false;
-    }
+    if (l != ERROR_SUCCESS)
+        throw string_error(IDS_REGSETVALUEEX_FAILED, l);
 
     l = RegCloseKey(hk);
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegCloseKey returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
-
-        return false;
-    }
-
-    return true;
+    if (l != ERROR_SUCCESS)
+        throw string_error(IDS_REGCLOSEKEY_FAILED, l);
 }
 
-static bool register_clsid(const GUID clsid, const WCHAR* description) {
+static void register_clsid(const GUID clsid, const WCHAR* description) {
     WCHAR* clsidstring;
     wstring inproc, progid, clsidkeyname;
     WCHAR dllpath[MAX_PATH];
-    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    inproc = L"CLSID\\"s + clsidstring + L"\\InprocServer32"s;
-    progid = L"CLSID\\"s + clsidstring + L"\\ProgId"s;
-    clsidkeyname = L"CLSID\\"s + clsidstring;
+    try {
+        inproc = L"CLSID\\"s + clsidstring + L"\\InprocServer32"s;
+        progid = L"CLSID\\"s + clsidstring + L"\\ProgId"s;
+        clsidkeyname = L"CLSID\\"s + clsidstring;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, nullptr, description))
-        goto end;
+        write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, nullptr, description);
 
-    GetModuleFileNameW(module, dllpath, sizeof(dllpath));
+        GetModuleFileNameW(module, dllpath, sizeof(dllpath));
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, nullptr, dllpath))
-        goto end;
+        write_reg_key(HKEY_CLASSES_ROOT, inproc, nullptr, dllpath);
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, inproc, L"ThreadingModel", L"Apartment"))
-        goto end;
+        write_reg_key(HKEY_CLASSES_ROOT, inproc, L"ThreadingModel", L"Apartment");
+    } catch (...) {
+        CoTaskMemFree(clsidstring);
+        throw;
+    }
 
-    ret = true;
-
-end:
     CoTaskMemFree(clsidstring);
-
-    return ret;
 }
 
-static bool unregister_clsid(const GUID clsid) {
+static void unregister_clsid(const GUID clsid) {
     WCHAR* clsidstring;
-    WCHAR clsidkeyname[MAX_PATH];
-    bool ret = false;
-    LONG l;
 
     StringFromCLSID(clsid, &clsidstring);
-    wsprintfW(clsidkeyname, L"CLSID\\%s", clsidstring);
 
-    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, clsidkeyname);
+    try {
+        WCHAR clsidkeyname[MAX_PATH];
 
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
+        wsprintfW(clsidkeyname, L"CLSID\\%s", clsidstring);
 
-        ret = false;
-    } else
-        ret = true;
+        LONG l = RegDeleteTreeW(HKEY_CLASSES_ROOT, clsidkeyname);
+
+        if (l != ERROR_SUCCESS)
+            throw string_error(IDS_REGDELETETREE_FAILED, l);
+    } catch (const exception& e) {
+        CoTaskMemFree(clsidstring);
+        throw;
+    }
 
     CoTaskMemFree(clsidstring);
-
-    return ret;
 }
 
-static bool reg_icon_overlay(const GUID clsid, const wstring& name) {
-    wstring path;
+static void reg_icon_overlay(const GUID clsid, const wstring& name) {
     WCHAR* clsidstring;
-    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
+    try {
+        wstring path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
 
-    if (!write_reg_key(HKEY_LOCAL_MACHINE, path, nullptr, clsidstring))
-        goto end;
+        write_reg_key(HKEY_LOCAL_MACHINE, path, nullptr, clsidstring);
+    } catch (...) {
+        CoTaskMemFree(clsidstring);
+        throw;
+    }
 
-    ret = true;
-
-end:
     CoTaskMemFree(clsidstring);
-
-    return ret;
 }
 
-static bool unreg_icon_overlay(const wstring& name) {
-    wstring path;
-    LONG l;
+static void unreg_icon_overlay(const wstring& name) {
+    wstring path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
 
-    path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
+    LONG l = RegDeleteTreeW(HKEY_LOCAL_MACHINE, path.c_str());
 
-    l = RegDeleteTreeW(HKEY_LOCAL_MACHINE, path.c_str());
-
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
-
-        return false;
-    } else
-        return true;
+    if (l != ERROR_SUCCESS)
+        throw string_error(IDS_REGDELETETREE_FAILED, l);
 }
 
-static bool reg_context_menu_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
-    wstring path;
+static void reg_context_menu_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
     WCHAR* clsidstring;
-    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
+    try {
+        wstring path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring))
-        goto end;
-
-    ret = true;
-
-end:
-    CoTaskMemFree(clsidstring);
-
-    return ret;
+        write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring);
+    } catch (...) {
+        CoTaskMemFree(clsidstring);
+        throw;
+    }
 }
 
-static bool unreg_context_menu_handler(const wstring& filetype, const wstring& name) {
-    wstring path;
-    LONG l;
+static void unreg_context_menu_handler(const wstring& filetype, const wstring& name) {
+    wstring path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
 
-    path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
+    LONG l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
 
-    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
-
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
-
-        return false;
-    } else
-        return true;
+    if (l != ERROR_SUCCESS)
+        throw string_error(IDS_REGDELETETREE_FAILED, l);
 }
 
-static bool reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
-    wstring path;
+static void reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
     WCHAR* clsidstring;
-    bool ret = false;
 
     StringFromCLSID(clsid, &clsidstring);
 
-    path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
+    try {
+        wstring path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
 
-    if (!write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring))
-        goto end;
-
-    ret = true;
-
-end:
-    CoTaskMemFree(clsidstring);
-
-    return ret;
+        write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring);
+    } catch (const exception& e) {
+        CoTaskMemFree(clsidstring);
+        throw;
+    }
 }
 
-static bool unreg_prop_sheet_handler(const wstring& filetype, const wstring& name) {
-    wstring path;
-    LONG l;
+static void unreg_prop_sheet_handler(const wstring& filetype, const wstring& name) {
+    wstring path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
 
-    path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
+    LONG l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
 
-    l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
-
-    if (l != ERROR_SUCCESS) {
-        WCHAR s[255];
-        wsprintfW(s, L"RegDeleteTree returned %08x", l);
-        MessageBoxW(0, s, nullptr, MB_ICONERROR);
-
-        return false;
-    } else
-        return true;
+    if (l != ERROR_SUCCESS)
+        throw string_error(IDS_REGDELETETREE_FAILED, l);
 }
 
 STDAPI DllRegisterServer(void) {
-    if (!register_clsid(CLSID_ShellBtrfsIconHandler, COM_DESCRIPTION_ICON_HANDLER))
-        return E_FAIL;
+    try {
+        register_clsid(CLSID_ShellBtrfsIconHandler, COM_DESCRIPTION_ICON_HANDLER);
+        register_clsid(CLSID_ShellBtrfsContextMenu, COM_DESCRIPTION_CONTEXT_MENU);
+        register_clsid(CLSID_ShellBtrfsPropSheet, COM_DESCRIPTION_PROP_SHEET);
+        register_clsid(CLSID_ShellBtrfsVolPropSheet, COM_DESCRIPTION_VOL_PROP_SHEET);
 
-    if (!register_clsid(CLSID_ShellBtrfsContextMenu, COM_DESCRIPTION_CONTEXT_MENU))
-        return E_FAIL;
+        reg_icon_overlay(CLSID_ShellBtrfsIconHandler, ICON_OVERLAY_NAME);
 
-    if (!register_clsid(CLSID_ShellBtrfsPropSheet, COM_DESCRIPTION_PROP_SHEET))
-        return E_FAIL;
+        reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Directory\\Background", ICON_OVERLAY_NAME);
+        reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Folder", ICON_OVERLAY_NAME);
 
-    if (!register_clsid(CLSID_ShellBtrfsVolPropSheet, COM_DESCRIPTION_VOL_PROP_SHEET))
-        return E_FAIL;
-
-    if (!reg_icon_overlay(CLSID_ShellBtrfsIconHandler, ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register icon overlay.", nullptr, MB_ICONERROR);
-        return E_FAIL;
-    }
-
-    if (!reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Directory\\Background", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register context menu handler.", nullptr, MB_ICONERROR);
-        return E_FAIL;
-    }
-
-    if (!reg_context_menu_handler(CLSID_ShellBtrfsContextMenu, L"Folder", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register context menu handler.", nullptr, MB_ICONERROR);
-        return E_FAIL;
-    }
-
-    if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"Folder", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register property sheet handler.", nullptr, MB_ICONERROR);
-        return E_FAIL;
-    }
-
-    if (!reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"*", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register property sheet handler.", nullptr, MB_ICONERROR);
-        return E_FAIL;
-    }
-
-    if (!reg_prop_sheet_handler(CLSID_ShellBtrfsVolPropSheet, L"Drive", ICON_OVERLAY_NAME)) {
-        MessageBoxW(0, L"Failed to register volume property sheet handler.", nullptr, MB_ICONERROR);
+        reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"Folder", ICON_OVERLAY_NAME);
+        reg_prop_sheet_handler(CLSID_ShellBtrfsPropSheet, L"*", ICON_OVERLAY_NAME);
+        reg_prop_sheet_handler(CLSID_ShellBtrfsVolPropSheet, L"Drive", ICON_OVERLAY_NAME);
+    } catch (const exception& e) {
+        error_message(nullptr, e.what());
         return E_FAIL;
     }
 
@@ -570,24 +483,22 @@ STDAPI DllRegisterServer(void) {
 }
 
 STDAPI DllUnregisterServer(void) {
-    unreg_prop_sheet_handler(L"Folder", ICON_OVERLAY_NAME);
-    unreg_prop_sheet_handler(L"*", ICON_OVERLAY_NAME);
-    unreg_prop_sheet_handler(L"Drive", ICON_OVERLAY_NAME);
-    unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
-    unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
-    unreg_icon_overlay(ICON_OVERLAY_NAME);
+    try {
+        unreg_prop_sheet_handler(L"Folder", ICON_OVERLAY_NAME);
+        unreg_prop_sheet_handler(L"*", ICON_OVERLAY_NAME);
+        unreg_prop_sheet_handler(L"Drive", ICON_OVERLAY_NAME);
+        unreg_context_menu_handler(L"Folder", ICON_OVERLAY_NAME);
+        unreg_context_menu_handler(L"Directory\\Background", ICON_OVERLAY_NAME);
+        unreg_icon_overlay(ICON_OVERLAY_NAME);
 
-    if (!unregister_clsid(CLSID_ShellBtrfsVolPropSheet))
+        unregister_clsid(CLSID_ShellBtrfsVolPropSheet);
+        unregister_clsid(CLSID_ShellBtrfsPropSheet);
+        unregister_clsid(CLSID_ShellBtrfsContextMenu);
+        unregister_clsid(CLSID_ShellBtrfsIconHandler);
+    } catch (const exception& e) {
+        error_message(nullptr, e.what());
         return E_FAIL;
-
-    if (!unregister_clsid(CLSID_ShellBtrfsPropSheet))
-        return E_FAIL;
-
-    if (!unregister_clsid(CLSID_ShellBtrfsContextMenu))
-        return E_FAIL;
-
-    if (!unregister_clsid(CLSID_ShellBtrfsIconHandler))
-        return E_FAIL;
+    }
 
     return S_OK;
 }

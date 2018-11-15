@@ -761,6 +761,10 @@ BEGIN
     IDS_BALANCE_FAILED_SHRINK "Device shrinking failed (error %08x, %s)"
     IDS_COMPRESS_ZSTD       "Zstd"
     IDS_RECV_RTLUNICODETOUTF8N_FAILED "RtlUnicodeToUTF8N returned %08x (%s)."
+    IDS_REGCREATEKEY_FAILED "RegCreateKey returned %08x"
+    IDS_REGSETVALUEEX_FAILED "RegSetValueEx returned %08x"
+    IDS_REGCLOSEKEY_FAILED  "RegCloseKey returned %08x"
+    IDS_REGDELETETREE_FAILED "RegDeleteTree returned %08x"
 END
 
 #endif    // English (United Kingdom) resources

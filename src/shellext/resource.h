@@ -198,6 +198,10 @@
 #define IDS_BALANCE_FAILED_SHRINK       280
 #define IDS_COMPRESS_ZSTD               281
 #define IDS_RECV_RTLUNICODETOUTF8N_FAILED 282
+#define IDS_REGCREATEKEY_FAILED         283
+#define IDS_REGSETVALUEEX_FAILED        284
+#define IDS_REGCLOSEKEY_FAILED          285
+#define IDS_REGDELETETREE_FAILED        286
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
