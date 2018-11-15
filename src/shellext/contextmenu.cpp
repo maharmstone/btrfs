@@ -508,11 +508,10 @@ static uint64_t __inline sector_align(uint64_t n, uint64_t a) {
     return n;
 }
 
-bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
+void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir) {
     win_handle source, dest;
     WCHAR* name, volpath1[255], volpath2[255];
     wstring dirw, newpath;
-    bool ret = false;
     FILE_BASIC_INFO fbi;
     FILETIME atime, mtime;
     btrfs_inode_info2 bii;
@@ -542,17 +541,15 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         throw last_error(GetLastError());
 
     if (wcscmp(volpath1, volpath2)) // different filesystems
-        return false;
+        throw string_error(IDS_CANT_REFLINK_DIFFERENT_FS);
 
     source = CreateFileW(fn, GENERIC_READ | FILE_TRAVERSE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_OPEN_REPARSE_POINT, nullptr);
     if (source == INVALID_HANDLE_VALUE)
         throw last_error(GetLastError());
 
     Status = NtFsControlFile(source, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii, sizeof(btrfs_inode_info2));
-    if (!NT_SUCCESS(Status)) {
-        ShowNtStatusError(hwnd, Status);
-        return false;
-    }
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
 
     // if subvol, do snapshot instead
     if (bii.inode == SUBVOL_ROOT_INODE) {
@@ -598,12 +595,10 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         free(bcs);
 
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwnd, Status);
-            return false;
-        }
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
-        return true;
+        return;
     }
 
     if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
@@ -629,9 +624,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwnd, Status);
             free(bmn);
-            return false;
+            throw ntstatus_error(Status);
         }
 
         free(bmn);
@@ -706,10 +700,8 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         }
 
         Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
-        if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwnd, Status);
-            goto end;
-        }
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
         if (fbi.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             if (!(fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -732,8 +724,7 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                         fn2 += L"\\";
                         fn2 += fff.cFileName;
 
-                        if (!reflink_copy(hwnd, fn2.c_str(), newpath.c_str()))
-                            goto end;
+                        reflink_copy(hwnd, fn2.c_str(), newpath.c_str());
                     } while (FindNextFileW(h, &fff));
                 }
             }
@@ -883,8 +874,7 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
             if (!NT_SUCCESS(Status)) {
                 free(xa);
-                ShowNtStatusError(hwnd, Status);
-                goto end;
+                throw ntstatus_error(Status);
             }
 
             xa2 = xa;
@@ -893,17 +883,14 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                                         offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
                 if (!NT_SUCCESS(Status)) {
                     free(xa);
-                    ShowNtStatusError(hwnd, Status);
-                    goto end;
+                    throw ntstatus_error(Status);
                 }
                 xa2 = (btrfs_set_xattr*)&xa2->data[xa2->namelen + xa2->valuelen];
             }
 
             free(xa);
-        } else if (!NT_SUCCESS(Status)) {
-            ShowNtStatusError(hwnd, Status);
-            goto end;
-        }
+        } else if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     } catch (...) {
         FILE_DISPOSITION_INFO fdi;
 
@@ -913,19 +900,6 @@ bool BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         throw;
     }
-
-    ret = true;
-
-end:
-    if (!ret) {
-        FILE_DISPOSITION_INFO fdi;
-
-        fdi.DeleteFile = true;
-        if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
-            throw last_error(GetLastError());
-    }
-
-    return ret;
 }
 
 HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
@@ -1090,31 +1064,37 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 if (!OpenClipboard(pici->hwnd))
                     throw last_error(GetLastError());
 
-                hdrop = (HDROP)GetClipboardData(CF_HDROP);
+                try {
+                    hdrop = (HDROP)GetClipboardData(CF_HDROP);
 
-                if (hdrop) {
-                    HANDLE lh;
+                    if (hdrop) {
+                        HANDLE lh;
 
-                    lh = GlobalLock(hdrop);
+                        lh = GlobalLock(hdrop);
 
-                    if (lh) {
-                        ULONG num_files, i;
-                        WCHAR fn[MAX_PATH];
+                        if (lh) {
+                            try {
+                                ULONG num_files, i;
+                                WCHAR fn[MAX_PATH];
 
-                        num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+                                num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
-                        for (i = 0; i < num_files; i++) {
-                            if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                                if (!reflink_copy(pici->hwnd, fn, pici->lpDirectoryW)) {
-                                    GlobalUnlock(lh);
-                                    CloseClipboard();
-                                    return E_FAIL;
+                                for (i = 0; i < num_files; i++) {
+                                    if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                                        reflink_copy(pici->hwnd, fn, pici->lpDirectoryW);
+                                    }
                                 }
+                            } catch (...) {
+                                GlobalUnlock(lh);
+                                throw;
                             }
-                        }
 
-                        GlobalUnlock(lh);
+                            GlobalUnlock(lh);
+                        }
                     }
+                } catch (...) {
+                    CloseClipboard();
+                    throw;
                 }
 
                 CloseClipboard();

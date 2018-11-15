@@ -765,6 +765,8 @@ BEGIN
     IDS_REGSETVALUEEX_FAILED "RegSetValueEx returned %08x"
     IDS_REGCLOSEKEY_FAILED  "RegCloseKey returned %08x"
     IDS_REGDELETETREE_FAILED "RegDeleteTree returned %08x"
+    IDS_CANT_REFLINK_DIFFERENT_FS 
+                            "Cannot create a reflink between two different filesystems."
 END
 
 #endif    // English (United Kingdom) resources

@@ -61,28 +61,6 @@ void ShowError(HWND hwnd, ULONG err) {
     LocalFree(buf);
 }
 
-void ShowNtStatusError(HWND hwnd, NTSTATUS Status) {
-    _RtlNtStatusToDosError RtlNtStatusToDosError;
-    HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
-
-    if (!ntdll) {
-        MessageBoxW(hwnd, L"Error loading ntdll.dll", L"Error", MB_ICONERROR);
-        return;
-    }
-
-    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
-
-    if (!RtlNtStatusToDosError) {
-        MessageBoxW(hwnd, L"Error loading RtlNtStatusToDosError in ntdll.dll", L"Error", MB_ICONERROR);
-        FreeLibrary(ntdll);
-        return;
-    }
-
-    ShowError(hwnd, RtlNtStatusToDosError(Status));
-
-    FreeLibrary(ntdll);
-}
-
 void set_dpi_aware() {
     _SetProcessDpiAwareness SetProcessDpiAwareness;
     HMODULE shcore = LoadLibraryW(L"shcore.dll");

@@ -80,6 +80,6 @@ private:
     bool stgm_set;
     HBITMAP uacicon;
 
-    bool reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
+    void reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir);
     void get_uac_icon();
 };
