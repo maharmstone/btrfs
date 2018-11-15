@@ -319,7 +319,7 @@ void BtrfsContextMenu::get_uac_icon() {
 }
 
 HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast, UINT uFlags) {
-    WCHAR str[256];
+    wstring str;
     ULONG entries = 0;
 
     if (ignore)
@@ -330,10 +330,10 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
 
     if (!bg) {
         if (allow_snapshot) {
-            if (LoadStringW(module, IDS_CREATE_SNAPSHOT, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            if (load_string(module, IDS_CREATE_SNAPSHOT, str) == 0)
                 return E_FAIL;
 
-            if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
+            if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str.c_str()))
                 return E_FAIL;
 
             entries = 1;
@@ -342,7 +342,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         if (idCmdFirst + entries <= idCmdLast) {
             MENUITEMINFOW mii;
 
-            if (LoadStringW(module, IDS_SEND_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            if (load_string(module, IDS_SEND_SUBVOL, str) == 0)
                 return E_FAIL;
 
             if (!uacicon)
@@ -351,7 +351,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
             memset(&mii, 0, sizeof(MENUITEMINFOW));
             mii.cbSize = sizeof(MENUITEMINFOW);
             mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
-            mii.dwTypeData = str;
+            mii.dwTypeData = (WCHAR*)str.c_str();
             mii.wID = idCmdFirst + entries;
             mii.hbmpItem = uacicon;
 
@@ -361,10 +361,10 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
             entries++;
         }
     } else {
-        if (LoadStringW(module, IDS_NEW_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
+        if (load_string(module, IDS_NEW_SUBVOL, str) == 0)
             return E_FAIL;
 
-        if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str))
+        if (!InsertMenuW(hmenu, indexMenu, MF_BYPOSITION, idCmdFirst, str.c_str()))
             return E_FAIL;
 
         entries = 1;
@@ -372,7 +372,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         if (idCmdFirst + 1 <= idCmdLast) {
             MENUITEMINFOW mii;
 
-            if (LoadStringW(module, IDS_RECV_SUBVOL, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            if (load_string(module, IDS_RECV_SUBVOL, str) == 0)
                 return E_FAIL;
 
             if (!uacicon)
@@ -381,7 +381,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
             memset(&mii, 0, sizeof(MENUITEMINFOW));
             mii.cbSize = sizeof(MENUITEMINFOW);
             mii.fMask = MIIM_STRING | MIIM_ID | MIIM_BITMAP;
-            mii.dwTypeData = str;
+            mii.dwTypeData = (WCHAR*)str.c_str();
             mii.wID = idCmdFirst + 1;
             mii.hbmpItem = uacicon;
 
@@ -392,10 +392,10 @@ HRESULT __stdcall BtrfsContextMenu::QueryContextMenu(HMENU hmenu, UINT indexMenu
         }
 
         if (idCmdFirst + 2 <= idCmdLast && show_reflink_paste(path)) {
-            if (LoadStringW(module, IDS_REFLINK_PASTE, str, sizeof(str) / sizeof(WCHAR)) == 0)
+            if (load_string(module, IDS_REFLINK_PASTE, str) == 0)
                 return E_FAIL;
 
-            if (!InsertMenuW(hmenu, indexMenu + 2, MF_BYPOSITION, idCmdFirst + 2, str))
+            if (!InsertMenuW(hmenu, indexMenu + 2, MF_BYPOSITION, idCmdFirst + 2, str.c_str()))
                 return E_FAIL;
 
             entries++;

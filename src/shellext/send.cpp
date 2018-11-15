@@ -227,7 +227,7 @@ static DWORD WINAPI send_thread(LPVOID lpParameter) {
 }
 
 void BtrfsSend::StartSend(HWND hwnd) {
-    WCHAR s[255];
+    wstring s;
     HWND cl;
     ULONG num_clones;
 
@@ -256,8 +256,8 @@ void BtrfsSend::StartSend(HWND hwnd) {
 
     SetDlgItemTextW(hwnd, IDC_SEND_STATUS, writing.c_str());
 
-    LoadStringW(module, IDS_SEND_CANCEL, s, sizeof(s) / sizeof(WCHAR));
-    SetDlgItemTextW(hwnd, IDCANCEL, s);
+    load_string(module, IDS_SEND_CANCEL, s);
+    SetDlgItemTextW(hwnd, IDCANCEL, s.c_str());
 
     EnableWindow(GetDlgItem(hwnd, IDOK), false);
     EnableWindow(GetDlgItem(hwnd, IDC_STREAM_DEST), false);
@@ -272,17 +272,17 @@ void BtrfsSend::StartSend(HWND hwnd) {
         ULONG i;
 
         for (i = 0; i < num_clones; i++) {
-            WCHAR* s;
+            WCHAR* t;
             ULONG len;
 
             len = SendMessageW(cl, LB_GETTEXTLEN, i, 0);
-            s = (WCHAR*)malloc((len + 1) * sizeof(WCHAR));
+            t = (WCHAR*)malloc((len + 1) * sizeof(WCHAR));
 
-            SendMessageW(cl, LB_GETTEXT, i, (LPARAM)s);
+            SendMessageW(cl, LB_GETTEXT, i, (LPARAM)t);
 
-            clones.push_back(s);
+            clones.push_back(t);
 
-            free(s);
+            free(t);
         }
     }
 

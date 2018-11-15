@@ -1189,11 +1189,11 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         BtrfsPropSheet bps;
         PROPSHEETPAGEW psp;
         PROPSHEETHEADERW psh;
-        WCHAR title[255];
+        wstring title;
 
         set_dpi_aware();
 
-        LoadStringW(module, IDS_STANDALONE_PROPSHEET_TITLE, title, sizeof(title) / sizeof(WCHAR));
+        load_string(module, IDS_STANDALONE_PROPSHEET_TITLE, title);
 
         bps.set_cmdline(lpszCmdLine);
 
@@ -1213,7 +1213,7 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         psh.dwFlags = PSH_PROPSHEETPAGE;
         psh.hwndParent = hwnd;
         psh.hInstance = psp.hInstance;
-        psh.pszCaption = title;
+        psh.pszCaption = title.c_str();
         psh.nPages = 1;
         psh.ppsp = &psp;
 

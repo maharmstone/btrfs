@@ -1556,20 +1556,20 @@ INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM 
                         case IDOK:
                         case IDCANCEL:
                             if (running) {
-                                WCHAR s[255];
+                                wstring s;
 
                                 cancelling = true;
 
-                                if (!LoadStringW(module, IDS_RECV_CANCELLED, s, sizeof(s) / sizeof(WCHAR)))
+                                if (!load_string(module, IDS_RECV_CANCELLED, s))
                                     throw last_error(GetLastError());
 
-                                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s);
+                                SetDlgItemTextW(hwnd, IDC_RECV_MSG, s.c_str());
                                 SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETPOS, 0, 0);
 
-                                if (!LoadStringW(module, IDS_RECV_BUTTON_OK, s, sizeof(s) / sizeof(WCHAR)))
+                                if (!load_string(module, IDS_RECV_BUTTON_OK, s))
                                     throw last_error(GetLastError());
 
-                                SetDlgItemTextW(hwnd, IDCANCEL, s);
+                                SetDlgItemTextW(hwnd, IDCANCEL, s.c_str());
                             } else
                                 EndDialog(hwndDlg, 1);
 
