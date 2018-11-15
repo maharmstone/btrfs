@@ -1179,7 +1179,7 @@ extern "C" {
 
 void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     try {
-        BtrfsPropSheet* bps;
+        BtrfsPropSheet bps;
         PROPSHEETPAGEW psp;
         PROPSHEETHEADERW psh;
         WCHAR title[255];
@@ -1188,8 +1188,7 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 
         LoadStringW(module, IDS_STANDALONE_PROPSHEET_TITLE, title, sizeof(title) / sizeof(WCHAR));
 
-        bps = new BtrfsPropSheet;
-        bps->set_cmdline(lpszCmdLine);
+        bps.set_cmdline(lpszCmdLine);
 
         psp.dwSize = sizeof(psp);
         psp.dwFlags = PSP_USETITLE;
@@ -1199,7 +1198,7 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         psp.pszTitle = MAKEINTRESOURCEW(IDS_PROP_SHEET_TITLE);
         psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
         psp.pfnCallback = nullptr;
-        psp.lParam = (LPARAM)bps;
+        psp.lParam = (LPARAM)&bps;
 
         memset(&psh, 0, sizeof(PROPSHEETHEADERW));
 
