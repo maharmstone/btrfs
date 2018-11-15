@@ -114,14 +114,20 @@ static void find_devices(HWND hwnd, const GUID* guid, const nt_handle& mountmgr,
 
                 Status = NtOpenFile(&file, FILE_GENERIC_READ, &attr, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_ALERT);
 
-                if (!NT_SUCCESS(Status))
-                    goto nextitem2;
+                if (!NT_SUCCESS(Status)) {
+                    free(detail);
+                    index++;
+                    continue;
+                }
 
                 dev.pnp_name = detail->DevicePath;
 
                 Status = NtDeviceIoControlFile(file, nullptr, nullptr, nullptr, &iosb, IOCTL_DISK_GET_LENGTH_INFO, nullptr, 0, &gli, sizeof(GET_LENGTH_INFORMATION));
-                if (!NT_SUCCESS(Status))
+                if (!NT_SUCCESS(Status)) {
+                    free(detail);
+                    index++;
                     continue;
+                }
 
                 dev.size = gli.Length.QuadPart;
 
@@ -313,7 +319,6 @@ static void find_devices(HWND hwnd, const GUID* guid, const nt_handle& mountmgr,
                 device_list.push_back(dev);
             }
 
-nextitem2:
             free(detail);
 
             index++;
