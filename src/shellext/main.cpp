@@ -224,15 +224,11 @@ void wstring_sprintf(wstring& s, wstring fmt, ...) {
     va_end(args);
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-STDAPI DllCanUnloadNow(void) {
+extern "C" STDAPI DllCanUnloadNow(void) {
     return objs_loaded == 0 ? S_OK : S_FALSE;
 }
 
-STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
+extern "C" STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     if (rclsid == CLSID_ShellBtrfsIconHandler) {
         Factory* fact = new Factory;
         if (!fact)
@@ -415,7 +411,7 @@ static void unreg_prop_sheet_handler(const wstring& filetype, const wstring& nam
         throw string_error(IDS_REGDELETETREE_FAILED, l);
 }
 
-STDAPI DllRegisterServer(void) {
+extern "C" STDAPI DllRegisterServer(void) {
     try {
         register_clsid(CLSID_ShellBtrfsIconHandler, COM_DESCRIPTION_ICON_HANDLER);
         register_clsid(CLSID_ShellBtrfsContextMenu, COM_DESCRIPTION_CONTEXT_MENU);
@@ -438,7 +434,7 @@ STDAPI DllRegisterServer(void) {
     return S_OK;
 }
 
-STDAPI DllUnregisterServer(void) {
+extern "C" STDAPI DllUnregisterServer(void) {
     try {
         unreg_prop_sheet_handler(L"Folder", ICON_OVERLAY_NAME);
         unreg_prop_sheet_handler(L"*", ICON_OVERLAY_NAME);
@@ -459,14 +455,14 @@ STDAPI DllUnregisterServer(void) {
     return S_OK;
 }
 
-STDAPI DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
+extern "C" STDAPI DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
     if (bInstall)
         return DllRegisterServer();
     else
         return DllUnregisterServer();
 }
 
-BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
+extern "C" BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     if (dwReason == DLL_PROCESS_ATTACH)
         module = (HMODULE)hModule;
 
@@ -506,7 +502,7 @@ static void create_subvol(const wstring& fn) {
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
 }
 
-void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);
@@ -553,7 +549,7 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
 }
 
-void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);
@@ -561,10 +557,6 @@ void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, in
     if (args.size() >= 2)
         create_snapshot2(args[0], args[1]);
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 void command_line_to_args(LPWSTR cmdline, vector<wstring> args) {
     LPWSTR* l;
