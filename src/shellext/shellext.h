@@ -66,6 +66,10 @@ using namespace std;
 #define funcname __func__
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4800)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
