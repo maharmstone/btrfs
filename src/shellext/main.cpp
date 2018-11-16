@@ -63,14 +63,14 @@ void set_dpi_aware() {
 }
 
 void format_size(uint64_t size, wstring& s, bool show_bytes) {
-    wstring t, bytes, kb;
-    WCHAR nb[255], nb2[255];
+    wstring t, bytes, kb, nb;
+    WCHAR nb2[255];
     ULONG sr;
     float f;
     NUMBERFMTW fmt;
     WCHAR thou[4], grouping[64], *c;
 
-    _i64tow(size, nb, 10);
+    nb = to_wstring(size);
 
     GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, thou, sizeof(thou) / sizeof(WCHAR));
 
@@ -100,7 +100,7 @@ void format_size(uint64_t size, wstring& s, bool show_bytes) {
     else
         fmt.Grouping *= 10;
 
-    GetNumberFormatW(LOCALE_USER_DEFAULT, 0, nb, &fmt, nb2, sizeof(nb2) / sizeof(WCHAR));
+    GetNumberFormatW(LOCALE_USER_DEFAULT, 0, nb.c_str(), &fmt, nb2, sizeof(nb2) / sizeof(WCHAR));
 
     if (size < 1024) {
         if (!load_string(module, size == 1 ? IDS_SIZE_BYTE : IDS_SIZE_BYTES, t))
