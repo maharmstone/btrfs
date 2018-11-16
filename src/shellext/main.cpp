@@ -329,7 +329,7 @@ static void unregister_clsid(const GUID clsid) {
 
         if (l != ERROR_SUCCESS)
             throw string_error(IDS_REGDELETETREE_FAILED, l);
-    } catch (const exception& e) {
+    } catch (...) {
         CoTaskMemFree(clsidstring);
         throw;
     }
@@ -396,7 +396,7 @@ static void reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, co
         wstring path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
 
         write_reg_key(HKEY_CLASSES_ROOT, path, nullptr, clsidstring);
-    } catch (const exception& e) {
+    } catch (...) {
         CoTaskMemFree(clsidstring);
         throw;
     }
