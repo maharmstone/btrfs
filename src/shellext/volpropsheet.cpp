@@ -761,11 +761,11 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
 }
 
 void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
-    wstring t;
-    WCHAR modfn[MAX_PATH], sel[10];
+    wstring t, sel;
+    WCHAR modfn[MAX_PATH];
     SHELLEXECUTEINFOW sei;
 
-    _itow(stats_dev, sel, 10);
+    sel = to_wstring(stats_dev);
 
     GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
 
