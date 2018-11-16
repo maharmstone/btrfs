@@ -105,7 +105,7 @@ static void find_devices(HWND hwnd, const GUID* guid, const nt_handle& mountmgr,
                 uint8_t sb[4096];
 
                 path.Buffer = detail->DevicePath;
-                path.Length = path.MaximumLength = wcslen(detail->DevicePath) * sizeof(WCHAR);
+                path.Length = path.MaximumLength = (uint16_t)(wcslen(detail->DevicePath) * sizeof(WCHAR));
 
                 if (path.Length > 4 * sizeof(WCHAR) && path.Buffer[0] == '\\' && path.Buffer[1] == '\\'  && path.Buffer[2] == '?'  && path.Buffer[3] == '\\')
                     path.Buffer[1] = '?';
@@ -369,7 +369,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
         {
             nt_handle btrfsh;
 
-            us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+            us.Length = us.MaximumLength = (uint16_t)(wcslen(btrfs) * sizeof(WCHAR));
             us.Buffer = btrfs;
 
             InitializeObjectAttributes(&attr, &us, 0, nullptr, nullptr);
@@ -550,7 +550,7 @@ void BtrfsDeviceAdd::AddDevice(HWND hwndDlg) {
     {
         nt_handle h2;
 
-        vn.Length = vn.MaximumLength = sel->pnp_name.length() * sizeof(WCHAR);
+        vn.Length = vn.MaximumLength = (uint16_t)(sel->pnp_name.length() * sizeof(WCHAR));
         vn.Buffer = (WCHAR*)sel->pnp_name.c_str();
 
         InitializeObjectAttributes(&attr, &vn, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, nullptr, nullptr);
@@ -792,8 +792,8 @@ INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg,
 
                     slider = GetDlgItem(hwndDlg, IDC_RESIZE_SLIDER);
                     SendMessageW(slider, TBM_SETRANGEMIN, false, 0);
-                    SendMessageW(slider, TBM_SETRANGEMAX, false, dev_info.max_size / 1048576);
-                    SendMessageW(slider, TBM_SETPOS, true, new_size / 1048576);
+                    SendMessageW(slider, TBM_SETRANGEMAX, false, (LPARAM)(dev_info.max_size / 1048576));
+                    SendMessageW(slider, TBM_SETPOS, true, (LPARAM)(new_size / 1048576));
                 } else
                     return false;
 

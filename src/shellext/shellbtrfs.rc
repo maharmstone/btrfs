@@ -774,6 +774,7 @@ BEGIN
     IDS_INITCOMMONCONTROLSEX_FAILED "InitCommonControlsEx failed."
     IDS_CANT_OPEN_MOUNTMGR  "Could not get a handle to mount manager."
     IDS_TVM_INSERTITEM_FAILED "TVM_INSERTITEM failed."
+    IDS_RECV_PATH_TOO_LONG  "%S: path was too long."
 END
 
 #endif    // English (United Kingdom) resources

@@ -505,7 +505,7 @@ static void create_subvol(const wstring& fn) {
 
     bcs->readonly = false;
     bcs->posix = false;
-    bcs->namelen = file.length() * sizeof(WCHAR);
+    bcs->namelen = (uint16_t)(file.length() * sizeof(WCHAR));
     memcpy(bcs->name, file.c_str(), bcs->namelen);
 
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
@@ -551,7 +551,7 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
 
     bcs->readonly = false;
     bcs->posix = false;
-    bcs->namelen = file.length() * sizeof(WCHAR);
+    bcs->namelen = (uint16_t)(file.length() * sizeof(WCHAR));
     memcpy(bcs->name, file.c_str(), bcs->namelen);
     bcs->subvol = src;
 

@@ -1062,11 +1062,11 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                                         if (sel == 0)
                                             bps->compress_type_changed = false;
                                         else {
-                                            bps->compress_type = sel - 1;
+                                            bps->compress_type = (uint8_t)(sel - 1);
                                             bps->compress_type_changed = true;
                                         }
                                     } else {
-                                        bps->compress_type = sel;
+                                        bps->compress_type = (uint8_t)sel;
                                         bps->compress_type_changed = true;
                                     }
 

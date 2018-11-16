@@ -33,9 +33,9 @@ static uint64_t convtypes2[] = { BLOCK_FLAG_SINGLE, BLOCK_FLAG_DUPLICATE, BLOCK_
 
 static WCHAR hex_digit(uint8_t u) {
     if (u >= 0xa && u <= 0xf)
-        return u - 0xa + 'a';
+        return (uint8_t)(u - 0xa + 'a');
     else
-        return u + '0';
+        return (uint8_t)(u + '0');
 }
 
 static void serialize(void* data, ULONG len, WCHAR* s) {
@@ -44,7 +44,7 @@ static void serialize(void* data, ULONG len, WCHAR* s) {
     d = (uint8_t*)data;
 
     while (true) {
-        *s = hex_digit(*d >> 4); s++;
+        *s = hex_digit((uint8_t)(*d >> 4)); s++;
         *s = hex_digit(*d & 0xf); s++;
 
         d++;
@@ -443,10 +443,10 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         opts->flags |= BTRFS_BALANCE_OPTS_STRIPES;
 
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_STRIPES_START), s, sizeof(s) / sizeof(WCHAR));
-        opts->stripes_start = _wtoi(s);
+        opts->stripes_start = (uint8_t)_wtoi(s);
 
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_STRIPES_END), s, sizeof(s) / sizeof(WCHAR));
-        opts->stripes_end = _wtoi(s);
+        opts->stripes_end = (uint8_t)_wtoi(s);
 
         if (opts->stripes_end < opts->stripes_start)
             throw string_error(IDS_STRIPES_END_BEFORE_START);
@@ -458,10 +458,10 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
         opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
 
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_USAGE_START), s, sizeof(s) / sizeof(WCHAR));
-        opts->usage_start = _wtoi(s);
+        opts->usage_start = (uint8_t)_wtoi(s);
 
         GetWindowTextW(GetDlgItem(hwndDlg, IDC_USAGE_END), s, sizeof(s) / sizeof(WCHAR));
-        opts->usage_end = _wtoi(s);
+        opts->usage_end = (uint8_t)_wtoi(s);
 
         if (opts->usage_end < opts->usage_start)
             throw string_error(IDS_USAGE_END_BEFORE_START);
@@ -1011,11 +1011,11 @@ void BtrfsBalance::ShowBalance(HWND hwndDlg) {
 
 static uint8_t from_hex_digit(WCHAR c) {
     if (c >= 'a' && c <= 'f')
-        return c - 'a' + 0xa;
+        return (uint8_t)(c - 'a' + 0xa);
     else if (c >= 'A' && c <= 'F')
-        return c - 'A' + 0xa;
+        return (uint8_t)(c - 'A' + 0xa);
     else
-        return c - '0';
+        return (uint8_t)(c - '0');
 }
 
 static void unserialize(void* data, ULONG len, WCHAR* s) {
@@ -1024,7 +1024,7 @@ static void unserialize(void* data, ULONG len, WCHAR* s) {
     d = (uint8_t*)data;
 
     while (s[0] != 0 && s[1] != 0 && len > 0) {
-        *d = from_hex_digit(s[0]) << 4 | from_hex_digit(s[1]);
+        *d = (uint8_t)(from_hex_digit(s[0]) << 4) | from_hex_digit(s[1]);
 
         s += 2;
         d++;

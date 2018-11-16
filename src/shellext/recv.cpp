@@ -206,7 +206,7 @@ void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
 
     bcs->readonly = true;
     bcs->posix = true;
-    bcs->namelen = nameu.length() * sizeof(WCHAR);
+    bcs->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
     Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
@@ -337,7 +337,7 @@ void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
         bcs->readonly = true;
         bcs->posix = true;
         bcs->subvol = subvol;
-        bcs->namelen = nameu.length() * sizeof(WCHAR);
+        bcs->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
         memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
         Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
@@ -442,7 +442,7 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         bmn->type = BTRFS_TYPE_FILE;
 
     bmn->st_rdev = rdev ? *rdev : 0;
-    bmn->namelen = nameu.length() * sizeof(WCHAR);
+    bmn->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
     memcpy(bmn->name, nameu.c_str(), bmn->namelen);
 
     Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
@@ -460,15 +460,18 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
         rdblen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer[0]) + (2 * pathlinku.length() * sizeof(WCHAR));
 
+        if (rdblen >= 0x10000)
+            throw string_error(IDS_RECV_PATH_TOO_LONG, funcname);
+
         rdb = (REPARSE_DATA_BUFFER*)malloc(rdblen);
 
         rdb->ReparseTag = IO_REPARSE_TAG_SYMLINK;
-        rdb->ReparseDataLength = rdblen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer);
+        rdb->ReparseDataLength = (uint16_t)(rdblen - offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer));
         rdb->Reserved = 0;
         rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
-        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = pathlinku.length() * sizeof(WCHAR);
-        rdb->SymbolicLinkReparseBuffer.PrintNameOffset = pathlinku.length() * sizeof(WCHAR);
-        rdb->SymbolicLinkReparseBuffer.PrintNameLength = pathlinku.length() * sizeof(WCHAR);
+        rdb->SymbolicLinkReparseBuffer.SubstituteNameLength = (uint16_t)(pathlinku.length() * sizeof(WCHAR));
+        rdb->SymbolicLinkReparseBuffer.PrintNameOffset = (uint16_t)(pathlinku.length() * sizeof(WCHAR));
+        rdb->SymbolicLinkReparseBuffer.PrintNameLength = (uint16_t)(pathlinku.length() * sizeof(WCHAR));
         rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
 
         memcpy(rdb->SymbolicLinkReparseBuffer.PathBuffer, pathlinku.c_str(), rdb->SymbolicLinkReparseBuffer.SubstituteNameLength);
@@ -516,7 +519,7 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
             memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
             bsii.mode_changed = true;
-            bsii.st_mode = *mode;
+            bsii.st_mode = (uint32_t)*mode;
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
             if (!NT_SUCCESS(Status))
@@ -715,8 +718,8 @@ void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         if (!bsxa)
             throw string_error(IDS_OUT_OF_MEMORY);
 
-        bsxa->namelen = xattrname.length();
-        bsxa->valuelen = xattrdatalen;
+        bsxa->namelen = (uint16_t)xattrname.length();
+        bsxa->valuelen = (uint16_t)xattrdatalen;
         memcpy(bsxa->data, xattrname.c_str(), xattrname.length());
         memcpy(&bsxa->data[xattrname.length()], xattrdata, xattrdatalen);
 
@@ -799,7 +802,7 @@ void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
         if (!bsxa)
             throw string_error(IDS_OUT_OF_MEMORY);
 
-        bsxa->namelen = xattrname.length();
+        bsxa->namelen = (uint16_t)(xattrname.length());
         bsxa->valuelen = 0;
         memcpy(bsxa->data, xattrname.c_str(), xattrname.length());
 

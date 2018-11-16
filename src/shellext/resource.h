@@ -206,6 +206,7 @@
 #define IDS_INITCOMMONCONTROLSEX_FAILED 288
 #define IDS_CANT_OPEN_MOUNTMGR          289
 #define IDS_TVM_INSERTITEM_FAILED       290
+#define IDS_RECV_PATH_TOO_LONG          291
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

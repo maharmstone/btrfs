@@ -490,7 +490,7 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
             bcs->readonly = false;
             bcs->posix = false;
             bcs->subvol = h;
-            bcs->namelen = namelen;
+            bcs->namelen = (uint16_t)namelen;
             memcpy(bcs->name, name.c_str(), namelen);
 
             Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen, nullptr, 0);
@@ -589,7 +589,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + (destname.length() * sizeof(WCHAR)));
         bcs->subvol = source;
-        bcs->namelen = destname.length() * sizeof(WCHAR);
+        bcs->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
 
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen, nullptr, 0);
@@ -620,7 +620,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bmn->inode = 0;
         bmn->type = bii.type;
         bmn->st_rdev = bii.st_rdev;
-        bmn->namelen = wcslen(name) * sizeof(WCHAR);
+        bmn->namelen = (uint16_t)(wcslen(name) * sizeof(WCHAR));
         memcpy(bmn->name, name, bmn->namelen);
 
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
@@ -810,6 +810,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                         win_handle stream;
                         uint8_t* data = nullptr;
+                        uint16_t stream_size = (uint16_t)fsd.StreamSize.QuadPart;
 
                         if (fsd.StreamSize.QuadPart > 0) {
                             wstring fn2;
@@ -824,9 +825,9 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
                             // We can get away with this because our streams are guaranteed to be below 64 KB -
                             // don't do this on NTFS!
-                            data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
+                            data = (uint8_t*)malloc(stream_size);
 
-                            if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                            if (!ReadFile(stream, data, stream_size, &bytesret, nullptr)) {
                                 free(data);
                                 throw last_error(GetLastError());
                             }
@@ -840,7 +841,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                         }
 
                         if (data) {
-                            if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                            if (!WriteFile(stream, data, stream_size, &bytesret, nullptr)) {
                                 free(data);
                                 throw last_error(GetLastError());
                             }
@@ -1016,7 +1017,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
 
                 bcs->readonly = false;
                 bcs->posix = false;
-                bcs->namelen = name.length() * sizeof(WCHAR);
+                bcs->namelen = (uint16_t)(name.length() * sizeof(WCHAR));
                 memcpy(bcs->name, name.c_str(), name.length() * sizeof(WCHAR));
 
                 Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
@@ -1293,7 +1294,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         bcslen = offsetof(btrfs_create_snapshot, name[0]) + (destname.length() * sizeof(WCHAR));
         bcs = (btrfs_create_snapshot*)malloc(bcslen);
         bcs->subvol = source;
-        bcs->namelen = destname.length() * sizeof(WCHAR);
+        bcs->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
 
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
@@ -1325,7 +1326,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         bmn->inode = 0;
         bmn->type = bii.type;
         bmn->st_rdev = bii.st_rdev;
-        bmn->namelen = destname.length() * sizeof(WCHAR);
+        bmn->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bmn->name, destname.c_str(), bmn->namelen);
 
         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
@@ -1477,6 +1478,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
                         if (fsd.StreamSize.QuadPart > 0) {
                             wstring fn2;
+                            uint16_t stream_size = (uint16_t)fsd.StreamSize.QuadPart;
 
                             fn2 = srcfn;
                             fn2 += sn;
@@ -1488,9 +1490,9 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
                             // We can get away with this because our streams are guaranteed to be below 64 KB -
                             // don't do this on NTFS!
-                            data = (uint8_t*)malloc(fsd.StreamSize.QuadPart);
+                            data = (uint8_t*)malloc(stream_size);
 
-                            if (!ReadFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                            if (!ReadFile(stream, data, stream_size, &bytesret, nullptr)) {
                                 free(data);
                                 throw last_error(GetLastError());
                             }
@@ -1504,7 +1506,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                         }
 
                         if (data) {
-                            if (!WriteFile(stream, data, fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                            if (!WriteFile(stream, data, (uint32_t)fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
                                 free(data);
                                 throw last_error(GetLastError());
                             }

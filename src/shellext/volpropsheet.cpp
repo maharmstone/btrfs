@@ -319,12 +319,11 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
                     s += t + L"\r\n";
 
                     for (uint64_t k = 0; k < bue->num_devices; k++) {
-                        uint64_t l;
                         bool found = false;
 
                         format_size(bue->devices[k].alloc, sizestring, false);
 
-                        for (l = 0; l < num_devs; l++) {
+                        for (size_t l = 0; l < min((uint64_t)SIZE_MAX, num_devs); l++) {
                             if (devs[l].dev_id == bue->devices[k].dev_id) {
                                 s += devs[l].name + L"\t" + sizestring + L"\r\n";
 
@@ -363,7 +362,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage
 
     s += t + L"\r\n"s;
 
-    for (uint64_t k = 0; k < num_devs; k++) {
+    for (size_t k = 0; k < min((uint64_t)SIZE_MAX, num_devs); k++) {
         wstring sizestring;
 
         format_size(devs[k].size - devs[k].alloc, sizestring, false);
@@ -678,7 +677,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
         RtlZeroMemory(&lvi, sizeof(LVITEMW));
         lvi.mask = LVIF_TEXT | LVIF_PARAM;
         lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
-        lvi.lParam = bd->dev_id;
+        lvi.lParam = (LPARAM)bd->dev_id;
 
         s = to_wstring(bd->dev_id);
         lvi.pszText = (LPWSTR)s.c_str();
