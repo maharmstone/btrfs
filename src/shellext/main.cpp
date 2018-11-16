@@ -207,6 +207,11 @@ bool load_string(HMODULE module, UINT id, wstring& s) {
     return true;
 }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+
 void wstring_sprintf(wstring& s, wstring fmt, ...) {
     int len;
     va_list args;
@@ -223,6 +228,10 @@ void wstring_sprintf(wstring& s, wstring fmt, ...) {
 
     va_end(args);
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 extern "C" STDAPI DllCanUnloadNow(void) {
     return objs_loaded == 0 ? S_OK : S_FALSE;
@@ -583,6 +592,11 @@ void command_line_to_args(LPWSTR cmdline, vector<wstring> args) {
     LocalFree(l);
 }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+
 string_error::string_error(int resno, ...) {
     wstring fmt, s;
     int len;
@@ -605,6 +619,10 @@ string_error::string_error(int resno, ...) {
 
     utf16_to_utf8(s, msg);
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 void utf8_to_utf16(const string& utf8, wstring& utf16) {
     NTSTATUS Status;
