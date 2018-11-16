@@ -68,15 +68,17 @@ void format_size(uint64_t size, wstring& s, bool show_bytes) {
     ULONG sr;
     float f;
     NUMBERFMTW fmt;
-    WCHAR thou[4], grouping[64], *c;
+    WCHAR dec[2], thou[4], grouping[64], *c;
 
     nb = to_wstring(size);
 
     GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, thou, sizeof(thou) / sizeof(WCHAR));
 
+    dec[0] = '.'; dec[1] = 0; // not used, but silences gcc warning
+
     fmt.NumDigits = 0;
     fmt.LeadingZero = 1;
-    fmt.lpDecimalSep = L"."; // not used
+    fmt.lpDecimalSep = dec;
     fmt.lpThousandSep = thou;
     fmt.NegativeOrder = 0;
 
