@@ -1022,7 +1022,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     // add INODE_REF
 
-    irsize = (UINT16)(offsetof(INODE_REF, name[0]) + strlen(DOTDOT));
+    irsize = (UINT16)(offsetof(INODE_REF, name[0]) + sizeof(DOTDOT) - 1);
     ir = ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
     if (!ir) {
         ERR("out of memory\n");
@@ -1031,7 +1031,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
 
     ir->index = 0;
-    ir->n = (USHORT)strlen(DOTDOT);
+    ir->n = sizeof(DOTDOT) - 1;
     RtlCopyMemory(ir->name, DOTDOT, ir->n);
 
     Status = insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_REF, r->root_item.objid, ir, irsize, NULL, Irp);
@@ -4257,7 +4257,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
-    if (bsxa->namelen == strlen(EA_NTACL) && RtlCompareMemory(bsxa->data, EA_NTACL, strlen(EA_NTACL)) == strlen(EA_NTACL)) {
+    if (bsxa->namelen == sizeof(EA_NTACL) - 1 && RtlCompareMemory(bsxa->data, EA_NTACL, sizeof(EA_NTACL) - 1) == sizeof(EA_NTACL) - 1) {
         if ((!(ccb->access & WRITE_DAC) || !(ccb->access & WRITE_OWNER)) && Irp->RequestorMode == UserMode) {
             WARN("insufficient privileges\n");
             Status = STATUS_ACCESS_DENIED;
@@ -4295,7 +4295,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
-    } else if (bsxa->namelen == strlen(EA_DOSATTRIB) && RtlCompareMemory(bsxa->data, EA_DOSATTRIB, strlen(EA_DOSATTRIB)) == strlen(EA_DOSATTRIB)) {
+    } else if (bsxa->namelen == sizeof(EA_DOSATTRIB) - 1 && RtlCompareMemory(bsxa->data, EA_DOSATTRIB, sizeof(EA_DOSATTRIB) - 1) == sizeof(EA_DOSATTRIB) - 1) {
         ULONG atts;
 
         if (bsxa->valuelen > 0 && get_file_attributes_from_xattr(bsxa->data + bsxa->namelen, bsxa->valuelen, &atts)) {
@@ -4326,7 +4326,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
-    } else if (bsxa->namelen == strlen(EA_REPARSE) && RtlCompareMemory(bsxa->data, EA_REPARSE, strlen(EA_REPARSE)) == strlen(EA_REPARSE)) {
+    } else if (bsxa->namelen == sizeof(EA_REPARSE) - 1 && RtlCompareMemory(bsxa->data, EA_REPARSE, sizeof(EA_REPARSE) - 1) == sizeof(EA_REPARSE) - 1) {
         if (fcb->reparse_xattr.Buffer) {
             ExFreePool(fcb->reparse_xattr.Buffer);
             fcb->reparse_xattr.Buffer = NULL;
@@ -4350,7 +4350,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
-    } else if (bsxa->namelen == strlen(EA_EA) && RtlCompareMemory(bsxa->data, EA_EA, strlen(EA_EA)) == strlen(EA_EA)) {
+    } else if (bsxa->namelen == sizeof(EA_EA) - 1 && RtlCompareMemory(bsxa->data, EA_EA, sizeof(EA_EA) - 1) == sizeof(EA_EA) - 1) {
         if (!(ccb->access & FILE_WRITE_EA) && Irp->RequestorMode == UserMode) {
             WARN("insufficient privileges\n");
             Status = STATUS_ACCESS_DENIED;
@@ -4406,16 +4406,16 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
-    } else if (bsxa->namelen == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(bsxa->data, EA_PROP_COMPRESSION, strlen(EA_PROP_COMPRESSION)) == strlen(EA_PROP_COMPRESSION)) {
-        const char lzo[] = "lzo";
-        const char zlib[] = "zlib";
-        const char zstd[] = "zstd";
+    } else if (bsxa->namelen == sizeof(EA_PROP_COMPRESSION) - 1 && RtlCompareMemory(bsxa->data, EA_PROP_COMPRESSION, sizeof(EA_PROP_COMPRESSION) - 1) == sizeof(EA_PROP_COMPRESSION) - 1) {
+        static const char lzo[] = "lzo";
+        static const char zlib[] = "zlib";
+        static const char zstd[] = "zstd";
 
-        if (bsxa->valuelen == strlen(zstd) && RtlCompareMemory(bsxa->data + bsxa->namelen, zstd, bsxa->valuelen) == bsxa->valuelen)
+        if (bsxa->valuelen == sizeof(zstd) - 1 && RtlCompareMemory(bsxa->data + bsxa->namelen, zstd, bsxa->valuelen) == bsxa->valuelen)
             fcb->prop_compression = PropCompression_ZSTD;
-        else if (bsxa->valuelen == strlen(lzo) && RtlCompareMemory(bsxa->data + bsxa->namelen, lzo, bsxa->valuelen) == bsxa->valuelen)
+        else if (bsxa->valuelen == sizeof(lzo) - 1 && RtlCompareMemory(bsxa->data + bsxa->namelen, lzo, bsxa->valuelen) == bsxa->valuelen)
             fcb->prop_compression = PropCompression_LZO;
-        else if (bsxa->valuelen == strlen(zlib) && RtlCompareMemory(bsxa->data + bsxa->namelen, zlib, bsxa->valuelen) == bsxa->valuelen)
+        else if (bsxa->valuelen == sizeof(zlib) - 1 && RtlCompareMemory(bsxa->data + bsxa->namelen, zlib, bsxa->valuelen) == bsxa->valuelen)
             fcb->prop_compression = PropCompression_Zlib;
         else
             fcb->prop_compression = PropCompression_None;
@@ -4430,7 +4430,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
-    } else if (bsxa->namelen >= strlen(stream_pref) && RtlCompareMemory(bsxa->data, stream_pref, strlen(stream_pref)) == strlen(stream_pref)) {
+    } else if (bsxa->namelen >= (sizeof(stream_pref) - 1) && RtlCompareMemory(bsxa->data, stream_pref, sizeof(stream_pref) - 1) == sizeof(stream_pref) - 1) {
         // don't allow xattrs beginning with user., as these appear as streams instead
         Status = STATUS_OBJECT_NAME_INVALID;
         goto end;

@@ -811,7 +811,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 if (len < offsetof(DIR_ITEM, name[0]) + di->m + di->n)
                     break;
 
-                if (tp.item->key.offset == EA_REPARSE_HASH && di->n == strlen(EA_REPARSE) && RtlCompareMemory(EA_REPARSE, di->name, di->n) == di->n) {
+                if (tp.item->key.offset == EA_REPARSE_HASH && di->n == sizeof(EA_REPARSE) - 1 && RtlCompareMemory(EA_REPARSE, di->name, di->n) == di->n) {
                     if (di->m > 0) {
                         fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->reparse_xattr.Buffer) {
@@ -825,7 +825,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         fcb->reparse_xattr.Buffer = NULL;
 
                     fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = di->m;
-                } else if (tp.item->key.offset == EA_EA_HASH && di->n == strlen(EA_EA) && RtlCompareMemory(EA_EA, di->name, di->n) == di->n) {
+                } else if (tp.item->key.offset == EA_EA_HASH && di->n == sizeof(EA_EA) - 1 && RtlCompareMemory(EA_EA, di->name, di->n) == di->n) {
                     if (di->m > 0) {
                         ULONG offset;
 
@@ -861,7 +861,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                             } while (TRUE);
                         }
                     }
-                } else if (tp.item->key.offset == EA_DOSATTRIB_HASH && di->n == strlen(EA_DOSATTRIB) && RtlCompareMemory(EA_DOSATTRIB, di->name, di->n) == di->n) {
+                } else if (tp.item->key.offset == EA_DOSATTRIB_HASH && di->n == sizeof(EA_DOSATTRIB) - 1 && RtlCompareMemory(EA_DOSATTRIB, di->name, di->n) == di->n) {
                     if (di->m > 0) {
                         if (get_file_attributes_from_xattr(&di->name[di->n], di->m, &fcb->atts)) {
                             atts_set = TRUE;
@@ -882,7 +882,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                             }
                         }
                     }
-                } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == strlen(EA_NTACL) && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
+                } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == sizeof(EA_NTACL) - 1 && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
                     if (di->m > 0) {
                         fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->sd) {
@@ -900,26 +900,26 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         else
                             sd_set = TRUE;
                     }
-                } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->n == strlen(EA_PROP_COMPRESSION) && RtlCompareMemory(EA_PROP_COMPRESSION, di->name, di->n) == di->n) {
+                } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->n == sizeof(EA_PROP_COMPRESSION) - 1 && RtlCompareMemory(EA_PROP_COMPRESSION, di->name, di->n) == di->n) {
                     if (di->m > 0) {
-                        const char lzo[] = "lzo";
-                        const char zlib[] = "zlib";
-                        const char zstd[] = "zstd";
+                        static const char lzo[] = "lzo";
+                        static const char zlib[] = "zlib";
+                        static const char zstd[] = "zstd";
 
-                        if (di->m == strlen(lzo) && RtlCompareMemory(&di->name[di->n], lzo, di->m) == di->m)
+                        if (di->m == sizeof(lzo) - 1 && RtlCompareMemory(&di->name[di->n], lzo, di->m) == di->m)
                             fcb->prop_compression = PropCompression_LZO;
-                        else if (di->m == strlen(zlib) && RtlCompareMemory(&di->name[di->n], zlib, di->m) == di->m)
+                        else if (di->m == sizeof(zlib) - 1 && RtlCompareMemory(&di->name[di->n], zlib, di->m) == di->m)
                             fcb->prop_compression = PropCompression_Zlib;
-                        else if (di->m == strlen(zstd) && RtlCompareMemory(&di->name[di->n], zstd, di->m) == di->m)
+                        else if (di->m == sizeof(zstd) - 1 && RtlCompareMemory(&di->name[di->n], zstd, di->m) == di->m)
                             fcb->prop_compression = PropCompression_ZSTD;
                         else
                             fcb->prop_compression = PropCompression_None;
                     }
-                } else if (di->n > strlen(xapref) && RtlCompareMemory(xapref, di->name, strlen(xapref)) == strlen(xapref)) {
+                } else if (di->n > sizeof(xapref) - 1 && RtlCompareMemory(xapref, di->name, sizeof(xapref) - 1) == sizeof(xapref) - 1) {
                     dir_child* dc;
                     ULONG utf16len;
 
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[strlen(xapref)], di->n - (ULONG)strlen(xapref));
+                    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[sizeof(xapref) - 1], di->n + 1 - sizeof(xapref));
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                         free_fcb(Vcb, fcb);
@@ -935,7 +935,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     RtlZeroMemory(dc, sizeof(dir_child));
 
-                    dc->utf8.MaximumLength = dc->utf8.Length = di->n - (UINT16)strlen(xapref);
+                    dc->utf8.MaximumLength = dc->utf8.Length = di->n + 1 - sizeof(xapref);
                     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
                     if (!dc->utf8.Buffer) {
                         ERR("out of memory\n");
@@ -944,7 +944,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    RtlCopyMemory(dc->utf8.Buffer, &di->name[strlen(xapref)], dc->utf8.Length);
+                    RtlCopyMemory(dc->utf8.Buffer, &di->name[sizeof(xapref) - 1], dc->utf8.Length);
 
                     dc->name.MaximumLength = dc->name.Length = (UINT16)utf16len;
                     dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
@@ -1118,7 +1118,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     ANSI_STRING xattr;
     UINT32 crc32;
 
-    xattr.Length = (UINT16)strlen(xapref) + dc->utf8.Length;
+    xattr.Length = sizeof(xapref) - 1 + dc->utf8.Length;
     xattr.MaximumLength = xattr.Length + 1;
     xattr.Buffer = ExAllocatePoolWithTag(PagedPool, xattr.MaximumLength, ALLOC_TAG);
     if (!xattr.Buffer) {
@@ -1126,8 +1126,8 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlCopyMemory(xattr.Buffer, xapref, strlen(xapref));
-    RtlCopyMemory(&xattr.Buffer[strlen(xapref)], dc->utf8.Buffer, dc->utf8.Length);
+    RtlCopyMemory(xattr.Buffer, xapref, sizeof(xapref) - 1);
+    RtlCopyMemory(&xattr.Buffer[sizeof(xapref) - 1], dc->utf8.Buffer, dc->utf8.Length);
     xattr.Buffer[xattr.Length] = 0;
 
     fcb = create_fcb(Vcb, PagedPool);
@@ -1994,7 +1994,6 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     static WCHAR DOSATTRIB[] = L"DOSATTRIB";
     static WCHAR EA[] = L"EA";
     static WCHAR reparse[] = L"reparse";
-    UINT16 xapreflen = (UINT16)strlen(xapref);
     LARGE_INTEGER time;
     BTRFS_TIME now;
     ULONG utf8len, overhead;
@@ -2125,7 +2124,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
         return Status;
     }
 
-    fcb->adsxattr.Length = (UINT16)utf8len + xapreflen;
+    fcb->adsxattr.Length = (UINT16)utf8len + sizeof(xapref) - 1;
     fcb->adsxattr.MaximumLength = fcb->adsxattr.Length + 1;
     fcb->adsxattr.Buffer = ExAllocatePoolWithTag(pool_type, fcb->adsxattr.MaximumLength, ALLOC_TAG);
     if (!fcb->adsxattr.Buffer) {
@@ -2134,9 +2133,9 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlCopyMemory(fcb->adsxattr.Buffer, xapref, xapreflen);
+    RtlCopyMemory(fcb->adsxattr.Buffer, xapref, sizeof(xapref) - 1);
 
-    Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[xapreflen], utf8len, &utf8len, stream->Buffer, stream->Length);
+    Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[sizeof(xapref) - 1], utf8len, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
         free_fcb(Vcb, fcb);
@@ -2168,12 +2167,12 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
 
-    if (utf8len + xapreflen + overhead > fcb->adsmaxlen) {
-        WARN("not enough room for new DIR_ITEM (%u + %u > %u)", utf8len + xapreflen, overhead, fcb->adsmaxlen);
+    if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
+        WARN("not enough room for new DIR_ITEM (%u + %u > %u)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
         free_fcb(Vcb, fcb);
         return STATUS_DISK_FULL;
     } else
-        fcb->adsmaxlen -= overhead + utf8len + xapreflen;
+        fcb->adsmaxlen -= overhead + utf8len + sizeof(xapref) - 1;
 
     fileref = create_fileref(Vcb);
     if (!fileref) {
@@ -2193,7 +2192,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     RtlZeroMemory(dc, sizeof(dir_child));
 
-    dc->utf8.MaximumLength = dc->utf8.Length = fcb->adsxattr.Length - xapreflen;
+    dc->utf8.MaximumLength = dc->utf8.Length = fcb->adsxattr.Length + 1 - sizeof(xapref);
     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
     if (!dc->utf8.Buffer) {
         ERR("out of memory\n");
@@ -2202,7 +2201,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlCopyMemory(dc->utf8.Buffer, &fcb->adsxattr.Buffer[xapreflen], fcb->adsxattr.Length - xapreflen);
+    RtlCopyMemory(dc->utf8.Buffer, &fcb->adsxattr.Buffer[sizeof(xapref) - 1], fcb->adsxattr.Length + 1 - sizeof(xapref));
 
     dc->name.MaximumLength = dc->name.Length = stream->Length;
     dc->name.Buffer = ExAllocatePoolWithTag(pool_type, dc->name.MaximumLength, ALLOC_TAG);

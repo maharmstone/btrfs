@@ -5186,7 +5186,7 @@ static void init_logging() {
             FILE_STANDARD_INFORMATION fsi;
             FILE_POSITION_INFORMATION fpi;
 
-            static char delim[] = "\n---\n";
+            static const char delim[] = "\n---\n";
 
             // move to end of file
 
@@ -5206,7 +5206,7 @@ static void init_logging() {
                 goto end;
             }
 
-            Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, delim, (ULONG)strlen(delim), NULL, NULL);
+            Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, (void*)delim, sizeof(delim) - 1, NULL, NULL);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("ZwWriteFile returned %08x\n", Status);
