@@ -53,6 +53,8 @@ NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     Irp->IoStatus.Information = 0;
 
+    ExAcquireResourceExclusiveLite(&pdo_list_lock, TRUE);
+
     ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
     if (InterlockedDecrement(&vde->open_count) == 0 && vde->removing) {
@@ -92,6 +94,8 @@ NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             IoDeleteDevice(pdo);
     } else
         ExReleaseResourceLite(&pdode->child_lock);
+
+    ExReleaseResourceLite(&pdo_list_lock);
 
     return STATUS_SUCCESS;
 }
