@@ -805,7 +805,7 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
 static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmps) {
     ULONG i;
 
-    static WCHAR pref[] = L"\\DosDevices\\";
+    static const WCHAR pref[] = L"\\DosDevices\\";
 
     for (i = 0; i < mmps->NumberOfMountPoints; i++) {
         UNICODE_STRING symlink, device_name;

@@ -5018,7 +5018,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else if (fcb->prop_compression == PropCompression_Zlib) {
-            const char zlib[] = "zlib";
+            static const char zlib[] = "zlib";
 
             Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, sizeof(EA_PROP_COMPRESSION) - 1,
                                EA_PROP_COMPRESSION_HASH, (UINT8*)zlib, sizeof(zlib) - 1);
@@ -5027,7 +5027,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else if (fcb->prop_compression == PropCompression_LZO) {
-            const char lzo[] = "lzo";
+            static const char lzo[] = "lzo";
 
             Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, sizeof(EA_PROP_COMPRESSION) - 1,
                                EA_PROP_COMPRESSION_HASH, (UINT8*)lzo, sizeof(lzo) - 1);
@@ -5036,7 +5036,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
         } else if (fcb->prop_compression == PropCompression_ZSTD) {
-            const char zstd[] = "zstd";
+            static const char zstd[] = "zstd";
 
             Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_PROP_COMPRESSION, sizeof(EA_PROP_COMPRESSION) - 1,
                                EA_PROP_COMPRESSION_HASH, (UINT8*)zstd, sizeof(zstd) - 1);

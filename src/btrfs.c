@@ -50,8 +50,8 @@
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD)
 #define COMPAT_RO_SUPPORTED (BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE | BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID)
 
-static WCHAR device_name[] = {'\\','B','t','r','f','s',0};
-static WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e','s','\\','B','t','r','f','s',0};
+static const WCHAR device_name[] = {'\\','B','t','r','f','s',0};
+static const WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e','s','\\','B','t','r','f','s',0};
 
 DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x69, 0x17, 0x9a, 0x7d, 0x1d);
 
@@ -277,7 +277,7 @@ static void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
     if (notification_entry)
         IoUnregisterPlugPlayNotificationEx(notification_entry);
 
-    dosdevice_nameW.Buffer = dosdevice_name;
+    dosdevice_nameW.Buffer = (WCHAR*)dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
 
     IoDeleteSymbolicLink(&dosdevice_nameW);
@@ -595,16 +595,16 @@ static BOOL lie_about_fs_type() {
     LIST_ENTRY* le;
     ULONG retlen;
 
-    static WCHAR mpr[] = L"MPR.DLL";
-    static WCHAR cmd[] = L"CMD.EXE";
-    static WCHAR fsutil[] = L"FSUTIL.EXE";
+    static const WCHAR mpr[] = L"MPR.DLL";
+    static const WCHAR cmd[] = L"CMD.EXE";
+    static const WCHAR fsutil[] = L"FSUTIL.EXE";
     UNICODE_STRING mprus, cmdus, fsutilus;
 
-    mprus.Buffer = mpr;
+    mprus.Buffer = (WCHAR*)mpr;
     mprus.Length = mprus.MaximumLength = sizeof(mpr) - sizeof(WCHAR);
-    cmdus.Buffer = cmd;
+    cmdus.Buffer = (WCHAR*)cmd;
     cmdus.Length = cmdus.MaximumLength = sizeof(cmd) - sizeof(WCHAR);
-    fsutilus.Buffer = fsutil;
+    fsutilus.Buffer = (WCHAR*)fsutil;
     fsutilus.Length = fsutilus.MaximumLength = sizeof(fsutil) - sizeof(WCHAR);
 
     if (!PsGetCurrentProcess())
@@ -3557,7 +3557,7 @@ _Ret_maybenull_
 static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
 
-    static char fn[] = "default";
+    static const char fn[] = "default";
     static UINT32 crc32 = 0x8dbfc2d2;
 
     if (Vcb->options.subvol_id != 0) {
@@ -5484,9 +5484,9 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     init_fast_io_dispatch(&DriverObject->FastIoDispatch);
 
-    device_nameW.Buffer = device_name;
+    device_nameW.Buffer = (WCHAR*)device_name;
     device_nameW.Length = device_nameW.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
-    dosdevice_nameW.Buffer = dosdevice_name;
+    dosdevice_nameW.Buffer = (WCHAR*)dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
 
     Status = IoCreateDevice(DriverObject, sizeof(control_device_extension), &device_nameW, FILE_DEVICE_DISK_FILE_SYSTEM,

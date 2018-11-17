@@ -345,7 +345,7 @@ end:
 static NTSTATUS bus_query_hardware_ids(PIRP Irp) {
     WCHAR* out;
 
-    static WCHAR ids[] = L"ROOT\\btrfs\0";
+    static const WCHAR ids[] = L"ROOT\\btrfs\0";
 
     out = ExAllocatePoolWithTag(PagedPool, sizeof(ids), ALLOC_TAG);
     if (!out) {
@@ -398,7 +398,7 @@ static NTSTATUS pdo_query_device_id(pdo_device_extension* pdode, PIRP Irp) {
     WCHAR name[100], *noff, *out;
     int i;
 
-    static WCHAR pref[] = L"Btrfs\\";
+    static const WCHAR pref[] = L"Btrfs\\";
 
     RtlCopyMemory(name, pref, sizeof(pref) - sizeof(WCHAR));
 
@@ -430,7 +430,7 @@ static NTSTATUS pdo_query_device_id(pdo_device_extension* pdode, PIRP Irp) {
 static NTSTATUS pdo_query_hardware_ids(PIRP Irp) {
     WCHAR* out;
 
-    static WCHAR ids[] = L"BtrfsVolume\0";
+    static const WCHAR ids[] = L"BtrfsVolume\0";
 
     out = ExAllocatePoolWithTag(PagedPool, sizeof(ids), ALLOC_TAG);
     if (!out) {

@@ -2944,7 +2944,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
     ULONG reqlen;
     UNICODE_STRING fn;
     NTSTATUS Status;
-    static WCHAR datasuf[] = {':','$','D','A','T','A',0};
+    static const WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UINT16 datasuflen = sizeof(datasuf) - sizeof(WCHAR);
 
     if (!fileref) {
@@ -3024,7 +3024,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     FILE_STREAM_INFORMATION *entry, *lastentry;
     NTSTATUS Status;
 
-    static WCHAR datasuf[] = L":$DATA";
+    static const WCHAR datasuf[] = L":$DATA";
     UNICODE_STRING suf;
 
     if (!fileref) {
@@ -3032,7 +3032,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         return STATUS_INVALID_PARAMETER;
     }
 
-    suf.Buffer = datasuf;
+    suf.Buffer = (WCHAR*)datasuf;
     suf.Length = suf.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
 
     if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY)

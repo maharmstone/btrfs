@@ -31,7 +31,7 @@ extern PDEVICE_OBJECT comdo;
 
 WORK_QUEUE_ITEM wqi;
 
-static WCHAR option_mounted[] = L"Mounted";
+static const WCHAR option_mounted[] = L"Mounted";
 
 NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     BTRFS_UUID* uuid = &Vcb->superblock.uuid;
@@ -268,7 +268,7 @@ NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
         goto end;
     }
 
-    mountedus.Buffer = option_mounted;
+    mountedus.Buffer = (WCHAR*)option_mounted;
     mountedus.Length = mountedus.MaximumLength = sizeof(option_mounted) - sizeof(WCHAR);
 
     data = 1;
@@ -318,7 +318,7 @@ static NTSTATUS registry_mark_volume_unmounted_path(PUNICODE_STRING path) {
 
     index = 0;
 
-    mountedus.Buffer = option_mounted;
+    mountedus.Buffer = (WCHAR*)option_mounted;
     mountedus.Length = mountedus.MaximumLength = sizeof(option_mounted) - sizeof(WCHAR);
 
     do {
@@ -536,7 +536,7 @@ static void read_mappings(PUNICODE_STRING regpath) {
     ULONG dispos;
     NTSTATUS Status;
 
-    const WCHAR mappings[] = L"\\Mappings";
+    static const WCHAR mappings[] = L"\\Mappings";
 
     while (!IsListEmpty(&uid_map_list)) {
         uid_map* um = CONTAINING_RECORD(RemoveHeadList(&uid_map_list), uid_map, listentry);
@@ -614,7 +614,7 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
     ULONG dispos;
     NTSTATUS Status;
 
-    const WCHAR mappings[] = L"\\GroupMappings";
+    static const WCHAR mappings[] = L"\\GroupMappings";
 
     while (!IsListEmpty(&gid_map_list)) {
         gid_map* gm = CONTAINING_RECORD(RemoveHeadList(&gid_map_list), gid_map, listentry);
@@ -770,7 +770,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     ULONG kvfilen, old_debug_log_level = debug_log_level;
     UNICODE_STRING us, old_log_file, old_log_device;
 
-    static WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
+    static const WCHAR def_log_file[] = L"\\??\\C:\\btrfs.log";
 #endif
 
     ExAcquireResourceExclusiveLite(&mapping_lock, TRUE);
@@ -946,7 +946,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
         ExFreePool(kvfi);
     } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-        Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, sizeof(def_log_file));
+        Status = ZwSetValueKey(h, &us, 0, REG_SZ, (void*)def_log_file, sizeof(def_log_file));
 
         if (!NT_SUCCESS(Status))
             ERR("ZwSetValueKey returned %08x\n", Status);

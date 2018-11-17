@@ -21,7 +21,7 @@
 
 extern PDEVICE_OBJECT master_devobj;
 
-static WCHAR datastring[] = L"::$DATA";
+static const WCHAR datastring[] = L"::$DATA";
 
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb* fcb;
@@ -306,10 +306,10 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     InsertTailList(parts, &nb->list_entry);
 
     if (has_stream) {
-        static WCHAR datasuf[] = {':','$','D','A','T','A',0};
+        static const WCHAR datasuf[] = {':','$','D','A','T','A',0};
         UNICODE_STRING dsus;
 
-        dsus.Buffer = datasuf;
+        dsus.Buffer = (WCHAR*)datasuf;
         dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
 
         for (i = 0; i < nb->us.Length / sizeof(WCHAR); i++) {
@@ -797,7 +797,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             ULONG len;
             DIR_ITEM* di;
 
-            static char xapref[] = "user.";
+            static const char xapref[] = "user.";
 
             if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
@@ -1114,7 +1114,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
-    static char xapref[] = "user.";
+    static const char xapref[] = "user.";
     ANSI_STRING xattr;
     UINT32 crc32;
 
@@ -1990,10 +1990,10 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     file_ref *fileref, *newpar, *parfileref;
     fcb* fcb;
-    static char xapref[] = "user.";
-    static WCHAR DOSATTRIB[] = L"DOSATTRIB";
-    static WCHAR EA[] = L"EA";
-    static WCHAR reparse[] = L"reparse";
+    static const char xapref[] = "user.";
+    static const WCHAR DOSATTRIB[] = L"DOSATTRIB";
+    static const WCHAR EA[] = L"EA";
+    static const WCHAR reparse[] = L"reparse";
     LARGE_INTEGER time;
     BTRFS_TIME now;
     ULONG utf8len, overhead;
@@ -2290,7 +2290,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     file_ref *fileref, *parfileref = NULL;
     ULONG i, j;
     ccb* ccb;
-    static WCHAR datasuf[] = {':','$','D','A','T','A',0};
+    static const WCHAR datasuf[] = {':','$','D','A','T','A',0};
     UNICODE_STRING dsus, fpus, stream;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
@@ -2306,7 +2306,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     if (options & FILE_DELETE_ON_CLOSE && IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_READONLY)
         return STATUS_CANNOT_DELETE;
 
-    dsus.Buffer = datasuf;
+    dsus.Buffer = (WCHAR*)datasuf;
     dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
     fpus.Buffer = NULL;
 
