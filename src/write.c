@@ -550,7 +550,8 @@ NTSTATUS alloc_chunk(device_extension* Vcb, UINT64 flags, chunk** pc, BOOL full_
         stripe_size -= stripe_size % stripe_length;
 
     if (stripe_size == 0) {
-        Status = STATUS_INTERNAL_ERROR;
+        ERR("not enough free space found (stripe_size == 0)\n");
+        Status = STATUS_DISK_FULL;
         goto end;
     }
 
