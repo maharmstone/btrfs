@@ -1690,6 +1690,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
 
 void uninit(_In_ device_extension* Vcb, _In_ BOOL flush) {
     UINT64 i;
+    KIRQL irql;
     NTSTATUS Status;
     LIST_ENTRY* le;
     LARGE_INTEGER time;
@@ -1699,6 +1700,11 @@ void uninit(_In_ device_extension* Vcb, _In_ BOOL flush) {
         Vcb->removing = TRUE;
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
+
+    IoAcquireVpbSpinLock(&irql);
+    Vcb->Vpb->Flags &= ~VPB_MOUNTED;
+    Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
+    IoReleaseVpbSpinLock(irql);
 
     RemoveEntryList(&Vcb->list_entry);
 

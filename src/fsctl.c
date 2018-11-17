@@ -2447,10 +2447,6 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
 
                 RtlZeroMemory(newvpb, sizeof(VPB));
 
-                IoAcquireVpbSpinLock(&irql);
-                devobj->Vpb->Flags &= ~VPB_MOUNTED;
-                IoReleaseVpbSpinLock(irql);
-
                 ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
                 Vcb->removing = TRUE;
@@ -2613,7 +2609,6 @@ static void update_volumes(device_extension* Vcb) {
 
 static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
-    KIRQL irql;
 
     TRACE("FSCTL_DISMOUNT_VOLUME\n");
 
@@ -2653,11 +2648,6 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     }
 
     ExReleaseResourceLite(&Vcb->tree_lock);
-
-    IoAcquireVpbSpinLock(&irql);
-    Vcb->Vpb->Flags &= ~VPB_MOUNTED;
-    Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
-    IoReleaseVpbSpinLock(irql);
 
     return STATUS_SUCCESS;
 }

@@ -243,8 +243,6 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
 
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
         Vcb->removing = TRUE;
-        Vcb->Vpb->Flags &= ~VPB_MOUNTED;
-        Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
         ExReleaseResourceLite(&Vcb->tree_lock);
 
         if (Vcb->open_files == 0)
@@ -266,8 +264,6 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             Vcb->vde->mounted_device = NULL;
 
         Vcb->removing = TRUE;
-        Vcb->Vpb->Flags &= ~VPB_MOUNTED;
-        Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
 
         ExReleaseResourceLite(&Vcb->tree_lock);
 
