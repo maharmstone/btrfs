@@ -942,10 +942,10 @@ static __inline UINT64 unix_time_to_win(BTRFS_TIME* t) {
 }
 
 static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
-    ULONGLONG l = t.QuadPart - 116444736000000000;
+    ULONGLONG l = (ULONGLONG)t.QuadPart - 116444736000000000;
 
     out->seconds = l / 10000000;
-    out->nanoseconds = (l % 10000000) * 100;
+    out->nanoseconds = (UINT32)((l % 10000000) * 100);
 }
 
 _Post_satisfies_(*stripe>=0&&*stripe<num_stripes)
