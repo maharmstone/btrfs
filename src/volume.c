@@ -85,7 +85,9 @@ NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         ExReleaseResourceLite(&pdode->child_lock);
         ExDeleteResourceLite(&pdode->child_lock);
-        IoDetachDevice(vde->pdo);
+
+        if (vde->pdo->AttachedDevice)
+            IoDetachDevice(vde->pdo);
 
         pdo = vde->pdo;
         IoDeleteDevice(vde->device);
