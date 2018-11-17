@@ -269,7 +269,7 @@ NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
     }
 
     mountedus.Buffer = option_mounted;
-    mountedus.Length = mountedus.MaximumLength = (USHORT)wcslen(option_mounted) * sizeof(WCHAR);
+    mountedus.Length = mountedus.MaximumLength = sizeof(option_mounted) - sizeof(WCHAR);
 
     data = 1;
 
@@ -319,7 +319,7 @@ static NTSTATUS registry_mark_volume_unmounted_path(PUNICODE_STRING path) {
     index = 0;
 
     mountedus.Buffer = option_mounted;
-    mountedus.Length = mountedus.MaximumLength = (USHORT)wcslen(option_mounted) * sizeof(WCHAR);
+    mountedus.Length = mountedus.MaximumLength = sizeof(option_mounted) - sizeof(WCHAR);
 
     do {
         Status = ZwEnumerateValueKey(h, index, KeyValueBasicInformation, kvbi, kvbilen, &retlen);
@@ -545,17 +545,17 @@ static void read_mappings(PUNICODE_STRING regpath) {
         ExFreePool(um);
     }
 
-    path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
+    path = ExAllocatePoolWithTag(PagedPool, regpath->Length + sizeof(mappings) - sizeof(WCHAR), ALLOC_TAG);
     if (!path) {
         ERR("out of memory\n");
         return;
     }
 
     RtlCopyMemory(path, regpath->Buffer, regpath->Length);
-    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, wcslen(mappings) * sizeof(WCHAR));
+    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, sizeof(mappings) - sizeof(WCHAR));
 
     us.Buffer = path;
-    us.Length = us.MaximumLength = regpath->Length + ((USHORT)wcslen(mappings) * sizeof(WCHAR));
+    us.Length = us.MaximumLength = regpath->Length + sizeof(mappings) - sizeof(WCHAR);
 
     InitializeObjectAttributes(&oa, &us, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -623,17 +623,17 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
         ExFreePool(gm);
     }
 
-    path = ExAllocatePoolWithTag(PagedPool, regpath->Length + (wcslen(mappings) * sizeof(WCHAR)), ALLOC_TAG);
+    path = ExAllocatePoolWithTag(PagedPool, regpath->Length + sizeof(mappings) - sizeof(WCHAR), ALLOC_TAG);
     if (!path) {
         ERR("out of memory\n");
         return;
     }
 
     RtlCopyMemory(path, regpath->Buffer, regpath->Length);
-    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, wcslen(mappings) * sizeof(WCHAR));
+    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, sizeof(mappings) - sizeof(WCHAR));
 
     us.Buffer = path;
-    us.Length = us.MaximumLength = regpath->Length + ((USHORT)wcslen(mappings) * sizeof(WCHAR));
+    us.Length = us.MaximumLength = regpath->Length + sizeof(mappings) - sizeof(WCHAR);
 
     InitializeObjectAttributes(&oa, &us, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -686,7 +686,7 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
         // If we're creating the key for the first time, we add a default mapping of
         // BUILTIN\Users to gid 100, which ought to correspond to the "users" group on Linux.
 
-        us2.Length = us2.MaximumLength = (USHORT)wcslen(builtin_users) * sizeof(WCHAR);
+        us2.Length = us2.MaximumLength = sizeof(builtin_users) - sizeof(WCHAR);
         us2.Buffer = ExAllocatePoolWithTag(PagedPool, us2.MaximumLength, ALLOC_TAG);
 
         if (us2.Buffer) {
@@ -946,7 +946,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 
         ExFreePool(kvfi);
     } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-        Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, (ULONG)(wcslen(def_log_file) + 1) * sizeof(WCHAR));
+        Status = ZwSetValueKey(h, &us, 0, REG_SZ, def_log_file, sizeof(def_log_file));
 
         if (!NT_SUCCESS(Status))
             ERR("ZwSetValueKey returned %08x\n", Status);
@@ -958,7 +958,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
     }
 
     if (log_file.Length == 0) {
-        log_file.Length = log_file.MaximumLength = (UINT16)wcslen(def_log_file) * sizeof(WCHAR);
+        log_file.Length = log_file.MaximumLength = sizeof(def_log_file) - sizeof(WCHAR);
         log_file.Buffer = ExAllocatePoolWithTag(PagedPool, log_file.MaximumLength, ALLOC_TAG);
 
         if (!log_file.Buffer) {

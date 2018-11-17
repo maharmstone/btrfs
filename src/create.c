@@ -310,7 +310,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
         UNICODE_STRING dsus;
 
         dsus.Buffer = datasuf;
-        dsus.Length = dsus.MaximumLength = (UINT16)wcslen(datasuf) * sizeof(WCHAR);
+        dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
 
         for (i = 0; i < nb->us.Length / sizeof(WCHAR); i++) {
             if (nb->us.Buffer[i] == ':') {
@@ -1455,7 +1455,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
     InitializeListHead(&parts);
 
     if (fnus->Length != 0 &&
-        (fnus->Length != wcslen(datastring) * sizeof(WCHAR) || RtlCompareMemory(fnus->Buffer, datastring, wcslen(datastring) * sizeof(WCHAR)) != wcslen(datastring) * sizeof(WCHAR))) {
+        (fnus->Length != sizeof(datastring) - sizeof(WCHAR) || RtlCompareMemory(fnus->Buffer, datastring, sizeof(datastring) - sizeof(WCHAR)) != sizeof(datastring) - sizeof(WCHAR))) {
         Status = split_path(Vcb, &fnus2, &parts, &has_stream);
         if (!NT_SUCCESS(Status)) {
             ERR("split_path returned %08x\n", Status);
@@ -2087,9 +2087,9 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
-    if ((stream->Length == wcslen(DOSATTRIB) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, DOSATTRIB, stream->Length) == stream->Length) ||
-        (stream->Length == wcslen(EA) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, EA, stream->Length) == stream->Length) ||
-        (stream->Length == wcslen(reparse) * sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, reparse, stream->Length) == stream->Length)) {
+    if ((stream->Length == sizeof(DOSATTRIB) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, DOSATTRIB, stream->Length) == stream->Length) ||
+        (stream->Length == sizeof(EA) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, EA, stream->Length) == stream->Length) ||
+        (stream->Length == sizeof(reparse) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, reparse, stream->Length) == stream->Length)) {
         return STATUS_OBJECT_NAME_INVALID;
     }
 
@@ -2308,7 +2308,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         return STATUS_CANNOT_DELETE;
 
     dsus.Buffer = datasuf;
-    dsus.Length = dsus.MaximumLength = (USHORT)wcslen(datasuf) * sizeof(WCHAR);
+    dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
     fpus.Buffer = NULL;
 
     if (!loaded_related) {

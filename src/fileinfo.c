@@ -2945,7 +2945,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
     UNICODE_STRING fn;
     NTSTATUS Status;
     static WCHAR datasuf[] = {':','$','D','A','T','A',0};
-    UINT16 datasuflen = (UINT16)wcslen(datasuf) * sizeof(WCHAR);
+    UINT16 datasuflen = sizeof(datasuf) - sizeof(WCHAR);
 
     if (!fileref) {
         ERR("called without fileref\n");
@@ -3033,7 +3033,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     }
 
     suf.Buffer = datasuf;
-    suf.Length = suf.MaximumLength = (UINT16)wcslen(datasuf) * sizeof(WCHAR);
+    suf.Length = suf.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
 
     if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY)
         reqsize = sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR);

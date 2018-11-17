@@ -278,7 +278,7 @@ static void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
         IoUnregisterPlugPlayNotificationEx(notification_entry);
 
     dosdevice_nameW.Buffer = dosdevice_name;
-    dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = (USHORT)wcslen(dosdevice_name) * sizeof(WCHAR);
+    dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
 
     IoDeleteSymbolicLink(&dosdevice_nameW);
     IoDeleteDevice(DriverObject->DeviceObject);
@@ -601,11 +601,11 @@ static BOOL lie_about_fs_type() {
     UNICODE_STRING mprus, cmdus, fsutilus;
 
     mprus.Buffer = mpr;
-    mprus.Length = mprus.MaximumLength = (USHORT)(wcslen(mpr) * sizeof(WCHAR));
+    mprus.Length = mprus.MaximumLength = sizeof(mpr) - sizeof(WCHAR);
     cmdus.Buffer = cmd;
-    cmdus.Length = cmdus.MaximumLength = (USHORT)(wcslen(cmd) * sizeof(WCHAR));
+    cmdus.Length = cmdus.MaximumLength = sizeof(cmd) - sizeof(WCHAR);
     fsutilus.Buffer = fsutil;
-    fsutilus.Length = fsutilus.MaximumLength = (USHORT)(wcslen(fsutil) * sizeof(WCHAR));
+    fsutilus.Length = fsutilus.MaximumLength = sizeof(fsutil) - sizeof(WCHAR);
 
     if (!PsGetCurrentProcess())
         return FALSE;
@@ -717,9 +717,18 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
         {
             FILE_FS_ATTRIBUTE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
             BOOL overflow = FALSE;
-            WCHAR* fs_name = (Irp->RequestorMode == UserMode && lie_about_fs_type()) ? L"NTFS" : L"Btrfs";
-            ULONG fs_name_len = (ULONG)wcslen(fs_name) * sizeof(WCHAR);
-            ULONG orig_fs_name_len = fs_name_len;
+            static const WCHAR ntfs[] = L"NTFS";
+            static const WCHAR btrfs[] = L"Btrfs";
+            const WCHAR* fs_name;
+            ULONG fs_name_len, orig_fs_name_len;
+
+            if (Irp->RequestorMode == UserMode && lie_about_fs_type()) {
+                fs_name = ntfs;
+                orig_fs_name_len = fs_name_len = sizeof(ntfs) - sizeof(WCHAR);
+            } else {
+                fs_name = btrfs;
+                orig_fs_name_len = fs_name_len = sizeof(btrfs) - sizeof(WCHAR);
+            }
 
             TRACE("FileFsAttributeInformation\n");
 
@@ -3713,8 +3722,8 @@ static BOOL is_btrfs_volume(_In_ PDEVICE_OBJECT DeviceObject) {
         return FALSE;
     }
 
-    if (mdn2->NameLength > wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR) &&
-        RtlCompareMemory(mdn2->Name, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR)) == wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR)) {
+    if (mdn2->NameLength > (sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR)) &&
+        RtlCompareMemory(mdn2->Name, BTRFS_VOLUME_PREFIX, sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR)) == sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR)) {
         ExFreePool(mdn2);
         return TRUE;
     }
@@ -5289,7 +5298,7 @@ NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObj
 
     ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
 
-    volname.Length = volname.MaximumLength = (USHORT)((wcslen(BTRFS_VOLUME_PREFIX) + 36 + 1) * sizeof(WCHAR));
+    volname.Length = volname.MaximumLength = (sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR)) + ((36 + 1) * sizeof(WCHAR));
     volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
 
     if (!volname.Buffer) {
@@ -5298,9 +5307,9 @@ NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObj
         goto end2;
     }
 
-    RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, wcslen(BTRFS_VOLUME_PREFIX) * sizeof(WCHAR));
+    RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR));
 
-    j = (ULONG)wcslen(BTRFS_VOLUME_PREFIX);
+    j = (sizeof(BTRFS_VOLUME_PREFIX) / sizeof(WCHAR)) - 1;
     for (i = 0; i < 16; i++) {
         volname.Buffer[j] = hex_digit(pdode->uuid.uuid[i] >> 4); j++;
         volname.Buffer[j] = hex_digit(pdode->uuid.uuid[i] & 0xf); j++;
@@ -5476,9 +5485,9 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     init_fast_io_dispatch(&DriverObject->FastIoDispatch);
 
     device_nameW.Buffer = device_name;
-    device_nameW.Length = device_nameW.MaximumLength = (USHORT)wcslen(device_name) * sizeof(WCHAR);
+    device_nameW.Length = device_nameW.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
     dosdevice_nameW.Buffer = dosdevice_name;
-    dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = (USHORT)wcslen(dosdevice_name) * sizeof(WCHAR);
+    dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
 
     Status = IoCreateDevice(DriverObject, sizeof(control_device_extension), &device_nameW, FILE_DEVICE_DISK_FILE_SYSTEM,
                             FILE_DEVICE_SECURE_OPEN, FALSE, &DeviceObject);

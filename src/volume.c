@@ -959,7 +959,7 @@ static BOOL allow_degraded_mount(BTRFS_UUID* uuid) {
     }
 
     adus.Buffer = L"AllowDegraded";
-    adus.Length = adus.MaximumLength = (USHORT)(wcslen(adus.Buffer) * sizeof(WCHAR));
+    adus.Length = adus.MaximumLength = sizeof(adus.Buffer) - sizeof(WCHAR);
 
     if (NT_SUCCESS(ZwQueryValueKey(h, &adus, KeyValueFullInformation, kvfi, kvfilen, &retlen))) {
         if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {

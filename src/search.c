@@ -826,8 +826,8 @@ static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmp
             device_name.Length = device_name.MaximumLength = 0;
         }
 
-        if (symlink.Length > wcslen(pref) * sizeof(WCHAR) &&
-            RtlCompareMemory(symlink.Buffer, pref, wcslen(pref) * sizeof(WCHAR)) == wcslen(pref) * sizeof(WCHAR))
+        if (symlink.Length > sizeof(pref) - sizeof(WCHAR) &&
+            RtlCompareMemory(symlink.Buffer, pref, sizeof(pref) - sizeof(WCHAR)) == sizeof(pref) - sizeof(WCHAR))
             mountmgr_process_drive(mountmgr, &device_name);
     }
 }

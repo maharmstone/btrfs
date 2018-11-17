@@ -400,9 +400,9 @@ static NTSTATUS pdo_query_device_id(pdo_device_extension* pdode, PIRP Irp) {
 
     static WCHAR pref[] = L"Btrfs\\";
 
-    RtlCopyMemory(name, pref, wcslen(pref) * sizeof(WCHAR));
+    RtlCopyMemory(name, pref, sizeof(pref) - sizeof(WCHAR));
 
-    noff = &name[wcslen(pref)];
+    noff = &name[(sizeof(pref) / sizeof(WCHAR)) - 1];
     for (i = 0; i < 16; i++) {
         *noff = hex_digit(pdode->uuid.uuid[i] >> 4); noff++;
         *noff = hex_digit(pdode->uuid.uuid[i] & 0xf); noff++;
