@@ -84,15 +84,17 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
                     IO_STATUS_BLOCK iosb;
                     btrfs_inode_info2 bii2;
 
+                    memset(&bii2, 0, sizeof(bii2));
+
                     Status = NtFsControlFile(fh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
                     if (NT_SUCCESS(Status)) {
                         sizes[0] += bii2.inline_length;
-                        sizes[1] += bii2.disk_size[0];
-                        sizes[2] += bii2.disk_size[1];
-                        sizes[3] += bii2.disk_size[2];
-                        sizes[4] += bii2.disk_size[3];
-                        totalsize += bii2.inline_length + bii2.disk_size[0] + bii2.disk_size[1] + bii2.disk_size[2] + bii2.disk_size[3];
+                        sizes[1] += bii2.disk_size_uncompressed;
+                        sizes[2] += bii2.disk_size_zlib;
+                        sizes[3] += bii2.disk_size_lzo;
+                        sizes[4] += bii2.disk_size_zstd;
+                        totalsize += bii2.inline_length + bii2.disk_size_uncompressed + bii2.disk_size_zlib + bii2.disk_size_lzo + bii2.disk_size_zstd;
                     }
                 }
             }
@@ -147,11 +149,11 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         search_list.push_back(fn);
 
+    memset(&bii2, 0, sizeof(bii2));
+
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
     if (NT_SUCCESS(Status) && !bii2.top) {
-        int j;
-
         LARGE_INTEGER filesize;
 
         if (i == 0) {
@@ -183,11 +185,24 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
             sizes[0] += bii2.inline_length;
         }
 
-        for (j = 0; j < 4; j++) {
-            if (bii2.disk_size[j] > 0) {
-                totalsize += bii2.disk_size[j];
-                sizes[j + 1] += bii2.disk_size[j];
-            }
+        if (bii2.disk_size_uncompressed > 0) {
+            totalsize += bii2.disk_size_uncompressed;
+            sizes[1] += bii2.disk_size_uncompressed;
+        }
+
+        if (bii2.disk_size_zlib > 0) {
+            totalsize += bii2.disk_size_zlib;
+            sizes[2] += bii2.disk_size_zlib;
+        }
+
+        if (bii2.disk_size_lzo > 0) {
+            totalsize += bii2.disk_size_lzo;
+            sizes[3] += bii2.disk_size_lzo;
+        }
+
+        if (bii2.disk_size_zstd > 0) {
+            totalsize += bii2.disk_size_zstd;
+            sizes[4] += bii2.disk_size_zstd;
         }
 
         min_mode |= ~bii2.st_mode;
@@ -357,11 +372,11 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
     if (GetFileInformationByHandle(h, &bhfi) && bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         search_list.push_back(cmdline);
 
+    memset(&bii2, 0, sizeof(bii2));
+
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info2));
 
     if (NT_SUCCESS(Status) && !bii2.top) {
-        int j;
-
         LARGE_INTEGER filesize;
 
         subvol = bii2.subvol;
@@ -376,11 +391,24 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
             sizes[0] += bii2.inline_length;
         }
 
-        for (j = 0; j < 4; j++) {
-            if (bii2.disk_size[j] > 0) {
-                totalsize += bii2.disk_size[j];
-                sizes[j + 1] += bii2.disk_size[j];
-            }
+        if (bii2.disk_size_uncompressed > 0) {
+            totalsize += bii2.disk_size_uncompressed;
+            sizes[1] += bii2.disk_size_uncompressed;
+        }
+
+        if (bii2.disk_size_zlib > 0) {
+            totalsize += bii2.disk_size_zlib;
+            sizes[2] += bii2.disk_size_zlib;
+        }
+
+        if (bii2.disk_size_lzo > 0) {
+            totalsize += bii2.disk_size_lzo;
+            sizes[3] += bii2.disk_size_lzo;
+        }
+
+        if (bii2.disk_size_zstd > 0) {
+            totalsize += bii2.disk_size_zstd;
+            sizes[4] += bii2.disk_size_zstd;
         }
 
         min_mode |= ~bii2.st_mode;
