@@ -40,6 +40,16 @@ typedef struct _FILE_ACCESS_INFORMATION {
 
 #define FileAccessInformation (FILE_INFORMATION_CLASS)8
 
+typedef struct _FILE_STANDARD_INFORMATION {
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG         NumberOfLinks;
+    BOOLEAN       DeletePending;
+    BOOLEAN       Directory;
+} FILE_STANDARD_INFORMATION, *PFILE_STANDARD_INFORMATION;
+
+#define FileStandardInformation (FILE_INFORMATION_CLASS)5
+
 #endif
 
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
@@ -95,6 +105,18 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
                         sizes[3] += bii2.disk_size_lzo;
                         sizes[4] += bii2.disk_size_zstd;
                         totalsize += bii2.inline_length + bii2.disk_size_uncompressed + bii2.disk_size_zlib + bii2.disk_size_lzo + bii2.disk_size_zstd;
+                        sparsesize += bii2.sparse_size;
+                    }
+
+                    FILE_STANDARD_INFORMATION fsi;
+
+                    Status = NtQueryInformationFile(fh, &iosb, &fsi, sizeof(fsi), FileStandardInformation);
+
+                    if (NT_SUCCESS(Status)) {
+                        if (bii2.inline_length > 0)
+                            allocsize += fsi.EndOfFile.QuadPart;
+                        else
+                            allocsize += fsi.AllocationSize.QuadPart;
                     }
                 }
             }
@@ -204,6 +226,20 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
             totalsize += bii2.disk_size_zstd;
             sizes[4] += bii2.disk_size_zstd;
         }
+
+        sparsesize += bii2.sparse_size;
+
+        FILE_STANDARD_INFORMATION fsi;
+
+        Status = NtQueryInformationFile(h, &iosb, &fsi, sizeof(fsi), FileStandardInformation);
+
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
+
+        if (bii2.inline_length > 0)
+            allocsize += fsi.EndOfFile.QuadPart;
+        else
+            allocsize += fsi.AllocationSize.QuadPart;
 
         min_mode |= ~bii2.st_mode;
         max_mode |= bii2.st_mode;
@@ -410,6 +446,20 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
             totalsize += bii2.disk_size_zstd;
             sizes[4] += bii2.disk_size_zstd;
         }
+
+        sparsesize += bii2.sparse_size;
+
+        FILE_STANDARD_INFORMATION fsi;
+
+        Status = NtQueryInformationFile(h, &iosb, &fsi, sizeof(fsi), FileStandardInformation);
+
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
+
+        if (bii2.inline_length > 0)
+            allocsize += fsi.EndOfFile.QuadPart;
+        else
+            allocsize += fsi.AllocationSize.QuadPart;
 
         min_mode |= ~bii2.st_mode;
         max_mode |= bii2.st_mode;
@@ -623,17 +673,30 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    wstring s, size_on_disk;
+    wstring s, size_on_disk, cr;
     WCHAR old_text[1024];
+    float ratio;
 
     format_size(totalsize, size_on_disk, true);
 
     wstring_sprintf(s, size_format, size_on_disk.c_str());
 
+    if (allocsize == sparsesize || totalsize == 0)
+        ratio = 0.0f;
+    else
+        ratio = 100.0f * (1.0f - ((float)totalsize / (float)(allocsize - sparsesize)));
+
+    wstring_sprintf(cr, cr_format, ratio);
+
     GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, old_text, sizeof(old_text) / sizeof(WCHAR));
 
     if (s != old_text)
         SetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, s.c_str());
+
+    GetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, old_text, sizeof(old_text) / sizeof(WCHAR));
+
+    if (cr != old_text)
+        SetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr.c_str());
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
@@ -853,6 +916,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
     SetDlgItemTextW(hwndDlg, IDC_TYPE, s.c_str());
 
     GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_format, sizeof(size_format) / sizeof(WCHAR));
+    GetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr_format, sizeof(cr_format) / sizeof(WCHAR));
     set_size_on_disk(hwndDlg);
 
     if (thread)

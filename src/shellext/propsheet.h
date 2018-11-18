@@ -106,7 +106,7 @@ public:
         filename = L"";
 
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = sizes[4] = 0;
-        totalsize = 0;
+        totalsize = allocsize = sparsesize = 0;
 
         InterlockedIncrement(&objs_loaded);
     }
@@ -162,7 +162,7 @@ public:
     bool readonly;
     bool can_change_perms;
     bool can_change_nocow;
-    WCHAR size_format[255];
+    WCHAR size_format[255], cr_format[255];
     HANDLE thread;
     uint32_t min_mode, max_mode, mode, mode_set;
     uint64_t min_flags, max_flags, flags, flags_set;
@@ -178,7 +178,7 @@ private:
     STGMEDIUM stgm;
     bool stgm_set;
     bool flags_changed, perms_changed, uid_changed, gid_changed;
-    uint64_t sizes[5], totalsize;
+    uint64_t sizes[5], totalsize, allocsize, sparsesize;
     deque<wstring> search_list;
     wstring filename;
 

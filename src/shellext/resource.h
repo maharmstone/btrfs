@@ -238,6 +238,7 @@
 #define IDC_VOL_SHOW_USAGE              1022
 #define IDC_VOL_BALANCE                 1023
 #define IDC_SIZE_ZSTD                   1023
+#define IDC_COMPRESSION_RATIO           1023
 #define IDC_PROFILES                    1024
 #define IDC_PROFILES_SINGLE             1025
 #define IDC_PROFILES_DUP                1026
@@ -336,7 +337,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        174
+#define _APS_NEXT_RESOURCE_VALUE        175
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1073
 #define _APS_NEXT_SYMED_VALUE           101
