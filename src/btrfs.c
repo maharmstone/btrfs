@@ -1667,7 +1667,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     CcUninitializeCacheMap(FileObject, NULL, NULL);
 
     if (open_files == 0 && fcb->Vcb->removing) {
-        uninit(fcb->Vcb, FALSE);
+        uninit(fcb->Vcb);
         return STATUS_SUCCESS;
     }
 
@@ -1688,7 +1688,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-void uninit(_In_ device_extension* Vcb, _In_ BOOL flush) {
+void uninit(_In_ device_extension* Vcb) {
     UINT64 i;
     KIRQL irql;
     NTSTATUS Status;
@@ -1754,20 +1754,6 @@ void uninit(_In_ device_extension* Vcb, _In_ BOOL flush) {
     Status = registry_mark_volume_unmounted(&Vcb->superblock.uuid);
     if (!NT_SUCCESS(Status) && Status != STATUS_TOO_LATE)
         WARN("registry_mark_volume_unmounted returned %08x\n", Status);
-
-    if (flush) {
-        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-
-        if (Vcb->need_write && !Vcb->readonly) {
-            Status = do_write(Vcb, NULL);
-            if (!NT_SUCCESS(Status))
-                ERR("do_write returned %08x\n", Status);
-        }
-
-        free_trees(Vcb);
-
-        ExReleaseResourceLite(&Vcb->tree_lock);
-    }
 
     for (i = 0; i < Vcb->calcthreads.num_threads; i++) {
         Vcb->calcthreads.threads[i].quit = TRUE;
@@ -4723,7 +4709,7 @@ static NTSTATUS verify_volume(_In_ PDEVICE_OBJECT devobj) {
         ExReleaseResourceLite(&Vcb->tree_lock);
 
     if (remove) {
-        uninit(Vcb, FALSE);
+        uninit(Vcb);
         return Status;
     }
 
@@ -4904,7 +4890,7 @@ static NTSTATUS drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         ExReleaseResourceLite(&Vcb->tree_lock);
 
         if (!open_files)
-            uninit(Vcb, TRUE);
+            uninit(Vcb);
 
         le = le2;
     }

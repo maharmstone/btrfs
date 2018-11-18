@@ -1070,7 +1070,7 @@ void protect_superblocks(_Inout_ chunk* c);
 BOOL is_top_level(_In_ PIRP Irp);
 NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ UINT64 id,
                      _Out_ root** rootptr, _In_ BOOL no_tree, _In_ UINT64 offset, _In_opt_ PIRP Irp);
-void uninit(_In_ device_extension* Vcb, _In_ BOOL flush);
+void uninit(_In_ device_extension* Vcb);
 NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In_reads_bytes_opt_(InputBufferSize) PVOID InputBuffer, _In_ ULONG InputBufferSize,
                    _Out_writes_bytes_opt_(OutputBufferSize) PVOID OutputBuffer, _In_ ULONG OutputBufferSize, _In_ BOOLEAN Override, _Out_opt_ IO_STATUS_BLOCK* iosb);
 BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix);

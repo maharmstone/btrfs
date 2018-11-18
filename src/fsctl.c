@@ -2436,7 +2436,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                     ExFreePool(newvpb);
 
                 if (Vcb->open_files == 0)
-                    uninit(Vcb, FALSE);
+                    uninit(Vcb);
             }
 
             break;

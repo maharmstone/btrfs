@@ -246,7 +246,7 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
         ExReleaseResourceLite(&Vcb->tree_lock);
 
         if (Vcb->open_files == 0)
-            uninit(Vcb, FALSE);
+            uninit(Vcb);
     }
 
     return STATUS_SUCCESS;
@@ -268,7 +268,7 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         ExReleaseResourceLite(&Vcb->tree_lock);
 
         if (Vcb->open_files == 0)
-            uninit(Vcb, FALSE);
+            uninit(Vcb);
     }
 
     return STATUS_SUCCESS;
