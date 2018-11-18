@@ -4862,6 +4862,7 @@ static NTSTATUS drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
+    LIST_ENTRY* le;
 
     FsRtlEnterFileSystem();
 
@@ -4879,12 +4880,33 @@ static NTSTATUS drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     shutting_down = TRUE;
     KeSetEvent(&mountmgr_thread_event, 0, FALSE);
 
-    while (!IsListEmpty(&VcbList)) {
-        Vcb = CONTAINING_RECORD(VcbList.Flink, device_extension, list_entry);
+    le = VcbList.Flink;
+    while (le != &VcbList) {
+        BOOL open_files;
+        LIST_ENTRY* le2 = le->Flink;
+
+        Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
 
         TRACE("shutting down Vcb %p\n", Vcb);
 
-        uninit(Vcb, TRUE);
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        Vcb->removing = TRUE;
+        open_files = Vcb->open_files > 0;
+
+        if (Vcb->need_write && !Vcb->readonly) {
+            Status = do_write(Vcb, Irp);
+            if (!NT_SUCCESS(Status))
+                ERR("do_write returned %08x\n", Status);
+        }
+
+        free_trees(Vcb);
+
+        ExReleaseResourceLite(&Vcb->tree_lock);
+
+        if (!open_files)
+            uninit(Vcb, TRUE);
+
+        le = le2;
     }
 
 #ifdef _DEBUG
