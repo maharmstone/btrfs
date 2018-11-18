@@ -91,8 +91,11 @@ typedef struct {
     UINT64 st_rdev;
     UINT64 flags;
     UINT32 inline_length;
-    UINT64 disk_size[4];
+    UINT64 disk_size_uncompressed;
+    UINT64 disk_size_zlib;
+    UINT64 disk_size_lzo;
     UINT8 compression_type;
+    UINT64 disk_size_zstd;
 } btrfs_inode_info2;
 
 typedef struct {
