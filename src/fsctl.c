@@ -1215,19 +1215,28 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     bii->disk_size_zlib = 0;
     bii->disk_size_lzo = 0;
 
-    if (!old_style)
+    if (!old_style) {
         bii->disk_size_zstd = 0;
+        bii->sparse_size = 0;
+    }
 
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+        UINT64 last_end = 0;
         LIST_ENTRY* le;
+        BOOL extents_inline = FALSE;
 
         le = fcb->extents.Flink;
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
             if (!ext->ignore) {
+                if (!old_style && ext->offset > last_end)
+                    bii->sparse_size += ext->offset - last_end;
+
                 if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
                     bii->inline_length += ext->datalen - (UINT16)offsetof(EXTENT_DATA, data[0]);
+                    last_end = ext->offset + ext->extent_data.decoded_size;
+                    extents_inline = TRUE;
                 } else {
                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
@@ -1252,11 +1261,16 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
                                 break;
                         }
                     }
+
+                    last_end = ext->offset + ed2->num_bytes;
                 }
             }
 
             le = le->Flink;
         }
+
+        if (!extents_inline && !old_style && sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end)
+            bii->sparse_size += sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end;
     }
 
     switch (fcb->prop_compression) {

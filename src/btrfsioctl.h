@@ -96,6 +96,7 @@ typedef struct {
     UINT64 disk_size_lzo;
     UINT8 compression_type;
     UINT64 disk_size_zstd;
+    UINT64 sparse_size;
 } btrfs_inode_info2;
 
 typedef struct {
