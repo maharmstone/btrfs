@@ -534,7 +534,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
     // If we've just added a partition to a whole-disk filesystem, unmount it
-    if (sdn.DeviceNumber != 0xffffffff) {
+    if (sdn.DeviceNumber != 0xffffffff && sdn.PartitionNumber != 0) {
         LIST_ENTRY* le;
 
         ExAcquireResourceExclusiveLite(&pdo_list_lock, TRUE);
