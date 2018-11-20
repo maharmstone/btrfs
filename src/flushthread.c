@@ -5752,6 +5752,8 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
             }
 
             if (c->space_changed || c->created) {
+                BOOL created = c->created;
+
                 used_minus_cache = c->used;
 
                 // subtract self-hosted cache
@@ -5794,9 +5796,10 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                     }
                 }
 
-                if (used_minus_cache > 0)
+                if (used_minus_cache > 0 || created)
                     release_chunk_lock(c, Vcb);
-            }
+            } else
+                release_chunk_lock(c, Vcb);
         }
 
         le = le2;
