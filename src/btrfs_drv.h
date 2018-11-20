@@ -61,6 +61,7 @@
 // #define DEBUG_LONG_MESSAGES
 // #define DEBUG_FLUSH_TIMES
 // #define DEBUG_STATS
+// #define DEBUG_CHUNK_LOCKS
 #define DEBUG_PARANOID
 #endif
 
@@ -704,6 +705,9 @@ typedef struct _device_extension {
 #ifdef DEBUG_STATS
     debug_stats stats;
 #endif
+#ifdef DEBUG_CHUNK_LOCKS
+    LONG chunk_locks_held;
+#endif
     UINT64 devices_loaded;
     superblock superblock;
     BOOL readonly;
@@ -1076,8 +1080,14 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
 BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix);
 void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
 void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
-void acquire_chunk_lock(chunk* c);
-void release_chunk_lock(chunk* c);
+
+#ifdef DEBUG_CHUNK_LOCKS
+#define acquire_chunk_lock(c, Vcb) { ExAcquireResourceExclusiveLite(&c->lock, TRUE); InterlockedIncrement(&Vcb->chunk_locks_held); }
+#define release_chunk_lock(c, Vcb) { InterlockedDecrement(&Vcb->chunk_locks_held); ExReleaseResourceLite(&c->lock); }
+#else
+#define acquire_chunk_lock(c, Vcb) ExAcquireResourceExclusiveLite(&(c)->lock, TRUE)
+#define release_chunk_lock(c, Vcb) ExReleaseResourceLite(&(c)->lock)
+#endif
 
 _Ret_z_
 WCHAR* file_desc(_In_ PFILE_OBJECT FileObject);

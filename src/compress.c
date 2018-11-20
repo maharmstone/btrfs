@@ -459,7 +459,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (!c->readonly && !c->reloc) {
-            acquire_chunk_lock(c);
+            acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
@@ -472,7 +472,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
                 }
             }
 
-            release_chunk_lock(c);
+            release_chunk_lock(c, fcb->Vcb);
         }
 
         le = le->Flink;
@@ -496,7 +496,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     }
 
     if (c) {
-        acquire_chunk_lock(c);
+        acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
@@ -507,7 +507,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
             }
         }
 
-        release_chunk_lock(c);
+        release_chunk_lock(c, fcb->Vcb);
     }
 
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
@@ -857,7 +857,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (!c->readonly && !c->reloc) {
-            acquire_chunk_lock(c);
+            acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
@@ -870,7 +870,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
                 }
             }
 
-            release_chunk_lock(c);
+            release_chunk_lock(c, fcb->Vcb);
         }
 
         le = le->Flink;
@@ -894,7 +894,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     }
 
     if (c) {
-        acquire_chunk_lock(c);
+        acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
@@ -905,7 +905,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
             }
         }
 
-        release_chunk_lock(c);
+        release_chunk_lock(c, fcb->Vcb);
     }
 
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
@@ -1023,7 +1023,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (!c->readonly && !c->reloc) {
-            acquire_chunk_lock(c);
+            acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
@@ -1036,7 +1036,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
                 }
             }
 
-            release_chunk_lock(c);
+            release_chunk_lock(c, fcb->Vcb);
         }
 
         le = le->Flink;
@@ -1060,7 +1060,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     }
 
     if (c) {
-        acquire_chunk_lock(c);
+        acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
@@ -1071,7 +1071,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
             }
         }
 
-        release_chunk_lock(c);
+        release_chunk_lock(c, fcb->Vcb);
     }
 
     WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);

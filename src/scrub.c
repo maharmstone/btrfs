@@ -3178,7 +3178,7 @@ static void scrub_thread(void* context) {
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        acquire_chunk_lock(c);
+        acquire_chunk_lock(c, Vcb);
 
         if (!c->readonly) {
             InsertTailList(&chunks, &c->list_entry_balance);
@@ -3186,7 +3186,7 @@ static void scrub_thread(void* context) {
             Vcb->scrub.chunks_left++;
         }
 
-        release_chunk_lock(c);
+        release_chunk_lock(c, Vcb);
 
         le = le->Flink;
     }

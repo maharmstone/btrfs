@@ -2889,7 +2889,7 @@ BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
 
     ExReleaseResourceLite(&c->changed_extents_lock);
 
-    release_chunk_lock(c);
+    release_chunk_lock(c, Vcb);
 
     if (data) {
         Status = write_data_complete(Vcb, address, data, (UINT32)length, Irp, NULL, file_write, irp_offset,
@@ -2950,10 +2950,10 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
     if (c->reloc || c->readonly || c->chunk_item->type != Vcb->data_flags)
         return FALSE;
 
-    acquire_chunk_lock(c);
+    acquire_chunk_lock(c, Vcb);
 
     if (length > c->chunk_item->size - c->used) {
-        release_chunk_lock(c);
+        release_chunk_lock(c, Vcb);
         return FALSE;
     }
 
@@ -2962,7 +2962,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
 
         if (!NT_SUCCESS(Status)) {
             ERR("load_cache_chunk returned %08x\n", Status);
-            release_chunk_lock(c);
+            release_chunk_lock(c, Vcb);
             return FALSE;
         }
     }
@@ -2979,7 +2979,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
             if (success)
                 *written += newlen;
             else
-                release_chunk_lock(c);
+                release_chunk_lock(c, Vcb);
 
             return success;
         } else if (s->address > ed2->address + ed2->size)
@@ -2988,7 +2988,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, UINT64 start_data, 
         le = le->Flink;
     }
 
-    release_chunk_lock(c);
+    release_chunk_lock(c, Vcb);
 
     return FALSE;
 }
@@ -3018,7 +3018,7 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, UINT64 start, UINT64 length, U
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (!c->readonly && !c->reloc) {
-            acquire_chunk_lock(c);
+            acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == flags) {
                 while (!IsListEmpty(&c->space_size) && length > 0) {
@@ -3030,12 +3030,12 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, UINT64 start, UINT64 length, U
                         length -= extlen;
                         if (data) data += extlen;
 
-                        acquire_chunk_lock(c);
+                        acquire_chunk_lock(c, fcb->Vcb);
                     }
                 }
             }
 
-            release_chunk_lock(c);
+            release_chunk_lock(c, fcb->Vcb);
 
             if (length == 0)
                 break;
@@ -3068,7 +3068,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             c = CONTAINING_RECORD(le, chunk, list_entry);
 
             if (!c->readonly && !c->reloc) {
-                acquire_chunk_lock(c);
+                acquire_chunk_lock(c, fcb->Vcb);
 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
                     if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0)) {
@@ -3077,7 +3077,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
                     }
                 }
 
-                release_chunk_lock(c);
+                release_chunk_lock(c, fcb->Vcb);
             }
 
             le = le->Flink;
@@ -3096,14 +3096,14 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, UINT64 start, UINT64 length, LI
             goto end;
         }
 
-        acquire_chunk_lock(c);
+        acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= extlen) {
             if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, FALSE, 0))
                 goto cont;
         }
 
-        release_chunk_lock(c);
+        release_chunk_lock(c, fcb->Vcb);
 
         Status = insert_chunk_fragmented(fcb, start, length, NULL, TRUE, rollback);
         if (!NT_SUCCESS(Status))
@@ -3160,7 +3160,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
             c = CONTAINING_RECORD(le, chunk, list_entry);
 
             if (!c->readonly && !c->reloc) {
-                acquire_chunk_lock(c);
+                acquire_chunk_lock(c, Vcb);
 
                 if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
                     insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen, file_write, irp_offset)) {
@@ -3178,7 +3178,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
                         break;
                     }
                 } else
-                    release_chunk_lock(c);
+                    release_chunk_lock(c, Vcb);
             }
 
             le = le->Flink;
@@ -3202,7 +3202,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
         }
 
         if (c) {
-            acquire_chunk_lock(c);
+            acquire_chunk_lock(c, Vcb);
 
             if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= newlen &&
                 insert_extent_chunk(Vcb, fcb, c, start_data, newlen, FALSE, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen, file_write, irp_offset)) {
@@ -3218,7 +3218,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, UINT64 start_data
                     data = &((UINT8*)data)[newlen];
                 }
             } else
-                release_chunk_lock(c);
+                release_chunk_lock(c, Vcb);
         }
 
         if (!done) {

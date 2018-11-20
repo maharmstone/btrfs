@@ -1102,7 +1102,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 rollback_space* rs = ri->ptr;
 
                 if (rs->chunk)
-                    acquire_chunk_lock(rs->chunk);
+                    acquire_chunk_lock(rs->chunk, Vcb);
 
                 if (ri->type == ROLLBACK_ADD_SPACE)
                     space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL, NULL);
@@ -1144,7 +1144,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         le2 = le3;
                     }
 
-                    release_chunk_lock(rs->chunk);
+                    release_chunk_lock(rs->chunk, Vcb);
                 }
 
                 ExFreePool(rs);
