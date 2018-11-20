@@ -1076,6 +1076,8 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
 BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix);
 void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
 void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
+void acquire_chunk_lock(chunk* c);
+void release_chunk_lock(chunk* c);
 
 _Ret_z_
 WCHAR* file_desc(_In_ PFILE_OBJECT FileObject);

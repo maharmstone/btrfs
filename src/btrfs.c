@@ -3804,6 +3804,14 @@ NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_ST
     return STATUS_NOT_FOUND;
 }
 
+void acquire_chunk_lock(chunk* c) {
+    ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+}
+
+void release_chunk_lock(chunk* c) {
+    ExReleaseResourceLite(&c->lock);
+}
+
 _Success_(return>=0)
 static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ BOOL* no_pnp) {
     NTSTATUS Status;

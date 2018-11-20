@@ -105,13 +105,13 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
 
     if (c) {
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        acquire_chunk_lock(c);
 
         c->used -= Vcb->superblock.node_size;
 
         space_list_add(c, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
 
-        ExReleaseResourceLite(&c->lock);
+        release_chunk_lock(c);
     }
 
     ei = (EXTENT_ITEM*)tp->item->data;
@@ -745,7 +745,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     flags = Vcb->metadata_flags;
 
                 if (newchunk) {
-                    ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
+                    acquire_chunk_lock(newchunk);
 
                     if (newchunk->chunk_item->type == flags && find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                         newchunk->used += Vcb->superblock.node_size;
@@ -753,7 +753,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                         done = TRUE;
                     }
 
-                    ExReleaseResourceLite(&newchunk->lock);
+                    release_chunk_lock(newchunk);
                 }
 
                 if (!done) {
@@ -764,20 +764,20 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                         chunk* c2 = CONTAINING_RECORD(le2, chunk, list_entry);
 
                         if (!c2->readonly && !c2->reloc && c2 != newchunk && c2->chunk_item->type == flags) {
-                            ExAcquireResourceExclusiveLite(&c2->lock, TRUE);
+                            acquire_chunk_lock(c2);
 
                             if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.node_size) {
                                 if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
                                     c2->used += Vcb->superblock.node_size;
                                     space_list_subtract(c2, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
-                                    ExReleaseResourceLite(&c2->lock);
+                                    release_chunk_lock(c2);
                                     newchunk = c2;
                                     done = TRUE;
                                     break;
                                 }
                             }
 
-                            ExReleaseResourceLite(&c2->lock);
+                            release_chunk_lock(c2);
                         }
 
                         le2 = le2->Flink;
@@ -793,12 +793,12 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             goto end;
                         }
 
-                        ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
+                        acquire_chunk_lock(newchunk);
 
                         newchunk->balance_num = Vcb->balance.balance_num;
 
                         if (!find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
-                            ExReleaseResourceLite(&newchunk->lock);
+                            release_chunk_lock(newchunk);
                             ExReleaseResourceLite(&Vcb->chunk_lock);
                             ERR("could not find address in new chunk\n");
                             Status = STATUS_DISK_FULL;
@@ -808,7 +808,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             space_list_subtract(newchunk, FALSE, mr->new_address, Vcb->superblock.node_size, rollback);
                         }
 
-                        ExReleaseResourceLite(&newchunk->lock);
+                        release_chunk_lock(newchunk);
                     }
 
                     ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -1338,13 +1338,13 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
 
     if (c) {
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        acquire_chunk_lock(c);
 
         c->used -= tp->item->key.offset;
 
         space_list_add(c, tp->item->key.obj_id, tp->item->key.offset, rollback);
 
-        ExReleaseResourceLite(&c->lock);
+        release_chunk_lock(c);
     }
 
     ei = (EXTENT_ITEM*)tp->item->data;
@@ -1754,7 +1754,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         ULONG runlength, index, lastoff;
 
         if (newchunk) {
-            ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
+            acquire_chunk_lock(newchunk);
 
             if (find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                 newchunk->used += dr->size;
@@ -1762,7 +1762,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                 done = TRUE;
             }
 
-            ExReleaseResourceLite(&newchunk->lock);
+            release_chunk_lock(newchunk);
         }
 
         if (!done) {
@@ -1773,20 +1773,20 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                 chunk* c2 = CONTAINING_RECORD(le2, chunk, list_entry);
 
                 if (!c2->readonly && !c2->reloc && c2 != newchunk && c2->chunk_item->type == Vcb->data_flags) {
-                    ExAcquireResourceExclusiveLite(&c2->lock, TRUE);
+                    acquire_chunk_lock(c2);
 
                     if ((c2->chunk_item->size - c2->used) >= dr->size) {
                         if (find_data_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
                             c2->used += dr->size;
                             space_list_subtract(c2, FALSE, dr->new_address, dr->size, &rollback);
-                            ExReleaseResourceLite(&c2->lock);
+                            release_chunk_lock(c2);
                             newchunk = c2;
                             done = TRUE;
                             break;
                         }
                     }
 
-                    ExReleaseResourceLite(&c2->lock);
+                    release_chunk_lock(c2);
                 }
 
                 le2 = le2->Flink;
@@ -1802,12 +1802,12 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                     goto end;
                 }
 
-                ExAcquireResourceExclusiveLite(&newchunk->lock, TRUE);
+                acquire_chunk_lock(newchunk);
 
                 newchunk->balance_num = Vcb->balance.balance_num;
 
                 if (!find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
-                    ExReleaseResourceLite(&newchunk->lock);
+                    release_chunk_lock(newchunk);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
                     ERR("could not find address in new chunk\n");
                     Status = STATUS_DISK_FULL;
@@ -1817,7 +1817,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
                     space_list_subtract(newchunk, FALSE, dr->new_address, dr->size, &rollback);
                 }
 
-                ExReleaseResourceLite(&newchunk->lock);
+                release_chunk_lock(newchunk);
             }
 
             ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -3104,7 +3104,7 @@ void balance_thread(void* context) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
         UINT8 sort;
 
-        ExAcquireResourceExclusiveLite(&c->lock, TRUE);
+        acquire_chunk_lock(c);
 
         if (c->chunk_item->type & BLOCK_FLAG_DATA)
             sort = BALANCE_OPTS_DATA;
@@ -3114,7 +3114,7 @@ void balance_thread(void* context) {
             sort = BALANCE_OPTS_SYSTEM;
         else {
             ERR("unexpected chunk type %llx\n", c->chunk_item->type);
-            ExReleaseResourceLite(&c->lock);
+            release_chunk_lock(c);
             break;
         }
 
@@ -3138,13 +3138,13 @@ void balance_thread(void* context) {
             if (!NT_SUCCESS(Status)) {
                 ERR("load_cache_chunk returned %08x\n", Status);
                 Vcb->balance.status = Status;
-                ExReleaseResourceLite(&c->lock);
+                release_chunk_lock(c);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 goto end;
             }
         }
 
-        ExReleaseResourceLite(&c->lock);
+        release_chunk_lock(c);
 
         le = le->Flink;
     }
