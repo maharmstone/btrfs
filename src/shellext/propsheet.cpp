@@ -927,6 +927,10 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 
     comptype = GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE);
 
+    while (SendMessage(comptype, CB_GETCOUNT, 0, 0) > 0) {
+        SendMessage(comptype, CB_DELETESTRING, 0, 0);
+    }
+
     if (min_compression_type != max_compression_type) {
         SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)L"");
         SendMessage(comptype, CB_SETCURSEL, 0, 0);
