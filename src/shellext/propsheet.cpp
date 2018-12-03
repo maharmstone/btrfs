@@ -293,6 +293,7 @@ HRESULT BtrfsPropSheet::load_file_list() {
     can_change_nocow = true;
 
     sizes[0] = sizes[1] = sizes[2] = sizes[3] = sizes[4] = 0;
+    totalsize = allocsize = sparsesize = 0;
 
     for (i = 0; i < num_files; i++) {
         if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
@@ -915,8 +916,12 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 
     SetDlgItemTextW(hwndDlg, IDC_TYPE, s.c_str());
 
-    GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_format, sizeof(size_format) / sizeof(WCHAR));
-    GetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr_format, sizeof(cr_format) / sizeof(WCHAR));
+    if (size_format[0] == 0)
+        GetDlgItemTextW(hwndDlg, IDC_SIZE_ON_DISK, size_format, sizeof(size_format) / sizeof(WCHAR));
+
+    if (cr_format[0] == 0)
+        GetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr_format, sizeof(cr_format) / sizeof(WCHAR));
+
     set_size_on_disk(hwndDlg);
 
     if (thread)

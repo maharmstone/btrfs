@@ -107,6 +107,8 @@ public:
 
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = sizes[4] = 0;
         totalsize = allocsize = sparsesize = 0;
+        size_format[0] = 0;
+        cr_format[0] = 0;
 
         InterlockedIncrement(&objs_loaded);
     }
