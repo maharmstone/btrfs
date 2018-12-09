@@ -594,6 +594,9 @@ static BOOL lie_about_fs_type() {
     PPEB peb;
     LIST_ENTRY* le;
     ULONG retlen;
+#ifdef _AMD64_
+    ULONG_PTR wow64info;
+#endif
 
     static const WCHAR mpr[] = L"MPR.DLL";
     static const WCHAR cmd[] = L"CMD.EXE";
@@ -609,6 +612,13 @@ static BOOL lie_about_fs_type() {
 
     if (!PsGetCurrentProcess())
         return FALSE;
+
+#ifdef _AMD64_
+    Status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessWow64Information, &wow64info, sizeof(wow64info), NULL);
+
+    if (NT_SUCCESS(Status) && wow64info != 0)
+        return TRUE;
+#endif
 
     Status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessBasicInformation, &pbi, sizeof(pbi), &retlen);
 
