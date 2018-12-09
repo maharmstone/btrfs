@@ -1707,7 +1707,57 @@ static NTSTATUS file_create_parse_ea(fcb* fcb, FILE_FULL_EA_INFORMATION* ea) {
         ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
     } while (TRUE);
 
-    // FIXME - LXSS
+    // handle LXSS values
+    le = ealist.Flink;
+    while (le != &ealist) {
+        LIST_ENTRY* le2 = le->Flink;
+        ea_item* item = CONTAINING_RECORD(le, ea_item, list_entry);
+
+        if (item->name.Length == sizeof(lxuid) - 1 && RtlCompareMemory(item->name.Buffer, lxuid, item->name.Length) == item->name.Length) {
+            if (item->value.Length < sizeof(UINT32)) {
+                ERR("uid value was shorter than expected\n");
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+
+            RtlCopyMemory(&fcb->inode_item.st_uid, item->value.Buffer, sizeof(UINT32));
+            fcb->sd_dirty = TRUE;
+            fcb->sd_deleted = FALSE;
+
+            RemoveEntryList(&item->list_entry);
+            ExFreePool(item);
+        } else if (item->name.Length == sizeof(lxgid) - 1 && RtlCompareMemory(item->name.Buffer, lxgid, item->name.Length) == item->name.Length) {
+            if (item->value.Length < sizeof(UINT32)) {
+                ERR("gid value was shorter than expected\n");
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+
+            RtlCopyMemory(&fcb->inode_item.st_gid, item->value.Buffer, sizeof(UINT32));
+
+            RemoveEntryList(&item->list_entry);
+            ExFreePool(item);
+        } else if (item->name.Length == sizeof(lxmod) - 1 && RtlCompareMemory(item->name.Buffer, lxmod, item->name.Length) == item->name.Length) {
+            UINT32 allowed = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH | S_ISGID | S_ISVTX | S_ISUID;
+            UINT32 val;
+
+            if (item->value.Length < sizeof(UINT32)) {
+                ERR("mode value was shorter than expected\n");
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+
+            RtlCopyMemory(&val, item->value.Buffer, sizeof(UINT32));
+
+            fcb->inode_item.st_mode &= ~allowed;
+            fcb->inode_item.st_mode |= val & allowed;
+
+            RemoveEntryList(&item->list_entry);
+            ExFreePool(item);
+        }
+
+        le = le2;
+    }
 
     if (IsListEmpty(&ealist))
         return STATUS_SUCCESS;

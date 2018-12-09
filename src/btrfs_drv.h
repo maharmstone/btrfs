@@ -1211,6 +1211,10 @@ typedef struct {
     LIST_ENTRY list_entry;
 } ea_item;
 
+static const char lxuid[] = "$LXUID";
+static const char lxgid[] = "$LXGID";
+static const char lxmod[] = "$LXMOD";
+
 // in treefuncs.c
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
                    _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp);

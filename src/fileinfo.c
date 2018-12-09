@@ -50,10 +50,6 @@ typedef struct _FILE_STAT_LX_INFORMATION {
 
 #endif
 
-static const char lxuid[] = "$LXUID";
-static const char lxgid[] = "$LXGID";
-static const char lxmod[] = "$LXMOD";
-
 static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
