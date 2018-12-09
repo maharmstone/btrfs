@@ -1680,6 +1680,10 @@ static __inline void do_xor(UINT8* buf1, UINT8* buf2, UINT32 len) {
 #define S_ISVTX 0001000
 #endif
 
+// based on functions in sys/sysmacros.h
+#define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((UINT32)((rdev) >> 32) & ~0xFFF))
+#define minor(rdev) (((rdev) & 0xFF) | ((UINT32)((rdev) >> 12) & ~0xFF))
+
 static __inline UINT64 fcb_alloc_size(fcb* fcb) {
     if (S_ISDIR(fcb->inode_item.st_mode))
         return 0;

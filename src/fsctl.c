@@ -3658,10 +3658,6 @@ end:
     return Status;
 }
 
-// based on functions in sys/sysmacros.h
-#define major(rdev) ((((rdev) >> 8) & 0xFFF) | ((UINT32)((rdev) >> 32) & ~0xFFF))
-#define minor(rdev) (((rdev) & 0xFF) | ((UINT32)((rdev) >> 12) & ~0xFF))
-
 static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     NTSTATUS Status;
     btrfs_mknod* bmn;

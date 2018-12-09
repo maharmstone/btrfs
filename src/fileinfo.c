@@ -20,6 +20,34 @@
 // not currently in mingw - introduced with Windows 10
 #ifndef FileIdInformation
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
+#define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
+
+typedef struct _FILE_STAT_LX_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG         FileAttributes;
+    ULONG         ReparseTag;
+    ULONG         NumberOfLinks;
+    ACCESS_MASK   EffectiveAccess;
+    ULONG         LxFlags;
+    ULONG         LxUid;
+    ULONG         LxGid;
+    ULONG         LxMode;
+    ULONG         LxDeviceIdMajor;
+    ULONG         LxDeviceIdMinor;
+} FILE_STAT_LX_INFORMATION, *PFILE_STAT_LX_INFORMATION;
+
+#define LX_FILE_METADATA_HAS_UID        0x01
+#define LX_FILE_METADATA_HAS_GID        0x02
+#define LX_FILE_METADATA_HAS_MODE       0x04
+#define LX_FILE_METADATA_HAS_DEVICE_ID  0x08
+#define LX_FILE_CASE_SENSITIVE_DIR      0x10
+
 #endif
 
 static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
@@ -3598,6 +3626,67 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, PIRP Irp, LONG* length) {
+    INODE_ITEM* ii;
+
+    fsli->FileId.LowPart = (UINT32)fcb->inode;
+    fsli->FileId.HighPart = (UINT32)fcb->subvol->id;
+
+    if (fcb->ads)
+        ii = &ccb->fileref->parent->fcb->inode_item;
+    else
+        ii = &fcb->inode_item;
+
+    if (fcb == fcb->Vcb->dummy_fcb) {
+        LARGE_INTEGER time;
+
+        KeQuerySystemTime(&time);
+        fsli->CreationTime = fsli->LastAccessTime = fsli->LastWriteTime = fsli->ChangeTime = time;
+    } else {
+        fsli->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
+        fsli->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
+        fsli->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
+        fsli->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    }
+
+    if (fcb->ads) {
+        fsli->AllocationSize.QuadPart = fsli->EndOfFile.QuadPart = fcb->adsdata.Length;
+        fsli->FileAttributes = ccb->fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : ccb->fileref->parent->fcb->atts;
+    } else {
+        fsli->AllocationSize.QuadPart = fcb_alloc_size(fcb);
+        fsli->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fsli->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
+    }
+
+    if (!(fsli->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        fsli->ReparseTag = 0;
+    else
+        fsli->ReparseTag = get_reparse_tag(fcb->Vcb, fcb->subvol, fcb->inode, fcb->type, fcb->atts, TRUE, Irp);
+
+    if (fcb->ads)
+        fsli->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.st_nlink;
+    else
+        fsli->NumberOfLinks = fcb->inode_item.st_nlink;
+
+    fsli->EffectiveAccess = ccb->access;
+    fsli->LxFlags = LX_FILE_METADATA_HAS_UID | LX_FILE_METADATA_HAS_GID | LX_FILE_METADATA_HAS_MODE | LX_FILE_METADATA_HAS_DEVICE_ID; // FIXME - LX_FILE_CASE_SENSITIVE_DIR
+    fsli->LxUid = ii->st_uid;
+    fsli->LxGid = ii->st_gid;
+    fsli->LxMode = ii->st_mode;
+
+    if (ii->st_mode & __S_IFBLK || ii->st_mode & __S_IFCHR) {
+        fsli->LxDeviceIdMajor = major(ii->st_rdev);
+        fsli->LxDeviceIdMinor = minor(ii->st_rdev);
+    } else {
+        fsli->LxDeviceIdMajor = 0;
+        fsli->LxDeviceIdMinor = 0;
+    }
+
+    *length -= sizeof(FILE_STAT_LX_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
@@ -3877,6 +3966,23 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             TRACE("FileIdInformation\n");
 
             Status = fill_in_file_id_information(fii, fcb, &length);
+
+            break;
+        }
+
+        case FileStatLxInformation:
+        {
+            FILE_STAT_LX_INFORMATION* fsli = Irp->AssociatedIrp.SystemBuffer;
+
+            if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_STAT_LX_INFORMATION)) {
+                WARN("overflow\n");
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto exit;
+            }
+
+            TRACE("FileStatLxInformation\n");
+
+            Status = fill_in_file_stat_lx_information(fsli, fcb, ccb, Irp, &length);
 
             break;
         }
