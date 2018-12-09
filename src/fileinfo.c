@@ -100,6 +100,20 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         goto end;
     }
 
+    // times of -2 are some sort of undocumented behaviour to do with LXSS
+
+    if (fbi->CreationTime.QuadPart == -2)
+        fbi->CreationTime.QuadPart = 0;
+
+    if (fbi->LastAccessTime.QuadPart == -2)
+        fbi->LastAccessTime.QuadPart = 0;
+
+    if (fbi->LastWriteTime.QuadPart == -2)
+        fbi->LastWriteTime.QuadPart = 0;
+
+    if (fbi->ChangeTime.QuadPart == -2)
+        fbi->ChangeTime.QuadPart = 0;
+
     if (fbi->CreationTime.QuadPart == -1)
         ccb->user_set_creation_time = TRUE;
     else if (fbi->CreationTime.QuadPart != 0) {
