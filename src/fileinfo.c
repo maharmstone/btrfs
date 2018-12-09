@@ -4304,13 +4304,6 @@ end:
     return Status;
 }
 
-typedef struct {
-    ANSI_STRING name;
-    ANSI_STRING value;
-    UCHAR flags;
-    LIST_ENTRY list_entry;
-} ea_item;
-
 _Dispatch_type_(IRP_MJ_SET_EA)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {

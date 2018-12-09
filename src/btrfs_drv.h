@@ -1204,6 +1204,13 @@ typedef struct {
     LIST_ENTRY list_entry;
 } rollback_item;
 
+typedef struct {
+    ANSI_STRING name;
+    ANSI_STRING value;
+    UCHAR flags;
+    LIST_ENTRY list_entry;
+} ea_item;
+
 // in treefuncs.c
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
                    _In_ const KEY* searchkey, _In_ BOOL ignore, _In_opt_ PIRP Irp);
