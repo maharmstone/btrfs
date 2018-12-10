@@ -2704,20 +2704,25 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
 
     // FIXME - ATOMIC_CREATE_ECP_IN_FLAG_BEST_EFFORT
     if (acec && acec->InFlags & ATOMIC_CREATE_ECP_IN_FLAG_REPARSE_POINT_SPECIFIED) {
-        Status = set_reparse_point2(fileref->fcb, acec->ReparseBuffer, acec->ReparseBufferLength, NULL, NULL, Irp, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("set_reparse_point2 returned %08x\n", Status);
-            fileref->deleted = TRUE;
-            fileref->fcb->deleted = TRUE;
+        if (fileref->fcb->type == BTRFS_TYPE_SOCKET || fileref->fcb->type == BTRFS_TYPE_FIFO ||
+            fileref->fcb->type == BTRFS_TYPE_CHARDEV || fileref->fcb->type == BTRFS_TYPE_BLOCKDEV) {
+            // NOP. If called from LXSS, humour it - we hardcode the values elsewhere.
+        } else {
+            Status = set_reparse_point2(fileref->fcb, acec->ReparseBuffer, acec->ReparseBufferLength, NULL, NULL, Irp, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("set_reparse_point2 returned %08x\n", Status);
+                fileref->deleted = TRUE;
+                fileref->fcb->deleted = TRUE;
 
-            if (stream.Length == 0) {
-                ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
-                parfileref->fcb->inode_item.st_size -= fileref->dc->utf8.Length * 2;
-                ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+                if (stream.Length == 0) {
+                    ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+                    parfileref->fcb->inode_item.st_size -= fileref->dc->utf8.Length * 2;
+                    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+                }
+
+                free_fileref(Vcb, fileref);
+                return Status;
             }
-
-            free_fileref(Vcb, fileref);
-            return Status;
         }
 
         acec->OutFlags |= ATOMIC_CREATE_ECP_OUT_FLAG_REPARSE_POINT_SET;
