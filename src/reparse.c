@@ -302,7 +302,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
         LARGE_INTEGER offset, time;
         BTRFS_TIME now;
 
-        if (fcb->type == BTRFS_TYPE_DIRECTORY) { // for directories, store as xattr
+        if (fcb->type == BTRFS_TYPE_DIRECTORY || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV) { // store as xattr
             ANSI_STRING buf;
 
             buf.Buffer = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
