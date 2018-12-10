@@ -3672,10 +3672,21 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
         fsli->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
-    if (!(fsli->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+    if (fcb->type == BTRFS_TYPE_SOCKET)
+        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_SOCKET;
+    else if (fcb->type == BTRFS_TYPE_FIFO)
+        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_FIFO;
+    else if (fcb->type == BTRFS_TYPE_CHARDEV)
+        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_CHARDEV;
+    else if (fcb->type == BTRFS_TYPE_BLOCKDEV)
+        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_BLOCKDEV;
+    else if (!(fsli->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         fsli->ReparseTag = 0;
     else
         fsli->ReparseTag = get_reparse_tag_fcb(fcb);
+
+    if (fcb->type == BTRFS_TYPE_SOCKET || fcb->type == BTRFS_TYPE_FIFO || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV)
+        fsli->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
 
     if (fcb->ads)
         fsli->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.st_nlink;
