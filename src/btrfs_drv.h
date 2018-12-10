@@ -1214,6 +1214,7 @@ typedef struct {
 static const char lxuid[] = "$LXUID";
 static const char lxgid[] = "$LXGID";
 static const char lxmod[] = "$LXMOD";
+static const char lxdev[] = "$LXDEV";
 
 // in treefuncs.c
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,

@@ -1785,10 +1785,29 @@ static NTSTATUS file_create_parse_ea(fcb* fcb, FILE_FULL_EA_INFORMATION* ea) {
 
             RemoveEntryList(&item->list_entry);
             ExFreePool(item);
+        } else if (item->name.Length == sizeof(lxdev) - 1 && RtlCompareMemory(item->name.Buffer, lxdev, item->name.Length) == item->name.Length) {
+            UINT32 major, minor;
+
+            if (item->value.Length < sizeof(UINT64)) {
+                ERR("dev value was shorter than expected\n");
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+
+            major = *(UINT32*)item->value.Buffer;
+            minor = *(UINT32*)&item->value.Buffer[sizeof(UINT32)];
+
+            fcb->inode_item.st_rdev = (minor & 0xFFFFF) | ((major & 0xFFFFFFFFFFF) << 20);
+
+            RemoveEntryList(&item->list_entry);
+            ExFreePool(item);
         }
 
         le = le2;
     }
+
+    if (fcb->type != BTRFS_TYPE_CHARDEV && fcb->type != BTRFS_TYPE_BLOCKDEV)
+        fcb->inode_item.st_rdev = 0;
 
     if (IsListEmpty(&ealist))
         return STATUS_SUCCESS;
