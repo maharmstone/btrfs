@@ -2977,7 +2977,8 @@ static NTSTATUS get_reparse_block(fcb* fcb, UINT8** data) {
         }
 
         RtlCopyMemory(*data, fcb->reparse_xattr.Buffer, fcb->reparse_xattr.Length);
-    }
+    } else
+        return STATUS_INVALID_PARAMETER;
 
     return STATUS_SUCCESS;
 }
