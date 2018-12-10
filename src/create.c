@@ -1766,8 +1766,22 @@ static NTSTATUS file_create_parse_ea(fcb* fcb, FILE_FULL_EA_INFORMATION* ea) {
 
             RtlCopyMemory(&val, item->value.Buffer, sizeof(UINT32));
 
+            if (fcb->type != BTRFS_TYPE_DIRECTORY)
+                allowed |= __S_IFIFO | __S_IFCHR | __S_IFBLK | __S_IFSOCK;
+
             fcb->inode_item.st_mode &= ~allowed;
             fcb->inode_item.st_mode |= val & allowed;
+
+            if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+                if ((fcb->inode_item.st_mode & __S_IFCHR) == __S_IFCHR)
+                    fcb->type = BTRFS_TYPE_CHARDEV;
+                else if ((fcb->inode_item.st_mode & __S_IFBLK) == __S_IFBLK)
+                    fcb->type = BTRFS_TYPE_BLOCKDEV;
+                else if ((fcb->inode_item.st_mode & __S_IFIFO) == __S_IFIFO)
+                    fcb->type = BTRFS_TYPE_FIFO;
+                else if ((fcb->inode_item.st_mode & __S_IFSOCK) == __S_IFSOCK)
+                    fcb->type = BTRFS_TYPE_SOCKET;
+            }
 
             RemoveEntryList(&item->list_entry);
             ExFreePool(item);
