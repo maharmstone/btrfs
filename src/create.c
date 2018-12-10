@@ -23,6 +23,23 @@ extern PDEVICE_OBJECT master_devobj;
 
 static const WCHAR datastring[] = L"::$DATA";
 
+// Windows 10
+#define ATOMIC_CREATE_ECP_IN_FLAG_REPARSE_POINT_SPECIFIED   0x0002
+#define ATOMIC_CREATE_ECP_IN_FLAG_BEST_EFFORT               0x0100
+#define ATOMIC_CREATE_ECP_OUT_FLAG_REPARSE_POINT_SET        0x0002
+
+typedef struct _ATOMIC_CREATE_ECP_CONTEXT {
+    USHORT Size;
+    USHORT InFlags;
+    USHORT OutFlags;
+    USHORT ReparseBufferLength;
+    PREPARSE_DATA_BUFFER ReparseBuffer;
+    LONGLONG FileSize;
+    LONGLONG ValidDataLength;
+} ATOMIC_CREATE_ECP_CONTEXT, *PATOMIC_CREATE_ECP_CONTEXT;
+
+static const GUID GUID_ECP_ATOMIC_CREATE = { 0x4720bd83, 0x52ac, 0x4104, { 0xa1, 0x30, 0xd1, 0xec, 0x6a, 0x8c, 0xc8, 0xe5 } };
+
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb* fcb;
 
@@ -2446,6 +2463,8 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     UNICODE_STRING dsus, fpus, stream;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
+    ECP_LIST* ecp_list;
+    ATOMIC_CREATE_ECP_CONTEXT* acec = NULL;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG oc;
 #endif
@@ -2457,6 +2476,23 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
 
     if (options & FILE_DELETE_ON_CLOSE && IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_READONLY)
         return STATUS_CANNOT_DELETE;
+
+    if (NT_SUCCESS(FsRtlGetEcpListFromIrp(Irp, &ecp_list)) && ecp_list) {
+        void* ctx = NULL;
+        GUID type;
+        ULONG ctxsize;
+
+        do {
+            Status = FsRtlGetNextExtraCreateParameter(ecp_list, ctx, &type, &ctx, &ctxsize);
+
+            if (NT_SUCCESS(Status)) {
+                if (RtlCompareMemory(&type, &GUID_ECP_ATOMIC_CREATE, sizeof(GUID)) == sizeof(GUID) && ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT)) {
+                    acec = ctx;
+                    break;
+                }
+            }
+        } while (NT_SUCCESS(Status));
+    }
 
     dsus.Buffer = (WCHAR*)datasuf;
     dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
@@ -2623,6 +2659,18 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     FileObject->FsContext2 = ccb;
 
     FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
+
+    // FIXME - ATOMIC_CREATE_ECP_IN_FLAG_BEST_EFFORT
+    if (acec && acec->InFlags & ATOMIC_CREATE_ECP_IN_FLAG_REPARSE_POINT_SPECIFIED) {
+        Status = set_reparse_point2(fileref->fcb, acec->ReparseBuffer, acec->ReparseBufferLength, NULL, NULL, Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("set_reparse_point2 returned %08x\n", Status);
+            free_fileref(Vcb, fileref);
+            return Status;
+        }
+
+        acec->OutFlags |= ATOMIC_CREATE_ECP_OUT_FLAG_REPARSE_POINT_SET;
+    }
 
     goto end2;
 
