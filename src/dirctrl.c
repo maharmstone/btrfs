@@ -34,7 +34,7 @@ typedef struct {
 ULONG get_reparse_tag_fcb(fcb* fcb) {
     ULONG tag;
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type == BTRFS_TYPE_DIRECTORY || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV) {
         if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG))
             return 0;
 
