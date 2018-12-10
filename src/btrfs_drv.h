@@ -1302,6 +1302,7 @@ _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp);
+ULONG get_reparse_tag_fcb(fcb* fcb);
 
 // in security.c
 

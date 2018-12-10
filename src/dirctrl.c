@@ -31,9 +31,31 @@ typedef struct {
     dir_child* dc;
 } dir_entry;
 
+ULONG get_reparse_tag_fcb(fcb* fcb) {
+    ULONG tag;
+
+    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG))
+            return 0;
+
+        RtlCopyMemory(&tag, fcb->reparse_xattr.Buffer, sizeof(ULONG));
+    } else {
+        NTSTATUS Status;
+        ULONG br;
+
+        Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_file returned %08x\n", Status);
+            return 0;
+        }
+    }
+
+    return tag;
+}
+
 ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp) {
     fcb* fcb;
-    ULONG tag = 0, br;
+    ULONG tag = 0;
     NTSTATUS Status;
 
     if (type == BTRFS_TYPE_SYMLINK) {
@@ -57,23 +79,8 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 t
 
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
 
-    if (type == BTRFS_TYPE_DIRECTORY) {
-        if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG))
-            goto end;
+    tag = get_reparse_tag_fcb(fcb);
 
-        RtlCopyMemory(&tag, fcb->reparse_xattr.Buffer, sizeof(ULONG));
-    } else {
-        Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br, NULL);
-        if (!NT_SUCCESS(Status)) {
-            ERR("read_file returned %08x\n", Status);
-            goto end;
-        }
-
-        if (br < sizeof(ULONG))
-            goto end;
-    }
-
-end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
     free_fcb(Vcb, fcb);

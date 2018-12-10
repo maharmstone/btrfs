@@ -3039,7 +3039,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
     return Status;
 }
 
-static NTSTATUS fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, ccb* ccb, PIRP Irp, LONG* length) {
+static NTSTATUS fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATION* ati, fcb* fcb, ccb* ccb, LONG* length) {
     *length -= sizeof(FILE_ATTRIBUTE_TAG_INFORMATION);
 
     if (fcb->ads) {
@@ -3055,7 +3055,7 @@ static NTSTATUS fill_in_file_attribute_information(FILE_ATTRIBUTE_TAG_INFORMATIO
     if (!(ati->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         ati->ReparseTag = 0;
     else
-        ati->ReparseTag = get_reparse_tag(fcb->Vcb, fcb->subvol, fcb->inode, fcb->type, fcb->atts, ccb->lxss, Irp);
+        ati->ReparseTag = get_reparse_tag_fcb(fcb);
 
     return STATUS_SUCCESS;
 }
@@ -3640,7 +3640,7 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, PIRP Irp, LONG* length) {
+static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, LONG* length) {
     INODE_ITEM* ii;
 
     fsli->FileId.LowPart = (UINT32)fcb->inode;
@@ -3675,7 +3675,7 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
     if (!(fsli->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         fsli->ReparseTag = 0;
     else
-        fsli->ReparseTag = get_reparse_tag(fcb->Vcb, fcb->subvol, fcb->inode, fcb->type, fcb->atts, TRUE, Irp);
+        fsli->ReparseTag = get_reparse_tag_fcb(fcb);
 
     if (fcb->ads)
         fsli->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.st_nlink;
@@ -3789,7 +3789,7 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             }
 
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-            Status = fill_in_file_attribute_information(ati, fcb, ccb, Irp, &length);
+            Status = fill_in_file_attribute_information(ati, fcb, ccb, &length);
             ExReleaseResourceLite(&Vcb->tree_lock);
 
             break;
@@ -3996,7 +3996,7 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
 
             TRACE("FileStatLxInformation\n");
 
-            Status = fill_in_file_stat_lx_information(fsli, fcb, ccb, Irp, &length);
+            Status = fill_in_file_stat_lx_information(fsli, fcb, ccb, &length);
 
             break;
         }
