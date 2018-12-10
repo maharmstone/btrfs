@@ -2627,6 +2627,15 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     if (!ccb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
+        fileref->deleted = TRUE;
+        fileref->fcb->deleted = TRUE;
+
+        if (stream.Length == 0) {
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+            parfileref->fcb->inode_item.st_size -= fileref->dc->utf8.Length * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+        }
+
         free_fileref(Vcb, fileref);
         goto end;
     }
@@ -2665,6 +2674,15 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         Status = set_reparse_point2(fileref->fcb, acec->ReparseBuffer, acec->ReparseBufferLength, NULL, NULL, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("set_reparse_point2 returned %08x\n", Status);
+            fileref->deleted = TRUE;
+            fileref->fcb->deleted = TRUE;
+
+            if (stream.Length == 0) {
+                ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+                parfileref->fcb->inode_item.st_size -= fileref->dc->utf8.Length * 2;
+                ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+            }
+
             free_fileref(Vcb, fileref);
             return Status;
         }
