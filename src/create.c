@@ -2733,6 +2733,8 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         acec->OutFlags |= ATOMIC_CREATE_ECP_OUT_FLAG_REPARSE_POINT_SET;
     }
 
+    fileref->dc->type = fileref->fcb->type;
+
     goto end2;
 
 end:
