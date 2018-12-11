@@ -34,7 +34,9 @@ typedef struct {
 ULONG get_reparse_tag_fcb(fcb* fcb) {
     ULONG tag;
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV) {
+    if (fcb->type == BTRFS_TYPE_SYMLINK)
+        return IO_REPARSE_TAG_SYMLINK;
+    else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG))
             return 0;
 
@@ -58,12 +60,9 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 t
     ULONG tag = 0;
     NTSTATUS Status;
 
-    if (type == BTRFS_TYPE_SYMLINK) {
-        if (lxss)
-            return IO_REPARSE_TAG_LXSS_SYMLINK;
-        else
-            return IO_REPARSE_TAG_SYMLINK;
-    } else if (lxss) {
+    if (type == BTRFS_TYPE_SYMLINK)
+        return IO_REPARSE_TAG_SYMLINK;
+    else if (lxss) {
         if (type == BTRFS_TYPE_SOCKET)
             return IO_REPARSE_TAG_LXSS_SOCKET;
         else if (type == BTRFS_TYPE_FIFO)
