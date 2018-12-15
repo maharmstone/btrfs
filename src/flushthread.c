@@ -5786,6 +5786,10 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                         ExReleaseResourceLite(&Vcb->chunk_lock);
                         return Status;
                     }
+
+                    // c is now freed, so avoid releasing non-existent lock
+                    le = le2;
+                    continue;
                 } else if (c->created) {
                     Status = create_chunk(Vcb, c, Irp);
                     if (!NT_SUCCESS(Status)) {
