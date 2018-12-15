@@ -5279,29 +5279,26 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                 return Status;
             }
 
-            if (keycmp(tp.item->key, searchkey)) {
-                ERR("error - could not find DEV_ITEM for device %llx\n", searchkey.offset);
-                return STATUS_INTERNAL_ERROR;
-            }
+            if (!keycmp(tp.item->key, searchkey)) {
+                Status = delete_tree_item(Vcb, &tp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    return Status;
+                }
 
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08x\n", Status);
-                return Status;
-            }
+                di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+                if (!di) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
 
-            di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
-            if (!di) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
+                RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(DEV_ITEM));
 
-            RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(DEV_ITEM));
-
-            Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_tree_item returned %08x\n", Status);
-                return Status;
+                Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08x\n", Status);
+                    return Status;
+                }
             }
 
             for (j = i + 1; j < c->chunk_item->num_stripes; j++) {
