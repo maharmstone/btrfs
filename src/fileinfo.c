@@ -3700,8 +3700,8 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
     fsli->LxMode = ii->st_mode;
 
     if (ii->st_mode & __S_IFBLK || ii->st_mode & __S_IFCHR) {
-        fsli->LxDeviceIdMajor = (ii->st_rdev & 0xFFFFFFFFFFF) >> 20;
-        fsli->LxDeviceIdMinor = (ii->st_rdev & 0xFFFF);
+        fsli->LxDeviceIdMajor = (ii->st_rdev & 0xFFFFFFFFFFF00000) >> 20;
+        fsli->LxDeviceIdMinor = (ii->st_rdev & 0xFFFFF);
     } else {
         fsli->LxDeviceIdMajor = 0;
         fsli->LxDeviceIdMinor = 0;
