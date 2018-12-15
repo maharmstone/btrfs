@@ -1,5 +1,5 @@
-WinBtrfs v1.0.2
----------------
+WinBtrfs v1.1
+-------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -43,15 +43,13 @@ Features
 
 * Reading and writing of Btrfs filesystems
 * Basic RAID: RAID0, RAID1, and RAID10
-* Advanced RAID: RAID5 and RAID6 (incompat flag `raid56`)
+* Advanced RAID: RAID5 and RAID6
 * Caching
 * Discovery of Btrfs partitions, even if Windows would normally ignore them
 * Getting and setting of Access Control Lists (ACLs), using the xattr
   security.NTACL
 * Alternate Data Streams (e.g. :Zone.Identifier is stored as the xattr
   user.Zone.Identifier)
-* Supported incompat flags: `mixed_backref`, `default_subvol`, `big_metadata`,
-  `extended_iref`, `skinny_metadata`.
 * Mappings from Linux users to Windows ones (see below)
 * Symlinks and other reparse points
 * Shell extension to identify and create subvolumes, including snapshots
@@ -63,8 +61,7 @@ Features
 * Partition-less Btrfs volumes
 * Per-volume registry mount options (see below)
 * zlib compression
-* LZO compression (incompat flag `compress_lzo`)
-* Misc incompat flags: `mixed_groups`, `no_holes`
+* LZO compression
 * LXSS ("Ubuntu on Windows") support
 * Balancing (including resuming balances started on Linux)
 * Device addition and removal
@@ -76,12 +73,14 @@ Features
 * Degraded mounts
 * Free space tree (compat_ro flag `free_space_cache`)
 * Shrinking and expanding
+* Passthrough of permissions etc. for LXSS
+* Zstd compression
 
 Todo
 ----
 
-* Passthrough of permissions etc. for LXSS
 * Oplocks
+* Marking directories as case-sensitive with `fsutil` on Windows 10
 
 Installation
 ------------
@@ -134,6 +133,23 @@ entry maps Windows' Users group to gid 100, which is usually "users" on Linux.
 You can also specify user SIDs here to force files created by a user to belong
 to a certain group. The setgid flag also works as on Linux.
 
+LXSS ("Ubuntu on Windows" / "Windows Subsystem for Linux")
+----------------------------------------------------------
+
+The driver will passthrough Linux metadata to recent versions of LXSS, but you
+will have to let Windows that you wish to do this. From a Bash prompt on Windows,
+edit `/etc/wsl.conf` to look like the following:
+
+```
+[automount]
+enabled = true
+options = "metadata"
+mountFsTab = false
+```
+
+It will then take effect next time you open a new command prompt. Yes, you should
+be able to chroot into an actual Linux installation, if you wish.
+
 Commands
 --------
 
@@ -175,13 +191,6 @@ The driver assumes that all filenames are encoded in UTF-8. This should be the
 default on most setups nowadays - if you're not using UTF-8, it's probably worth
 looking into converting your files.
 
-* `btrfs check` reports errors in the extent tree
-
-There's a bug in btrfs-progs v4.7, which causes it to return false positives when
-using prealloc extents - this'll also manifest itself with filesystems from the
-official driver. If you still get the same errors when using btrfs-check v4.6, please
-e-mail me what it says.
-
 * The root of the drive isn't case-sensitive in LXSS
 
 This is something Microsoft hardcoded into LXSS, presumably to stop people hosing
@@ -212,6 +221,13 @@ for Windows, you're out of luck.
 
 Changelog
 ---------
+
+v1.1 (2018-12-15):
+* Support for Zstd compression
+* Passthrough of Linux metadata to LXSS
+* Refactored shell extension
+* Fixed memory leaks
+* Many other bug fixes
 
 v1.0.2 (2018-05-19):
 * Minor bug fixes
@@ -408,6 +424,8 @@ when the system last powered down. The default is 0. The equivalent parameter on
 
 * `NoPNP` (DWORD): useful for debugging only, this forces any volumes to appear rather than exposing them
 via the usual Plug and Play method.
+
+* `ZstdLevel` (DWORD): Zstd compression level, default 3.
 
 Contact
 -------

@@ -25,18 +25,18 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 // TEXTINCLUDE
 //
 
-1 TEXTINCLUDE 
+1 TEXTINCLUDE
 BEGIN
     "resource.h\0"
 END
 
-2 TEXTINCLUDE 
+2 TEXTINCLUDE
 BEGIN
     "#include ""winres.h""\r\n"
     "\0"
 END
 
-3 TEXTINCLUDE 
+3 TEXTINCLUDE
 BEGIN
     "\r\n"
     "\0"
@@ -51,8 +51,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,2,0
- PRODUCTVERSION 1,0,2,0
+ FILEVERSION 1,1,0,0
+ PRODUCTVERSION 1,1,0,0
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -68,12 +68,12 @@ BEGIN
         BLOCK "080904b0"
         BEGIN
             VALUE "FileDescription", "Btrfs formatting utility"
-            VALUE "FileVersion", "1.0.2"
+            VALUE "FileVersion", "1.1"
             VALUE "InternalName", "mkbtrfs"
             VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-18"
             VALUE "OriginalFilename", "mkbtrfs.exe"
             VALUE "ProductName", "WinBtrfs"
-            VALUE "ProductVersion", "1.0.2"
+            VALUE "ProductVersion", "1.1"
         END
     END
     BLOCK "VarFileInfo"
@@ -106,7 +106,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_NO_NODE_SIZE        "No node size specified."
-    IDS_CANT_FIND_SETINCOMPATFLAGS 
+    IDS_CANT_FIND_SETINCOMPATFLAGS
                             "Could not load function SetIncompatFlags in %s"
     IDS_USAGE2              "The device parameter can either be a drive letter, e.g. D:, or a device path,\nsuch as \\Device\\Harddisk0\\Partition2.\n\nTo format the whole of the first hard disk without using partitions, you would\nneed to use the parameter \\Device\\Harddisk0\\Partition0.\n\nSupported flags:\n\n/sectorsize:num                     Sets the sector size. This must be a\n                                    multiple of the size that the disk itself\n                                    reports. The default is 4096, which should\n                                    be used unless you have a good reason.\n\n/nodesize:num                       Sets the node size, i.e. the size of the\n                                    metadata trees. The default is 16384. This\n                                    needs to either be the same as sector size,\n                                    or a power of two multiple.\n\n/mixed                              Enables or disable mixed block groups,\n/notmixed                           which store data and and metadata in the\n                                    same chunks. The default is disabled. This\n                                    is only useful for very small filesystems.\n\n/extiref                            Enables or disables extened inode refs,\n/notextiref                         which increase the number of hardlinks\n                                    allowed. The default is enabled.\n\n/skinnymetadata                     Enables or disable skinny metadata, which\n/notskinnymetadata                  allows more efficient storage of metadata\n                                    refs. The default is enabled.\n\n/noholes                            Enables or disables whether sparse extents\n/notnoholes                         should be stored implicitly, which can save\n                                    a little space. The default is disabled."
 END
