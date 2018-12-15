@@ -1648,7 +1648,7 @@ static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, travers
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_ext_holes(LIST_ENTRY* exts, UINT64 size) {
+static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, UINT64 size) {
     UINT64 lastoff = 0;
     LIST_ENTRY* le;
 
@@ -1699,7 +1699,7 @@ static NTSTATUS add_ext_holes(LIST_ENTRY* exts, UINT64 size) {
 
         ext2->offset = lastoff;
         ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
-        ext2->data.decoded_size = ed2->num_bytes = size - lastoff;
+        ext2->data.decoded_size = ed2->num_bytes = sector_align(size - lastoff, Vcb->superblock.sector_size);
         ext2->data.type = EXTENT_TYPE_REGULAR;
         ed2->address = ed2->size = ed2->offset = 0;
 
@@ -2130,13 +2130,13 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         return STATUS_SUCCESS;
 
     if (context->parent) {
-        Status = add_ext_holes(&context->lastinode.exts, context->lastinode.size);
+        Status = add_ext_holes(context->Vcb, &context->lastinode.exts, context->lastinode.size);
         if (!NT_SUCCESS(Status)) {
             ERR("add_ext_holes returned %08x\n", Status);
             return Status;
         }
 
-        Status = add_ext_holes(&context->lastinode.oldexts, context->lastinode.size);
+        Status = add_ext_holes(context->Vcb, &context->lastinode.oldexts, context->lastinode.size);
         if (!NT_SUCCESS(Status)) {
             ERR("add_ext_holes returned %08x\n", Status);
             return Status;
