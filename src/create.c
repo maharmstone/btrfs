@@ -284,6 +284,11 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     if (len > 0 && (path->Buffer[len - 1] == '/' || path->Buffer[len - 1] == '\\'))
         len--;
 
+    if (len == 0 || (path->Buffer[len - 1] == '/' || path->Buffer[len - 1] == '\\')) {
+        WARN("zero-length filename part\n");
+        return STATUS_OBJECT_NAME_INVALID;
+    }
+
     has_stream = FALSE;
     for (i = 0; i < len; i++) {
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
