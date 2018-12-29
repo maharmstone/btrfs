@@ -337,6 +337,11 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
             if (nb->us.Buffer[i] == ':') {
                 name_bit* nb2;
 
+                if (nb->us.Buffer[i+1] == 0) {
+                    ERR("zero-length stream name\n");
+                    return STATUS_OBJECT_NAME_INVALID;
+                }
+
                 nb2 = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
                 if (!nb2) {
                     ERR("out of memory\n");
