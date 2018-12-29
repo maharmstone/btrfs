@@ -285,6 +285,9 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     if (len > 0 && (path->Buffer[len - 1] == '/' || path->Buffer[len - 1] == '\\'))
         len--;
 
+    if (len == 0 || (path->Buffer[len - 1] == '/' || path->Buffer[len - 1] == '\\'))
+        return STATUS_OBJECT_NAME_INVALID;
+
     has_stream = FALSE;
     for (i = 0; i < len; i++) {
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
@@ -1464,7 +1467,8 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
                 *fn_offset = 0;
 
             return STATUS_SUCCESS;
-        }
+        } else if (fnus2.Length >= 2 * sizeof(WCHAR) && fnus2.Buffer[1] == '\\')
+            return STATUS_OBJECT_NAME_INVALID;
 
         dir = Vcb->root_fileref;
 
