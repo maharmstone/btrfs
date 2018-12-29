@@ -298,6 +298,11 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
 
     for (i = 0; i < len; i++) {
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
+            if (buf[0] == '/' || buf[0] == '\\') {
+                ERR("Bogus name\n");
+                return STATUS_OBJECT_NAME_INVALID;
+            }
+
             nb = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
             if (!nb) {
                 ERR("out of memory\n");
