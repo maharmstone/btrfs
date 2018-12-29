@@ -356,8 +356,14 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
                 nb2->us.Length = nb2->us.MaximumLength = (UINT16)(nb->us.Length - (i * sizeof(WCHAR)) - sizeof(WCHAR));
                 InsertTailList(parts, &nb2->list_entry);
 
-                nb->us.Length = (UINT16)i * sizeof(WCHAR);
-                nb->us.MaximumLength = nb->us.Length;
+                /* It's just a stream name, remove last name item */
+                if (i == 0) {
+                    RemoveEntryList(&nb->list_entry);
+                    ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb);
+                } else {
+                    nb->us.Length = (UINT16)i * sizeof(WCHAR);
+                    nb->us.MaximumLength = nb->us.Length;
+                }
 
                 nb = nb2;
 
