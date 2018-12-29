@@ -279,6 +279,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     BOOL has_stream;
     WCHAR* buf;
     name_bit* nb;
+    NTSTATUS Status;
 
     len = path->Length / sizeof(WCHAR);
     if (len > 0 && (path->Buffer[len - 1] == '/' || path->Buffer[len - 1] == '\\'))
@@ -304,13 +305,15 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
             if (buf[0] == '/' || buf[0] == '\\') {
                 WARN("zero-length filename part\n");
-                return STATUS_OBJECT_NAME_INVALID;
+                Status = STATUS_OBJECT_NAME_INVALID;
+                goto cleanup;
             }
 
             nb = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
             if (!nb) {
                 ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto cleanup;
             }
 
             nb->us.Buffer = buf;
@@ -324,7 +327,8 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     nb = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
     if (!nb) {
         ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto cleanup;
     }
 
     nb->us.Buffer = buf;
@@ -344,13 +348,15 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
 
                 if (nb->us.Buffer[i+1] == 0) {
                     WARN("zero-length stream name\n");
-                    return STATUS_OBJECT_NAME_INVALID;
+                    Status = STATUS_OBJECT_NAME_INVALID;
+                    goto cleanup;
                 }
 
                 nb2 = ExAllocateFromPagedLookasideList(&Vcb->name_bit_lookaside);
                 if (!nb2) {
                     ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto cleanup;
                 }
 
                 nb2->us.Buffer = &nb->us.Buffer[i+1];
@@ -395,6 +401,15 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     *stream = has_stream;
 
     return STATUS_SUCCESS;
+
+cleanup:
+    while (!IsListEmpty(parts)) {
+        nb = CONTAINING_RECORD(RemoveHeadList(parts), name_bit, list_entry);
+
+        ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb);
+    }
+
+    return Status;
 }
 
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, UINT32* csum, UINT64 start, UINT64 length, PIRP Irp) {
