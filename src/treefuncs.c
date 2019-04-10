@@ -197,9 +197,48 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
     return STATUS_SUCCESS;
 }
 
-static tree* free_tree2(tree* t) {
+NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp) {
+    BOOL ret;
+
+    ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
+
+    if (!th->tree) {
+        NTSTATUS Status;
+        tree* nt;
+
+        Status = load_tree(Vcb, th->address, r, &nt, th->generation, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("load_tree returned %08x\n", Status);
+            ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
+            return Status;
+        }
+
+        nt->parent = t;
+
+#ifdef DEBUG_PARANOID
+        if (t && t->header.level <= nt->header.level) int3;
+#endif
+
+        nt->paritem = td;
+
+        th->tree = nt;
+
+        ret = TRUE;
+    } else
+        ret = FALSE;
+
+    ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
+
+    *loaded = ret;
+
+    return STATUS_SUCCESS;
+}
+
+void free_tree(tree* t) {
     tree* par;
     root* r = t->root;
+
+    // No need to acquire lock, as this is only ever called while Vcb->tree_lock held exclusively
 
     par = t->parent;
 
@@ -246,55 +285,6 @@ static tree* free_tree2(tree* t) {
         ExFreePool(t->buf);
 
     ExFreePool(t);
-
-    return NULL;
-}
-
-NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, BOOL* loaded, PIRP Irp) {
-    BOOL ret;
-
-    ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-
-    if (!th->tree) {
-        NTSTATUS Status;
-        tree* nt;
-
-        Status = load_tree(Vcb, th->address, r, &nt, th->generation, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("load_tree returned %08x\n", Status);
-            ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-            return Status;
-        }
-
-        nt->parent = t;
-
-#ifdef DEBUG_PARANOID
-        if (t && t->header.level <= nt->header.level) int3;
-#endif
-
-        nt->paritem = td;
-
-        th->tree = nt;
-
-        ret = TRUE;
-    } else
-        ret = FALSE;
-
-    ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-
-    *loaded = ret;
-
-    return STATUS_SUCCESS;
-}
-
-void free_tree(tree* t) {
-    root* r = t->root;
-
-    ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-
-    free_tree2(t);
-
-    ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
 }
 
 static __inline tree_data* first_item(tree* t) {
@@ -753,7 +743,7 @@ void free_trees_root(device_extension* Vcb, root* r) {
 
                     empty = FALSE;
 
-                    free_tree2(t);
+                    free_tree(t);
                     if (top && r->treeholder.tree == t)
                         r->treeholder.tree = NULL;
 
@@ -790,7 +780,7 @@ void free_trees(device_extension* Vcb) {
 
                 empty = FALSE;
 
-                free_tree2(t);
+                free_tree(t);
                 if (top && r->treeholder.tree == t)
                     r->treeholder.tree = NULL;
 
