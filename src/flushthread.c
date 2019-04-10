@@ -3091,7 +3091,6 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
     tree *next_tree, *par;
-    BOOL loaded;
 
     *done = FALSE;
 
@@ -3115,7 +3114,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
 
     TRACE("nextparitem: key = %llx,%x,%llx\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
 
-    Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, &loaded, NULL);
+    Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("do_load_tree returned %08x\n", Status);
         return Status;
