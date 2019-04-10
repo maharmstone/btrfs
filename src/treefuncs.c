@@ -287,17 +287,14 @@ NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, 
     return STATUS_SUCCESS;
 }
 
-tree* free_tree(tree* t) {
-    tree* ret;
+void free_tree(tree* t) {
     root* r = t->root;
 
     ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
 
-    ret = free_tree2(t);
+    free_tree2(t);
 
     ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-
-    return ret;
 }
 
 static __inline tree_data* first_item(tree* t) {
