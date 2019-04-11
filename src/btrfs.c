@@ -989,6 +989,8 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
+        t->nonpaged = NULL;
+
         t->is_unique = TRUE;
         t->uniqueness_determined = TRUE;
         t->buf = NULL;

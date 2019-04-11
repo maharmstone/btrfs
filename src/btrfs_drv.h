@@ -377,7 +377,12 @@ typedef struct _tree_data {
     };
 } tree_data;
 
+typedef struct {
+    FAST_MUTEX mutex;
+} tree_nonpaged;
+
 typedef struct _tree {
+    tree_nonpaged* nonpaged;
     tree_header header;
     UINT32 hash;
     BOOL has_address;

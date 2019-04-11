@@ -2798,6 +2798,18 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    if (t->header.level > 0) {
+        nt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
+        if (!nt->nonpaged) {
+            ERR("out of memory\n");
+            ExFreePool(nt);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ExInitializeFastMutex(&nt->nonpaged->mutex);
+    } else
+        nt->nonpaged = NULL;
+
     RtlCopyMemory(&nt->header, &t->header, sizeof(tree_header));
     nt->header.address = 0;
     nt->header.generation = Vcb->superblock.generation;
@@ -2911,6 +2923,15 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+
+    pt->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
+    if (!pt->nonpaged) {
+        ERR("out of memory\n");
+        ExFreePool(pt);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ExInitializeFastMutex(&pt->nonpaged->mutex);
 
     RtlCopyMemory(&pt->header, &nt->header, sizeof(tree_header));
     pt->header.address = 0;

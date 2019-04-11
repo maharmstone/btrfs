@@ -50,6 +50,19 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    if (th->level > 0) {
+        t->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(tree_nonpaged), ALLOC_TAG);
+        if (!t->nonpaged) {
+            ERR("out of memory\n");
+            ExFreePool(t);
+            ExFreePool(buf);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ExInitializeFastMutex(&t->nonpaged->mutex);
+    } else
+        t->nonpaged = NULL;
+
     RtlCopyMemory(&t->header, th, sizeof(tree_header));
     t->hash = calc_crc32c(0xffffffff, (UINT8*)&addr, sizeof(UINT64));
     t->has_address = TRUE;
@@ -197,9 +210,7 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
     return STATUS_SUCCESS;
 }
 
-NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp) {
-    ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
-
+static NTSTATUS do_load_tree2(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp) {
     if (!th->tree) {
         NTSTATUS Status;
         tree* nt;
@@ -207,7 +218,6 @@ NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, 
         Status = load_tree(Vcb, th->address, r, &nt, th->generation, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
-            ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
             return Status;
         }
 
@@ -222,9 +232,32 @@ NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, 
         th->tree = nt;
     }
 
-    ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
-
     return STATUS_SUCCESS;
+}
+
+NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp) {
+    NTSTATUS Status;
+
+    // FIXME - we could speed things up a bit by moving the disk reads out of the lock
+
+    if (t)
+        ExAcquireFastMutex(&t->nonpaged->mutex);
+    else
+        ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
+
+    Status = do_load_tree2(Vcb, th, r, t, td, Irp);
+
+    if (t)
+        ExReleaseFastMutex(&t->nonpaged->mutex);
+    else
+        ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("do_load_tree2 returned %08x\n", Status);
+        return Status;
+    }
+
+    return Status;
 }
 
 void free_tree(tree* t) {
@@ -276,6 +309,9 @@ void free_tree(tree* t) {
 
     if (t->buf)
         ExFreePool(t->buf);
+
+    if (t->nonpaged)
+        ExFreePool(t->nonpaged);
 
     ExFreePool(t);
 }
