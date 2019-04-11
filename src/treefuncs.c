@@ -635,10 +635,12 @@ BOOL find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
     if (!t)
         return FALSE;
 
-    Status = do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("do_load_tree returned %08x\n", Status);
-        return FALSE;
+    if (!td->treeholder.tree) {
+        Status = do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return FALSE;
+        }
     }
 
     t = td->treeholder.tree;
@@ -648,10 +650,12 @@ BOOL find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 
         fi = first_item(t);
 
-        Status = do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_load_tree returned %08x\n", Status);
-            return FALSE;
+        if (!fi->treeholder.tree) {
+            Status = do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_load_tree returned %08x\n", Status);
+                return FALSE;
+            }
         }
 
         t = fi->treeholder.tree;
@@ -720,10 +724,12 @@ BOOL find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 
     td = prev_item(t->parent, t->paritem);
 
-    Status = do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("do_load_tree returned %08x\n", Status);
-        return FALSE;
+    if (!td->treeholder.tree) {
+        Status = do_load_tree(Vcb, &td->treeholder, t->parent->root, t->parent, td, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return FALSE;
+        }
     }
 
     t = td->treeholder.tree;
@@ -733,10 +739,12 @@ BOOL find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 
         li = last_item(t);
 
-        Status = do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_load_tree returned %08x\n", Status);
-            return FALSE;
+        if (!li->treeholder.tree) {
+            Status = do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_load_tree returned %08x\n", Status);
+                return FALSE;
+            }
         }
 
         t = li->treeholder.tree;
