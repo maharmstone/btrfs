@@ -137,6 +137,8 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, UINT8* buf, root* r, tree
         t->buf = NULL;
     }
 
+    ExAcquireFastMutex(&Vcb->trees_list_mutex);
+
     InsertTailList(&Vcb->trees, &t->list_entry);
 
     h = t->hash >> 24;
@@ -178,6 +180,8 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, UINT8* buf, root* r, tree
 
     if (!Vcb->trees_ptrs[h] || t->list_entry_hash.Flink == Vcb->trees_ptrs[h])
         Vcb->trees_ptrs[h] = &t->list_entry_hash;
+
+    ExReleaseFastMutex(&Vcb->trees_list_mutex);
 
     TRACE("returning %p\n", t);
 

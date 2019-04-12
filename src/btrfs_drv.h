@@ -758,6 +758,7 @@ typedef struct _device_extension {
     LIST_ENTRY trees;
     LIST_ENTRY trees_hash;
     LIST_ENTRY* trees_ptrs[256];
+    FAST_MUTEX trees_list_mutex;
     LIST_ENTRY all_fcbs;
     LIST_ENTRY dirty_fcbs;
     ERESOURCE dirty_fcbs_lock;

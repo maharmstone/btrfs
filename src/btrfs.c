@@ -4207,6 +4207,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     InitializeListHead(&Vcb->dirty_subvols);
     InitializeListHead(&Vcb->send_ops);
 
+    ExInitializeFastMutex(&Vcb->trees_list_mutex);
+
     InitializeListHead(&Vcb->DirNotifyList);
     InitializeListHead(&Vcb->scrub.errors);
 
