@@ -3675,7 +3675,27 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     NTSTATUS Status;
 
     if (!th->tree) {
-        Status = load_tree(Vcb, th->address, r, &th->tree, th->generation, NULL);
+        UINT8* buf;
+        chunk* c;
+
+        buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        Status = read_data(Vcb, th->address, Vcb->superblock.node_size, NULL, TRUE, buf, NULL,
+                           &c, Irp, th->generation, FALSE, NormalPagePriority);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_data returned 0x%08x\n", Status);
+            ExFreePool(buf);
+            return Status;
+        }
+
+        Status = load_tree(Vcb, th->address, buf, r, &th->tree);
+
+        if (!th->tree || th->tree->buf != buf)
+            ExFreePool(buf);
 
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree(%llx) returned %08x\n", th->address, Status);

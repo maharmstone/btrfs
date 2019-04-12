@@ -17,36 +17,19 @@
 
 #include "btrfs_drv.h"
 
-NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT64 generation, PIRP Irp) {
-    UINT8* buf;
-    NTSTATUS Status;
+NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, UINT8* buf, root* r, tree** pt) {
     tree_header* th;
     tree* t;
     tree_data* td;
-    chunk* c;
     UINT8 h;
     BOOL inserted;
     LIST_ENTRY* le;
-
-    buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
-    if (!buf) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    Status = read_data(Vcb, addr, Vcb->superblock.node_size, NULL, TRUE, buf, NULL, &c, Irp, generation, FALSE, NormalPagePriority);
-    if (!NT_SUCCESS(Status)) {
-        ERR("read_data returned 0x%08x\n", Status);
-        ExFreePool(buf);
-        return Status;
-    }
 
     th = (tree_header*)buf;
 
     t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!t) {
         ERR("out of memory\n");
-        ExFreePool(buf);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -55,7 +38,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
         if (!t->nonpaged) {
             ERR("out of memory\n");
             ExFreePool(t);
-            ExFreePool(buf);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -86,7 +68,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
         if ((t->header.num_items * sizeof(leaf_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
             ERR("tree at %llx has more items than expected (%x)\n", t->header.num_items);
             ExFreePool(t);
-            ExFreePool(buf);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -95,7 +76,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
             if (!td) {
                 ERR("out of memory\n");
                 ExFreePool(t);
-                ExFreePool(buf);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -110,7 +90,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
                 ERR("overlarge item in tree %llx: %u > %u\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
                 ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
                 ExFreePool(t);
-                ExFreePool(buf);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -132,7 +111,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
         if ((t->header.num_items * sizeof(internal_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
             ERR("tree at %llx has more items than expected (%x)\n", t->header.num_items);
             ExFreePool(t);
-            ExFreePool(buf);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -141,7 +119,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
             if (!td) {
                 ERR("out of memory\n");
                 ExFreePool(t);
-                ExFreePool(buf);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -158,7 +135,6 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
 
         t->size = t->header.num_items * sizeof(internal_node);
         t->buf = NULL;
-        ExFreePool(buf);
     }
 
     InsertTailList(&Vcb->trees, &t->list_entry);
@@ -210,12 +186,12 @@ NTSTATUS load_tree(device_extension* Vcb, UINT64 addr, root* r, tree** pt, UINT6
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_load_tree2(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp) {
+static NTSTATUS do_load_tree2(device_extension* Vcb, tree_holder* th, UINT8* buf, root* r, tree* t, tree_data* td) {
     if (!th->tree) {
         NTSTATUS Status;
         tree* nt;
 
-        Status = load_tree(Vcb, th->address, r, &nt, th->generation, Irp);
+        Status = load_tree(Vcb, th->address, buf, r, &nt);
         if (!NT_SUCCESS(Status)) {
             ERR("load_tree returned %08x\n", Status);
             return Status;
@@ -237,20 +213,37 @@ static NTSTATUS do_load_tree2(device_extension* Vcb, tree_holder* th, root* r, t
 
 NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp) {
     NTSTATUS Status;
+    UINT8* buf;
+    chunk* c;
 
-    // FIXME - we could speed things up a bit by moving the disk reads out of the lock
+    buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    if (!buf) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = read_data(Vcb, th->address, Vcb->superblock.node_size, NULL, TRUE, buf, NULL,
+                       &c, Irp, th->generation, FALSE, NormalPagePriority);
+    if (!NT_SUCCESS(Status)) {
+        ERR("read_data returned 0x%08x\n", Status);
+        ExFreePool(buf);
+        return Status;
+    }
 
     if (t)
         ExAcquireFastMutex(&t->nonpaged->mutex);
     else
         ExAcquireResourceExclusiveLite(&r->nonpaged->load_tree_lock, TRUE);
 
-    Status = do_load_tree2(Vcb, th, r, t, td, Irp);
+    Status = do_load_tree2(Vcb, th, buf, r, t, td);
 
     if (t)
         ExReleaseFastMutex(&t->nonpaged->mutex);
     else
         ExReleaseResourceLite(&r->nonpaged->load_tree_lock);
+
+    if (!th->tree || th->tree->buf != buf)
+        ExFreePool(buf);
 
     if (!NT_SUCCESS(Status)) {
         ERR("do_load_tree2 returned %08x\n", Status);
