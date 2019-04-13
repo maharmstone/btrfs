@@ -642,11 +642,6 @@ static NTSTATUS query_directory(PIRP Irp) {
     if (fileref->fcb == Vcb->dummy_fcb)
         return STATUS_NO_MORE_FILES;
 
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    acquire_fcb_lock_shared(Vcb);
-
-    TRACE("%S\n", file_desc(IrpSp->FileObject));
-
     if (IrpSp->Flags == 0) {
         TRACE("QD flags: (none)\n");
     } else {
@@ -737,6 +732,9 @@ static NTSTATUS query_directory(PIRP Irp) {
     }
 
     newoffset = ccb->query_dir_offset;
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
 
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
 
@@ -924,7 +922,7 @@ end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
 end2:
-    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     TRACE("returning %08x\n", Status);

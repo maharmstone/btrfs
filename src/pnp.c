@@ -157,7 +157,7 @@ static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject) {
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-    acquire_fcb_lock_shared(Vcb);
+    ExAcquireResourceSharedLite(&Vcb->fileref_lock, TRUE);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
@@ -171,7 +171,7 @@ static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject) {
     }
 
 end:
-    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     return STATUS_SUCCESS;

@@ -2106,8 +2106,6 @@ end:
         // update open FCBs
         // FIXME - speed this up(?)
 
-        acquire_fcb_lock_shared(Vcb);
-
         le = Vcb->all_fcbs.Flink;
         while (le != &Vcb->all_fcbs) {
             struct _fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_all);
@@ -2146,8 +2144,6 @@ end:
 
             le = le->Flink;
         }
-
-        release_fcb_lock(Vcb);
     } else
         do_rollback(Vcb, &rollback);
 

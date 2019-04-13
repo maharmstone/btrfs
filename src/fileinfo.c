@@ -228,8 +228,6 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     if (!fileref)
         return STATUS_INVALID_PARAMETER;
 
-    acquire_fcb_lock_exclusive(Vcb);
-
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
     TRACE("changing delete_on_close to %s for %S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", file_desc(FileObject), fcb);
@@ -274,8 +272,6 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
 
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
-
-    release_fcb_lock(Vcb);
 
     // send notification that directory is about to be deleted
     if (NT_SUCCESS(Status) && fdi->DeleteFile && fcb->type == BTRFS_TYPE_DIRECTORY) {
@@ -664,11 +660,13 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     Status = SeAssignSecurity(parfcb->sd, NULL, (void**)&fcb->sd, TRUE, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
 
     if (!NT_SUCCESS(Status)) {
+        reap_fcb(fcb);
         ERR("SeAssignSecurity returned %08x\n", Status);
         return Status;
     }
 
     if (!fcb->sd) {
+        reap_fcb(fcb);
         ERR("SeAssignSecurity returned NULL security descriptor\n");
         return STATUS_INTERNAL_ERROR;
     }
@@ -687,16 +685,12 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
 
     fcb->inode_item_changed = TRUE;
 
-    InsertTailList(&r->fcbs, &fcb->list_entry);
-    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
-
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
     fcb->Header.AllocationSize.QuadPart = 0;
     fcb->Header.FileSize.QuadPart = 0;
     fcb->Header.ValidDataLength.QuadPart = 0;
 
     fcb->created = TRUE;
-    mark_fcb_dirty(fcb);
 
     if (parfcb->inode_item.flags & BTRFS_INODE_COMPRESS)
         fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
@@ -720,6 +714,13 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
 
     RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
 
+    acquire_fcb_lock_exclusive(Vcb);
+    InsertTailList(&r->fcbs, &fcb->list_entry);
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+    release_fcb_lock(Vcb);
+
+    mark_fcb_dirty(fcb);
+
     *pfcb = fcb;
 
     return STATUS_SUCCESS;
@@ -739,6 +740,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
+
+    acquire_fcb_lock_exclusive(fileref->fcb->Vcb);
 
     me = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
 
@@ -1247,6 +1250,8 @@ end:
         ExFreePool(me);
     }
 
+    release_fcb_lock(fileref->fcb->Vcb);
+
     return Status;
 }
 
@@ -1390,7 +1395,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    acquire_fcb_lock_exclusive(Vcb);
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
     if (fcb->ads) {
@@ -1927,7 +1932,7 @@ end:
         do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
-    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     return Status;
@@ -2227,7 +2232,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     }
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    acquire_fcb_lock_exclusive(Vcb);
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
@@ -2496,7 +2501,7 @@ end:
         do_rollback(Vcb, &rollback);
 
     ExReleaseResourceLite(fcb->Header.Resource);
-    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     return Status;
@@ -3514,7 +3519,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
             len = bytes_needed;
         }
     } else {
-        acquire_fcb_lock_exclusive(fcb->Vcb);
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, TRUE);
 
         if (IsListEmpty(&fcb->hardlinks)) {
             bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fileref->dc->name.Length - sizeof(WCHAR);
@@ -3607,7 +3612,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
             }
         }
 
-        release_fcb_lock(fcb->Vcb);
+        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
     }
 
     fli->BytesNeeded = bytes_needed;

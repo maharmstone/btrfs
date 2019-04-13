@@ -2222,15 +2222,15 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     if (Vcb->locked)
         return STATUS_SUCCESS;
 
-    acquire_fcb_lock_shared(Vcb);
+    ExAcquireResourceSharedLite(&Vcb->fileref_lock, TRUE);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
-        release_fcb_lock(Vcb);
+        ExReleaseResourceLite(&Vcb->fileref_lock);
         goto end;
     }
 
-    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
 
     if (Vcb->balance.thread && KeReadStateEvent(&Vcb->balance.event)) {
         ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
@@ -3757,8 +3757,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     name.Length = name.MaximumLength = bmn->namelen;
     name.Buffer = bmn->name;
 
-    acquire_fcb_lock_exclusive(Vcb);
-
     Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, TRUE);
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("find_file_in_dir returned %08x\n", Status);
@@ -3769,36 +3767,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         WARN("filename already exists\n");
         Status = STATUS_OBJECT_NAME_COLLISION;
         goto end;
-    }
-
-    if (bmn->inode == 0) {
-        inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
-        lastle = parfcb->subvol->fcbs.Blink;
-    } else {
-        if (bmn->inode > (UINT64)parfcb->subvol->lastinode) {
-            inode = parfcb->subvol->lastinode = bmn->inode;
-            lastle = parfcb->subvol->fcbs.Blink;
-        } else {
-            LIST_ENTRY* le = parfcb->subvol->fcbs.Flink;
-
-            lastle = parfcb->subvol->fcbs.Blink;;
-            while (le != &parfcb->subvol->fcbs) {
-                struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
-
-                if (fcb2->inode == bmn->inode && !fcb2->deleted) {
-                    WARN("inode collision\n");
-                    Status = STATUS_INVALID_PARAMETER;
-                    goto end;
-                } else if (fcb2->inode > bmn->inode) {
-                    lastle = fcb2->list_entry.Blink;
-                    break;
-                }
-
-                le = le->Flink;
-            }
-
-            inode = bmn->inode;
-        }
     }
 
     KeQuerySystemTime(&time);
@@ -3886,8 +3854,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     InterlockedIncrement(&parfcb->refcount);
     fcb->subvol = parfcb->subvol;
-    fcb->inode = inode;
-    fcb->type = bmn->type;
 
     SeCaptureSubjectContext(&subjcont);
 
@@ -3896,7 +3862,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08x\n", Status);
-        free_fcb(fcb);
+        reap_fcb(fcb);
         goto end;
     }
 
@@ -3911,10 +3877,52 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     find_gid(fcb, parfcb, &subjcont);
 
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
+    acquire_fcb_lock_exclusive(Vcb);
+
+    if (bmn->inode == 0) {
+        inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
+        lastle = parfcb->subvol->fcbs.Blink;
+    } else {
+        if (bmn->inode > (UINT64)parfcb->subvol->lastinode) {
+            inode = parfcb->subvol->lastinode = bmn->inode;
+            lastle = parfcb->subvol->fcbs.Blink;
+        } else {
+            LIST_ENTRY* le = parfcb->subvol->fcbs.Flink;
+
+            lastle = parfcb->subvol->fcbs.Blink;;
+            while (le != &parfcb->subvol->fcbs) {
+                struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+                if (fcb2->inode == bmn->inode && !fcb2->deleted) {
+                    release_fcb_lock(Vcb);
+                    ExReleaseResourceLite(&Vcb->fileref_lock);
+
+                    WARN("inode collision\n");
+                    Status = STATUS_INVALID_PARAMETER;
+                    goto end;
+                } else if (fcb2->inode > bmn->inode) {
+                    lastle = fcb2->list_entry.Blink;
+                    break;
+                }
+
+                le = le->Flink;
+            }
+
+            inode = bmn->inode;
+        }
+    }
+
+    fcb->inode = inode;
+    fcb->type = bmn->type;
+
     fileref = create_fileref(Vcb);
     if (!fileref) {
+        release_fcb_lock(Vcb);
+        ExReleaseResourceLite(&Vcb->fileref_lock);
+
         ERR("out of memory\n");
-        free_fcb(fcb);
+        reap_fcb(fcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -3922,15 +3930,15 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fileref->fcb = fcb;
 
     fcb->created = TRUE;
-    mark_fcb_dirty(fcb);
-
     fileref->created = TRUE;
-    mark_fileref_dirty(fileref);
 
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
     fileref->parent = parfileref;
+
+    mark_fcb_dirty(fcb);
+    mark_fileref_dirty(fileref);
 
     Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, &utf8, &name, fcb->type, &dc);
     if (!NT_SUCCESS(Status))
@@ -3948,6 +3956,9 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
+            release_fcb_lock(Vcb);
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+
             ERR("out of memory\n");
             free_fileref(fileref);
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3958,6 +3969,9 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
         fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs_uc) {
+            release_fcb_lock(Vcb);
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+
             ERR("out of memory\n");
             free_fileref(fileref);
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3985,6 +3999,8 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         parfcb->inode_item.st_mtime = now;
 
     ExReleaseResourceLite(parfcb->Header.Resource);
+    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
 
     parfcb->inode_item_changed = TRUE;
     mark_fcb_dirty(parfcb);
@@ -3997,7 +4013,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     Status = STATUS_SUCCESS;
 
 end:
-    release_fcb_lock(Vcb);
 
     ExFreePool(utf8.Buffer);
 
@@ -4447,11 +4462,11 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
         return STATUS_INTERNAL_ERROR;
     }
 
-    acquire_fcb_lock_shared(Vcb);
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
 
     Status = open_fileref_by_inode(Vcb, r, r->root_item.objid, &fr, Irp);
     if (!NT_SUCCESS(Status)) {
-        release_fcb_lock(Vcb);
+        ExReleaseResourceLite(&Vcb->fileref_lock);
         ERR("open_fileref_by_inode returned %08x\n", Status);
         return Status;
     }
@@ -4469,7 +4484,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
 
     free_fileref(fr);
 
-    release_fcb_lock(Vcb);
+    ExReleaseResourceLite(&Vcb->fileref_lock);
 
     return Status;
 }

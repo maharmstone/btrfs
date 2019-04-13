@@ -1342,7 +1342,7 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
         return;
     }
 
-    acquire_fcb_lock_exclusive(fcb->Vcb);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, TRUE);
 
     le = fcb->hardlinks.Flink;
     while (le != &fcb->hardlinks) {
@@ -1409,7 +1409,7 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
         le = le->Flink;
     }
 
-    release_fcb_lock(fcb->Vcb);
+    ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
 }
 
 void mark_fcb_dirty(_In_ fcb* fcb) {
@@ -1587,7 +1587,7 @@ void free_fileref(_Inout_ file_ref* fr) {
 #endif
 }
 
-static void reap_fileref(device_extension* Vcb, file_ref* fr) {
+void reap_fileref(device_extension* Vcb, file_ref* fr) {
     // FIXME - do we need a file_ref lock?
 
     // FIXME - do delete if needed
@@ -2228,21 +2228,19 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                     ExReleaseResourceLite(fcb->Header.Resource);
                     locked = FALSE;
 
-                    // fcb_lock needs to be acquired before fcb->Header.Resource
-                    acquire_fcb_lock_exclusive(fcb->Vcb);
+                    // fileref_lock needs to be acquired before fcb->Header.Resource
+                    ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, TRUE);
 
                     Status = delete_fileref(fileref, FileObject, Irp, &rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_fileref returned %08x\n", Status);
                         do_rollback(fcb->Vcb, &rollback);
-                        release_fcb_lock(fcb->Vcb);
+                        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
                         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
                         goto exit;
                     }
 
-                    release_fcb_lock(fcb->Vcb);
-
-                    locked = FALSE;
+                    ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
 
                     clear_rollback(&rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {

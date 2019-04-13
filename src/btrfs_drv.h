@@ -1119,6 +1119,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
 void reap_fcb(fcb* fcb);
 void reap_fcbs(device_extension* Vcb);
+void reap_fileref(device_extension* Vcb, file_ref* fr);
 void reap_filerefs(device_extension* Vcb, file_ref* fr);
 
 #ifdef _MSC_VER
