@@ -1886,6 +1886,7 @@ void uninit(_In_ device_extension* Vcb) {
     ExReleaseResourceLite(&Vcb->scrub.stats_lock);
 
     ExDeleteResourceLite(&Vcb->fcb_lock);
+    ExDeleteResourceLite(&Vcb->fileref_lock);
     ExDeleteResourceLite(&Vcb->load_lock);
     ExDeleteResourceLite(&Vcb->tree_lock);
     ExDeleteResourceLite(&Vcb->chunk_lock);
@@ -4090,6 +4091,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->need_write = FALSE;
 
     ExInitializeResourceLite(&Vcb->fcb_lock);
+    ExInitializeResourceLite(&Vcb->fileref_lock);
     ExInitializeResourceLite(&Vcb->chunk_lock);
     ExInitializeResourceLite(&Vcb->dirty_fcbs_lock);
     ExInitializeResourceLite(&Vcb->dirty_filerefs_lock);
@@ -4556,6 +4558,7 @@ exit2:
             ExDeleteResourceLite(&Vcb->tree_lock);
             ExDeleteResourceLite(&Vcb->load_lock);
             ExDeleteResourceLite(&Vcb->fcb_lock);
+            ExDeleteResourceLite(&Vcb->fileref_lock);
             ExDeleteResourceLite(&Vcb->chunk_lock);
             ExDeleteResourceLite(&Vcb->dirty_fcbs_lock);
             ExDeleteResourceLite(&Vcb->dirty_filerefs_lock);

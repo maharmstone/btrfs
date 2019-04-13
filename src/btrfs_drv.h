@@ -732,6 +732,7 @@ typedef struct _device_extension {
     file_ref* root_fileref;
     LONG open_files;
     _Has_lock_level_(fcb_lock) ERESOURCE fcb_lock;
+    ERESOURCE fileref_lock;
     ERESOURCE load_lock;
     _Has_lock_level_(tree_lock) ERESOURCE tree_lock;
     PNOTIFY_SYNC NotifySync;
