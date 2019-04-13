@@ -1078,7 +1078,7 @@ BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
                _Out_ UINT8** data, _Out_ UINT16* datalen, _In_opt_ PIRP Irp);
 
 #ifndef DEBUG_FCB_REFCOUNTS
-void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb);
+void free_fcb(_Inout_ fcb* fcb);
 #endif
 void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ file_ref* fr);
 void protect_superblocks(_Inout_ chunk* c);
@@ -1116,6 +1116,8 @@ NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_ST
 void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int error);
 NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
 NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
+void reap_fcb(fcb* fcb);
+void reap_fcbs(device_extension* Vcb);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -1179,8 +1181,8 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...);
 #endif
 
 #ifdef DEBUG_FCB_REFCOUNTS
-void _free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb, _In_ const char* func);
-#define free_fcb(Vcb, fcb) _free_fcb(Vcb, fcb, funcname)
+void _free_fcb(_Inout_ fcb* fcb, _In_ const char* func);
+#define free_fcb(fcb) _free_fcb(fcb, funcname)
 #endif
 
 // in fastio.c

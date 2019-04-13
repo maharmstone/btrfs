@@ -824,6 +824,8 @@ void free_trees(device_extension* Vcb) {
         if (empty)
             break;
     }
+
+    reap_fcbs(Vcb);
 }
 
 #ifdef _MSC_VER

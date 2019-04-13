@@ -1047,9 +1047,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (!fr) {
         ERR("out of memory\n");
 
-        acquire_fcb_lock_exclusive(Vcb);
-        free_fcb(Vcb, rootfcb);
-        release_fcb_lock(Vcb);
+        reap_fcb(rootfcb);
 
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -3905,7 +3903,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08x\n", Status);
-        free_fcb(Vcb, fcb);
+        free_fcb(fcb);
         goto end;
     }
 
@@ -3923,7 +3921,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fileref = create_fileref(Vcb);
     if (!fileref) {
         ERR("out of memory\n");
-        free_fcb(Vcb, fcb);
+        free_fcb(fcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }

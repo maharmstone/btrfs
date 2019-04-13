@@ -1448,13 +1448,11 @@ void mark_fileref_dirty(_In_ file_ref* fileref) {
 }
 
 #ifdef DEBUG_FCB_REFCOUNTS
-void _free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb, _In_ const char* func) {
+void _free_fcb(_Inout_ fcb* fcb, _In_ const char* func) {
 #else
-void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ fcb* fcb) {
+void free_fcb(_Inout_ fcb* fcb) {
 #endif
-    LONG rc;
-
-    rc = InterlockedDecrement(&fcb->refcount);
+    InterlockedDecrement(&fcb->refcount);
 
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
@@ -1463,10 +1461,9 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
     ERR("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #endif
 #endif
+}
 
-    if (rc > 0)
-        return;
-
+void reap_fcb(fcb* fcb) {
     if (fcb->list_entry.Flink)
         RemoveEntryList(&fcb->list_entry);
 
@@ -1477,7 +1474,7 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
 
-    ExFreeToNPagedLookasideList(&Vcb->fcb_np_lookaside, fcb->nonpaged);
+    ExFreeToNPagedLookasideList(&fcb->Vcb->fcb_np_lookaside, fcb->nonpaged);
 
     if (fcb->sd)
         ExFreePool(fcb->sd);
@@ -1547,7 +1544,7 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
     if (fcb->pool_type == NonPagedPool)
         ExFreePool(fcb);
     else
-        ExFreeToPagedLookasideList(&Vcb->fcb_lookaside, fcb);
+        ExFreeToPagedLookasideList(&fcb->Vcb->fcb_lookaside, fcb);
 
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
@@ -1556,6 +1553,21 @@ void free_fcb(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_exten
     _debug_message(func, "freeing fcb %p\n", fcb);
 #endif
 #endif
+}
+
+void reap_fcbs(device_extension* Vcb) {
+    LIST_ENTRY* le;
+
+    le = Vcb->all_fcbs.Flink;
+    while (le != &Vcb->all_fcbs) {
+        fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_all);
+        LIST_ENTRY* le2 = le->Flink;
+
+        if (fcb->refcount == 0)
+            reap_fcb(fcb);
+
+        le = le2;
+    }
 }
 
 void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ file_ref* fr) {
@@ -1612,7 +1624,7 @@ void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_e
         free_fileref(Vcb, fr->parent);
     }
 
-    free_fcb(Vcb, fr->fcb);
+    free_fcb(fr->fcb);
 
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
@@ -1693,7 +1705,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     if (fileref)
         free_fileref(fcb->Vcb, fileref);
     else
-        free_fcb(Vcb, fcb);
+        free_fcb(fcb);
 
     release_fcb_lock(Vcb);
 
@@ -1786,10 +1798,8 @@ void uninit(_In_ device_extension* Vcb) {
     KeSetTimer(&Vcb->flush_thread_timer, time, NULL); // trigger the timer early
     KeWaitForSingleObject(&Vcb->flush_thread_finished, Executive, KernelMode, FALSE, NULL);
 
-    acquire_fcb_lock_exclusive(Vcb);
-    free_fcb(Vcb, Vcb->volume_fcb);
-    free_fcb(Vcb, Vcb->dummy_fcb);
-    release_fcb_lock(Vcb);
+    reap_fcb(Vcb->volume_fcb);
+    reap_fcb(Vcb->dummy_fcb);
 
     if (Vcb->root_file)
         ObDereferenceObject(Vcb->root_file);
@@ -1799,9 +1809,7 @@ void uninit(_In_ device_extension* Vcb) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (c->cache) {
-            acquire_fcb_lock_exclusive(Vcb);
-            free_fcb(Vcb, c->cache);
-            release_fcb_lock(Vcb);
+            reap_fcb(c->cache);
             c->cache = NULL;
         }
 
@@ -1836,11 +1844,8 @@ void uninit(_In_ device_extension* Vcb) {
         if (c->devices)
             ExFreePool(c->devices);
 
-        if (c->cache) {
-            acquire_fcb_lock_exclusive(Vcb);
-            free_fcb(Vcb, c->cache);
-            release_fcb_lock(Vcb);
-        }
+        if (c->cache)
+            reap_fcb(c->cache);
 
         ExDeleteResourceLite(&c->range_locks_lock);
         ExDeleteResourceLite(&c->partial_stripes_lock);
@@ -4535,17 +4540,14 @@ exit2:
                 acquire_fcb_lock_exclusive(Vcb);
                 free_fileref(Vcb, Vcb->root_fileref);
                 release_fcb_lock(Vcb);
-            } else if (root_fcb) {
-                acquire_fcb_lock_exclusive(Vcb);
-                free_fcb(Vcb, root_fcb);
-                release_fcb_lock(Vcb);
-            }
+            } else if (root_fcb)
+                free_fcb(root_fcb);
 
-            if (Vcb->volume_fcb) {
-                acquire_fcb_lock_exclusive(Vcb);
-                free_fcb(Vcb, Vcb->volume_fcb);
-                release_fcb_lock(Vcb);
-            }
+            if (root_fcb->refcount == 0)
+                reap_fcb(root_fcb);
+
+            if (Vcb->volume_fcb)
+                reap_fcb(Vcb->volume_fcb);
 
             ExDeleteResourceLite(&Vcb->tree_lock);
             ExDeleteResourceLite(&Vcb->load_lock);
