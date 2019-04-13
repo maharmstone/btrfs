@@ -1069,9 +1069,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fr->fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!fr->fcb->hash_ptrs) {
         ERR("out of memory\n");
-        acquire_fcb_lock_exclusive(Vcb);
         free_fileref(fr);
-        release_fcb_lock(Vcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -1081,9 +1079,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fr->fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!fr->fcb->hash_ptrs_uc) {
         ERR("out of memory\n");
-        acquire_fcb_lock_exclusive(Vcb);
         free_fileref(fr);
-        release_fcb_lock(Vcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -1150,11 +1146,8 @@ end:
     }
 
 end2:
-    if (fr) {
-        acquire_fcb_lock_exclusive(Vcb);
+    if (fr)
         free_fileref(fr);
-        release_fcb_lock(Vcb);
-    }
 
     return Status;
 }
@@ -2229,7 +2222,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     if (Vcb->locked)
         return STATUS_SUCCESS;
 
-    acquire_fcb_lock_exclusive(Vcb);
+    acquire_fcb_lock_shared(Vcb);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;

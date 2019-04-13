@@ -1647,7 +1647,6 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     ccb* ccb;
     file_ref* fileref = NULL;
     LONG open_files;
-    device_extension* Vcb;
 
     UNUSED(Irp);
 
@@ -1711,16 +1710,10 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     if (!(fcb->Vcb->Vpb->Flags & VPB_MOUNTED))
         return STATUS_SUCCESS;
 
-    Vcb = fcb->Vcb;
-
-    acquire_fcb_lock_exclusive(Vcb);
-
     if (fileref)
         free_fileref(fileref);
     else
         free_fcb(fcb);
-
-    release_fcb_lock(Vcb);
 
     return STATUS_SUCCESS;
 }
@@ -4549,11 +4542,9 @@ exit2:
 
             if (Vcb->root_file)
                 ObDereferenceObject(Vcb->root_file);
-            else if (Vcb->root_fileref) {
-                acquire_fcb_lock_exclusive(Vcb);
+            else if (Vcb->root_fileref)
                 free_fileref(Vcb->root_fileref);
-                release_fcb_lock(Vcb);
-            } else if (root_fcb)
+            else if (root_fcb)
                 free_fcb(root_fcb);
 
             if (root_fcb->refcount == 0)
