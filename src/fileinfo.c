@@ -733,6 +733,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     BTRFS_TIME now;
     file_ref* origparent;
 
+    // FIXME - make sure me->dummyfileref and me->dummyfcb get freed properly
+
     InitializeListHead(&move_list);
 
     KeQuerySystemTime(&time);
@@ -1102,7 +1104,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 ExReleaseResourceLite(&destdir->fcb->nonpaged->dir_children_lock);
             }
 
-            free_fileref(fileref->fcb->Vcb, me->fileref->parent);
+            free_fileref(me->fileref->parent);
             me->fileref->parent = destdir;
 
             ExAcquireResourceExclusiveLite(&me->fileref->parent->nonpaged->children_lock, TRUE);
@@ -1238,9 +1240,9 @@ end:
             free_fcb(me->dummyfcb);
 
         if (me->dummyfileref)
-            free_fileref(fileref->fcb->Vcb, me->dummyfileref);
+            free_fileref(me->dummyfileref);
 
-        free_fileref(fileref->fcb->Vcb, me->fileref);
+        free_fileref(me->fileref);
 
         ExFreePool(me);
     }
@@ -1455,7 +1457,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         }
 
         if (fileref == oldfileref || oldfileref->deleted) {
-            free_fileref(Vcb, oldfileref);
+            free_fileref(oldfileref);
             oldfileref = NULL;
         }
     }
@@ -1898,7 +1900,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fr2->parent->fcb->inode_item.st_ctime = now;
     fr2->parent->fcb->inode_item.st_mtime = now;
 
-    free_fileref(Vcb, fr2);
+    free_fileref(fr2);
 
     fr2->parent->fcb->inode_item_changed = TRUE;
     mark_fcb_dirty(fr2->parent->fcb);
@@ -1911,13 +1913,13 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
 end:
     if (oldfileref)
-        free_fileref(Vcb, oldfileref);
+        free_fileref(oldfileref);
 
     if (!NT_SUCCESS(Status) && related)
-        free_fileref(Vcb, related);
+        free_fileref(related);
 
     if (!NT_SUCCESS(Status) && fr2)
-        free_fileref(Vcb, fr2);
+        free_fileref(fr2);
 
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
@@ -2297,7 +2299,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
                 goto end;
             }
         } else {
-            free_fileref(Vcb, oldfileref);
+            free_fileref(oldfileref);
             oldfileref = NULL;
         }
     }
@@ -2445,7 +2447,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     InsertTailList(&fcb->hardlinks, &hl->list_entry);
 
     mark_fileref_dirty(fr2);
-    free_fileref(Vcb, fr2);
+    free_fileref(fr2);
 
     // update inode's INODE_ITEM
 
@@ -2480,13 +2482,13 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
 end:
     if (oldfileref)
-        free_fileref(Vcb, oldfileref);
+        free_fileref(oldfileref);
 
     if (!NT_SUCCESS(Status) && related)
-        free_fileref(Vcb, related);
+        free_fileref(related);
 
     if (!NT_SUCCESS(Status) && fr2)
-        free_fileref(Vcb, fr2);
+        free_fileref(fr2);
 
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);
@@ -3441,7 +3443,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             ExFreePool(name.Buffer);
 
         free_fcb(fcb);
-        free_fileref(Vcb, parfr);
+        free_fileref(parfr);
 
         return Status;
     }
@@ -3452,7 +3454,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         ExFreePool(name.Buffer);
 
     free_fcb(fcb);
-    free_fileref(Vcb, parfr);
+    free_fileref(parfr);
 
     return STATUS_SUCCESS;
 }
@@ -3598,7 +3600,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                         }
                     }
 
-                    free_fileref(fcb->Vcb, parfr);
+                    free_fileref(parfr);
                 }
 
                 le = le->Flink;

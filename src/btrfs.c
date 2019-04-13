@@ -1361,7 +1361,7 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
             Status = fileref_get_filename(parfr, &fn, NULL, &pathlen);
             if (Status != STATUS_BUFFER_OVERFLOW) {
                 ERR("fileref_get_filename returned %08x\n", Status);
-                free_fileref(fcb->Vcb, parfr);
+                free_fileref(parfr);
                 break;
             }
 
@@ -1370,7 +1370,7 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
 
             if (pathlen + hl->name.Length > 0xffff) {
                 WARN("pathlen + hl->name.Length was too long for FsRtlNotifyFilterReportChange\n");
-                free_fileref(fcb->Vcb, parfr);
+                free_fileref(parfr);
                 break;
             }
 
@@ -1378,14 +1378,14 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
             fn.Buffer = ExAllocatePoolWithTag(PagedPool, fn.MaximumLength, ALLOC_TAG);
             if (!fn.Buffer) {
                 ERR("out of memory\n");
-                free_fileref(fcb->Vcb, parfr);
+                free_fileref(parfr);
                 break;
             }
 
             Status = fileref_get_filename(parfr, &fn, NULL, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("fileref_get_filename returned %08x\n", Status);
-                free_fileref(fcb->Vcb, parfr);
+                free_fileref(parfr);
                 ExFreePool(fn.Buffer);
                 break;
             }
@@ -1403,7 +1403,7 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
 
             ExFreePool(fn.Buffer);
 
-            free_fileref(fcb->Vcb, parfr);
+            free_fileref(parfr);
         }
 
         le = le->Flink;
@@ -1570,7 +1570,7 @@ void reap_fcbs(device_extension* Vcb) {
     }
 }
 
-void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ file_ref* fr) {
+void free_fileref(_Inout_ file_ref* fr) {
     LONG rc;
 
     rc = InterlockedDecrement(&fr->refcount);
@@ -1585,13 +1585,9 @@ void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_e
         int3;
     }
 #endif
+}
 
-    if (rc > 0)
-        return;
-
-    if (fr->parent)
-        ExAcquireResourceExclusiveLite(&fr->parent->nonpaged->children_lock, TRUE);
-
+static void reap_fileref(device_extension* Vcb, file_ref* fr) {
     // FIXME - do we need a file_ref lock?
 
     // FIXME - do delete if needed
@@ -1619,14 +1615,31 @@ void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_e
     if (fr->list_entry.Flink)
         RemoveEntryList(&fr->list_entry);
 
-    if (fr->parent) {
-        ExReleaseResourceLite(&fr->parent->nonpaged->children_lock);
-        free_fileref(Vcb, fr->parent);
-    }
+    if (fr->parent)
+        free_fileref(fr->parent);
 
     free_fcb(fr->fcb);
 
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
+}
+
+void reap_filerefs(device_extension* Vcb, file_ref* fr) {
+    LIST_ENTRY* le;
+
+    // FIXME - recursion is a bad idea in kernel mode
+
+    le = fr->children.Flink;
+    while (le != &fr->children) {
+        file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
+        LIST_ENTRY* le2 = le->Flink;
+
+        reap_filerefs(Vcb, c);
+
+        le = le2;
+    }
+
+    if (fr->refcount == 0)
+        reap_fileref(Vcb, fr);
 }
 
 static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
@@ -1703,7 +1716,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     acquire_fcb_lock_exclusive(Vcb);
 
     if (fileref)
-        free_fileref(fcb->Vcb, fileref);
+        free_fileref(fileref);
     else
         free_fcb(fcb);
 
@@ -4538,7 +4551,7 @@ exit2:
                 ObDereferenceObject(Vcb->root_file);
             else if (Vcb->root_fileref) {
                 acquire_fcb_lock_exclusive(Vcb);
-                free_fileref(Vcb, Vcb->root_fileref);
+                free_fileref(Vcb->root_fileref);
                 release_fcb_lock(Vcb);
             } else if (root_fcb)
                 free_fcb(root_fcb);

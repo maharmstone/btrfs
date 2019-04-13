@@ -6956,7 +6956,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&Vcb->dirty_filerefs), file_ref, list_entry_dirty);
 
         flush_fileref(fr, &batchlist, Irp);
-        free_fileref(Vcb, fr);
+        free_fileref(fr);
 
 #ifdef DEBUG_FLUSH_TIMES
         filerefs++;

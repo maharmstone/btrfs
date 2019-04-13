@@ -1080,7 +1080,7 @@ BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 #ifndef DEBUG_FCB_REFCOUNTS
 void free_fcb(_Inout_ fcb* fcb);
 #endif
-void free_fileref(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Inout_ file_ref* fr);
+void free_fileref(_Inout_ file_ref* fr);
 void protect_superblocks(_Inout_ chunk* c);
 BOOL is_top_level(_In_ PIRP Irp);
 NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ UINT64 id,
@@ -1118,6 +1118,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
 void reap_fcb(fcb* fcb);
 void reap_fcbs(device_extension* Vcb);
+void reap_filerefs(device_extension* Vcb, file_ref* fr);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

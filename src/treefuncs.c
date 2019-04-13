@@ -825,6 +825,7 @@ void free_trees(device_extension* Vcb) {
             break;
     }
 
+    reap_filerefs(Vcb, Vcb->root_fileref);
     reap_fcbs(Vcb);
 }
 

@@ -433,7 +433,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
-        free_fileref(Vcb, fr);
+        free_fileref(fr);
         goto end;
     }
 
@@ -460,7 +460,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     fr->fcb->subvol->parent = fileref->fcb->subvol->id;
 
-    free_fileref(Vcb, fr);
+    free_fileref(fr);
 
     // change fcb's INODE_ITEM
 
@@ -639,11 +639,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
             WARN("file already exists\n");
-            free_fileref(Vcb, fr2);
+            free_fileref(fr2);
             Status = STATUS_OBJECT_NAME_COLLISION;
             goto end3;
         } else
-            free_fileref(Vcb, fr2);
+            free_fileref(fr2);
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("open_fileref returned %08x\n", Status);
         goto end3;
@@ -724,7 +724,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
             Status = STATUS_SUCCESS;
         } else {
             send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
-            free_fileref(Vcb, fr);
+            free_fileref(fr);
         }
     }
 
@@ -864,11 +864,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
             WARN("file already exists\n");
-            free_fileref(Vcb, fr2);
+            free_fileref(fr2);
             Status = STATUS_OBJECT_NAME_COLLISION;
             goto end;
         } else
-            free_fileref(Vcb, fr2);
+            free_fileref(fr2);
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("open_fileref returned %08x\n", Status);
         goto end;
@@ -1070,7 +1070,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (!fr->fcb->hash_ptrs) {
         ERR("out of memory\n");
         acquire_fcb_lock_exclusive(Vcb);
-        free_fileref(Vcb, fr);
+        free_fileref(fr);
         release_fcb_lock(Vcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -1082,7 +1082,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (!fr->fcb->hash_ptrs_uc) {
         ERR("out of memory\n");
         acquire_fcb_lock_exclusive(Vcb);
-        free_fileref(Vcb, fr);
+        free_fileref(fr);
         release_fcb_lock(Vcb);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
@@ -1152,7 +1152,7 @@ end:
 end2:
     if (fr) {
         acquire_fcb_lock_exclusive(Vcb);
-        free_fileref(Vcb, fr);
+        free_fileref(fr);
         release_fcb_lock(Vcb);
     }
 
@@ -3956,7 +3956,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
             ERR("out of memory\n");
-            free_fileref(Vcb, fileref);
+            free_fileref(fileref);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
@@ -3966,7 +3966,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs_uc) {
             ERR("out of memory\n");
-            free_fileref(Vcb, fileref);
+            free_fileref(fileref);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
@@ -4474,7 +4474,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, UINT64 id, WCHAR* out, UL
     else
         ERR("fileref_get_filename returned %08x\n", Status);
 
-    free_fileref(Vcb, fr);
+    free_fileref(fr);
 
     release_fcb_lock(Vcb);
 
