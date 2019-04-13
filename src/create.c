@@ -576,7 +576,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
 
-    acquire_fcb_lock_exclusive(Vcb);
+    acquire_fcb_lock_shared(Vcb);
 
     if (!IsListEmpty(&subvol->fcbs)) {
         LIST_ENTRY* le = subvol->fcbs.Flink;
@@ -610,7 +610,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     return STATUS_SUCCESS;
                 }
 
-                lastle = le->Blink;
                 break;
             }
 
@@ -625,9 +624,10 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         return STATUS_SUCCESS;
     }
 
+    release_fcb_lock(Vcb);
+
     fcb = create_fcb(Vcb, pooltype);
     if (!fcb) {
-        release_fcb_lock(Vcb);
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -644,14 +644,12 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
-        release_fcb_lock(Vcb);
         ERR("error - find_item returned %08x\n", Status);
         reap_fcb(fcb);
         return Status;
     }
 
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        release_fcb_lock(Vcb);
         WARN("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", inode, subvol->id);
         reap_fcb(fcb);
         return STATUS_INVALID_PARAMETER;
@@ -701,7 +699,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
                 if (!hl) {
-                    release_fcb_lock(Vcb);
                     ERR("out of memory\n");
                     reap_fcb(fcb);
                     return STATUS_INSUFFICIENT_RESOURCES;
@@ -719,7 +716,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
                 if (!NT_SUCCESS(Status)) {
-                    release_fcb_lock(Vcb);
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                     ExFreePool(hl);
                     reap_fcb(fcb);
@@ -734,7 +730,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     hl->name.Buffer = ExAllocatePoolWithTag(pooltype, hl->name.MaximumLength, ALLOC_TAG);
 
                     if (!hl->name.Buffer) {
-                        release_fcb_lock(Vcb);
                         ERR("out of memory\n");
                         ExFreePool(hl);
                         reap_fcb(fcb);
@@ -743,7 +738,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
                     if (!NT_SUCCESS(Status)) {
-                        release_fcb_lock(Vcb);
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
@@ -770,7 +764,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
                 if (!hl) {
-                    release_fcb_lock(Vcb);
                     ERR("out of memory\n");
                     reap_fcb(fcb);
                     return STATUS_INSUFFICIENT_RESOURCES;
@@ -788,7 +781,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
                 if (!NT_SUCCESS(Status)) {
-                    release_fcb_lock(Vcb);
                     ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                     ExFreePool(hl);
                     reap_fcb(fcb);
@@ -803,7 +795,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     hl->name.Buffer = ExAllocatePoolWithTag(pooltype, hl->name.MaximumLength, ALLOC_TAG);
 
                     if (!hl->name.Buffer) {
-                        release_fcb_lock(Vcb);
                         ERR("out of memory\n");
                         ExFreePool(hl);
                         reap_fcb(fcb);
@@ -812,7 +803,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
                     if (!NT_SUCCESS(Status)) {
-                        release_fcb_lock(Vcb);
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
@@ -848,7 +838,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     if (di->m > 0) {
                         fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->reparse_xattr.Buffer) {
-                            release_fcb_lock(Vcb);
                             ERR("out of memory\n");
                             reap_fcb(fcb);
                             return STATUS_INSUFFICIENT_RESOURCES;
@@ -872,7 +861,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                             fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                             if (!fcb->ea_xattr.Buffer) {
-                                release_fcb_lock(Vcb);
                                 ERR("out of memory\n");
                                 reap_fcb(fcb);
                                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -921,7 +909,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     if (di->m > 0) {
                         fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
                         if (!fcb->sd) {
-                            release_fcb_lock(Vcb);
                             ERR("out of memory\n");
                             reap_fcb(fcb);
                             return STATUS_INSUFFICIENT_RESOURCES;
@@ -957,7 +944,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[sizeof(xapref) - 1], di->n + 1 - sizeof(xapref));
                     if (!NT_SUCCESS(Status)) {
-                        release_fcb_lock(Vcb);
                         ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
                         reap_fcb(fcb);
                         return Status;
@@ -965,7 +951,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
                     if (!dc) {
-                        release_fcb_lock(Vcb);
                         ERR("out of memory\n");
                         reap_fcb(fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
@@ -976,7 +961,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     dc->utf8.MaximumLength = dc->utf8.Length = di->n + 1 - sizeof(xapref);
                     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
                     if (!dc->utf8.Buffer) {
-                        release_fcb_lock(Vcb);
                         ERR("out of memory\n");
                         ExFreePool(dc);
                         reap_fcb(fcb);
@@ -988,7 +972,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     dc->name.MaximumLength = dc->name.Length = (UINT16)utf16len;
                     dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
                     if (!dc->name.Buffer) {
-                        release_fcb_lock(Vcb);
                         ERR("out of memory\n");
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc);
@@ -998,7 +981,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = RtlUTF8ToUnicodeN(dc->name.Buffer, utf16len, &utf16len, dc->utf8.Buffer, dc->utf8.Length);
                     if (!NT_SUCCESS(Status)) {
-                        release_fcb_lock(Vcb);
                         ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
@@ -1009,7 +991,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, TRUE);
                     if (!NT_SUCCESS(Status)) {
-                        release_fcb_lock(Vcb);
                         ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
@@ -1026,7 +1007,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + di->m + di->n, ALLOC_TAG);
                     if (!xa) {
-                        release_fcb_lock(Vcb);
                         ERR("out of memory\n");
                         reap_fcb(fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1054,7 +1034,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             ed = (EXTENT_DATA*)tp.item->data;
 
             if (tp.item->size < sizeof(EXTENT_DATA)) {
-                release_fcb_lock(Vcb);
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
 
@@ -1066,7 +1045,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
 
                 if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    release_fcb_lock(Vcb);
                     ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
 
@@ -1083,7 +1061,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
             ext = ExAllocatePoolWithTag(pooltype, offsetof(extent, extent_data) + tp.item->size, ALLOC_TAG);
             if (!ext) {
-                release_fcb_lock(Vcb);
                 ERR("out of memory\n");
                 reap_fcb(fcb);
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -1104,7 +1081,6 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         Status = load_dir_children(Vcb, fcb, FALSE, Irp);
         if (!NT_SUCCESS(Status)) {
-            release_fcb_lock(Vcb);
             ERR("load_dir_children returned %08x\n", Status);
             reap_fcb(fcb);
             return Status;
@@ -1131,6 +1107,50 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     if (!sd_set)
         fcb_get_sd(fcb, parent, FALSE, Irp);
 
+    acquire_fcb_lock_exclusive(Vcb);
+
+    if (!IsListEmpty(&subvol->fcbs)) {
+        LIST_ENTRY* le = subvol->fcbs.Flink;
+
+        while (le != &subvol->fcbs) {
+            struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+            if (fcb2->inode == inode) {
+                if (!fcb2->ads) {
+                    if (fcb2->deleted)
+                        deleted_fcb = fcb2;
+                    else {
+#ifdef DEBUG_FCB_REFCOUNTS
+                        LONG rc = InterlockedIncrement(&fcb2->refcount);
+
+                        WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb2, rc, fcb2->subvol->id, fcb2->inode);
+#else
+                        InterlockedIncrement(&fcb2->refcount);
+#endif
+
+                        *pfcb = fcb2;
+                        release_fcb_lock(Vcb);
+                        reap_fcb(fcb);
+                        return STATUS_SUCCESS;
+                    }
+                }
+            } else if (fcb2->inode > inode) {
+                if (deleted_fcb) {
+                    InterlockedIncrement(&deleted_fcb->refcount);
+                    *pfcb = deleted_fcb;
+                    release_fcb_lock(Vcb);
+                    reap_fcb(fcb);
+                    return STATUS_SUCCESS;
+                }
+
+                lastle = le->Blink;
+                break;
+            }
+
+            le = le->Flink;
+        }
+    }
+
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
 
@@ -1147,11 +1167,11 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
 
+    release_fcb_lock(Vcb);
+
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
 
     *pfcb = fcb;
-
-    release_fcb_lock(Vcb);
 
     return STATUS_SUCCESS;
 }
