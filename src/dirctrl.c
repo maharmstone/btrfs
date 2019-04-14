@@ -602,7 +602,6 @@ static NTSTATUS query_directory(PIRP Irp) {
     BOOL has_wildcard = FALSE, specific_file = FALSE, initial;
     dir_entry de;
     UINT64 newoffset;
-    ANSI_STRING utf8;
     dir_child* dc = NULL;
 
     TRACE("query directory\n");
@@ -611,8 +610,6 @@ static NTSTATUS query_directory(PIRP Irp) {
     fcb = IrpSp->FileObject->FsContext;
     ccb = IrpSp->FileObject->FsContext2;
     fileref = ccb ? ccb->fileref : NULL;
-
-    utf8.Buffer = NULL;
 
     if (!fileref)
         return STATUS_INVALID_PARAMETER;
@@ -703,8 +700,7 @@ static NTSTATUS query_directory(PIRP Irp) {
             ccb->query_string.Buffer = ExAllocatePoolWithTag(PagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length, ALLOC_TAG);
             if (!ccb->query_string.Buffer) {
                 ERR("out of memory\n");
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end2;
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             ccb->query_string.Length = ccb->query_string.MaximumLength = IrpSp->Parameters.QueryDirectory.FileName->Length;
@@ -720,10 +716,8 @@ static NTSTATUS query_directory(PIRP Irp) {
         if (!(IrpSp->Flags & SL_RESTART_SCAN)) {
             initial = FALSE;
 
-            if (specific_file) {
-                Status = STATUS_NO_MORE_FILES;
-                goto end2;
-            }
+            if (specific_file)
+                return STATUS_NO_MORE_FILES;
         }
     }
 
@@ -734,7 +728,6 @@ static NTSTATUS query_directory(PIRP Irp) {
     newoffset = ccb->query_dir_offset;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
-    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
 
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
 
@@ -922,13 +915,9 @@ end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
 end2:
-    ExReleaseResourceLite(&Vcb->fileref_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     TRACE("returning %08x\n", Status);
-
-    if (utf8.Buffer)
-        ExFreePool(utf8.Buffer);
 
     return Status;
 }
