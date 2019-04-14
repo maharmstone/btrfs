@@ -1451,16 +1451,17 @@ void mark_fileref_dirty(_In_ file_ref* fileref) {
 
 #ifdef DEBUG_FCB_REFCOUNTS
 void _free_fcb(_Inout_ fcb* fcb, _In_ const char* func) {
+    LONG rc = InterlockedDecrement(&fcb->refcount);
 #else
 void free_fcb(_Inout_ fcb* fcb) {
-#endif
     InterlockedDecrement(&fcb->refcount);
+#endif
 
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
-    ERR("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
+    ERR("fcb %p (%s): refcount now %i (subvol %llx, inode %llx)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #else
-    ERR("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
+    ERR("fcb %p (%s): refcount now %i (subvol %llx, inode %llx)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #endif
 #endif
 }
@@ -1556,14 +1557,6 @@ void reap_fcb(fcb* fcb) {
         ExFreePool(fcb);
     else
         ExFreeToPagedLookasideList(&fcb->Vcb->fcb_lookaside, fcb);
-
-#ifdef DEBUG_FCB_REFCOUNTS
-#ifdef DEBUG_LONG_MESSAGES
-    _debug_message(func, file, line, "freeing fcb %p\n", fcb);
-#else
-    _debug_message(func, "freeing fcb %p\n", fcb);
-#endif
-#endif
 }
 
 void reap_fcbs(device_extension* Vcb) {
