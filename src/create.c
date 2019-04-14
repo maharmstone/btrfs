@@ -1169,6 +1169,23 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             }
         }
 
+        if (!lastle) {
+            UINT8 c = hash >> 24;
+
+            if (c != 0xff) {
+                UINT8 d = c + 1;
+
+                do {
+                    if (subvol->fcbs_ptrs[d]) {
+                        lastle = subvol->fcbs_ptrs[d]->Blink;
+                        break;
+                    }
+
+                    d++;
+                } while (d != 0);
+            }
+        }
+
         if (lastle) {
             InsertHeadList(lastle, &fcb->list_entry);
 
