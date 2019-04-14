@@ -3139,10 +3139,12 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
 
     TRACE("nextparitem: key = %llx,%x,%llx\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
 
-    Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("do_load_tree returned %08x\n", Status);
-        return Status;
+    if (!nextparitem->treeholder.tree) {
+        Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_load_tree returned %08x\n", Status);
+            return Status;
+        }
     }
 
     if (!is_tree_unique(Vcb, nextparitem->treeholder.tree, Irp))
