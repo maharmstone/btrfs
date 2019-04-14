@@ -135,7 +135,6 @@ file_ref* create_fileref(device_extension* Vcb) {
     InitializeListHead(&fr->children);
 
     ExInitializeResourceLite(&fr->nonpaged->fileref_lock);
-    ExInitializeResourceLite(&fr->nonpaged->children_lock);
 
     return fr;
 }
@@ -1385,9 +1384,9 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         sf2->dc = dc;
         dc->fileref = sf2;
 
-        ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
+        ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, TRUE);
         InsertTailList(&sf->children, &sf2->list_entry);
-        ExReleaseResourceLite(&sf->nonpaged->children_lock);
+        ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
 
         increase_fileref_refcount(sf);
     } else {
@@ -1459,7 +1458,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             if (dc->type == BTRFS_TYPE_DIRECTORY)
                 fcb->fileref = sf2;
 
-            ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
+            ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, TRUE);
 
             if (!dc->fileref) {
                 sf2->parent = (struct _file_ref*)sf;
@@ -1472,7 +1471,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 sf2 = dc->fileref;
             }
 
-            ExReleaseResourceLite(&sf->nonpaged->children_lock);
+            ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
 
             if (duff_fr)
                 reap_fileref(Vcb, duff_fr);
@@ -2268,9 +2267,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fileref->dc = dc;
     dc->fileref = fileref;
 
-    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&parfileref->children, &fileref->list_entry);
-    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
     increase_fileref_refcount(parfileref);
 
@@ -2565,9 +2564,9 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     fileref->parent = (struct _file_ref*)parfileref;
 
-    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&parfileref->children, &fileref->list_entry);
-    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
     parfileref->fcb->subvol->fcbs_version++;
 

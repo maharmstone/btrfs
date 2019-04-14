@@ -1024,9 +1024,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
         increase_fileref_refcount(me->dummyfileref->parent);
 
-        ExAcquireResourceExclusiveLite(&me->dummyfileref->parent->nonpaged->children_lock, TRUE);
+        ExAcquireResourceExclusiveLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
         InsertTailList(&me->dummyfileref->parent->children, &me->dummyfileref->list_entry);
-        ExReleaseResourceLite(&me->dummyfileref->parent->nonpaged->children_lock);
+        ExReleaseResourceLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock);
 
         me->dummyfileref->debug_desc = me->fileref->debug_desc;
 
@@ -1111,9 +1111,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             free_fileref(me->fileref->parent);
             me->fileref->parent = destdir;
 
-            ExAcquireResourceExclusiveLite(&me->fileref->parent->nonpaged->children_lock, TRUE);
+            ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
             InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
-            ExReleaseResourceLite(&me->fileref->parent->nonpaged->children_lock);
+            ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
             TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
             me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
@@ -1735,10 +1735,10 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fileref->created = TRUE;
     fileref->parent = related;
 
-    ExAcquireResourceExclusiveLite(&fileref->parent->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, TRUE);
     InsertHeadList(&fileref->list_entry, &fr2->list_entry);
     RemoveEntryList(&fileref->list_entry);
-    ExReleaseResourceLite(&fileref->parent->nonpaged->children_lock);
+    ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
 
     mark_fileref_dirty(fr2);
     mark_fileref_dirty(fileref);
@@ -1803,9 +1803,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
     }
 
-    ExAcquireResourceExclusiveLite(&related->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&related->children, &fileref->list_entry);
-    ExReleaseResourceLite(&related->nonpaged->children_lock);
+    ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
 
     if (fcb->inode_item.st_nlink > 1) {
         // add new hardlink entry to fcb
@@ -2373,9 +2373,9 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     fr2->dc = dc;
     dc->fileref = fr2;
 
-    ExAcquireResourceExclusiveLite(&related->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&related->children, &fr2->list_entry);
-    ExReleaseResourceLite(&related->nonpaged->children_lock);
+    ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
 
     // add hardlink for existing fileref, if it's not there already
     if (IsListEmpty(&fcb->hardlinks)) {

@@ -1606,7 +1606,6 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
     if (fr->debug_desc)
         ExFreePool(fr->debug_desc);
 
-    ExDeleteResourceLite(&fr->nonpaged->children_lock);
     ExDeleteResourceLite(&fr->nonpaged->fileref_lock);
 
     ExFreeToNPagedLookasideList(&Vcb->fileref_np_lookaside, fr->nonpaged);

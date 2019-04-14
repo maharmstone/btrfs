@@ -446,9 +446,9 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->dc = dc;
     dc->fileref = fr;
 
-    ExAcquireResourceExclusiveLite(&fileref->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&fileref->children, &fr->list_entry);
-    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+    ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
     increase_fileref_refcount(fileref);
 
@@ -1087,9 +1087,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     RtlZeroMemory(fr->fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
 
-    ExAcquireResourceExclusiveLite(&fileref->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&fileref->children, &fr->list_entry);
-    ExReleaseResourceLite(&fileref->nonpaged->children_lock);
+    ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
     increase_fileref_refcount(fileref);
 
@@ -3948,9 +3948,9 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fileref->dc = dc;
     dc->fileref = fileref;
 
-    ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, TRUE);
     InsertTailList(&parfileref->children, &fileref->list_entry);
-    ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+    ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
     increase_fileref_refcount(parfileref);
 

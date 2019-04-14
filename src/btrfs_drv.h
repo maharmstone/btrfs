@@ -295,7 +295,6 @@ typedef struct _fcb {
 
 typedef struct {
     ERESOURCE fileref_lock;
-    ERESOURCE children_lock;
 } file_ref_nonpaged;
 
 typedef struct _file_ref {
