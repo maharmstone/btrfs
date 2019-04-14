@@ -1711,6 +1711,7 @@ end2:
 NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, PUNICODE_STRING name, UINT8 type, dir_child** pdc) {
     NTSTATUS Status;
     dir_child* dc;
+    BOOL locked;
 
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
     if (!dc) {
@@ -1757,7 +1758,10 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, P
     dc->hash = calc_crc32c(0xffffffff, (UINT8*)dc->name.Buffer, dc->name.Length);
     dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)dc->name_uc.Buffer, dc->name_uc.Length);
 
-    ExAcquireResourceExclusiveLite(&fcb->nonpaged->dir_children_lock, TRUE);
+    locked = ExIsResourceAcquiredExclusive(&fcb->nonpaged->dir_children_lock);
+
+    if (!locked)
+        ExAcquireResourceExclusiveLite(&fcb->nonpaged->dir_children_lock, TRUE);
 
     if (IsListEmpty(&fcb->dir_children_index))
         dc->index = 2;
@@ -1771,7 +1775,8 @@ NTSTATUS add_dir_child(fcb* fcb, UINT64 inode, BOOL subvol, PANSI_STRING utf8, P
 
     insert_dir_child_into_hash_lists(fcb, dc);
 
-    ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
+    if (!locked)
+        ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
 
     *pdc = dc;
 
@@ -2023,6 +2028,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     file_ref* fileref;
     dir_child* dc;
     ANSI_STRING utf8as;
+    LIST_ENTRY* lastle = NULL;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2056,8 +2062,6 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
-
-    acquire_fcb_lock_exclusive(Vcb);
 
     TRACE("create file %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
     ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
@@ -2110,8 +2114,6 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
         parfileref->fcb->inode_item.st_size -= utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
-
-        release_fcb_lock(Vcb);
 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -2186,6 +2188,60 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->created = TRUE;
     fcb->deleted = TRUE;
 
+    fcb->hash = calc_crc32c(0xffffffff, (UINT8*)&inode, sizeof(UINT64));
+
+    acquire_fcb_lock_exclusive(Vcb);
+
+    if (fcb->subvol->fcbs_ptrs[fcb->hash >> 24]) {
+        LIST_ENTRY* le = fcb->subvol->fcbs_ptrs[fcb->hash >> 24];
+
+        while (le != &fcb->subvol->fcbs) {
+            struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+            if (fcb2->hash > fcb->hash) {
+                lastle = le->Blink;
+                break;
+            }
+
+            le = le->Flink;
+        }
+    }
+
+    if (!lastle) {
+        UINT8 c = fcb->hash >> 24;
+
+        if (c != 0xff) {
+            UINT8 d = c + 1;
+
+            do {
+                if (fcb->subvol->fcbs_ptrs[d]) {
+                    lastle = fcb->subvol->fcbs_ptrs[d]->Blink;
+                    break;
+                }
+
+                d++;
+            } while (d != 0);
+        }
+    }
+
+    if (lastle) {
+        InsertHeadList(lastle, &fcb->list_entry);
+
+        if (lastle == &fcb->subvol->fcbs || (CONTAINING_RECORD(lastle, struct _fcb, list_entry)->hash >> 24) != (fcb->hash >> 24))
+            fcb->subvol->fcbs_ptrs[fcb->hash >> 24] = &fcb->list_entry;
+    } else {
+        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+
+        if (fcb->list_entry.Blink == &fcb->subvol->fcbs || (CONTAINING_RECORD(fcb->list_entry.Blink, struct _fcb, list_entry)->hash >> 24) != (fcb->hash >> 24))
+            fcb->subvol->fcbs_ptrs[fcb->hash >> 24] = &fcb->list_entry;
+    }
+
+    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+
+    fcb->subvol->fcbs_version++;
+
+    release_fcb_lock(Vcb);
+
     mark_fcb_dirty(fcb);
 
     Status = fcb_get_new_sd(fcb, parfileref, IrpSp->Parameters.Create.SecurityContext->AccessState);
@@ -2198,7 +2254,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         parfileref->fcb->inode_item.st_size -= utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
-        release_fcb_lock(Vcb);
+        ExFreePool(utf8);
 
         return Status;
     }
@@ -2215,7 +2271,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
             parfileref->fcb->inode_item.st_size -= utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
-            release_fcb_lock(Vcb);
+            ExFreePool(utf8);
 
             return Status;
         }
@@ -2230,7 +2286,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         parfileref->fcb->inode_item.st_size -= utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
-        release_fcb_lock(Vcb);
+        ExFreePool(utf8);
 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -2242,13 +2298,13 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
         if (!NT_SUCCESS(Status)) {
             ERR("extend_file returned %08x\n", Status);
-            free_fileref(fileref);
+            reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
             parfileref->fcb->inode_item.st_size -= utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
-            release_fcb_lock(Vcb);
+            ExFreePool(utf8);
 
             return Status;
         }
@@ -2258,13 +2314,13 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
             ERR("out of memory\n");
-            free_fileref(fileref);
+            reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
             parfileref->fcb->inode_item.st_size -= utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
-            release_fcb_lock(Vcb);
+            ExFreePool(utf8);
 
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -2274,13 +2330,13 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs_uc) {
             ERR("out of memory\n");
-            free_fileref(fileref);
+            reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
             parfileref->fcb->inode_item.st_size -= utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
-            release_fcb_lock(Vcb);
+            ExFreePool(utf8);
 
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -2291,42 +2347,48 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->deleted = FALSE;
 
     fileref->created = TRUE;
-    mark_fileref_dirty(fileref);
 
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
-    fileref->parent = parfileref;
-
     utf8as.Buffer = utf8;
     utf8as.Length = utf8as.MaximumLength = (UINT16)utf8len;
 
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, FALSE, &utf8as, fpus, fcb->type, &dc);
-    if (!NT_SUCCESS(Status))
-        WARN("add_dir_child returned %08x\n", Status);
+    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, TRUE);
 
-    ExFreePool(utf8);
+    // FIXME - check again doesn't already exist
 
+    Status = add_dir_child(parfileref->fcb, fcb->inode, FALSE, &utf8as, fpus, fcb->type, &dc);
+    if (!NT_SUCCESS(Status)) {
+        ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
+        ERR("add_dir_child returned %08x\n", Status);
+        reap_fileref(Vcb, fileref);
+
+        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
+        ExFreePool(utf8);
+
+        return Status;
+    }
+
+    fileref->parent = parfileref;
     fileref->dc = dc;
     dc->fileref = fileref;
-
-    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, TRUE);
-    InsertTailList(&parfileref->children, &fileref->list_entry);
-    ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
-
-    increase_fileref_refcount(parfileref);
-
-    InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
-    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
-
-    *pfr = fileref;
 
     if (type == BTRFS_TYPE_DIRECTORY)
         fileref->fcb->fileref = fileref;
 
-    fileref->fcb->subvol->fcbs_version++;
+    InsertTailList(&parfileref->children, &fileref->list_entry);
+    ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
-    release_fcb_lock(Vcb);
+    ExFreePool(utf8);
+
+    mark_fileref_dirty(fileref);
+    increase_fileref_refcount(parfileref);
+
+    *pfr = fileref;
 
     TRACE("created new file %S in subvol %llx, inode %llx\n", file_desc_fileref(fileref), fcb->subvol->id, fcb->inode);
 
@@ -3847,7 +3909,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         }
     } else {
         Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+                              pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
     }
 
     if (Status == STATUS_REPARSE) {
@@ -3908,12 +3970,10 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 #ifdef DEBUG_STATS
         open_type = 2;
 #endif
-//         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
-//         ExReleaseResourceLite(&Vcb->fileref_lock);
-//
-//         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
-//         granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
-        Status = STATUS_NOT_IMPLEMENTED; // FIXME
+        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
+
+        Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
+        granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
     }
 
     if (NT_SUCCESS(Status) && !(options & FILE_NO_INTERMEDIATE_BUFFERING))
