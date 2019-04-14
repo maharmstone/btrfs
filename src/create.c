@@ -3833,7 +3833,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
     }
 
 #ifdef DEBUG_FCB_REFCOUNTS
-    oc = InterlockedIncrement(&fileref->open_count);
+    LONG oc = InterlockedIncrement(&fileref->open_count);
     ERR("fileref %p: open_count now %i\n", fileref, oc);
 #else
     InterlockedIncrement(&fileref->open_count);
@@ -3856,9 +3856,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     ACCESS_MASK granted_access;
     BOOL loaded_related = FALSE;
     UNICODE_STRING fn;
-#ifdef DEBUG_FCB_REFCOUNTS
-    LONG oc;
-#endif
 #ifdef DEBUG_STATS
     LARGE_INTEGER time1, time2;
     UINT8 open_type = 0;
