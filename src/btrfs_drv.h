@@ -245,6 +245,7 @@ typedef struct _fcb {
     struct _device_extension* Vcb;
     struct _root* subvol;
     UINT64 inode;
+    UINT32 hash;
     UINT8 type;
     INODE_ITEM inode_item;
     SECURITY_DESCRIPTOR* sd;
@@ -420,6 +421,7 @@ typedef struct _root {
     LONG send_ops;
     UINT64 fcbs_version;
     LIST_ENTRY fcbs;
+    LIST_ENTRY* fcbs_ptrs[256];
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
 } root;

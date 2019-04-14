@@ -1022,6 +1022,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     r->root_item.num_references = 1;
     r->fcbs_version = 0;
     InitializeListHead(&r->fcbs);
+    RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
     RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
 
@@ -1465,6 +1466,15 @@ void free_fcb(_Inout_ fcb* fcb) {
 }
 
 void reap_fcb(fcb* fcb) {
+    UINT8 c = fcb->hash >> 24;
+
+    if (fcb->subvol->fcbs_ptrs[c] == &fcb->list_entry) {
+        if (fcb->list_entry.Flink != &fcb->subvol->fcbs && (CONTAINING_RECORD(fcb->list_entry.Flink, struct _fcb, list_entry)->hash >> 24) == c)
+            fcb->subvol->fcbs_ptrs[c] = fcb->list_entry.Flink;
+        else
+            fcb->subvol->fcbs_ptrs[c] = NULL;
+    }
+
     if (fcb->list_entry.Flink)
         RemoveEntryList(&fcb->list_entry);
 
@@ -2618,6 +2628,7 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ UINT64 id, _In_ UIN
     r->send_ops = 0;
     r->fcbs_version = 0;
     InitializeListHead(&r->fcbs);
+    RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);
     if (!r->nonpaged) {

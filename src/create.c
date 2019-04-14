@@ -576,11 +576,14 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
     UINT64 fcbs_version;
+    UINT32 hash;
+
+    hash = calc_crc32c(0xffffffff, (UINT8*)&inode, sizeof(UINT64));
 
     acquire_fcb_lock_shared(Vcb);
 
-    if (!IsListEmpty(&subvol->fcbs)) {
-        LIST_ENTRY* le = subvol->fcbs.Flink;
+    if (subvol->fcbs_ptrs[hash >> 24]) {
+        LIST_ENTRY* le = subvol->fcbs_ptrs[hash >> 24];
 
         while (le != &subvol->fcbs) {
             fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
@@ -603,7 +606,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_SUCCESS;
                     }
                 }
-            } else if (fcb->inode > inode) {
+            } else if (fcb->hash > hash) {
                 if (deleted_fcb) {
                     InterlockedIncrement(&deleted_fcb->refcount);
                     *pfcb = deleted_fcb;
@@ -621,14 +624,13 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         }
     }
 
+    release_fcb_lock(Vcb);
+
     if (deleted_fcb) {
         InterlockedIncrement(&deleted_fcb->refcount);
         *pfcb = deleted_fcb;
-        release_fcb_lock(Vcb);
         return STATUS_SUCCESS;
     }
-
-    release_fcb_lock(Vcb);
 
     fcb = create_fcb(Vcb, pooltype);
     if (!fcb) {
@@ -640,6 +642,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     fcb->subvol = subvol;
     fcb->inode = inode;
+    fcb->hash = hash;
     fcb->type = type;
 
     searchkey.obj_id = inode;
@@ -1116,8 +1119,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     if (lastle && subvol->fcbs_version == fcbs_version)
         InsertHeadList(lastle, &fcb->list_entry);
     else {
-        if (!IsListEmpty(&subvol->fcbs)) {
-            LIST_ENTRY* le = subvol->fcbs.Flink;
+        if (subvol->fcbs_ptrs[hash >> 24]) {
+            LIST_ENTRY* le = subvol->fcbs_ptrs[hash >> 24];
 
             while (le != &subvol->fcbs) {
                 struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
@@ -1127,13 +1130,13 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         if (fcb2->deleted)
                             deleted_fcb = fcb2;
                         else {
-    #ifdef DEBUG_FCB_REFCOUNTS
+#ifdef DEBUG_FCB_REFCOUNTS
                             LONG rc = InterlockedIncrement(&fcb2->refcount);
 
                             WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb2, rc, fcb2->subvol->id, fcb2->inode);
-    #else
+#else
                             InterlockedIncrement(&fcb2->refcount);
-    #endif
+#endif
 
                             *pfcb = fcb2;
                             release_fcb_lock(Vcb);
@@ -1141,7 +1144,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                             return STATUS_SUCCESS;
                         }
                     }
-                } else if (fcb2->inode > inode) {
+                } else if (fcb2->hash > hash) {
                     if (deleted_fcb) {
                         InterlockedIncrement(&deleted_fcb->refcount);
                         *pfcb = deleted_fcb;
@@ -1167,10 +1170,17 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             }
         }
 
-        if (lastle)
+        if (lastle) {
             InsertHeadList(lastle, &fcb->list_entry);
-        else
+
+            if (lastle == &subvol->fcbs || (CONTAINING_RECORD(lastle, struct _fcb, list_entry)->hash >> 24) != (hash >> 24))
+                subvol->fcbs_ptrs[hash >> 24] = &fcb->list_entry;
+        } else {
             InsertTailList(&subvol->fcbs, &fcb->list_entry);
+
+            if (fcb->list_entry.Blink == &subvol->fcbs || (CONTAINING_RECORD(fcb->list_entry.Blink, struct _fcb, list_entry)->hash >> 24) != (hash >> 24))
+                subvol->fcbs_ptrs[hash >> 24] = &fcb->list_entry;
+        }
     }
 
     subvol->fcbs_version++;
