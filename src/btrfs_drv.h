@@ -1362,7 +1362,6 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 BOOL has_open_children(file_ref* fileref);
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT16 end, fcb* fcb, file_ref* fileref, BOOL advance_only);
 NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen);
-NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp);
 void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc);
 
@@ -1393,6 +1392,7 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, UINT64* inode, dir_child** pdc, BOOL case_sensitive);
 UINT32 inherit_mode(fcb* parfcb, BOOL is_dir);
 file_ref* create_fileref(device_extension* Vcb);
+NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, UINT64 inode, file_ref** pfr, PIRP Irp);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, UINT32 type);
