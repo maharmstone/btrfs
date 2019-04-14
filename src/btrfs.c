@@ -4396,6 +4396,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     root_fcb->Vcb = Vcb;
     root_fcb->inode = SUBVOL_ROOT_INODE;
+    root_fcb->hash = calc_crc32c(0xffffffff, (UINT8*)&root_fcb->inode, sizeof(UINT64));
     root_fcb->type = BTRFS_TYPE_DIRECTORY;
 
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -4450,6 +4451,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->root_fileref->fcb = root_fcb;
     InsertTailList(&root_fcb->subvol->fcbs, &root_fcb->list_entry);
     InsertTailList(&Vcb->all_fcbs, &root_fcb->list_entry_all);
+
+    root_fcb->subvol->fcbs_ptrs[root_fcb->hash >> 24] = &root_fcb->list_entry;
 
     root_fcb->fileref = Vcb->root_fileref;
 
