@@ -3911,115 +3911,10 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         return STATUS_SUCCESS;
     }
 
-    // find hardlink if fcb doesn't have any loaded
-    if (IsListEmpty(&fcb->hardlinks)) {
-        KEY searchkey;
-        traverse_ptr tp;
+    hardlink* hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
 
-        searchkey.obj_id = fcb->inode;
-        searchkey.obj_type = TYPE_INODE_EXTREF;
-        searchkey.offset = 0xffffffffffffffff;
-
-        Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("find_item returned %08x\n", Status);
-            free_fcb(fcb);
-            return Status;
-        }
-
-        if (tp.item->key.obj_id == fcb->inode) {
-            if (tp.item->key.obj_type == TYPE_INODE_REF) {
-                INODE_REF* ir;
-                ULONG stringlen;
-
-                ir = (INODE_REF*)tp.item->data;
-
-                parent = tp.item->key.offset;
-
-                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                    free_fcb(fcb);
-                    return Status;
-                }
-
-                name.Length = name.MaximumLength = (UINT16)stringlen;
-
-                if (stringlen == 0)
-                    name.Buffer = NULL;
-                else {
-                    name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
-
-                    if (!name.Buffer) {
-                        ERR("out of memory\n");
-                        free_fcb(fcb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                        ExFreePool(name.Buffer);
-                        free_fcb(fcb);
-                        return Status;
-                    }
-
-                    hl_alloc = TRUE;
-                }
-            } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
-                INODE_EXTREF* ier;
-                ULONG stringlen;
-
-                ier = (INODE_EXTREF*)tp.item->data;
-
-                parent = ier->dir;
-
-                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
-                    free_fcb(fcb);
-                    return Status;
-                }
-
-                name.Length = name.MaximumLength = (UINT16)stringlen;
-
-                if (stringlen == 0)
-                    name.Buffer = NULL;
-                else {
-                    name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
-
-                    if (!name.Buffer) {
-                        ERR("out of memory\n");
-                        free_fcb(fcb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ier->name, ier->n);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
-                        ExFreePool(name.Buffer);
-                        free_fcb(fcb);
-                        return Status;
-                    }
-
-                    hl_alloc = TRUE;
-                }
-
-            }
-        }
-    } else {
-        hardlink* hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
-
-        name = hl->name;
-        parent = hl->parent;
-    }
-
-    if (parent == 0) {
-        ERR("subvol %llx, inode %llx has no hardlinks\n", subvol->id, inode);
-        free_fcb(fcb);
-        if (hl_alloc) ExFreePool(name.Buffer);
-        return STATUS_INVALID_PARAMETER;
-    }
+    name = hl->name;
+    parent = hl->parent;
 
     if (parent == inode) { // subvolume root
         KEY searchkey;
@@ -4033,7 +3928,6 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08x\n", Status);
             free_fcb(fcb);
-            if (hl_alloc) ExFreePool(name.Buffer);
             return Status;
         }
 
@@ -4046,14 +3940,12 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             if (tp.item->size < sizeof(ROOT_REF)) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
                 free_fcb(fcb);
-                if (hl_alloc) ExFreePool(name.Buffer);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
                 ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
                 free_fcb(fcb);
-                if (hl_alloc) ExFreePool(name.Buffer);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -4072,7 +3964,6 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             if (!r) {
                 ERR("couldn't find subvol %llx\n", tp.item->key.offset);
                 free_fcb(fcb);
-                if (hl_alloc) ExFreePool(name.Buffer);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -4080,13 +3971,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             if (!NT_SUCCESS(Status)) {
                 ERR("open_fileref_by_inode returned %08x\n", Status);
                 free_fcb(fcb);
-                if (hl_alloc) ExFreePool(name.Buffer);
                 return Status;
-            }
-
-            if (hl_alloc) {
-                ExFreePool(name.Buffer);
-                hl_alloc = FALSE;
             }
 
             Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, rr->name, rr->n);
@@ -4122,7 +4007,6 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         } else {
             ERR("couldn't find parent for subvol %llx\n", subvol->id);
             free_fcb(fcb);
-            if (hl_alloc) ExFreePool(name.Buffer);
             return STATUS_INTERNAL_ERROR;
         }
     } else {
@@ -4130,21 +4014,17 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref_by_inode returned %08x\n", Status);
             free_fcb(fcb);
-
-            if (hl_alloc)
-                ExFreePool(name.Buffer);
-
             return Status;
         }
     }
 
     Status = open_fileref_child(Vcb, parfr, &name, TRUE, TRUE, FALSE, PagedPool, &fr, Irp);
 
+    if (hl_alloc)
+        ExFreePool(name.Buffer);
+
     if (!NT_SUCCESS(Status)) {
         ERR("open_fileref_child returned %08x\n", Status);
-
-        if (hl_alloc)
-            ExFreePool(name.Buffer);
 
         free_fcb(fcb);
         free_fileref(parfr);
@@ -4153,9 +4033,6 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     }
 
     *pfr = fr;
-
-    if (hl_alloc)
-        ExFreePool(name.Buffer);
 
     free_fcb(fcb);
     free_fileref(parfr);
@@ -4252,30 +4129,21 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
     if (options & FILE_OPEN_BY_FILE_ID) {
         if (fn.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
-            Status = STATUS_NOT_IMPLEMENTED; // FIXME
-            goto exit;
+            UINT64 inode;
 
-//             UINT64 inode;
-//
-//             RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
-//
-//             if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
-//                 inode = Vcb->root_fileref->fcb->inode;
-//
-//             if (inode == 0) { // we use 0 to mean the parent of a subvolume
-//                 fileref = related->parent;
-//                 increase_fileref_refcount(fileref);
-//                 Status = STATUS_SUCCESS;
-//             } else {
-//                 ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
-//                 Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref, Irp);
-//                 ExReleaseResourceLite(&Vcb->fileref_lock);
-//             }
-//
-//             if (NT_SUCCESS(Status) && !(options & FILE_NO_INTERMEDIATE_BUFFERING))
-//                 FileObject->Flags |= FO_CACHE_SUPPORTED;
-//
-//             goto exit;
+            RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
+
+            if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
+                inode = Vcb->root_fileref->fcb->inode;
+
+            if (inode == 0) { // we use 0 to mean the parent of a subvolume
+                fileref = related->parent;
+                increase_fileref_refcount(fileref);
+                Status = STATUS_SUCCESS;
+            } else
+                Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref, Irp);
+
+            goto loaded;
         } else {
             WARN("FILE_OPEN_BY_FILE_ID only supported for inodes\n");
             Status = STATUS_NOT_IMPLEMENTED;
@@ -4321,6 +4189,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                               pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
     }
 
+loaded:
     if (Status == STATUS_REPARSE) {
         REPARSE_DATA_BUFFER* data;
 
