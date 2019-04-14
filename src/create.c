@@ -1219,11 +1219,8 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     RtlCopyMemory(&xattr.Buffer[sizeof(xapref) - 1], dc->utf8.Buffer, dc->utf8.Length);
     xattr.Buffer[xattr.Length] = 0;
 
-    acquire_fcb_lock_exclusive(Vcb);
-
     fcb = create_fcb(Vcb, PagedPool);
     if (!fcb) {
-        release_fcb_lock(Vcb);
         ERR("out of memory\n");
         ExFreePool(xattr.Buffer);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1234,7 +1231,6 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     crc32 = calc_crc32c(0xfffffffe, (UINT8*)xattr.Buffer, xattr.Length);
 
     if (!get_xattr(Vcb, parent->subvol, parent->inode, xattr.Buffer, crc32, &xattrdata, &xattrlen, Irp)) {
-        release_fcb_lock(Vcb);
         ERR("get_xattr failed\n");
         reap_fcb(fcb);
         ExFreePool(xattr.Buffer);
@@ -1256,21 +1252,18 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
 
     Status = find_item(Vcb, parent->subvol, &tp, &searchkey, FALSE, Irp);
     if (!NT_SUCCESS(Status)) {
-        release_fcb_lock(Vcb);
         ERR("find_item returned %08x\n", Status);
         reap_fcb(fcb);
         return Status;
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        release_fcb_lock(Vcb);
         ERR("error - could not find key for xattr\n");
         reap_fcb(fcb);
         return STATUS_INTERNAL_ERROR;
     }
 
     if (tp.item->size < xattrlen) {
-        release_fcb_lock(Vcb);
         ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, xattrlen);
         reap_fcb(fcb);
         return STATUS_INTERNAL_ERROR;
@@ -1289,14 +1282,6 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     fcb->Header.ValidDataLength.QuadPart = xattrlen;
 
     TRACE("stream found: size = %x, hash = %08x\n", xattrlen, fcb->adshash);
-
-    InsertHeadList(&parent->list_entry, &fcb->list_entry);
-
-    InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
-
-    fcb->subvol->fcbs_version++;
-
-    release_fcb_lock(Vcb);
 
     *pfcb = fcb;
 
@@ -1318,6 +1303,8 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         UNICODE_STRING name_uc;
         dir_child* dc = NULL;
         fcb* fcb;
+        struct _fcb* duff_fcb = NULL;
+        file_ref* duff_fr = NULL;
 
         if (!case_sensitive) {
             Status = RtlUpcaseUnicodeString(&name_uc, name, TRUE);
@@ -1349,25 +1336,74 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             le = le->Flink;
         }
 
-        if (!case_sensitive)
-            ExFreePool(name_uc.Buffer);
+        if (!dc) {
+            if (locked)
+                ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
 
-        if (locked)
-            ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+            if (!case_sensitive)
+                ExFreePool(name_uc.Buffer);
 
-        if (!dc)
             return STATUS_OBJECT_NAME_NOT_FOUND;
+        }
 
         if (dc->fileref) {
+            if (locked)
+                ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+
+            if (!case_sensitive)
+                ExFreePool(name_uc.Buffer);
+
             increase_fileref_refcount(dc->fileref);
             *psf2 = dc->fileref;
             return STATUS_SUCCESS;
         }
 
+        if (locked)
+            ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+
+        if (!case_sensitive)
+            ExFreePool(name_uc.Buffer);
+
         Status = open_fcb_stream(Vcb, dc, sf->fcb, &fcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("open_fcb_stream returned %08x\n", Status);
             return Status;
+        }
+
+        fcb->hash = sf->fcb->hash;
+
+        acquire_fcb_lock_exclusive(Vcb);
+
+        if (sf->fcb->subvol->fcbs_ptrs[fcb->hash >> 24]) {
+            LIST_ENTRY* le = sf->fcb->subvol->fcbs_ptrs[fcb->hash >> 24];
+
+            while (le != &sf->fcb->subvol->fcbs) {
+                struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+                if (fcb2->inode == fcb->inode) {
+                    if (fcb2->ads && fcb2->adshash == fcb->adshash) { // FIXME - handle hash collisions
+                        duff_fcb = fcb;
+                        fcb = fcb2;
+                        break;
+                    }
+                } else if (fcb2->hash > fcb->hash)
+                    break;
+
+                le = le->Flink;
+            }
+        }
+
+        if (!duff_fcb) {
+            InsertHeadList(&sf->fcb->list_entry, &fcb->list_entry);
+            InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+            fcb->subvol->fcbs_version++;
+        }
+
+        release_fcb_lock(Vcb);
+
+        if (duff_fcb) {
+            reap_fcb(duff_fcb);
+            InterlockedIncrement(&fcb->refcount);
         }
 
         sf2 = create_fileref(Vcb);
@@ -1377,18 +1413,25 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        sf2->fcb = fcb;
-
-        sf2->parent = (struct _file_ref*)sf;
-
-        sf2->dc = dc;
-        dc->fileref = sf2;
-
         ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, TRUE);
-        InsertTailList(&sf->children, &sf2->list_entry);
+
+        if (dc->fileref) {
+            duff_fr = sf2;
+            sf2 = dc->fileref;
+            increase_fileref_refcount(sf2);
+        } else {
+            sf2->fcb = fcb;
+            sf2->parent = (struct _file_ref*)sf;
+            sf2->dc = dc;
+            dc->fileref = sf2;
+            increase_fileref_refcount(sf);
+            InsertTailList(&sf->children, &sf2->list_entry);
+        }
+
         ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
 
-        increase_fileref_refcount(sf);
+        if (duff_fr)
+            reap_fileref(Vcb, duff_fr);
     } else {
         root* subvol;
         UINT64 inode;
