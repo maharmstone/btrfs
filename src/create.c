@@ -1383,6 +1383,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             return Status;
         } else {
             fcb* fcb;
+            file_ref* duff_fr = NULL;
 #ifdef DEBUG_STATS
             LARGE_INTEGER time1, time2;
 #endif
@@ -1436,16 +1437,23 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             if (dc->type == BTRFS_TYPE_DIRECTORY)
                 fcb->fileref = sf2;
 
-            sf2->dc = dc;
-            dc->fileref = sf2;
-
-            sf2->parent = (struct _file_ref*)sf;
-
             ExAcquireResourceExclusiveLite(&sf->nonpaged->children_lock, TRUE);
-            InsertTailList(&sf->children, &sf2->list_entry);
+
+            if (!dc->fileref) {
+                sf2->parent = (struct _file_ref*)sf;
+                sf2->dc = dc;
+                dc->fileref = sf2;
+                InsertTailList(&sf->children, &sf2->list_entry);
+                increase_fileref_refcount(sf);
+            } else {
+                duff_fr = sf2;
+                sf2 = dc->fileref;
+            }
+
             ExReleaseResourceLite(&sf->nonpaged->children_lock);
 
-            increase_fileref_refcount(sf);
+            if (duff_fr)
+                reap_fileref(Vcb, duff_fr);
         }
     }
 
@@ -1465,13 +1473,6 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
     LIST_ENTRY* le;
 
     TRACE("(%p, %p, %p, %u, %p)\n", Vcb, pfr, related, parent, parsed);
-
-#ifdef DEBUG
-    if (!ExIsResourceAcquiredExclusiveLite(&Vcb->fcb_lock) && !ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock)) {
-        ERR("fcb_lock not acquired exclusively\n");
-        int3;
-    }
-#endif
 
     if (Vcb->removing || Vcb->locked)
         return STATUS_ACCESS_DENIED;
@@ -3710,70 +3711,75 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         goto exit;
     }
 
-    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
-
     if (options & FILE_OPEN_BY_FILE_ID) {
         if (fn.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
-            UINT64 inode;
+            Status = STATUS_NOT_IMPLEMENTED; // FIXME
+            goto exit;
 
-            RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
-
-            if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
-                inode = Vcb->root_fileref->fcb->inode;
-
-            if (inode == 0) { // we use 0 to mean the parent of a subvolume
-                fileref = related->parent;
-                increase_fileref_refcount(fileref);
-                Status = STATUS_SUCCESS;
-            } else {
-                Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref, Irp);
-            }
+//             UINT64 inode;
+//
+//             RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
+//
+//             if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
+//                 inode = Vcb->root_fileref->fcb->inode;
+//
+//             if (inode == 0) { // we use 0 to mean the parent of a subvolume
+//                 fileref = related->parent;
+//                 increase_fileref_refcount(fileref);
+//                 Status = STATUS_SUCCESS;
+//             } else {
+//                 ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
+//                 Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref, Irp);
+//                 ExReleaseResourceLite(&Vcb->fileref_lock);
+//             }
+//
+//             if (NT_SUCCESS(Status) && !(options & FILE_NO_INTERMEDIATE_BUFFERING))
+//                 FileObject->Flags |= FO_CACHE_SUPPORTED;
+//
+//             goto exit;
         } else {
             WARN("FILE_OPEN_BY_FILE_ID only supported for inodes\n");
             Status = STATUS_NOT_IMPLEMENTED;
-            ExReleaseResourceLite(&Vcb->fileref_lock);
             goto exit;
+        }
+    }
+
+    if (related && fn.Length != 0 && fn.Buffer[0] == '\\') {
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+
+    if (!related && RequestedDisposition != FILE_OPEN && !(IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY)) {
+        ULONG fnoff;
+
+        Status = open_fileref(Vcb, &related, &fn, NULL, TRUE, &parsed, &fnoff,
+                              pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+            Status = STATUS_OBJECT_PATH_NOT_FOUND;
+        else if (Status == STATUS_REPARSE)
+            fileref = related;
+        else if (NT_SUCCESS(Status)) {
+            fnoff *= sizeof(WCHAR);
+            fnoff += (related->dc ? related->dc->name.Length : 0) + sizeof(WCHAR);
+
+            if (related->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
+                Status = STATUS_REPARSE;
+                fileref = related;
+                parsed = (USHORT)fnoff - sizeof(WCHAR);
+            } else {
+                fn.Buffer = &fn.Buffer[fnoff / sizeof(WCHAR)];
+                fn.Length -= (USHORT)fnoff;
+
+                Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
+                                      pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+
+                loaded_related = TRUE;
+            }
         }
     } else {
-        if (related && fn.Length != 0 && fn.Buffer[0] == '\\') {
-            Status = STATUS_INVALID_PARAMETER;
-            ExReleaseResourceLite(&Vcb->fileref_lock);
-            goto exit;
-        }
-
-        if (!related && RequestedDisposition != FILE_OPEN && !(IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY)) {
-            ULONG fnoff;
-
-            Status = open_fileref(Vcb, &related, &fn, NULL, TRUE, &parsed, &fnoff,
-                                  pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
-
-            if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
-                Status = STATUS_OBJECT_PATH_NOT_FOUND;
-            else if (Status == STATUS_REPARSE)
-                fileref = related;
-            else if (NT_SUCCESS(Status)) {
-                fnoff *= sizeof(WCHAR);
-                fnoff += (related->dc ? related->dc->name.Length : 0) + sizeof(WCHAR);
-
-                if (related->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
-                    Status = STATUS_REPARSE;
-                    fileref = related;
-                    parsed = (USHORT)fnoff - sizeof(WCHAR);
-                } else {
-                    fn.Buffer = &fn.Buffer[fnoff / sizeof(WCHAR)];
-                    fn.Length -= (USHORT)fnoff;
-
-                    Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                          pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
-
-                    loaded_related = TRUE;
-                }
-
-            }
-        } else {
-            Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                  pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
-        }
+        Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
+                                pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
     }
 
     if (Status == STATUS_REPARSE) {
@@ -3795,7 +3801,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
             Irp->Tail.Overlay.AuxiliaryBuffer = (void*)data;
 
-            ExReleaseResourceLite(&Vcb->fileref_lock);
             free_fileref(fileref);
 
             goto exit;
@@ -3810,7 +3815,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             TRACE("file %S already exists, returning STATUS_OBJECT_NAME_COLLISION\n", file_desc_fileref(fileref));
             Status = STATUS_OBJECT_NAME_COLLISION;
 
-            ExReleaseResourceLite(&Vcb->fileref_lock);
             free_fileref(fileref);
 
             goto exit;
@@ -3818,22 +3822,17 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     } else if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         if (RequestedDisposition == FILE_OPEN || RequestedDisposition == FILE_OVERWRITE) {
             TRACE("file doesn't exist, returning STATUS_OBJECT_NAME_NOT_FOUND\n");
-            ExReleaseResourceLite(&Vcb->fileref_lock);
             goto exit;
         }
     } else if (Status == STATUS_OBJECT_PATH_NOT_FOUND) {
         TRACE("open_fileref returned %08x\n", Status);
-        ExReleaseResourceLite(&Vcb->fileref_lock);
         goto exit;
     } else {
         ERR("open_fileref returned %08x\n", Status);
-        ExReleaseResourceLite(&Vcb->fileref_lock);
         goto exit;
     }
 
     if (NT_SUCCESS(Status)) { // file already exists
-        ExReleaseResourceLite(&Vcb->fileref_lock);
-
         Status = open_file2(Vcb, RequestedDisposition, pool_type, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
         if (!NT_SUCCESS(Status))
             goto exit;
@@ -3841,11 +3840,12 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 #ifdef DEBUG_STATS
         open_type = 2;
 #endif
-        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
-        ExReleaseResourceLite(&Vcb->fileref_lock);
-
-        Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
-        granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
+//         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
+//         ExReleaseResourceLite(&Vcb->fileref_lock);
+//
+//         Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
+//         granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
+        Status = STATUS_NOT_IMPLEMENTED; // FIXME
     }
 
     if (NT_SUCCESS(Status) && !(options & FILE_NO_INTERMEDIATE_BUFFERING))
