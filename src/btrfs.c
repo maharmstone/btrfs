@@ -1468,7 +1468,7 @@ void free_fcb(_Inout_ fcb* fcb) {
 void reap_fcb(fcb* fcb) {
     UINT8 c = fcb->hash >> 24;
 
-    if (fcb->subvol->fcbs_ptrs[c] == &fcb->list_entry) {
+    if (fcb->subvol && fcb->subvol->fcbs_ptrs[c] == &fcb->list_entry) {
         if (fcb->list_entry.Flink != &fcb->subvol->fcbs && (CONTAINING_RECORD(fcb->list_entry.Flink, struct _fcb, list_entry)->hash >> 24) == c)
             fcb->subvol->fcbs_ptrs[c] = fcb->list_entry.Flink;
         else
