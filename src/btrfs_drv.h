@@ -418,6 +418,7 @@ typedef struct _root {
     PEPROCESS reserved;
     UINT64 parent;
     LONG send_ops;
+    UINT64 fcbs_version;
     LIST_ENTRY fcbs;
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;

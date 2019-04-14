@@ -575,6 +575,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     BOOL atts_set = FALSE, sd_set = FALSE, no_data;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
+    UINT64 fcbs_version;
 
     acquire_fcb_lock_shared(Vcb);
 
@@ -609,6 +610,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     release_fcb_lock(Vcb);
                     return STATUS_SUCCESS;
                 }
+
+                lastle = le->Blink;
+                fcbs_version = subvol->fcbs_version;
 
                 break;
             }
@@ -1109,61 +1113,67 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     acquire_fcb_lock_exclusive(Vcb);
 
-    if (!IsListEmpty(&subvol->fcbs)) {
-        LIST_ENTRY* le = subvol->fcbs.Flink;
+    if (lastle && subvol->fcbs_version == fcbs_version)
+        InsertHeadList(lastle, &fcb->list_entry);
+    else {
+        if (!IsListEmpty(&subvol->fcbs)) {
+            LIST_ENTRY* le = subvol->fcbs.Flink;
 
-        while (le != &subvol->fcbs) {
-            struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+            while (le != &subvol->fcbs) {
+                struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
 
-            if (fcb2->inode == inode) {
-                if (!fcb2->ads) {
-                    if (fcb2->deleted)
-                        deleted_fcb = fcb2;
-                    else {
-#ifdef DEBUG_FCB_REFCOUNTS
-                        LONG rc = InterlockedIncrement(&fcb2->refcount);
+                if (fcb2->inode == inode) {
+                    if (!fcb2->ads) {
+                        if (fcb2->deleted)
+                            deleted_fcb = fcb2;
+                        else {
+    #ifdef DEBUG_FCB_REFCOUNTS
+                            LONG rc = InterlockedIncrement(&fcb2->refcount);
 
-                        WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb2, rc, fcb2->subvol->id, fcb2->inode);
-#else
-                        InterlockedIncrement(&fcb2->refcount);
-#endif
+                            WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb2, rc, fcb2->subvol->id, fcb2->inode);
+    #else
+                            InterlockedIncrement(&fcb2->refcount);
+    #endif
 
-                        *pfcb = fcb2;
+                            *pfcb = fcb2;
+                            release_fcb_lock(Vcb);
+                            reap_fcb(fcb);
+                            return STATUS_SUCCESS;
+                        }
+                    }
+                } else if (fcb2->inode > inode) {
+                    if (deleted_fcb) {
+                        InterlockedIncrement(&deleted_fcb->refcount);
+                        *pfcb = deleted_fcb;
                         release_fcb_lock(Vcb);
                         reap_fcb(fcb);
                         return STATUS_SUCCESS;
                     }
-                }
-            } else if (fcb2->inode > inode) {
-                if (deleted_fcb) {
-                    InterlockedIncrement(&deleted_fcb->refcount);
-                    *pfcb = deleted_fcb;
-                    release_fcb_lock(Vcb);
-                    reap_fcb(fcb);
-                    return STATUS_SUCCESS;
+
+                    lastle = le->Blink;
+                    break;
                 }
 
-                lastle = le->Blink;
-                break;
+                le = le->Flink;
             }
-
-            le = le->Flink;
         }
+
+        if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
+            fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
+
+            if (!Vcb->readonly && !is_subvol_readonly(subvol, Irp)) {
+                fcb->atts_changed = TRUE;
+                mark_fcb_dirty(fcb);
+            }
+        }
+
+        if (lastle)
+            InsertHeadList(lastle, &fcb->list_entry);
+        else
+            InsertTailList(&subvol->fcbs, &fcb->list_entry);
     }
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
-        fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
-
-        if (!Vcb->readonly && !is_subvol_readonly(subvol, Irp)) {
-            fcb->atts_changed = TRUE;
-            mark_fcb_dirty(fcb);
-        }
-    }
-
-    if (lastle)
-        InsertHeadList(lastle, &fcb->list_entry);
-    else
-        InsertTailList(&subvol->fcbs, &fcb->list_entry);
+    subvol->fcbs_version++;
 
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
 
@@ -1274,6 +1284,8 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     InsertHeadList(&parent->list_entry, &fcb->list_entry);
 
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+
+    fcb->subvol->fcbs_version++;
 
     release_fcb_lock(Vcb);
 
@@ -2260,6 +2272,8 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     if (type == BTRFS_TYPE_DIRECTORY)
         fileref->fcb->fileref = fileref;
 
+    fileref->fcb->subvol->fcbs_version++;
+
     release_fcb_lock(Vcb);
 
     TRACE("created new file %S in subvol %llx, inode %llx\n", file_desc_fileref(fileref), fcb->subvol->id, fcb->inode);
@@ -2544,6 +2558,8 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     ExAcquireResourceExclusiveLite(&parfileref->nonpaged->children_lock, TRUE);
     InsertTailList(&parfileref->children, &fileref->list_entry);
     ExReleaseResourceLite(&parfileref->nonpaged->children_lock);
+
+    parfileref->fcb->subvol->fcbs_version++;
 
     release_fcb_lock(Vcb);
     ExReleaseResourceLite(&Vcb->fileref_lock);

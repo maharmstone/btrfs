@@ -1020,6 +1020,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     r->send_ops = 0;
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
+    r->fcbs_version = 0;
     InitializeListHead(&r->fcbs);
 
     RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
@@ -2615,6 +2616,7 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ UINT64 id, _In_ UIN
     r->treeholder.generation = generation;
     r->parent = 0;
     r->send_ops = 0;
+    r->fcbs_version = 0;
     InitializeListHead(&r->fcbs);
 
     r->nonpaged = ExAllocatePoolWithTag(NonPagedPool, sizeof(root_nonpaged), ALLOC_TAG);

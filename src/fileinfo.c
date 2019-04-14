@@ -717,6 +717,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     acquire_fcb_lock_exclusive(Vcb);
     InsertTailList(&r->fcbs, &fcb->list_entry);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
+    r->fcbs_version++;
     release_fcb_lock(Vcb);
 
     mark_fcb_dirty(fcb);
@@ -1249,6 +1250,9 @@ end:
 
         ExFreePool(me);
     }
+
+    destdir->fcb->subvol->fcbs_version++;
+    fileref->fcb->subvol->fcbs_version++;
 
     release_fcb_lock(fileref->fcb->Vcb);
 

@@ -1003,6 +1003,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     acquire_fcb_lock_exclusive(Vcb);
     InsertTailList(&r->fcbs, &rootfcb->list_entry);
     InsertTailList(&Vcb->all_fcbs, &rootfcb->list_entry_all);
+    r->fcbs_version++;
     release_fcb_lock(Vcb);
 
     rootfcb->Header.IsFastIoPossible = fast_io_possible(rootfcb);
@@ -3997,6 +3998,8 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     if (!parccb->user_set_write_time)
         parfcb->inode_item.st_mtime = now;
+
+    parfcb->subvol->fcbs_version++;
 
     ExReleaseResourceLite(parfcb->Header.Resource);
     release_fcb_lock(Vcb);
