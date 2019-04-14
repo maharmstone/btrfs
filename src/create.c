@@ -2030,7 +2030,7 @@ end:
 
 static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _In_ PUNICODE_STRING fpus,
                              _In_ file_ref* parfileref, _In_ ULONG options, _In_reads_bytes_opt_(ealen) FILE_FULL_EA_INFORMATION* ea, _In_ ULONG ealen,
-                             _Out_ file_ref** pfr, _In_ LIST_ENTRY* rollback) {
+                             _Out_ file_ref** pfr, BOOL case_sensitive, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
@@ -2046,6 +2046,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     dir_child* dc;
     ANSI_STRING utf8as;
     LIST_ENTRY* lastle = NULL;
+    file_ref* existing_fileref = NULL;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2373,7 +2374,77 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, TRUE);
 
-    // FIXME - check again doesn't already exist
+    // check again doesn't already exist
+    if (case_sensitive) {
+        UINT32 dc_hash = calc_crc32c(0xffffffff, (UINT8*)fpus->Buffer, fpus->Length);
+
+        if (parfileref->fcb->hash_ptrs[dc_hash >> 24]) {
+            LIST_ENTRY* le = parfileref->fcb->hash_ptrs[dc_hash >> 24];
+            while (le != &parfileref->fcb->dir_children_hash) {
+                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+
+                if (dc->hash == dc_hash && dc->name.Length == fpus->Length && RtlCompareMemory(dc->name.Buffer, fpus->Buffer, fpus->Length) == fpus->Length) {
+                    existing_fileref = dc->fileref;
+                    break;
+                } else if (dc->hash > dc_hash)
+                    break;
+
+                le = le->Flink;
+            }
+        }
+    } else {
+        UNICODE_STRING fpusuc;
+
+        Status = RtlUpcaseUnicodeString(&fpusuc, fpus, TRUE);
+        if (!NT_SUCCESS(Status)) {
+            ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            reap_fileref(Vcb, fileref);
+
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
+            ExFreePool(utf8);
+
+            return Status;
+        }
+
+        UINT32 dc_hash = calc_crc32c(0xffffffff, (UINT8*)fpusuc.Buffer, fpusuc.Length);
+
+        if (parfileref->fcb->hash_ptrs_uc[dc_hash >> 24]) {
+            LIST_ENTRY* le = parfileref->fcb->hash_ptrs_uc[dc_hash >> 24];
+            while (le != &parfileref->fcb->dir_children_hash_uc) {
+                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+
+                if (dc->hash_uc == dc_hash && dc->name.Length == fpusuc.Length && RtlCompareMemory(dc->name.Buffer, fpusuc.Buffer, fpusuc.Length) == fpusuc.Length) {
+                    existing_fileref = dc->fileref;
+                    break;
+                } else if (dc->hash_uc > dc_hash)
+                    break;
+
+                le = le->Flink;
+            }
+        }
+
+        ExFreePool(fpusuc.Buffer);
+    }
+
+    if (existing_fileref) {
+        ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
+        reap_fileref(Vcb, fileref);
+
+        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
+        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
+        ExFreePool(utf8);
+
+        increase_fileref_refcount(existing_fileref);
+        *pfr = existing_fileref;
+
+        return STATUS_OBJECT_NAME_COLLISION;
+    }
 
     Status = add_dir_child(parfileref->fcb, fcb->inode, FALSE, &utf8as, fpus, fcb->type, &dc);
     if (!NT_SUCCESS(Status)) {
@@ -2472,7 +2543,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
         SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
-        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, rollback);
+        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, case_sensitive, rollback);
 
         if (!NT_SUCCESS(Status)) {
             ERR("file_create2 returned %08x\n", Status);
@@ -2725,7 +2796,8 @@ static __inline BOOL called_from_lxss() {
 #endif
 
 static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                            PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options, LIST_ENTRY* rollback) {
+                            PFILE_OBJECT FileObject, file_ref* related, BOOL loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options,
+                            file_ref** existing_fileref, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref *fileref, *parfileref = NULL;
     ULONG i, j;
@@ -2879,9 +2951,12 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         }
 
         Status = file_create2(Irp, Vcb, &fpus, parfileref, options, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength,
-                              &fileref, rollback);
+                              &fileref, IrpSp->Flags & SL_CASE_SENSITIVE, rollback);
 
-        if (!NT_SUCCESS(Status)) {
+        if (Status == STATUS_OBJECT_NAME_COLLISION) {
+            *existing_fileref = fileref;
+            goto end;
+        } else if (!NT_SUCCESS(Status)) {
             ERR("file_create2 returned %08x\n", Status);
             goto end;
         }
@@ -3984,13 +4059,23 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
         if (!NT_SUCCESS(Status))
             goto exit;
     } else {
+        file_ref* existing_file;
+
 #ifdef DEBUG_STATS
         open_type = 2;
 #endif
-        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, rollback);
+        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, &existing_file, rollback);
 
-        Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
-        granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
+        if (Status == STATUS_OBJECT_NAME_COLLISION) { // already exists
+            fileref = existing_file;
+
+            Status = open_file2(Vcb, RequestedDisposition, pool_type, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
+            if (!NT_SUCCESS(Status))
+                goto exit;
+        } else {
+            Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
+            granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
+        }
     }
 
     if (NT_SUCCESS(Status) && !(options & FILE_NO_INTERMEDIATE_BUFFERING))
