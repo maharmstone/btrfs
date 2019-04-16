@@ -1529,6 +1529,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             } else {
                 duff_fr = sf2;
                 sf2 = dc->fileref;
+                increase_fileref_refcount(sf2);
             }
 
             ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
