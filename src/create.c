@@ -4563,12 +4563,16 @@ NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (!skip_lock)
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
+        ExAcquireResourceSharedLite(&Vcb->fileref_lock, TRUE);
+
         Status = open_file(DeviceObject, Vcb, Irp, &rollback);
 
         if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);
         else
             clear_rollback(&rollback);
+
+        ExReleaseResourceLite(&Vcb->fileref_lock);
 
         if (!skip_lock)
             ExReleaseResourceLite(&Vcb->tree_lock);
