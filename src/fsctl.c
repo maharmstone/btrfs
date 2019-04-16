@@ -2223,7 +2223,7 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
     if (Vcb->locked)
         return STATUS_SUCCESS;
 
-    ExAcquireResourceSharedLite(&Vcb->fileref_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
