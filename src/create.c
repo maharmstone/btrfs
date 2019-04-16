@@ -557,11 +557,6 @@ cont:
             break;
     }
 
-    // If a directory has a lot of files, force it to stick around until the next flush
-    // so we aren't constantly re-reading.
-    if (num_children >= 100)
-        mark_fcb_dirty(fcb);
-
     return STATUS_SUCCESS;
 }
 
