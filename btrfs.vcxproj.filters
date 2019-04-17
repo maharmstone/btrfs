@@ -281,7 +281,4 @@
       <Filter>Source Files\zstd</Filter>
     </ClCompile>
   </ItemGroup>
-  <ItemGroup>
-    <Inf Include="src\btrfs.inf" />
-  </ItemGroup>
 </Project>
