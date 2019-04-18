@@ -4555,7 +4555,7 @@ exit2:
             else if (root_fcb)
                 free_fcb(root_fcb);
 
-            if (root_fcb->refcount == 0)
+            if (root_fcb && root_fcb->refcount == 0)
                 reap_fcb(root_fcb);
 
             if (Vcb->volume_fcb)
