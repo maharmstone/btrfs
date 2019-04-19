@@ -826,12 +826,12 @@ NTSTATUS vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             return vol_is_dynamic(Irp);
 
         case IOCTL_VOLUME_ONLINE:
-            TRACE("unhandled control code IOCTL_VOLUME_ONLINE\n");
-            break;
+            Irp->IoStatus.Information = 0;
+            return STATUS_SUCCESS;
 
         case IOCTL_VOLUME_POST_ONLINE:
-            TRACE("unhandled control code IOCTL_VOLUME_POST_ONLINE\n");
-            break;
+            Irp->IoStatus.Information = 0;
+            return STATUS_SUCCESS;
 
         case IOCTL_DISK_GET_DRIVE_GEOMETRY:
             return vol_get_drive_geometry(DeviceObject, Irp);
