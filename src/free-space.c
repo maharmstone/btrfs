@@ -529,6 +529,11 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    if (c->chunk_item->size < 0x6400000) { // 100 MB
+        WARN("deleting free space cache for chunk smaller than 100MB\n");
+        goto clearcache;
+    }
+
     Status = read_file(c->cache, data, 0, c->cache->inode_item.st_size, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08x\n", Status);
@@ -1357,7 +1362,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->space_changed) {
+        if (c->space_changed && c->chunk_item->size >= 0x6400000) { // 100MB
             BOOL b;
 
             acquire_chunk_lock(c, Vcb);
@@ -1827,7 +1832,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->space_changed) {
+        if (c->space_changed && c->chunk_item->size >= 0x6400000) { // 100MB
             acquire_chunk_lock(c, Vcb);
             Status = update_chunk_cache(Vcb, c, &now, &batchlist, Irp, rollback);
             release_chunk_lock(c, Vcb);
