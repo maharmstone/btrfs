@@ -914,7 +914,6 @@ static NTSTATUS query_directory(PIRP Irp) {
 end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
-end2:
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     TRACE("returning %08x\n", Status);
