@@ -1239,6 +1239,32 @@ void BtrfsVolPropSheet::ShowScrub(HWND hwndDlg) {
     CloseHandle(sei.hProcess);
 }
 
+void BtrfsVolPropSheet::ShowChangeDriveLetter(HWND hwndDlg) {
+    wstring t;
+    WCHAR modfn[MAX_PATH];
+    SHELLEXECUTEINFOW sei;
+
+    GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
+
+    t = L"\""s + modfn + L"\",ShowChangeDriveLetter "s + fn;
+
+    RtlZeroMemory(&sei, sizeof(sei));
+
+    sei.cbSize = sizeof(sei);
+    sei.hwnd = hwndDlg;
+    sei.lpVerb = L"runas";
+    sei.lpFile = L"rundll32.exe";
+    sei.lpParameters = t.c_str();
+    sei.nShow = SW_SHOW;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+    if (!ShellExecuteExW(&sei))
+        throw last_error(GetLastError());
+
+    WaitForSingleObject(sei.hProcess, INFINITE);
+    CloseHandle(sei.hProcess);
+}
+
 static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     try {
         switch (uMsg) {
@@ -1282,6 +1308,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     SetDlgItemTextW(hwndDlg, IDC_UUID, L"");
 
                 SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_SCRUB), BCM_SETSHIELD, 0, true);
+                SendMessageW(GetDlgItem(hwndDlg, IDC_VOL_CHANGE_DRIVE_LETTER), BCM_SETSHIELD, 0, true);
 
                 return false;
             }
@@ -1318,6 +1345,10 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
                                 case IDC_VOL_SCRUB:
                                     bps->ShowScrub(hwndDlg);
+                                break;
+
+                                case IDC_VOL_CHANGE_DRIVE_LETTER:
+                                    bps->ShowChangeDriveLetter(hwndDlg);
                                 break;
                             }
                         }

@@ -87,6 +87,7 @@ public:
     INT_PTR CALLBACK DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowDevices(HWND hwndDlg);
     void ShowScrub(HWND hwndDlg);
+    void ShowChangeDriveLetter(HWND hwndDlg);
     INT_PTR CALLBACK StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void ShowStats(HWND hwndDlg, uint64_t devid);
     void ResetStats(HWND hwndDlg);
