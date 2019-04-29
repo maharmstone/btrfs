@@ -28,7 +28,7 @@ propsheet.o: propsheet.cpp propsheet.h shellext.h
 volpropsheet.o: volpropsheet.cpp volpropsheet.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-devices.o: devices.cpp devices.h shellext.h
+devices.o: devices.cpp devices.h shellext.h mountmgr.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 balance.o: balance.cpp balance.h shellext.h
@@ -43,7 +43,7 @@ recv.o: recv.cpp recv.h shellext.h
 send.o: send.cpp send.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-mountmgr.o: mountmgr.cpp mountmgr.h
+mountmgr.o: mountmgr.cpp mountmgr.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/shellbtrfs.dll: $(OBJS)

@@ -1,14 +1,8 @@
+#include "shellext.h"
 #include "mountmgr.h"
+#include <mountmgr.h>
 
 using namespace std;
-
-ntstatus_error::ntstatus_error(const string& func, NTSTATUS Status) {
-    stringstream ss;
-
-    ss << setfill('0') << setw(8) << hex << Status;
-
-    s = func + " returned " + ss.str();
-}
 
 mountmgr::mountmgr() {
     UNICODE_STRING us;
@@ -23,7 +17,7 @@ mountmgr::mountmgr() {
                         FILE_SHARE_READ, FILE_SYNCHRONOUS_IO_ALERT);
 
     if (!NT_SUCCESS(Status))
-        throw ntstatus_error("NtOpenFile", Status);
+        throw ntstatus_error(Status);
 }
 
 mountmgr::~mountmgr() {
@@ -49,7 +43,7 @@ void mountmgr::create_point(const wstring_view& symlink, const wstring_view& dev
                                    buf.data(), (ULONG)buf.size(), nullptr, 0);
 
     if (!NT_SUCCESS(Status))
-        throw ntstatus_error("IOCTL_MOUNTMGR_CREATE_POINT", Status);
+        throw ntstatus_error(Status);
 }
 
 void mountmgr::delete_points(const wstring_view& symlink, const wstring_view& unique_id, const wstring_view& device_name) const {
@@ -103,7 +97,7 @@ void mountmgr::delete_points(const wstring_view& symlink, const wstring_view& un
     }
 
     if (!NT_SUCCESS(Status))
-        throw ntstatus_error("IOCTL_MOUNTMGR_DELETE_POINTS", Status);
+        throw ntstatus_error(Status);
 }
 
 vector<mountmgr_point> mountmgr::query_points(const wstring_view& symlink, const wstring_view& unique_id, const wstring_view& device_name) const {
@@ -151,7 +145,7 @@ vector<mountmgr_point> mountmgr::query_points(const wstring_view& symlink, const
                                    buf.data(), (ULONG)buf.size(), buf2.data(), (ULONG)buf2.size());
 
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
-        throw ntstatus_error("IOCTL_MOUNTMGR_QUERY_POINTS", Status);
+        throw ntstatus_error(Status);
 
     buf2.resize(mmps->Size);
     mmps = reinterpret_cast<MOUNTMGR_MOUNT_POINTS*>(buf2.data());

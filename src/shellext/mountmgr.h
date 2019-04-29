@@ -1,27 +1,11 @@
-#include <intrin.h>
-#include <ntifs.h>
-#include <mountmgr.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
+#pragma once
+
 #include <vector>
 #include <string>
 #include <sstream>
 #include <string_view>
 #include <iostream>
 #include <iomanip>
-
-class ntstatus_error : public std::exception {
-public:
-    ntstatus_error(const std::string& func, NTSTATUS Status);
-
-    const char* what() const noexcept {
-        return s.c_str();
-    }
-
-private:
-    std::string s;
-};
 
 class mountmgr_point {
 public:
