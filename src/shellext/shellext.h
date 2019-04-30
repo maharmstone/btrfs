@@ -310,7 +310,7 @@ wstring format_message(ULONG last_error);
 wstring format_ntstatus(NTSTATUS Status);
 bool load_string(HMODULE module, UINT id, wstring& s);
 void wstring_sprintf(wstring& s, wstring fmt, ...);
-void command_line_to_args(LPWSTR cmdline, vector<wstring> args);
+void command_line_to_args(LPWSTR cmdline, vector<wstring> &args);
 void utf8_to_utf16(const string& utf8, wstring& utf16);
 void utf16_to_utf8(const wstring& utf16, string& utf8);
 void error_message(HWND hwnd, const char* msg);
