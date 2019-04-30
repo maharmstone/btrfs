@@ -92,6 +92,7 @@
 #define IDS_PARTITION                   174
 #define IDS_WHOLE_DISK                  175
 #define IDS_CANNOT_REMOVE_RAID          176
+#define IDD_DRIVE_LETTER                176
 #define IDS_REMOVE_DEVICE_CONFIRMATION  177
 #define IDS_CONFIRMATION_TITLE          178
 #define IDS_ADD_DEVICE_CONFIRMATION     179
@@ -333,14 +334,15 @@
 #define IDC_RESIZE_SLIDER               1072
 #define IDC_RESIZE_NEWSIZE              1073
 #define IDC_VOL_CHANGE_DRIVE_LETTER     1073
+#define IDC_DRIVE_LETTER_COMBO          1074
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        176
+#define _APS_NEXT_RESOURCE_VALUE        178
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1074
+#define _APS_NEXT_CONTROL_VALUE         1075
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

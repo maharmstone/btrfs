@@ -297,6 +297,8 @@ public:
         return msg.c_str();
     }
 
+    NTSTATUS Status;
+
 private:
     string msg;
 };

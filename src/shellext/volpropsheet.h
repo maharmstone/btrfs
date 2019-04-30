@@ -106,3 +106,19 @@ private:
     wstring fn;
     uint64_t stats_dev;
 };
+
+class BtrfsChangeDriveLetter {
+public:
+    BtrfsChangeDriveLetter(HWND hwnd, const wstring_view& fn) : hwnd(hwnd), fn(fn) {
+    }
+
+    void show();
+    INT_PTR DlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+private:
+    void do_change(HWND hwndDlg);
+
+    HWND hwnd;
+    wstring fn;
+    vector<wchar_t> letters;
+};

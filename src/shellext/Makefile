@@ -25,7 +25,7 @@ contextmenu.o: contextmenu.cpp contextmenu.h shellext.h
 propsheet.o: propsheet.cpp propsheet.h shellext.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-volpropsheet.o: volpropsheet.cpp volpropsheet.h shellext.h
+volpropsheet.o: volpropsheet.cpp volpropsheet.h shellext.h mountmgr.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 devices.o: devices.cpp devices.h shellext.h mountmgr.h

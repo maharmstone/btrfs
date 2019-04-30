@@ -707,7 +707,7 @@ void error_message(HWND hwnd, const char* msg) {
     MessageBoxW(hwnd, wmsg.c_str(), title.c_str(), MB_ICONERROR);
 }
 
-ntstatus_error::ntstatus_error(NTSTATUS Status) {
+ntstatus_error::ntstatus_error(NTSTATUS Status) : Status(Status) {
     _RtlNtStatusToDosError RtlNtStatusToDosError;
     HMODULE ntdll = LoadLibraryW(L"ntdll.dll");
     WCHAR* buf;

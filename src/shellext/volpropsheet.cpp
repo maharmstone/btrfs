@@ -29,6 +29,9 @@
 
 #include "volpropsheet.h"
 #include "resource.h"
+#include "mountmgr.h"
+
+static const NTSTATUS STATUS_OBJECT_NAME_NOT_FOUND = 0xC0000034;
 
 HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     if (riid == IID_IUnknown || riid == IID_IShellPropSheetExt) {
@@ -1412,6 +1415,129 @@ HRESULT __stdcall BtrfsVolPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETP
     return S_OK;
 }
 
+void BtrfsChangeDriveLetter::do_change(HWND hwndDlg) {
+    unsigned int sel = (unsigned int)SendDlgItemMessageW(hwndDlg, IDC_DRIVE_LETTER_COMBO, CB_GETCURSEL, 0, 0);
+
+    if (sel >= 0 && sel < letters.size()) {
+        wstring dd;
+
+        if (fn.length() == 3 && fn[1] == L':' && fn[2] == L'\\') {
+            dd = L"\\DosDevices\\?:";
+
+            dd[12] = fn[0];
+        } else
+            throw runtime_error("Volume path was not root of drive.");
+
+        mountmgr mm;
+        wstring dev_name;
+
+        {
+            auto v = mm.query_points(dd);
+
+            if (v.empty())
+                throw runtime_error("Error finding device name.");
+
+            dev_name = v[0].device_name;
+        }
+
+        wstring new_dd = L"\\DosDevices\\?:";
+        new_dd[12] = letters[sel];
+
+        mm.delete_points(dd);
+
+        try {
+            mm.create_point(new_dd, dev_name);
+        } catch (...) {
+            // if fails, try to recreate old symlink, so we're not left with no drive letter at all
+            mm.create_point(dd, dev_name);
+            throw;
+        }
+    }
+
+    EndDialog(hwndDlg, 1);
+}
+
+INT_PTR BtrfsChangeDriveLetter::DlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    try {
+        switch (uMsg) {
+            case WM_INITDIALOG:
+            {
+                HWND cb = GetDlgItem(hwndDlg, IDC_DRIVE_LETTER_COMBO);
+
+                SendMessageW(cb, CB_RESETCONTENT, 0, 0);
+
+                mountmgr mm;
+                wstring drv;
+
+                drv = L"\\DosDevices\\?:";
+
+                for (wchar_t l = 'A'; l <= 'Z'; l++) {
+                    bool found = true;
+
+                    drv[12] = l;
+
+                    try {
+                        auto v = mm.query_points(drv);
+
+                        if (v.empty())
+                            found = false;
+                    } catch (const ntstatus_error& ntstatus) {
+                        if (ntstatus.Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                            found = false;
+                        else
+                            throw;
+                    }
+
+                    if (!found) {
+                        wstring str = L"?:";
+
+                        str[0] = l;
+                        letters.push_back(l);
+
+                        SendMessageW(cb, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(str.c_str()));
+                    }
+                }
+
+                break;
+            }
+
+            case WM_COMMAND:
+                switch (HIWORD(wParam)) {
+                    case BN_CLICKED:
+                        switch (LOWORD(wParam)) {
+                            case IDOK:
+                                do_change(hwndDlg);
+                                return true;
+
+                            case IDCANCEL:
+                                EndDialog(hwndDlg, 0);
+                                return true;
+                        }
+                        break;
+                }
+            break;
+        }
+    } catch (const exception& e) {
+        error_message(hwndDlg, e.what());
+    }
+
+    return false;
+}
+
+void BtrfsChangeDriveLetter::show() {
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DRIVE_LETTER), hwnd, [](HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        BtrfsChangeDriveLetter* bcdl;
+
+        if (uMsg == WM_INITDIALOG) {
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+            bcdl = (BtrfsChangeDriveLetter*)lParam;
+        } else
+            bcdl = (BtrfsChangeDriveLetter*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+
+        return bcdl->DlgProc(hwndDlg, uMsg, wParam, lParam);
+    }, (LPARAM)this);
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1468,6 +1594,12 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     } catch (const exception& e) {
         error_message(hwnd, e.what());
     }
+}
+
+void CALLBACK ShowChangeDriveLetterW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+    BtrfsChangeDriveLetter bcdl(hwnd, lpszCmdLine);
+
+    bcdl.show();
 }
 
 #ifdef __cplusplus
