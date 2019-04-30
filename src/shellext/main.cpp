@@ -569,7 +569,7 @@ extern "C" void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpsz
         create_snapshot2(args[0], args[1]);
 }
 
-void command_line_to_args(LPWSTR cmdline, vector<wstring> args) {
+void command_line_to_args(LPWSTR cmdline, vector<wstring>& args) {
     LPWSTR* l;
     int num_args;
 
