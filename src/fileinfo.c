@@ -18,7 +18,7 @@
 #include "btrfs_drv.h"
 
 // not currently in mingw - introduced with Windows 10
-#ifndef FileIdInformation
+#ifndef _MSC_VER
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
 
