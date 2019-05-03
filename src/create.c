@@ -303,7 +303,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
     for (i = 0; i < len; i++) {
         if (path->Buffer[i] == '/' || path->Buffer[i] == '\\') {
             if (buf[0] == '/' || buf[0] == '\\') {
-                ERR("zero-length filename part\n");
+                WARN("zero-length filename part\n");
                 return STATUS_OBJECT_NAME_INVALID;
             }
 
@@ -343,7 +343,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
                 name_bit* nb2;
 
                 if (nb->us.Buffer[i+1] == 0) {
-                    ERR("zero-length stream name\n");
+                    WARN("zero-length stream name\n");
                     return STATUS_OBJECT_NAME_INVALID;
                 }
 
