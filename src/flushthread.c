@@ -4104,6 +4104,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     }
 
     c->created = FALSE;
+    c->oldused = c->used;
 
     return STATUS_SUCCESS;
 }
