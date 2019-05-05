@@ -1,4 +1,4 @@
-WinBtrfs v1.1
+WinBtrfs v1.2
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -8,23 +8,14 @@ as part of the free operating system [ReactOS](https://www.reactos.org/).
 
 First, a disclaimer:
 
-This software is in active development - YOU USE IT AT YOUR OWN RISK. I take NO
-RESPONSIBILITY for any damage it may do to your filesystem. DO NOT USE THIS
-DRIVER UNLESS YOU HAVE FULL AND UP-TO-DATE BACKUPS OF ALL YOUR DATA. Do not rely
-on Btrfs' internal mechanisms: SNAPSHOTS ARE NOT BACKUPS, AND DO NOT RULE OUT
-THE POSSIBILITY OF SILENT CORRUPTION.
-
-In other words, assume that the driver is going to corrupt your entire
-filesystem, and you'll be pleasantly surprised when it doesn't.
-
-However, having said that, it ought to be suitable for day-to-day use.
+You use this software at your own risk. I take no responsibility for any damage
+it may do to your filesystem. It ought to be suitable for day-to-day use, but
+make sure you take backups anyway.
 
 Everything here is released under the GNU Lesser General Public Licence (LGPL);
 see the file LICENCE for more info. You are encouraged to play about with the
 source code as you will, and I'd appreciate a note (mark@harmstone.com) if you
-come up with anything nifty. On top of that, I'm open to relicensing the code if
-you've a burning desire to use it on a GPL or commercial project, or what have
-you - drop me a line and we'll talk.
+come up with anything nifty.
 
 See at the end of this document for copyright details of third-party code that's
 included here.
@@ -196,12 +187,11 @@ looking into converting your files.
 This is something Microsoft hardcoded into LXSS, presumably to stop people hosing
 their systems by running `mkdir /mnt/c/WiNdOwS`.
 
-* Disk Management doesn't work properly, e.g. unable to change drive letter
+* How do I change the drive letter?
 
-Try changing the type of your partition in Linux. For MBR partitions, this should be
-type 7 in `fdisk`. For GPT partitions, this should be type 6 in `fdisk` ("Microsoft
-basic data"), or 0700 in `gdisk`. We have to do some chicanery to get Linux partitions
-to appear in the first place, but unfortunately this confuses diskmgmt.msc too much.
+With the shell extension installed, right-click the drive in Explorer, click Properties,
+and go to the Btrfs tab. There should be a button which allows you to change the drive
+letter.
 
 * How do I format a partition as Btrfs?
 
@@ -221,6 +211,14 @@ for Windows, you're out of luck.
 
 Changelog
 ---------
+
+v1.2 (2019-05-05):
+* Dramatic speed increase when opening many small files, such as with a Git repository
+* Fixed crash on surprise removals of removable devices
+* Added ability to change drive letters easily
+* No longer creates free-space cache for very small chunks, so as not to confuse the Linux driver
+* Fixed corruption when very large file created and then immediately deleted
+* Minor bug fixes
 
 v1.1 (2018-12-15):
 * Support for Zstd compression
