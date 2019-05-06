@@ -1,5 +1,5 @@
-WinBtrfs v1.2
--------------
+WinBtrfs v1.2.1
+---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -211,6 +211,9 @@ for Windows, you're out of luck.
 
 Changelog
 ---------
+
+v1.2.1 (2019-05-06):
+* Reverted commit affecting the creation of streams
 
 v1.2 (2019-05-05):
 * Dramatic speed increase when opening many small files, such as with a Git repository
