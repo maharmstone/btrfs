@@ -20,6 +20,7 @@
 // not currently in mingw - introduced with Windows 10
 #ifndef _MSC_VER
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
+#define FileRenameInformationEx (enum _FILE_INFORMATION_CLASS)65
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
 
 typedef struct _FILE_STAT_LX_INFORMATION {
@@ -47,6 +48,30 @@ typedef struct _FILE_STAT_LX_INFORMATION {
 #define LX_FILE_METADATA_HAS_MODE       0x04
 #define LX_FILE_METADATA_HAS_DEVICE_ID  0x08
 #define LX_FILE_CASE_SENSITIVE_DIR      0x10
+
+typedef struct _FILE_RENAME_INFORMATION_EX {
+    union {
+        BOOLEAN ReplaceIfExists;
+        ULONG Flags;
+    } DUMMYUNIONNAME;
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
+
+#define FILE_RENAME_REPLACE_IF_EXISTS                       0x001
+#define FILE_RENAME_POSIX_SEMANTICS                         0x002
+#define FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE          0x004
+#define FILE_RENAME_SUPPRESS_STORAGE_RESERVE_INHERITANCE    0x008
+#define FILE_RENAME_NO_INCREASE_AVAILABLE_SPACE             0x010
+#define FILE_RENAME_NO_DECREASE_AVAILABLE_SPACE             0x020
+#define FILE_RENAME_IGNORE_READONLY_ATTRIBUTE               0x040
+#define FILE_RENAME_FORCE_RESIZE_TARGET_SR                  0x080
+#define FILE_RENAME_FORCE_RESIZE_SOURCE_SR                  0x100
+
+#else
+
+#define FILE_RENAME_INFORMATION_EX FILE_RENAME_INFORMATION
 
 #endif
 
@@ -1347,9 +1372,8 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     }
 }
 
-static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
-    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    FILE_RENAME_INFORMATION* fri = Irp->AssociatedIrp.SystemBuffer;
+static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ex) {
+    FILE_RENAME_INFORMATION_EX* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
@@ -1364,11 +1388,17 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     hardlink* hl;
     SECURITY_SUBJECT_CONTEXT subjcont;
     ACCESS_MASK access;
+    ULONG flags;
 
     InitializeListHead(&rollback);
 
+    if (ex)
+        flags = fri->Flags;
+    else
+        flags = fri->ReplaceIfExists ? FILE_RENAME_REPLACE_IF_EXISTS : 0;
+
     TRACE("tfo = %p\n", tfo);
-    TRACE("ReplaceIfExists = %u\n", IrpSp->Parameters.SetFile.ReplaceIfExists);
+    TRACE("Flags = %x\n", flags);
     TRACE("RootDirectory = %p\n", fri->RootDirectory);
     TRACE("FileName = %.*S\n", fri->FileNameLength / sizeof(WCHAR), fri->FileName);
 
@@ -1449,10 +1479,10 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         TRACE("destination file %S already exists\n", file_desc_fileref(oldfileref));
 
         if (fileref != oldfileref && !oldfileref->deleted) {
-            if (!IrpSp->Parameters.SetFile.ReplaceIfExists) {
+            if (!(flags & FILE_RENAME_REPLACE_IF_EXISTS)) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
-            } else if ((oldfileref->open_count >= 1 || has_open_children(oldfileref)) && !oldfileref->deleted) {
+            } else if (!(flags & FILE_RENAME_POSIX_SEMANTICS) && (oldfileref->open_count >= 1 || has_open_children(oldfileref)) && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -2653,7 +2683,7 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     }
 
     if (fcb != Vcb->dummy_fcb && is_subvol_readonly(fcb->subvol, Irp) && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
-        (fcb->inode != SUBVOL_ROOT_INODE || (IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformation))) {
+        (fcb->inode != SUBVOL_ROOT_INODE || (IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformationEx))) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -2735,7 +2765,7 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         case FileRenameInformation:
             TRACE("FileRenameInformation\n");
             // FIXME - make this work with streams
-            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject);
+            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, FALSE);
             break;
 
         case FileValidDataLengthInformation:
@@ -2752,6 +2782,11 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
             break;
         }
+
+        case FileRenameInformationEx:
+            TRACE("FileRenameInformationEx\n");
+            Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, TRUE);
+            break;
 
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.SetFile.FileInformationClass);
