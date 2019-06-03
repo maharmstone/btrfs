@@ -419,6 +419,7 @@ typedef struct _root {
     UINT64 parent;
     LONG send_ops;
     UINT64 fcbs_version;
+    BOOL checked_for_orphans;
     LIST_ENTRY fcbs;
     LIST_ENTRY* fcbs_ptrs[256];
     LIST_ENTRY list_entry;

@@ -1021,6 +1021,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
     r->root_item.num_references = 1;
     r->fcbs_version = 0;
+    r->checked_for_orphans = TRUE;
     InitializeListHead(&r->fcbs);
     RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
@@ -2619,6 +2620,7 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ UINT64 id, _In_ UIN
     r->parent = 0;
     r->send_ops = 0;
     r->fcbs_version = 0;
+    r->checked_for_orphans = FALSE;
     InitializeListHead(&r->fcbs);
     RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
