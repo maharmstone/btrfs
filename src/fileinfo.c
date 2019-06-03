@@ -20,6 +20,7 @@
 // not currently in mingw - introduced with Windows 10
 #ifndef _MSC_VER
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
+#define FileDispositionInformationEx (enum _FILE_INFORMATION_CLASS)64
 #define FileRenameInformationEx (enum _FILE_INFORMATION_CLASS)65
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
 
@@ -59,6 +60,10 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
     WCHAR FileName[1];
 } FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
 
+typedef struct _FILE_DISPOSITION_INFORMATION_EX {
+    ULONG Flags;
+} FILE_DISPOSITION_INFORMATION_EX, *PFILE_DISPOSITION_INFORMATION_EX;
+
 #define FILE_RENAME_REPLACE_IF_EXISTS                       0x001
 #define FILE_RENAME_POSIX_SEMANTICS                         0x002
 #define FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE          0x004
@@ -68,6 +73,11 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
 #define FILE_RENAME_IGNORE_READONLY_ATTRIBUTE               0x040
 #define FILE_RENAME_FORCE_RESIZE_TARGET_SR                  0x080
 #define FILE_RENAME_FORCE_RESIZE_SOURCE_SR                  0x100
+
+#define FILE_DISPOSITION_DELETE                         0x1
+#define FILE_DISPOSITION_POSIX_SEMANTICS                0x2
+#define FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK      0x4
+#define FILE_DISPOSITION_ON_CLOSE                       0x8
 
 #else
 
@@ -242,20 +252,29 @@ end:
     return Status;
 }
 
-static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
-    FILE_DISPOSITION_INFORMATION* fdi = Irp->AssociatedIrp.SystemBuffer;
+static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, BOOL ex) {
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb ? ccb->fileref : NULL;
-    ULONG atts;
+    ULONG atts, flags;
     NTSTATUS Status;
 
     if (!fileref)
         return STATUS_INVALID_PARAMETER;
 
+    if (ex) {
+        FILE_DISPOSITION_INFORMATION_EX* fdi = Irp->AssociatedIrp.SystemBuffer;
+
+        flags = fdi->Flags;
+    } else {
+        FILE_DISPOSITION_INFORMATION* fdi = Irp->AssociatedIrp.SystemBuffer;
+
+        flags = fdi->DeleteFile ? FILE_DISPOSITION_DELETE : 0;
+    }
+
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
-    TRACE("changing delete_on_close to %s for %S (fcb %p)\n", fdi->DeleteFile ? "TRUE" : "FALSE", file_desc(FileObject), fcb);
+    TRACE("changing delete_on_close to %s for %S (fcb %p)\n", flags & FILE_DISPOSITION_DELETE ? "TRUE" : "FALSE", file_desc(FileObject), fcb);
 
     if (fcb->ads) {
         if (fileref->parent)
@@ -284,14 +303,16 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     }
 
     if (!MmFlushImageSection(&fcb->nonpaged->segment_object, MmFlushForDelete)) {
-        TRACE("trying to delete file which is being mapped as an image\n");
-        Status = STATUS_CANNOT_DELETE;
-        goto end;
+        if (!ex || flags & FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK) {
+            TRACE("trying to delete file which is being mapped as an image\n");
+            Status = STATUS_CANNOT_DELETE;
+            goto end;
+        }
     }
 
-    ccb->fileref->delete_on_close = fdi->DeleteFile;
+    ccb->fileref->delete_on_close = flags & FILE_DISPOSITION_DELETE;
 
-    FileObject->DeletePending = fdi->DeleteFile;
+    FileObject->DeletePending = flags & FILE_DISPOSITION_DELETE;
 
     Status = STATUS_SUCCESS;
 
@@ -299,7 +320,7 @@ end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
     // send notification that directory is about to be deleted
-    if (NT_SUCCESS(Status) && fdi->DeleteFile && fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (NT_SUCCESS(Status) && flags & FILE_DISPOSITION_DELETE && fcb->type == BTRFS_TYPE_DIRECTORY) {
         FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext,
                                        NULL, FALSE, FALSE, 0, NULL, NULL, NULL);
     }
@@ -2732,7 +2753,7 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 break;
             }
 
-            Status = set_disposition_information(Vcb, Irp, IrpSp->FileObject);
+            Status = set_disposition_information(Vcb, Irp, IrpSp->FileObject, FALSE);
 
             break;
         }
@@ -2779,6 +2800,21 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             }
 
             Status = set_valid_data_length_information(Vcb, Irp, IrpSp->FileObject);
+
+            break;
+        }
+
+        case FileDispositionInformationEx:
+        {
+            TRACE("FileDispositionInformationEx\n");
+
+            if (Irp->RequestorMode == UserMode && !(ccb->access & DELETE)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            Status = set_disposition_information(Vcb, Irp, IrpSp->FileObject, TRUE);
 
             break;
         }
