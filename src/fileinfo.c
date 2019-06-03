@@ -314,6 +314,9 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
 
     FileObject->DeletePending = flags & FILE_DISPOSITION_DELETE;
 
+    if (flags & FILE_DISPOSITION_DELETE && flags & FILE_DISPOSITION_POSIX_SEMANTICS)
+        ccb->fileref->posix_delete = TRUE;
+
     Status = STATUS_SUCCESS;
 
 end:
@@ -1205,7 +1208,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         }
 
         if (!me->dummyfileref->fcb->ads) {
-            Status = delete_fileref(me->dummyfileref, NULL, Irp, rollback);
+            Status = delete_fileref(me->dummyfileref, NULL, FALSE, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_fileref returned %08x\n", Status);
                 goto end;
@@ -1261,7 +1264,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me = CONTAINING_RECORD(le, move_entry, list_entry);
 
         if (me->dummyfileref->fcb->ads && me->parent->dummyfileref->fcb->deleted) {
-            Status = delete_fileref(me->dummyfileref, NULL, Irp, rollback);
+            Status = delete_fileref(me->dummyfileref, NULL, FALSE, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_fileref returned %08x\n", Status);
                 goto end;
@@ -1565,7 +1568,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
         SeReleaseSubjectContext(&subjcont);
 
-        Status = delete_fileref(oldfileref, NULL, Irp, &rollback);
+        Status = delete_fileref(oldfileref, NULL, FALSE, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_fileref returned %08x\n", Status);
             goto end;
@@ -2402,7 +2405,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
         SeReleaseSubjectContext(&subjcont);
 
-        Status = delete_fileref(oldfileref, NULL, Irp, &rollback);
+        Status = delete_fileref(oldfileref, NULL, FALSE, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_fileref returned %08x\n", Status);
             goto end;

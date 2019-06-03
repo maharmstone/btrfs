@@ -5134,6 +5134,30 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->xattrs_changed = FALSE;
     }
 
+    if (fcb->inode_item.st_nlink == 0) { // mark as orphan
+        KEY searchkey;
+        traverse_ptr tp;
+
+        searchkey.obj_id = BTRFS_ORPHAN_INODE_OBJID;
+        searchkey.obj_type = TYPE_ORPHAN_INODE;
+        searchkey.offset = fcb->inode;
+
+        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_item returned %08x\n", Status);
+            goto end;
+        }
+
+        if (keycmp(searchkey, tp.item->key)) {
+            Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset,
+                                            NULL, 0, Batch_Insert);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_tree_item_batch returned %08x\n", Status);
+                goto end;
+            }
+        }
+    }
+
     Status = STATUS_SUCCESS;
 
 end:

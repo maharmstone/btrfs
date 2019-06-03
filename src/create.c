@@ -3746,7 +3746,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
                     if (dc->fileref) {
                         send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_STREAM_NAME, FILE_ACTION_REMOVED_STREAM, &dc->name);
 
-                        Status = delete_fileref(dc->fileref, NULL, NULL, rollback);
+                        Status = delete_fileref(dc->fileref, NULL, FALSE, NULL, rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("delete_fileref returned %08x\n", Status);
 
