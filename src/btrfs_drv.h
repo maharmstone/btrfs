@@ -265,6 +265,7 @@ typedef struct _fcb {
     BOOL inode_item_changed;
     enum prop_compression_type prop_compression;
     LIST_ENTRY xattrs;
+    BOOL marked_as_orphan;
 
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;

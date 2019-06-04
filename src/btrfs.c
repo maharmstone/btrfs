@@ -1913,6 +1913,62 @@ void uninit(_In_ device_extension* Vcb) {
     ZwClose(Vcb->flush_thread_handle);
 }
 
+static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+
+    // excise extents
+
+    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
+        Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size), Irp, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("excise_extents returned %08x\n", Status);
+            return Status;
+        }
+    }
+
+    fileref->fcb->Header.AllocationSize.QuadPart = 0;
+    fileref->fcb->Header.FileSize.QuadPart = 0;
+    fileref->fcb->Header.ValidDataLength.QuadPart = 0;
+
+    if (FileObject) {
+        CC_FILE_SIZES ccfs;
+
+        ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
+        ccfs.FileSize = fileref->fcb->Header.FileSize;
+        ccfs.ValidDataLength = fileref->fcb->Header.ValidDataLength;
+
+        Status = STATUS_SUCCESS;
+
+        try {
+            CcSetFileSizes(FileObject, &ccfs);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("CcSetFileSizes threw exception %08x\n", Status);
+            return Status;
+        }
+    }
+
+    fileref->fcb->deleted = TRUE;
+
+    le = fileref->children.Flink;
+    while (le != &fileref->children) {
+        file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+
+        if (fr2->fcb->ads) {
+            fr2->fcb->deleted = TRUE;
+            mark_fcb_dirty(fr2->fcb);
+        }
+
+        le = le->Flink;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_ BOOL make_orphan, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LARGE_INTEGER newlength, time;
     BTRFS_TIME now;
@@ -1955,55 +2011,11 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
                 fileref->fcb->inode_item.sequence++;
                 fileref->fcb->inode_item.st_ctime = now;
             } else {
-                // excise extents
-
-                if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
-                    Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size), Irp, rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("excise_extents returned %08x\n", Status);
-                        ExReleaseResourceLite(fileref->fcb->Header.Resource);
-                        return Status;
-                    }
-                }
-
-                fileref->fcb->Header.AllocationSize.QuadPart = 0;
-                fileref->fcb->Header.FileSize.QuadPart = 0;
-                fileref->fcb->Header.ValidDataLength.QuadPart = 0;
-
-                if (FileObject) {
-                    CC_FILE_SIZES ccfs;
-
-                    ccfs.AllocationSize = fileref->fcb->Header.AllocationSize;
-                    ccfs.FileSize = fileref->fcb->Header.FileSize;
-                    ccfs.ValidDataLength = fileref->fcb->Header.ValidDataLength;
-
-                    Status = STATUS_SUCCESS;
-
-                    try {
-                        CcSetFileSizes(FileObject, &ccfs);
-                    } except (EXCEPTION_EXECUTE_HANDLER) {
-                        Status = GetExceptionCode();
-                    }
-
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("CcSetFileSizes threw exception %08x\n", Status);
-                        ExReleaseResourceLite(fileref->fcb->Header.Resource);
-                        return Status;
-                    }
-                }
-
-                fileref->fcb->deleted = TRUE;
-
-                le = fileref->children.Flink;
-                while (le != &fileref->children) {
-                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
-
-                    if (fr2->fcb->ads) {
-                        fr2->fcb->deleted = TRUE;
-                        mark_fcb_dirty(fr2->fcb);
-                    }
-
-                    le = le->Flink;
+                Status = delete_fileref_fcb(fileref, FileObject, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_fileref_fcb returned %08x\n", Status);
+                    ExReleaseResourceLite(fileref->fcb->Header.Resource);
+                    return Status;
                 }
             }
 
@@ -2216,7 +2228,24 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         if (fileref && (oc == 0 || (fileref->delete_on_close && fileref->posix_delete))) {
             if (!fcb->Vcb->removing) {
-                if (fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
+                if (oc == 0 && fileref->fcb->inode_item.st_nlink == 0 && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) { // last handle closed on POSIX-deleted file
+                    LIST_ENTRY rollback;
+
+                    InitializeListHead(&rollback);
+
+                    Status = delete_fileref_fcb(fileref, FileObject, Irp, &rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_fileref_fcb returned %08x\n", Status);
+                        do_rollback(fcb->Vcb, &rollback);
+                        ExReleaseResourceLite(fileref->fcb->Header.Resource);
+                        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                        goto exit;
+                    }
+
+                    clear_rollback(&rollback);
+
+                    mark_fcb_dirty(fileref->fcb);
+                } else if (fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
                     LIST_ENTRY rollback;
 
                     InitializeListHead(&rollback);

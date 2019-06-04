@@ -4651,6 +4651,15 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             goto end;
         }
 
+        if (fcb->marked_as_orphan) {
+            Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
+                                            fcb->inode, NULL, 0, Batch_Delete);
+            if (!NT_SUCCESS(Status)) {
+                ERR("insert_tree_item_batch returned %08x\n", Status);
+                goto end;
+            }
+        }
+
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -5134,28 +5143,15 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->xattrs_changed = FALSE;
     }
 
-    if (fcb->inode_item.st_nlink == 0) { // mark as orphan
-        KEY searchkey;
-        traverse_ptr tp;
-
-        searchkey.obj_id = BTRFS_ORPHAN_INODE_OBJID;
-        searchkey.obj_type = TYPE_ORPHAN_INODE;
-        searchkey.offset = fcb->inode;
-
-        Status = find_item(fcb->Vcb, fcb->subvol, &tp, &searchkey, FALSE, Irp);
+    if (fcb->inode_item.st_nlink == 0 && !fcb->marked_as_orphan) { // mark as orphan
+        Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
+                                        fcb->inode, NULL, 0, Batch_Insert);
         if (!NT_SUCCESS(Status)) {
-            ERR("find_item returned %08x\n", Status);
+            ERR("insert_tree_item_batch returned %08x\n", Status);
             goto end;
         }
 
-        if (keycmp(searchkey, tp.item->key)) {
-            Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, searchkey.obj_id, searchkey.obj_type, searchkey.offset,
-                                            NULL, 0, Batch_Insert);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_tree_item_batch returned %08x\n", Status);
-                goto end;
-            }
-        }
+        fcb->marked_as_orphan = TRUE;
     }
 
     Status = STATUS_SUCCESS;
@@ -6987,31 +6983,30 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
             TRACE("removing orphaned inode %llx\n", tp.item->key.offset);
 
             Status = open_fcb(Vcb, r, tp.item->key.offset, 0, NULL, NULL, &fcb, PagedPool, Irp);
-            if (!NT_SUCCESS(Status)) {
+            if (!NT_SUCCESS(Status))
                 ERR("open_fcb returned %08x\n", Status);
-                goto end;
-            }
-
-            if (fcb->inode_item.st_nlink == 0) {
-                if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
-                    Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size), Irp, &rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("excise_extents returned %08x\n", Status);
-                        goto end;
+            else {
+                if (fcb->inode_item.st_nlink == 0) {
+                    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
+                        Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size), Irp, &rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("excise_extents returned %08x\n", Status);
+                            goto end;
+                        }
                     }
+
+                    fcb->deleted = TRUE;
+
+                    mark_fcb_dirty(fcb);
                 }
 
-                fcb->deleted = TRUE;
+                free_fcb(fcb);
 
-                mark_fcb_dirty(fcb);
-            }
-
-            free_fcb(fcb);
-
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08x\n", Status);
-                goto end;
+                Status = delete_tree_item(Vcb, &tp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08x\n", Status);
+                    goto end;
+                }
             }
         }
 
