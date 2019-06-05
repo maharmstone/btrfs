@@ -23,6 +23,7 @@
 #define FileDispositionInformationEx (enum _FILE_INFORMATION_CLASS)64
 #define FileRenameInformationEx (enum _FILE_INFORMATION_CLASS)65
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
+#define FileLinkInformationEx (enum _FILE_INFORMATION_CLASS)72
 
 typedef struct _FILE_STAT_LX_INFORMATION {
     LARGE_INTEGER FileId;
@@ -54,7 +55,7 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
     union {
         BOOLEAN ReplaceIfExists;
         ULONG Flags;
-    } DUMMYUNIONNAME;
+    };
     HANDLE RootDirectory;
     ULONG FileNameLength;
     WCHAR FileName[1];
@@ -63,6 +64,16 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
 typedef struct _FILE_DISPOSITION_INFORMATION_EX {
     ULONG Flags;
 } FILE_DISPOSITION_INFORMATION_EX, *PFILE_DISPOSITION_INFORMATION_EX;
+
+typedef struct _FILE_LINK_INFORMATION_EX {
+    union {
+        BOOLEAN ReplaceIfExists;
+        ULONG Flags;
+    };
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_LINK_INFORMATION_EX, *PFILE_LINK_INFORMATION_EX;
 
 #define FILE_RENAME_REPLACE_IF_EXISTS                       0x001
 #define FILE_RENAME_POSIX_SEMANTICS                         0x002
@@ -79,9 +90,19 @@ typedef struct _FILE_DISPOSITION_INFORMATION_EX {
 #define FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK      0x4
 #define FILE_DISPOSITION_ON_CLOSE                       0x8
 
+#define FILE_LINK_REPLACE_IF_EXISTS                       0x001
+#define FILE_LINK_POSIX_SEMANTICS                         0x002
+#define FILE_LINK_SUPPRESS_STORAGE_RESERVE_INHERITANCE    0x008
+#define FILE_LINK_NO_INCREASE_AVAILABLE_SPACE             0x010
+#define FILE_LINK_NO_DECREASE_AVAILABLE_SPACE             0x020
+#define FILE_LINK_IGNORE_READONLY_ATTRIBUTE               0x040
+#define FILE_LINK_FORCE_RESIZE_TARGET_SR                  0x080
+#define FILE_LINK_FORCE_RESIZE_SOURCE_SR                  0x100
+
 #else
 
 #define FILE_RENAME_INFORMATION_EX FILE_RENAME_INFORMATION
+#define FILE_LINK_INFORMATION_EX FILE_LINK_INFORMATION
 
 #endif
 
@@ -2234,8 +2255,8 @@ static NTSTATUS set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo) {
-    FILE_LINK_INFORMATION* fli = Irp->AssociatedIrp.SystemBuffer;
+static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, BOOL ex) {
+    FILE_LINK_INFORMATION_EX* fli = Irp->AssociatedIrp.SystemBuffer;
     fcb *fcb = FileObject->FsContext, *tfofcb, *parfcb;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
@@ -2251,13 +2272,19 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     ACCESS_MASK access;
     SECURITY_SUBJECT_CONTEXT subjcont;
     dir_child* dc = NULL;
+    ULONG flags;
 
     InitializeListHead(&rollback);
 
     // FIXME - check fli length
     // FIXME - don't ignore fli->RootDirectory
 
-    TRACE("ReplaceIfExists = %x\n", fli->ReplaceIfExists);
+    if (ex)
+        flags = fli->Flags;
+    else
+        flags = fli->ReplaceIfExists ? FILE_LINK_REPLACE_IF_EXISTS : 0;
+
+    TRACE("flags = %x\n", flags);
     TRACE("RootDirectory = %p\n", fli->RootDirectory);
     TRACE("FileNameLength = %x\n", fli->FileNameLength);
     TRACE("FileName = %.*S\n", fli->FileNameLength / sizeof(WCHAR), fli->FileName);
@@ -2349,7 +2376,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
         if (!oldfileref->deleted) {
             WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
 
-            if (!fli->ReplaceIfExists) {
+            if (!(flags & FILE_LINK_REPLACE_IF_EXISTS)) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
             } else if (oldfileref->open_count >= 1 && !oldfileref->deleted) {
@@ -2783,7 +2810,7 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         case FileLinkInformation:
             TRACE("FileLinkInformation\n");
-            Status = set_link_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject);
+            Status = set_link_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, FALSE);
             break;
 
         case FilePositionInformation:
@@ -2830,6 +2857,11 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         case FileRenameInformationEx:
             TRACE("FileRenameInformationEx\n");
             Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, TRUE);
+            break;
+
+        case FileLinkInformationEx:
+            TRACE("FileLinkInformationEx\n");
+            Status = set_link_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, TRUE);
             break;
 
         default:
