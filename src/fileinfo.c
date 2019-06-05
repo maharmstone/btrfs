@@ -1506,7 +1506,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             if (!(flags & FILE_RENAME_REPLACE_IF_EXISTS)) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
-            } else if (!(flags & FILE_RENAME_POSIX_SEMANTICS) && (oldfileref->open_count >= 1 || has_open_children(oldfileref)) && !oldfileref->deleted) {
+            } else if (!(flags & FILE_RENAME_POSIX_SEMANTICS) && (oldfileref->open_count > 0 || has_open_children(oldfileref)) && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -1568,7 +1568,12 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
         SeReleaseSubjectContext(&subjcont);
 
-        Status = delete_fileref(oldfileref, NULL, FALSE, Irp, &rollback);
+        if (oldfileref->open_count > 0 && flags & FILE_RENAME_POSIX_SEMANTICS) {
+            oldfileref->delete_on_close = TRUE;
+            oldfileref->posix_delete = TRUE;
+        }
+
+        Status = delete_fileref(oldfileref, NULL, oldfileref->open_count > 0 && flags & FILE_RENAME_POSIX_SEMANTICS, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_fileref returned %08x\n", Status);
             goto end;
