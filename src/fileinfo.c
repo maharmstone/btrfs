@@ -2711,6 +2711,38 @@ end:
     return Status;
 }
 
+static NTSTATUS set_case_sensitive_information(PIRP Irp) {
+    FILE_CASE_SENSITIVE_INFORMATION* fcsi = (FILE_CASE_SENSITIVE_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+    if (IrpSp->Parameters.FileSystemControl.InputBufferLength < sizeof(FILE_CASE_SENSITIVE_INFORMATION))
+        return STATUS_INFO_LENGTH_MISMATCH;
+
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb* fcb = FileObject->FsContext;
+
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!(fcb->atts & FILE_ATTRIBUTE_DIRECTORY)) {
+        WARN("cannot set case-sensitive flag on anything other than directory\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
+
+    fcb->case_sensitive = fcsi->Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+    mark_fcb_dirty(fcb);
+
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+
+    return STATUS_SUCCESS;
+}
+
 _Dispatch_type_(IRP_MJ_SET_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
@@ -2885,6 +2917,18 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         case FileLinkInformationEx:
             TRACE("FileLinkInformationEx\n");
             Status = set_link_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, TRUE);
+            break;
+
+        case FileCaseSensitiveInformation:
+            TRACE("FileCaseSensitiveInformation\n");
+
+            if (Irp->RequestorMode == UserMode && !(ccb->access & FILE_WRITE_ATTRIBUTES)) {
+                WARN("insufficient privileges\n");
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            Status = set_case_sensitive_information(Irp);
             break;
 #ifndef _MSC_VER
 #pragma GCC diagnostic pop
