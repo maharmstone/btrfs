@@ -2755,11 +2755,13 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
 
-            TRACE("bytes_used = %llx\n", Vcb->superblock.bytes_used);
+            UINT64 old_phys_used = chunk_estimate_phys_size(Vcb, c, c->oldused);
+            UINT64 phys_used = chunk_estimate_phys_size(Vcb, c, c->used);
 
-            Vcb->superblock.bytes_used += c->used - c->oldused;
-
-            TRACE("bytes_used = %llx\n", Vcb->superblock.bytes_used);
+            if (Vcb->superblock.bytes_used + phys_used > old_phys_used)
+                Vcb->superblock.bytes_used += phys_used - old_phys_used;
+            else
+                Vcb->superblock.bytes_used = 0;
 
             c->oldused = c->used;
         }
@@ -4106,7 +4108,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     c->created = FALSE;
     c->oldused = c->used;
 
-    Vcb->superblock.bytes_used += c->used;
+    Vcb->superblock.bytes_used += chunk_estimate_phys_size(Vcb, c, c->used);
 
     return STATUS_SUCCESS;
 }
@@ -5471,7 +5473,12 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             Vcb->superblock.incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_RAID56;
     }
 
-    Vcb->superblock.bytes_used -= c->oldused;
+    UINT64 phys_used = chunk_estimate_phys_size(Vcb, c, c->oldused);
+
+    if (phys_used < Vcb->superblock.bytes_used)
+        Vcb->superblock.bytes_used -= phys_used;
+    else
+        Vcb->superblock.bytes_used = 0;
 
     ExFreePool(c->chunk_item);
     ExFreePool(c->devices);

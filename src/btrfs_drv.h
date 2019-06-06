@@ -1131,6 +1131,7 @@ void reap_fcb(fcb* fcb);
 void reap_fcbs(device_extension* Vcb);
 void reap_fileref(device_extension* Vcb, file_ref* fr);
 void reap_filerefs(device_extension* Vcb, file_ref* fr);
+UINT64 chunk_estimate_phys_size(device_extension* Vcb, chunk* c, UINT64 u);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

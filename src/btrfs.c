@@ -3503,7 +3503,7 @@ void protect_superblocks(_Inout_ chunk* c) {
     }
 }
 
-static UINT64 chunk_estimate_phys_size(device_extension* Vcb, chunk* c, UINT64 u) {
+UINT64 chunk_estimate_phys_size(device_extension* Vcb, chunk* c, UINT64 u) {
     UINT64 nfactor, dfactor;
 
     if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE || c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_RAID10) {
