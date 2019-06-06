@@ -3932,6 +3932,12 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         return Status;
     }
 
+    if (fcb->inode_item.st_nlink == 0) {
+        WARN("refusing to open orphaned inode\n");
+        free_fcb(fcb);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
     if (fcb->fileref) {
         *pfr = fcb->fileref;
         increase_fileref_refcount(fcb->fileref);
