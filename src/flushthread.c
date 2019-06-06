@@ -4106,6 +4106,8 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     c->created = FALSE;
     c->oldused = c->used;
 
+    Vcb->superblock.bytes_used += c->used;
+
     return STATUS_SUCCESS;
 }
 
