@@ -88,6 +88,9 @@
 #define EA_EA "user.EA"
 #define EA_EA_HASH 0x8270dd43
 
+#define EA_CASE_SENSITIVE "user.casesensitive"
+#define EA_CASE_SENSITIVE_HASH 0x1a9d97d4
+
 #define EA_PROP_COMPRESSION "btrfs.compression"
 #define EA_PROP_COMPRESSION_HASH 0x20ccdf69
 
@@ -266,6 +269,8 @@ typedef struct _fcb {
     enum prop_compression_type prop_compression;
     LIST_ENTRY xattrs;
     BOOL marked_as_orphan;
+    BOOL case_sensitive;
+    BOOL case_sensitive_set;
 
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;

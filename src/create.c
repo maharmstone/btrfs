@@ -969,6 +969,11 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         else
                             fcb->prop_compression = PropCompression_None;
                     }
+                } else if (tp.item->key.offset == EA_CASE_SENSITIVE_HASH && di->n == sizeof(EA_CASE_SENSITIVE) - 1 && RtlCompareMemory(EA_CASE_SENSITIVE, di->name, di->n) == di->n) {
+                    if (di->m > 0) {
+                        fcb->case_sensitive = di->m == 1 && di->name[di->n] == '1';
+                        fcb->case_sensitive_set = TRUE;
+                    }
                 } else if (di->n > sizeof(xapref) - 1 && RtlCompareMemory(xapref, di->name, sizeof(xapref) - 1) == sizeof(xapref) - 1) {
                     dir_child* dc;
                     ULONG utf16len;

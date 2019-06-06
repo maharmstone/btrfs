@@ -104,6 +104,8 @@ typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
 #define FILE_LINK_FORCE_RESIZE_TARGET_SR                  0x080
 #define FILE_LINK_FORCE_RESIZE_SOURCE_SR                  0x100
 
+#define FILE_CS_FLAG_CASE_SENSITIVE_DIR                 1
+
 #else
 
 #define FILE_RENAME_INFORMATION_EX FILE_RENAME_INFORMATION
@@ -3586,7 +3588,7 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
 }
 
 static NTSTATUS fill_in_file_case_sensitive_information(FILE_CASE_SENSITIVE_INFORMATION* fcsi, fcb* fcb, LONG* length) {
-    fcsi->Flags = 0; // FIXME
+    fcsi->Flags = fcb->case_sensitive ? FILE_CS_FLAG_CASE_SENSITIVE_DIR : 0;
 
     *length -= sizeof(FILE_CASE_SENSITIVE_INFORMATION);
 
