@@ -3613,7 +3613,11 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
         fsli->NumberOfLinks = fcb->inode_item.st_nlink;
 
     fsli->EffectiveAccess = ccb->access;
-    fsli->LxFlags = LX_FILE_METADATA_HAS_UID | LX_FILE_METADATA_HAS_GID | LX_FILE_METADATA_HAS_MODE | LX_FILE_METADATA_HAS_DEVICE_ID; // FIXME - LX_FILE_CASE_SENSITIVE_DIR
+    fsli->LxFlags = LX_FILE_METADATA_HAS_UID | LX_FILE_METADATA_HAS_GID | LX_FILE_METADATA_HAS_MODE | LX_FILE_METADATA_HAS_DEVICE_ID;
+
+    if (fcb->case_sensitive)
+        fsli->LxFlags |= LX_FILE_CASE_SENSITIVE_DIR;
+
     fsli->LxUid = ii->st_uid;
     fsli->LxGid = ii->st_gid;
     fsli->LxMode = ii->st_mode;
