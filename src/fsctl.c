@@ -4342,6 +4342,14 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
         Status = STATUS_SUCCESS;
         goto end;
+    } else if (bsxa->namelen == sizeof(EA_CASE_SENSITIVE) - 1 && RtlCompareMemory(bsxa->data, EA_CASE_SENSITIVE, sizeof(EA_CASE_SENSITIVE) - 1) == sizeof(EA_CASE_SENSITIVE) - 1) {
+        if (bsxa->valuelen > 0 && bsxa->data[bsxa->namelen] == '1') {
+            fcb->case_sensitive = TRUE;
+            mark_fcb_dirty(fcb);
+        }
+
+        Status = STATUS_SUCCESS;
+        goto end;
     } else if (bsxa->namelen == sizeof(EA_PROP_COMPRESSION) - 1 && RtlCompareMemory(bsxa->data, EA_PROP_COMPRESSION, sizeof(EA_PROP_COMPRESSION) - 1) == sizeof(EA_PROP_COMPRESSION) - 1) {
         static const char lzo[] = "lzo";
         static const char zlib[] = "zlib";
