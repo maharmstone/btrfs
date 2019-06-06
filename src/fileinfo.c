@@ -1531,9 +1531,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            }
-
-            if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            } else if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && oldfileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+                WARN("trying to overwrite readonly file\n");
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
+            } else if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
                 WARN("trying to overwrite directory\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
