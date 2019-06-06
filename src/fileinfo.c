@@ -2381,16 +2381,18 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
             if (!(flags & FILE_LINK_REPLACE_IF_EXISTS)) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
+            } else if (fileref == oldfileref) {
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
             } else if (!(flags & FILE_LINK_POSIX_SEMANTICS) && (oldfileref->open_count > 0 || has_open_children(oldfileref)) && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            } else if (fileref == oldfileref) {
+            } else if (!(flags & FILE_LINK_IGNORE_READONLY_ATTRIBUTE) && oldfileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+                WARN("trying to overwrite readonly file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            }
-
-            if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            } else if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
                 WARN("trying to overwrite directory\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
