@@ -23,6 +23,7 @@
 #define FileDispositionInformationEx (enum _FILE_INFORMATION_CLASS)64
 #define FileRenameInformationEx (enum _FILE_INFORMATION_CLASS)65
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
+#define FileCaseSensitiveInformation (enum _FILE_INFORMATION_CLASS)71
 #define FileLinkInformationEx (enum _FILE_INFORMATION_CLASS)72
 
 typedef struct _FILE_STAT_LX_INFORMATION {
@@ -74,6 +75,10 @@ typedef struct _FILE_LINK_INFORMATION_EX {
     ULONG FileNameLength;
     WCHAR FileName[1];
 } FILE_LINK_INFORMATION_EX, *PFILE_LINK_INFORMATION_EX;
+
+typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
+    ULONG Flags;
+} FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
 
 #define FILE_RENAME_REPLACE_IF_EXISTS                       0x001
 #define FILE_RENAME_POSIX_SEMANTICS                         0x002
@@ -3573,6 +3578,14 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_case_sensitive_information(FILE_CASE_SENSITIVE_INFORMATION* fcsi, fcb* fcb, LONG* length) {
+    fcsi->Flags = 0; // FIXME
+
+    *length -= sizeof(FILE_CASE_SENSITIVE_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
@@ -3869,6 +3882,23 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             TRACE("FileStatLxInformation\n");
 
             Status = fill_in_file_stat_lx_information(fsli, fcb, ccb, &length);
+
+            break;
+        }
+
+        case FileCaseSensitiveInformation:
+        {
+            FILE_CASE_SENSITIVE_INFORMATION* fcsi = Irp->AssociatedIrp.SystemBuffer;
+
+            if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_CASE_SENSITIVE_INFORMATION)) {
+                WARN("overflow\n");
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto exit;
+            }
+
+            TRACE("FileCaseSensitiveInformation\n");
+
+            Status = fill_in_file_case_sensitive_information(fcsi, fcb, &length);
 
             break;
         }
