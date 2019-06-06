@@ -2856,6 +2856,10 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             break;
         }
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
+#endif
         case FileDispositionInformationEx:
         {
             TRACE("FileDispositionInformationEx\n");
@@ -2880,6 +2884,9 @@ NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             TRACE("FileLinkInformationEx\n");
             Status = set_link_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, TRUE);
             break;
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
 
         default:
             WARN("unknown FileInformationClass %u\n", IrpSp->Parameters.SetFile.FileInformationClass);
