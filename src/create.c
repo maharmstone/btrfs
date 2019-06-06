@@ -2534,6 +2534,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     static const WCHAR DOSATTRIB[] = L"DOSATTRIB";
     static const WCHAR EA[] = L"EA";
     static const WCHAR reparse[] = L"reparse";
+    static const WCHAR casesensitive_str[] = L"casesensitive";
     LARGE_INTEGER time;
     BTRFS_TIME now;
     ULONG utf8len, overhead;
@@ -2636,7 +2637,8 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     if ((stream->Length == sizeof(DOSATTRIB) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, DOSATTRIB, stream->Length) == stream->Length) ||
         (stream->Length == sizeof(EA) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, EA, stream->Length) == stream->Length) ||
-        (stream->Length == sizeof(reparse) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, reparse, stream->Length) == stream->Length)) {
+        (stream->Length == sizeof(reparse) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, reparse, stream->Length) == stream->Length) ||
+        (stream->Length == sizeof(casesensitive_str) - sizeof(WCHAR) && RtlCompareMemory(stream->Buffer, casesensitive_str, stream->Length) == stream->Length)) {
         free_fileref(parfileref);
         return STATUS_OBJECT_NAME_INVALID;
     }
