@@ -5143,6 +5143,26 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->xattrs_changed = FALSE;
     }
 
+    if ((fcb->case_sensitive_set && !fcb->case_sensitive)) {
+        Status = delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_CASE_SENSITIVE,
+                              sizeof(EA_CASE_SENSITIVE) - 1, EA_CASE_SENSITIVE_HASH);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_xattr returned %08x\n", Status);
+            goto end;
+        }
+
+        fcb->case_sensitive_set = FALSE;
+    } else if ((!fcb->case_sensitive_set && fcb->case_sensitive)) {
+        Status = set_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, EA_CASE_SENSITIVE,
+                           sizeof(EA_CASE_SENSITIVE) - 1, EA_CASE_SENSITIVE_HASH, (UINT8*)"1", 1);
+        if (!NT_SUCCESS(Status)) {
+            ERR("set_xattr returned %08x\n", Status);
+            goto end;
+        }
+
+        fcb->case_sensitive_set = TRUE;
+    }
+
     if (fcb->inode_item.st_nlink == 0 && !fcb->marked_as_orphan) { // mark as orphan
         Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
                                         fcb->inode, NULL, 0, Batch_Insert);
