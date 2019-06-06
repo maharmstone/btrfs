@@ -1527,6 +1527,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             if (!(flags & FILE_RENAME_REPLACE_IF_EXISTS)) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
                 goto end;
+            } else if (fileref == oldfileref) {
+                Status = STATUS_ACCESS_DENIED;
+                goto end;
             } else if (!(flags & FILE_RENAME_POSIX_SEMANTICS) && (oldfileref->open_count > 0 || has_open_children(oldfileref)) && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
