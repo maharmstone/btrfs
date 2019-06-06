@@ -1168,8 +1168,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 #endif
 
                             *pfcb = fcb2;
-                            release_fcb_lock(Vcb);
                             reap_fcb(fcb);
+                            release_fcb_lock(Vcb);
                             return STATUS_SUCCESS;
                         }
                     }
@@ -1177,8 +1177,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     if (deleted_fcb) {
                         InterlockedIncrement(&deleted_fcb->refcount);
                         *pfcb = deleted_fcb;
-                        release_fcb_lock(Vcb);
                         reap_fcb(fcb);
+                        release_fcb_lock(Vcb);
                         return STATUS_SUCCESS;
                     }
 
