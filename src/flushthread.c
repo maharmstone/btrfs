@@ -547,6 +547,13 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                             return Status;
                         }
                     }
+
+                    tree* t2 = tp.tree;
+                    while (t2) {
+                        t2->write = TRUE;
+
+                        t2 = t2->parent;
+                    }
                 }
             }
 
