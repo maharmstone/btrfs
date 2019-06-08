@@ -591,7 +591,7 @@ cont:
 }
 
 NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                  root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
+                  root* subvol, UINT64 inode, UINT8 type, PANSI_STRING utf8, BOOL always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -717,7 +717,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         if ((no_data && tp.item->key.obj_type > TYPE_XATTR_ITEM) || tp.item->key.obj_type > TYPE_EXTENT_DATA)
             break;
 
-        if (fcb->inode_item.st_nlink > 1 && tp.item->key.obj_type == TYPE_INODE_REF) {
+        if ((always_add_hl || fcb->inode_item.st_nlink > 1) && tp.item->key.obj_type == TYPE_INODE_REF) {
             ULONG len;
             INODE_REF* ir;
 
@@ -782,7 +782,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 len -= sizeof(INODE_REF) - 1 + ir->n;
                 ir = (INODE_REF*)&ir->name[ir->n];
             }
-        } else if (fcb->inode_item.st_nlink > 1 && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+        } else if ((always_add_hl || fcb->inode_item.st_nlink > 1) && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
             ULONG len;
             INODE_EXTREF* ier;
 
@@ -1517,7 +1517,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 #ifdef DEBUG_STATS
                 time1 = KeQueryPerformanceCounter(NULL);
 #endif
-                Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, sf->fcb, &fcb, pooltype, Irp);
+                Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, FALSE, sf->fcb, &fcb, pooltype, Irp);
 #ifdef DEBUG_STATS
                 time2 = KeQueryPerformanceCounter(NULL);
                 Vcb->stats.open_fcb_calls++;
@@ -3942,14 +3942,17 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     BOOL hl_alloc = FALSE;
     file_ref *parfr, *fr;
 
-    Status = open_fcb(Vcb, subvol, inode, 0, NULL, NULL, &fcb, PagedPool, Irp);
+    Status = open_fcb(Vcb, subvol, inode, 0, NULL, TRUE, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return Status;
     }
 
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+
     if (fcb->inode_item.st_nlink == 0) {
         WARN("refusing to open orphaned inode\n");
+        ExReleaseResourceLite(fcb->Header.Resource);
         free_fcb(fcb);
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
@@ -3957,13 +3960,48 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     if (fcb->fileref) {
         *pfr = fcb->fileref;
         increase_fileref_refcount(fcb->fileref);
+        free_fcb(fcb);
+        ExReleaseResourceLite(fcb->Header.Resource);
         return STATUS_SUCCESS;
     }
 
-    hardlink* hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
+    if (IsListEmpty(&fcb->hardlinks)) {
+        ExReleaseResourceLite(fcb->Header.Resource);
 
-    name = hl->name;
-    parent = hl->parent;
+        ExAcquireResourceSharedLite(&Vcb->dirty_filerefs_lock, TRUE);
+
+        if (!IsListEmpty(&Vcb->dirty_filerefs)) {
+            LIST_ENTRY* le = Vcb->dirty_filerefs.Flink;
+            while (le != &Vcb->dirty_filerefs) {
+                file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry_dirty);
+
+                if (fr->fcb == fcb) {
+                    ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
+                    increase_fileref_refcount(fr);
+                    free_fcb(fcb);
+                    *pfr = fr;
+                    return STATUS_SUCCESS;
+                }
+
+                le = le->Flink;
+            }
+        }
+
+        ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
+
+        // FIXME - search INODE_REFs and INODE_EXTREFs
+
+        WARN("trying to open inode with no references\n");
+        free_fcb(fcb);
+        return STATUS_INVALID_PARAMETER;
+    } else {
+        hardlink* hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
+
+        name = hl->name;
+        parent = hl->parent;
+
+        ExReleaseResourceLite(fcb->Header.Resource);
+    }
 
     if (parent == inode) { // subvolume root
         KEY searchkey;
@@ -4177,8 +4215,20 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     }
 
     if (options & FILE_OPEN_BY_FILE_ID) {
-        if (fn.Length == sizeof(UINT64) && related && RequestedDisposition == FILE_OPEN) {
+        if (RequestedDisposition != FILE_OPEN) {
+            WARN("FILE_OPEN_BY_FILE_ID not supported for anything other than FILE_OPEN\n");
+            Status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
+
+        if (fn.Length == sizeof(UINT64)) {
             UINT64 inode;
+
+            if (!related) {
+                WARN("cannot open by short file ID unless related fileref also provided");
+                Status = STATUS_INVALID_PARAMETER;
+                goto exit;
+            }
 
             RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
 
@@ -4193,9 +4243,37 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 Status = open_fileref_by_inode(Vcb, related->fcb->subvol, inode, &fileref, Irp);
 
             goto loaded;
+        } else if (fn.Length == sizeof(FILE_ID_128)) {
+            UINT64 inode, subvol_id;
+            root* subvol = NULL;
+
+            RtlCopyMemory(&inode, fn.Buffer, sizeof(UINT64));
+            RtlCopyMemory(&subvol_id, (UINT8*)fn.Buffer + sizeof(UINT64), sizeof(UINT64));
+
+            if (subvol_id == BTRFS_ROOT_FSTREE || (subvol_id >= 0x100 && subvol_id < 0x8000000000000000)) {
+                LIST_ENTRY* le = Vcb->roots.Flink;
+                while (le != &Vcb->roots) {
+                    root* r = CONTAINING_RECORD(le, root, list_entry);
+
+                    if (r->id == subvol_id) {
+                        subvol = r;
+                        break;
+                    }
+
+                    le = le->Flink;
+                }
+            }
+
+            if (!subvol) {
+                WARN("subvol %llx not found\n", subvol_id);
+                Status = STATUS_OBJECT_NAME_NOT_FOUND;
+            } else
+                Status = open_fileref_by_inode(Vcb, subvol, inode, &fileref, Irp);
+
+            goto loaded;
         } else {
-            WARN("FILE_OPEN_BY_FILE_ID only supported for inodes\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+            WARN("invalid ID size for FILE_OPEN_BY_FILE_ID\n");
+            Status = STATUS_INVALID_PARAMETER;
             goto exit;
         }
     }

@@ -7018,7 +7018,7 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
 
             TRACE("removing orphaned inode %llx\n", tp.item->key.offset);
 
-            Status = open_fcb(Vcb, r, tp.item->key.offset, 0, NULL, NULL, &fcb, PagedPool, Irp);
+            Status = open_fcb(Vcb, r, tp.item->key.offset, 0, NULL, FALSE, NULL, &fcb, PagedPool, Irp);
             if (!NT_SUCCESS(Status))
                 ERR("open_fcb returned %08x\n", Status);
             else {

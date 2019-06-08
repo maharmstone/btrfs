@@ -122,7 +122,7 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 t
     if (!(atts & FILE_ATTRIBUTE_REPARSE_POINT))
         return 0;
 
-    Status = open_fcb(Vcb, subvol, inode, type, NULL, NULL, &fcb, PagedPool, Irp);
+    Status = open_fcb(Vcb, subvol, inode, type, NULL, FALSE, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return 0;
