@@ -20,6 +20,7 @@
 // not currently in mingw - introduced with Windows 10
 #ifndef _MSC_VER
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
+#define FileHardLinkFullIdInformation (enum _FILE_INFORMATION_CLASS)62
 #define FileDispositionInformationEx (enum _FILE_INFORMATION_CLASS)64
 #define FileRenameInformationEx (enum _FILE_INFORMATION_CLASS)65
 #define FileStatInformation (enum _FILE_INFORMATION_CLASS)68
@@ -99,6 +100,19 @@ typedef struct _FILE_LINK_INFORMATION_EX {
 typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
     ULONG Flags;
 } FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
+
+typedef struct _FILE_LINK_ENTRY_FULL_ID_INFORMATION {
+    ULONG NextEntryOffset;
+    FILE_ID_128 ParentFileId;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_LINK_ENTRY_FULL_ID_INFORMATION, *PFILE_LINK_ENTRY_FULL_ID_INFORMATION;
+
+typedef struct _FILE_LINKS_FULL_ID_INFORMATION {
+    ULONG BytesNeeded;
+    ULONG EntriesReturned;
+    FILE_LINK_ENTRY_FULL_ID_INFORMATION Entry;
+} FILE_LINKS_FULL_ID_INFORMATION, *PFILE_LINKS_FULL_ID_INFORMATION;
 
 #define FILE_RENAME_REPLACE_IF_EXISTS                       0x001
 #define FILE_RENAME_POSIX_SEMANTICS                         0x002
@@ -3558,6 +3572,177 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
     return Status;
 }
 
+static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMATION* flfii, file_ref* fileref, PIRP Irp, LONG* length) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+    LONG bytes_needed;
+    FILE_LINK_ENTRY_FULL_ID_INFORMATION* flefii;
+    BOOL overflow = FALSE;
+    fcb* fcb = fileref->fcb;
+    ULONG len;
+
+    if (fcb->ads)
+        return STATUS_INVALID_PARAMETER;
+
+    if (*length < (LONG)offsetof(FILE_LINKS_FULL_ID_INFORMATION, Entry))
+        return STATUS_INVALID_PARAMETER;
+
+    RtlZeroMemory(flfii, *length);
+
+    bytes_needed = offsetof(FILE_LINKS_FULL_ID_INFORMATION, Entry);
+    len = bytes_needed;
+    flefii = NULL;
+
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+
+    if (fcb->inode == SUBVOL_ROOT_INODE) {
+        ULONG namelen;
+
+        if (fcb == fcb->Vcb->root_fileref->fcb)
+            namelen = sizeof(WCHAR);
+        else
+            namelen = fileref->dc->name.Length;
+
+        bytes_needed += offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + namelen;
+
+        if (bytes_needed > *length)
+            overflow = TRUE;
+
+        if (!overflow) {
+            flefii = &flfii->Entry;
+
+            flefii->NextEntryOffset = 0;
+
+            if (fcb == fcb->Vcb->root_fileref->fcb) {
+                RtlZeroMemory(&flefii->ParentFileId.Identifier[0], sizeof(FILE_ID_128));
+                flefii->FileNameLength = 1;
+                flefii->FileName[0] = '.';
+            } else {
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &fileref->parent->fcb->inode, sizeof(UINT64));
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(UINT64)], &fileref->parent->fcb->subvol->id, sizeof(UINT64));
+
+                flefii->FileNameLength = fileref->dc->name.Length / sizeof(WCHAR);
+                RtlCopyMemory(flefii->FileName, fileref->dc->name.Buffer, fileref->dc->name.Length);
+            }
+
+            flfii->EntriesReturned++;
+
+            len = bytes_needed;
+        }
+    } else {
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, TRUE);
+
+        if (IsListEmpty(&fcb->hardlinks)) {
+            bytes_needed += offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + fileref->dc->name.Length;
+
+            if (bytes_needed > *length)
+                overflow = TRUE;
+
+            if (!overflow) {
+                flefii = &flfii->Entry;
+
+                flefii->NextEntryOffset = 0;
+
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &fileref->parent->fcb->inode, sizeof(UINT64));
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(UINT64)], &fileref->parent->fcb->subvol->id, sizeof(UINT64));
+
+                flefii->FileNameLength = fileref->dc->name.Length / sizeof(WCHAR);
+                RtlCopyMemory(flefii->FileName, fileref->dc->name.Buffer, fileref->dc->name.Length);
+
+                flfii->EntriesReturned++;
+
+                len = bytes_needed;
+            }
+        } else {
+            le = fcb->hardlinks.Flink;
+            while (le != &fcb->hardlinks) {
+                hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+                file_ref* parfr;
+
+                TRACE("parent %llx, index %llx, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
+
+                Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr, Irp);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("open_fileref_by_inode returned %08x\n", Status);
+                } else if (!parfr->deleted) {
+                    LIST_ENTRY* le2;
+                    BOOL found = FALSE, deleted = FALSE;
+                    UNICODE_STRING* fn = NULL;
+
+                    le2 = parfr->children.Flink;
+                    while (le2 != &parfr->children) {
+                        file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
+
+                        if (fr2->dc->index == hl->index) {
+                            found = TRUE;
+                            deleted = fr2->deleted;
+
+                            if (!deleted)
+                                fn = &fr2->dc->name;
+
+                            break;
+                        }
+
+                        le2 = le2->Flink;
+                    }
+
+                    if (!found)
+                        fn = &hl->name;
+
+                    if (!deleted) {
+                        TRACE("fn = %.*S (found = %u)\n", fn->Length / sizeof(WCHAR), fn->Buffer, found);
+
+                        if (flefii)
+                            bytes_needed = (LONG)sector_align(bytes_needed, 8);
+
+                        bytes_needed += offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + fn->Length;
+
+                        if (bytes_needed > *length)
+                            overflow = TRUE;
+
+                        if (!overflow) {
+                            if (flefii) {
+                                flefii->NextEntryOffset = (ULONG)sector_align(offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + (flefii->FileNameLength * sizeof(WCHAR)), 8);
+                                flefii = (FILE_LINK_ENTRY_FULL_ID_INFORMATION*)((UINT8*)flefii + flefii->NextEntryOffset);
+                            } else
+                                flefii = &flfii->Entry;
+
+                            flefii->NextEntryOffset = 0;
+
+                            RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &parfr->fcb->inode, sizeof(UINT64));
+                            RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(UINT64)], &parfr->fcb->subvol->id, sizeof(UINT64));
+
+                            flefii->FileNameLength = fn->Length / sizeof(WCHAR);
+                            RtlCopyMemory(flefii->FileName, fn->Buffer, fn->Length);
+
+                            flfii->EntriesReturned++;
+
+                            len = bytes_needed;
+                        }
+                    }
+
+                    free_fileref(parfr);
+                }
+
+                le = le->Flink;
+            }
+        }
+
+        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
+    }
+
+    flfii->BytesNeeded = bytes_needed;
+
+    *length -= len;
+
+    Status = overflow ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    return Status;
+}
+
 static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, LONG* length) {
     RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.uuid.uuid[8], sizeof(UINT64));
     RtlCopyMemory(&fii->FileId.Identifier[0], &fcb->inode, sizeof(UINT64));
@@ -4042,6 +4227,19 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             TRACE("FileCaseSensitiveInformation\n");
 
             Status = fill_in_file_case_sensitive_information(fcsi, fcb, &length);
+
+            break;
+        }
+
+        case FileHardLinkFullIdInformation:
+        {
+            FILE_LINKS_FULL_ID_INFORMATION* flfii = Irp->AssociatedIrp.SystemBuffer;
+
+            TRACE("FileHardLinkFullIdInformation\n");
+
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+            Status = fill_in_hard_link_full_id_information(flfii, fileref, Irp, &length);
+            ExReleaseResourceLite(&Vcb->tree_lock);
 
             break;
         }
