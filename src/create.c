@@ -3950,8 +3950,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
 
-    if (fcb->inode_item.st_nlink == 0) {
-        WARN("refusing to open orphaned inode\n");
+    if (fcb->inode_item.st_nlink == 0 || fcb->deleted) {
         ExReleaseResourceLite(fcb->Header.Resource);
         free_fcb(fcb);
         return STATUS_OBJECT_NAME_NOT_FOUND;
@@ -3989,11 +3988,133 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
         ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
 
-        // FIXME - search INODE_REFs and INODE_EXTREFs
+        {
+            KEY searchkey;
+            traverse_ptr tp;
 
-        WARN("trying to open inode with no references\n");
-        free_fcb(fcb);
-        return STATUS_INVALID_PARAMETER;
+            searchkey.obj_id = fcb->inode;
+            searchkey.obj_type = TYPE_INODE_REF;
+            searchkey.offset = 0;
+
+            Status = find_item(Vcb, subvol, &tp, &searchkey, FALSE, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("find_item returned %08x\n", Status);
+                free_fcb(fcb);
+                return Status;
+            }
+
+            do {
+                traverse_ptr next_tp;
+
+                if (tp.item->key.obj_id > fcb->inode || (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type > TYPE_INODE_EXTREF))
+                    break;
+
+                if (tp.item->key.obj_id == fcb->inode) {
+                    if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                        INODE_REF* ir = (INODE_REF*)tp.item->data;
+
+                        if (tp.item->size < offsetof(INODE_REF, name[0]) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+                            ERR("INODE_REF was too short\n");
+                            free_fcb(fcb);
+                            return STATUS_INTERNAL_ERROR;
+                        }
+
+                        ULONG stringlen;
+
+                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                            free_fcb(fcb);
+                            return Status;
+                        }
+
+                        name.Length = name.MaximumLength = (UINT16)stringlen;
+
+                        if (stringlen == 0)
+                            name.Buffer = NULL;
+                        else {
+                            name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
+
+                            if (!name.Buffer) {
+                                ERR("out of memory\n");
+                                free_fcb(fcb);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                                ExFreePool(name.Buffer);
+                                free_fcb(fcb);
+                                return Status;
+                            }
+
+                            hl_alloc = TRUE;
+                        }
+
+                        parent = tp.item->key.offset;
+
+                        break;
+                    } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                        INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+
+                        if (tp.item->size < offsetof(INODE_EXTREF, name[0]) || tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+                            ERR("INODE_EXTREF was too short\n");
+                            free_fcb(fcb);
+                            return STATUS_INTERNAL_ERROR;
+                        }
+
+                        ULONG stringlen;
+
+                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                            free_fcb(fcb);
+                            return Status;
+                        }
+
+                        name.Length = name.MaximumLength = (UINT16)stringlen;
+
+                        if (stringlen == 0)
+                            name.Buffer = NULL;
+                        else {
+                            name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
+
+                            if (!name.Buffer) {
+                                ERR("out of memory\n");
+                                free_fcb(fcb);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ier->name, ier->n);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                                ExFreePool(name.Buffer);
+                                free_fcb(fcb);
+                                return Status;
+                            }
+
+                            hl_alloc = TRUE;
+                        }
+
+                        parent = ier->dir;
+
+                        break;
+                    }
+                }
+
+                if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp))
+                    tp = next_tp;
+                else
+                    break;
+            } while (TRUE);
+        }
+
+        if (parent == 0) {
+            WARN("trying to open inode with no references\n");
+            free_fcb(fcb);
+            return STATUS_INVALID_PARAMETER;
+        }
     } else {
         hardlink* hl = CONTAINING_RECORD(fcb->hardlinks.Flink, hardlink, list_entry);
 
@@ -4073,6 +4194,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             if (stringlen == 0)
                 name.Buffer = NULL;
             else {
+                if (hl_alloc)
+                    ExFreePool(name.Buffer);
+
                 name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
 
                 if (!name.Buffer) {
