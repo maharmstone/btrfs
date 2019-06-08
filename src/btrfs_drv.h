@@ -130,6 +130,12 @@
 #define FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL 0x00020000
 #endif
 
+#ifndef _MSC_VER
+typedef struct _FILE_ID_128 {
+    UCHAR Identifier[16];
+} FILE_ID_128, *PFILE_ID_128;
+#endif
+
 typedef struct _DUPLICATE_EXTENTS_DATA {
     HANDLE FileHandle;
     LARGE_INTEGER SourceFileOffset;

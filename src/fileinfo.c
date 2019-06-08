@@ -26,10 +26,6 @@
 #define FileCaseSensitiveInformation (enum _FILE_INFORMATION_CLASS)71
 #define FileLinkInformationEx (enum _FILE_INFORMATION_CLASS)72
 
-typedef struct _FILE_ID_128 {
-    UCHAR Identifier[16];
-} FILE_ID_128, *PFILE_ID_128;
-
 typedef struct _FILE_ID_INFORMATION {
     ULONGLONG VolumeSerialNumber;
     FILE_ID_128 FileId;
