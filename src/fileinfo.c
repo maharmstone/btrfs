@@ -22,6 +22,7 @@
 #define FileIdInformation (enum _FILE_INFORMATION_CLASS)59
 #define FileDispositionInformationEx (enum _FILE_INFORMATION_CLASS)64
 #define FileRenameInformationEx (enum _FILE_INFORMATION_CLASS)65
+#define FileStatInformation (enum _FILE_INFORMATION_CLASS)68
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
 #define FileCaseSensitiveInformation (enum _FILE_INFORMATION_CLASS)71
 #define FileLinkInformationEx (enum _FILE_INFORMATION_CLASS)72
@@ -30,6 +31,20 @@ typedef struct _FILE_ID_INFORMATION {
     ULONGLONG VolumeSerialNumber;
     FILE_ID_128 FileId;
 } FILE_ID_INFORMATION, *PFILE_ID_INFORMATION;
+
+typedef struct _FILE_STAT_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+    ULONG ReparseTag;
+    ULONG NumberOfLinks;
+    ACCESS_MASK EffectiveAccess;
+} FILE_STAT_INFORMATION, *PFILE_STAT_INFORMATION;
 
 typedef struct _FILE_STAT_LX_INFORMATION {
     LARGE_INTEGER FileId;
@@ -3553,6 +3568,66 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* fcb, ccb* ccb, LONG* length) {
+    INODE_ITEM* ii;
+
+    fsi->FileId.LowPart = (UINT32)fcb->inode;
+    fsi->FileId.HighPart = (UINT32)fcb->subvol->id;
+
+    if (fcb->ads)
+        ii = &ccb->fileref->parent->fcb->inode_item;
+    else
+        ii = &fcb->inode_item;
+
+    if (fcb == fcb->Vcb->dummy_fcb) {
+        LARGE_INTEGER time;
+
+        KeQuerySystemTime(&time);
+        fsi->CreationTime = fsi->LastAccessTime = fsi->LastWriteTime = fsi->ChangeTime = time;
+    } else {
+        fsi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
+        fsi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
+        fsi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
+        fsi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+    }
+
+    if (fcb->ads) {
+        fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = fcb->adsdata.Length;
+        fsi->FileAttributes = ccb->fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : ccb->fileref->parent->fcb->atts;
+    } else {
+        fsi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
+        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fsi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
+    }
+
+    if (fcb->type == BTRFS_TYPE_SOCKET)
+        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_SOCKET;
+    else if (fcb->type == BTRFS_TYPE_FIFO)
+        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_FIFO;
+    else if (fcb->type == BTRFS_TYPE_CHARDEV)
+        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_CHARDEV;
+    else if (fcb->type == BTRFS_TYPE_BLOCKDEV)
+        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_BLOCKDEV;
+    else if (!(fsi->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        fsi->ReparseTag = 0;
+    else
+        fsi->ReparseTag = get_reparse_tag_fcb(fcb);
+
+    if (fcb->type == BTRFS_TYPE_SOCKET || fcb->type == BTRFS_TYPE_FIFO || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV)
+        fsi->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
+
+    if (fcb->ads)
+        fsi->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.st_nlink;
+    else
+        fsi->NumberOfLinks = fcb->inode_item.st_nlink;
+
+    fsi->EffectiveAccess = ccb->access;
+
+    *length -= sizeof(FILE_STAT_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, LONG* length) {
     INODE_ITEM* ii;
 
@@ -3916,6 +3991,23 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
             TRACE("FileIdInformation\n");
 
             Status = fill_in_file_id_information(fii, fcb, &length);
+
+            break;
+        }
+
+        case FileStatInformation:
+        {
+            FILE_STAT_INFORMATION* fsi = Irp->AssociatedIrp.SystemBuffer;
+
+            if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_STAT_LX_INFORMATION)) {
+                WARN("overflow\n");
+                Status = STATUS_BUFFER_OVERFLOW;
+                goto exit;
+            }
+
+            TRACE("FileStatInformation\n");
+
+            Status = fill_in_file_stat_information(fsi, fcb, ccb, &length);
 
             break;
         }
