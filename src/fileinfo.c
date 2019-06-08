@@ -26,6 +26,15 @@
 #define FileCaseSensitiveInformation (enum _FILE_INFORMATION_CLASS)71
 #define FileLinkInformationEx (enum _FILE_INFORMATION_CLASS)72
 
+typedef struct _FILE_ID_128 {
+    UCHAR Identifier[16];
+} FILE_ID_128, *PFILE_ID_128;
+
+typedef struct _FILE_ID_INFORMATION {
+    ULONGLONG VolumeSerialNumber;
+    FILE_ID_128 FileId;
+} FILE_ID_INFORMATION, *PFILE_ID_INFORMATION;
+
 typedef struct _FILE_STAT_LX_INFORMATION {
     LARGE_INTEGER FileId;
     LARGE_INTEGER CreationTime;
@@ -3537,17 +3546,6 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
 
     return Status;
 }
-
-#ifdef __MINGW32__
-typedef struct _FILE_ID_128 {
-    UCHAR Identifier[16];
-} FILE_ID_128, *PFILE_ID_128;
-
-typedef struct _FILE_ID_INFORMATION {
-    ULONGLONG VolumeSerialNumber;
-    FILE_ID_128 FileId;
-} FILE_ID_INFORMATION, *PFILE_ID_INFORMATION;
-#endif
 
 static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, LONG* length) {
     RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.uuid.uuid[8], sizeof(UINT64));
