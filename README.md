@@ -1,5 +1,5 @@
-WinBtrfs v1.2.1
----------------
+WinBtrfs v1.3
+-------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -66,12 +66,13 @@ Features
 * Shrinking and expanding
 * Passthrough of permissions etc. for LXSS
 * Zstd compression
+* Windows 10 case-sensitive directory flag
 
 Todo
 ----
 
 * Oplocks
-* Marking directories as case-sensitive with `fsutil` on Windows 10
+* Windows 10 reserved storage
 
 Installation
 ------------
@@ -211,6 +212,14 @@ for Windows, you're out of luck.
 
 Changelog
 ---------
+
+v1.3 (2019-06-10):
+* Added support for new rename and delete functions introduced to Windows 10
+* Added support for Windows 10's flag for case-sensitive directories
+* Changed free-space calculation method to be more like that of the Linux driver
+* Added more support for 128-bit file IDs
+* Fixed bug causing outdated root items
+* Fixed bug preventing writing to VHDs
 
 v1.2.1 (2019-05-06):
 * Reverted commit affecting the creation of streams
