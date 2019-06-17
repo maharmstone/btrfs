@@ -627,6 +627,10 @@ sub dump_item {
 		@b=unpack("QQQQ", $s);
 		printf("qgroup_status version=%x generation=%x flags=%s rescan=%x",$b[0],$b[1],qgroup_status_flags($b[2]),$b[3]);
 		$s=substr($s,0x20);
+	} elsif ($type == 0xf2) { # QGROUP_INFO
+		@b=unpack("QQQQQ", $s);
+		printf("qgroup_info generation=%x rfer=%x rfer_cmpr=%x excl=%x excl_cmpr=%x",$b[0],$b[1],$b[2],$b[3],$b[4]);
+		$s=substr($s,0x28);
 	} elsif ($type == 0xf8 && $id == 0xfffffffffffffffc) { # balance
 		my ($fl,@f);
 
