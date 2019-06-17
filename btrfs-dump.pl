@@ -398,6 +398,32 @@ sub format_balance {
 	return $t;
 }
 
+sub qgroup_status_flags {
+	my ($f)=@_;
+	my (@l);
+
+	if ($f & 1) {
+		push @l, "on";
+		$f &= ~1;
+	}
+
+	if ($f & 2) {
+		push @l, "rescan";
+		$f &= ~2;
+	}
+
+	if ($f & 4) {
+		push @l, "inconsistent";
+		$f &= ~4;
+	}
+
+	if ($f != 0) {
+		push @l, $f;
+	}
+
+	return join(',',@l);
+}
+
 sub dump_item {
 	my ($type,$s,$pref,$id)=@_;
 	my (@b);
@@ -597,6 +623,10 @@ sub dump_item {
 
 			printf(" stripe(%u) devid=%x offset=%x devuuid=%s",$i,$b[0],$b[1],format_uuid($b[2]));
 		}
+	} elsif ($type == 0xf0) { # QGROUP_STATUS
+		@b=unpack("QQQQ", $s);
+		printf("qgroup_status version=%x generation=%x flags=%s rescan=%x",$b[0],$b[1],qgroup_status_flags($b[2]),$b[3]);
+		$s=substr($s,0x20);
 	} elsif ($type == 0xf8 && $id == 0xfffffffffffffffc) { # balance
 		my ($fl,@f);
 
