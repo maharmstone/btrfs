@@ -4481,13 +4481,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         } else if (compress) {
             Status = write_compressed(fcb, start_data, end_data, data, Irp, rollback);
 
+            ExFreePool(data);
+
             if (!NT_SUCCESS(Status)) {
                 ERR("write_compressed returned %08x\n", Status);
-                ExFreePool(data);
                 goto end;
             }
-
-            ExFreePool(data);
         } else {
             if (write_irp && Irp->MdlAddress && no_buf) {
                 BOOL locked = Irp->MdlAddress->MdlFlags & (MDL_PAGES_LOCKED | MDL_PARTIAL);
@@ -4521,16 +4520,16 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 } except (EXCEPTION_EXECUTE_HANDLER) {
                     Status = GetExceptionCode();
                 }
+
+                if (!no_buf)
+                    ExFreePool(data);
             }
 
             if (!NT_SUCCESS(Status)) {
                 ERR("do_write_file returned %08x\n", Status);
-                if (!no_buf) ExFreePool(data);
                 goto end;
             }
 
-            if (!no_buf)
-                ExFreePool(data);
         }
     }
 
