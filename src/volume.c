@@ -1263,19 +1263,19 @@ void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING 
 
     ExReleaseResourceLite(&pdode->child_lock);
 
-    if (new_pdo) {
-        control_device_extension* cde = master_devobj->DeviceExtension;
-
+    if (new_pdo)
         InsertTailList(&pdo_list, &pdode->list_entry);
-
-        if (!no_pnp)
-            IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
-    }
 
     ExReleaseResourceLite(&pdo_list_lock);
 
-    if (new_pdo && no_pnp)
-        AddDevice(drvobj, pdo);
+    if (new_pdo) {
+        if (no_pnp)
+            AddDevice(drvobj, pdo);
+        else {
+            control_device_extension* cde = master_devobj->DeviceExtension;
+            IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
+        }
+    }
 
     return;
 
