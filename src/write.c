@@ -4140,7 +4140,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     UINT64 off64, newlength, start_data, end_data;
     UINT32 bufhead;
     BOOL make_inline;
-    UINT8* data;
     INODE_ITEM* origii;
     BOOL changed_length = FALSE;
     NTSTATUS Status;
@@ -4397,6 +4396,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             mark_fileref_dirty(fileref);
     } else {
         BOOL compress = write_fcb_compressed(fcb), no_buf = FALSE;
+        UINT8* data;
 
         if (make_inline) {
             start_data = 0;
@@ -4486,8 +4486,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 ExFreePool(data);
                 goto end;
             }
-
-            ExFreePool(data);
         } else {
             if (write_irp && Irp->MdlAddress && no_buf) {
                 BOOL locked = Irp->MdlAddress->MdlFlags & (MDL_PAGES_LOCKED | MDL_PARTIAL);
@@ -4528,10 +4526,10 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 if (!no_buf) ExFreePool(data);
                 goto end;
             }
-
-            if (!no_buf)
-                ExFreePool(data);
         }
+
+        if (!no_buf)
+            ExFreePool(data);
     }
 
     KeQuerySystemTime(&time);
