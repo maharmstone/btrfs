@@ -631,6 +631,10 @@ sub dump_item {
 		@b=unpack("QQQQQ", $s);
 		printf("qgroup_info generation=%x rfer=%x rfer_cmpr=%x excl=%x excl_cmpr=%x",$b[0],$b[1],$b[2],$b[3],$b[4]);
 		$s=substr($s,0x28);
+	} elsif ($type == 0xf4) { # QGROUP_LIMIT
+		@b=unpack("QQQQQ", $s);
+		printf("qgroup_limit flags=%x max_rfer=%x max_excl=%x rsv_rfer=%x rsv_excl=%x",$b[0],$b[1],$b[2],$b[3],$b[4]);
+		$s=substr($s,0x28);
 	} elsif ($type == 0xf8 && $id == 0xfffffffffffffffc) { # balance
 		my ($fl,@f);
 
