@@ -4471,9 +4471,11 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->type = EXTENT_TYPE_INLINE;
 
             Status = add_extent_to_fcb(fcb, 0, ed2, (UINT16)(offsetof(EXTENT_DATA, data[0]) + newlength), FALSE, NULL, rollback);
+
+            ExFreePool(data);
+
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08x\n", Status);
-                ExFreePool(data);
                 goto end;
             }
 
