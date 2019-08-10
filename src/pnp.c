@@ -103,6 +103,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
             IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_PNP;
             IrpSp->MinorFunction = minor;
+            IrpSp->FileObject = dev->fileobj;
 
             context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
 
