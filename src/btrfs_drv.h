@@ -1429,7 +1429,8 @@ void flush_thread(void* context);
 NTSTATUS do_write(device_extension* Vcb, PIRP Irp);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp);
-NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ UINT64 address, _In_reads_bytes_(length) void* data, _In_ UINT32 length);
+NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ UINT64 address,
+                         _In_reads_bytes_(length) void* data, _In_ UINT32 length);
 BOOL is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp);
 NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, BOOL no_free);
 void add_checksum_entry(device_extension* Vcb, UINT64 address, ULONG length, UINT32* csum, PIRP Irp);

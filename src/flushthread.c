@@ -60,7 +60,8 @@ static NTSTATUS write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID co
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ UINT64 address, _In_reads_bytes_(length) void* data, _In_ UINT32 length) {
+NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ UINT64 address,
+                         _In_reads_bytes_(length) void* data, _In_ UINT32 length) {
     NTSTATUS Status;
     LARGE_INTEGER offset;
     PIRP Irp;
@@ -84,6 +85,7 @@ NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ UINT64 address, _In_re
 
     IrpSp = IoGetNextIrpStackLocation(Irp);
     IrpSp->MajorFunction = IRP_MJ_WRITE;
+    IrpSp->FileObject = fileobj;
 
     if (device->Flags & DO_BUFFERED_IO) {
         Irp->AssociatedIrp.SystemBuffer = data;
@@ -5721,7 +5723,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     data = ps->data;
     for (k = 0; k < num_data_stripes; k++) {
         if (c->devices[stripe]->devobj) {
-            Status = write_data_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff, data, stripe_length);
+            Status = write_data_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff, data, stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08x\n", Status);
                 return Status;
@@ -5741,7 +5743,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
                 do_xor(ps->data, ps->data + (i * stripe_length), stripe_length);
             }
 
-            Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, ps->data, stripe_length);
+            Status = write_data_phys(c->devices[parity2]->devobj, c->devices[parity2]->fileobj, cis[parity2].offset + startoff, ps->data, stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08x\n", Status);
                 return Status;
@@ -5780,7 +5782,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             }
 
             if (c->devices[parity1]->devobj) {
-                Status = write_data_phys(c->devices[parity1]->devobj, cis[parity1].offset + startoff, scratch, stripe_length);
+                Status = write_data_phys(c->devices[parity1]->devobj, c->devices[parity1]->fileobj, cis[parity1].offset + startoff, scratch, stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
                     ExFreePool(scratch);
@@ -5789,7 +5791,8 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             }
 
             if (c->devices[parity2]->devobj) {
-                Status = write_data_phys(c->devices[parity2]->devobj, cis[parity2].offset + startoff, scratch + stripe_length, stripe_length);
+                Status = write_data_phys(c->devices[parity2]->devobj, c->devices[parity2]->fileobj, cis[parity2].offset + startoff,
+                                         scratch + stripe_length, stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08x\n", Status);
                     ExFreePool(scratch);
