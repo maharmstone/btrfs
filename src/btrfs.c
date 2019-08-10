@@ -4232,6 +4232,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     dev->devobj = readobj;
+    dev->fileobj = fileobj;
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
 
     if (dev->devitem.num_bytes > readobjsize) {
