@@ -1513,6 +1513,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, UINT64
 
             IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_READ;
+            IrpSp->FileObject = c->devices[i]->fileobj;
 
             if (c->devices[i]->devobj->Flags & DO_BUFFERED_IO) {
                 context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, context.stripes[i].length, ALLOC_TAG);
