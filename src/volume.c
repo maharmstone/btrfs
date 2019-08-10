@@ -242,6 +242,7 @@ NTSTATUS vol_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     IrpSp2 = IoGetNextIrpStackLocation(Irp2);
 
     IrpSp2->MajorFunction = IRP_MJ_WRITE;
+    IrpSp2->FileObject = vc->fileobj;
 
     if (vc->devobj->Flags & DO_BUFFERED_IO) {
         Irp2->AssociatedIrp.SystemBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
