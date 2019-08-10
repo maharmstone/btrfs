@@ -184,6 +184,7 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
 
         IrpSp = IoGetNextIrpStackLocation(Irp);
         IrpSp->MajorFunction = IRP_MJ_WRITE;
+        IrpSp->FileObject = comfo;
 
         if (comdo->Flags & DO_BUFFERED_IO) {
             Irp->AssociatedIrp.SystemBuffer = buf2;
