@@ -111,8 +111,8 @@ static BOOL fs_ignored(BTRFS_UUID* uuid) {
     return ret;
 }
 
-static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNICODE_STRING devpath,
-                     DWORD disk_num, DWORD part_num, UINT64 length) {
+static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
+                     PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, UINT64 length) {
     NTSTATUS Status;
     ULONG toread;
     UINT8* data = NULL;
@@ -155,7 +155,7 @@ static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNIC
         goto deref;
     }
 
-    Status = sync_read_phys(DeviceObject, superblock_addrs[0], toread, data, TRUE);
+    Status = sync_read_phys(DeviceObject, FileObject, superblock_addrs[0], toread, data, TRUE);
 
     if (NT_SUCCESS(Status) && ((superblock*)data)->magic == BTRFS_MAGIC) {
         superblock* sb = (superblock*)data;
@@ -176,7 +176,7 @@ static void test_vol(PDEVICE_OBJECT mountmgr, PDEVICE_OBJECT DeviceObject, PUNIC
                 }
 
                 while (superblock_addrs[i] > 0 && length >= superblock_addrs[i] + toread) {
-                    Status = sync_read_phys(DeviceObject, superblock_addrs[i], toread, (PUCHAR)sb2, TRUE);
+                    Status = sync_read_phys(DeviceObject, FileObject, superblock_addrs[i], toread, (PUCHAR)sb2, TRUE);
 
                     if (NT_SUCCESS(Status) && sb2->magic == BTRFS_MAGIC) {
                         crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb2->uuid, (ULONG)sizeof(superblock) - sizeof(sb2->checksum));
@@ -257,7 +257,7 @@ NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
 }
 
 void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
-    PFILE_OBJECT FileObject, mountmgrfo;
+    PFILE_OBJECT fileobj, mountmgrfo;
     PDEVICE_OBJECT devobj, mountmgr;
     NTSTATUS Status;
     STORAGE_DEVICE_NUMBER sdn;
@@ -269,7 +269,7 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
 
     UNUSED(DriverObject);
 
-    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &fileobj, &devobj);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
         return;
@@ -279,7 +279,7 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        ObDereferenceObject(FileObject);
+        ObDereferenceObject(fileobj);
         return;
     }
 
@@ -326,10 +326,10 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     } else
         TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
-    test_vol(mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
+    test_vol(mountmgr, devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
 
 end:
-    ObDereferenceObject(FileObject);
+    ObDereferenceObject(fileobj);
     ObDereferenceObject(mountmgrfo);
 }
 
@@ -493,7 +493,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
 
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     STORAGE_DEVICE_NUMBER sdn;
-    PFILE_OBJECT FileObject, mountmgrfo;
+    PFILE_OBJECT fileobj, mountmgrfo;
     UNICODE_STRING mmdevpath;
     PDEVICE_OBJECT devobj, mountmgr;
     GET_LENGTH_INFORMATION gli;
@@ -501,7 +501,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
 
     TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
 
-    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &FileObject, &devobj);
+    Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &fileobj, &devobj);
     if (!NT_SUCCESS(Status)) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
         return;
@@ -578,12 +578,12 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         goto end;
     }
 
-    test_vol(mountmgr, devobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
+    test_vol(mountmgr, devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
 
     ObDereferenceObject(mountmgrfo);
 
 end:
-    ObDereferenceObject(FileObject);
+    ObDereferenceObject(fileobj);
 }
 
 void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {

@@ -2585,7 +2585,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
+static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFILE_OBJECT fileobj) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
@@ -2601,7 +2601,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = sync_read_phys(devobj, superblock_addrs[0], to_read, (UINT8*)sb, TRUE);
+    Status = sync_read_phys(devobj, fileobj, superblock_addrs[0], to_read, (UINT8*)sb, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("sync_read_phys returned %08x\n", Status);
         ExFreePool(sb);
@@ -2765,7 +2765,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         return Status;
     }
 
-    Status = is_device_part_of_mounted_btrfs_raid(DeviceObject);
+    Status = is_device_part_of_mounted_btrfs_raid(DeviceObject, fileobj);
     if (!NT_SUCCESS(Status)) {
         ERR("is_device_part_of_mounted_btrfs_raid returned %08x\n", Status);
         ObDereferenceObject(fileobj);
@@ -2860,6 +2860,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     RtlZeroMemory(dev, sizeof(device));
 
     dev->devobj = DeviceObject;
+    dev->fileobj = fileobj;
     dev->seeding = FALSE;
     init_device(Vcb, dev, TRUE);
 

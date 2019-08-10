@@ -2424,7 +2424,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     return att;
 }
 
-NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
+NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ PFILE_OBJECT FileObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
                         _Out_writes_bytes_(Length) PUCHAR Buffer, _In_ BOOL override) {
     IO_STATUS_BLOCK IoStatus;
     LARGE_INTEGER Offset;
@@ -2450,6 +2450,7 @@ NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ UINT64 StartingOf
     Irp->Flags |= IRP_NOCACHE;
     IrpSp = IoGetNextIrpStackLocation(Irp);
     IrpSp->MajorFunction = IRP_MJ_READ;
+    IrpSp->FileObject = FileObject;
 
     if (override)
         IrpSp->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
@@ -2516,7 +2517,7 @@ exit:
     return Status;
 }
 
-static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ UINT64 length) {
+static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ UINT64 length) {
     NTSTATUS Status;
     superblock* sb;
     ULONG i, to_read;
@@ -2545,7 +2546,7 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
         if (i > 0 && superblock_addrs[i] + to_read > length)
             break;
 
-        Status = sync_read_phys(device, superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
+        Status = sync_read_phys(device, fileobj, superblock_addrs[i], to_read, (PUCHAR)sb, FALSE);
         if (!NT_SUCCESS(Status)) {
             ERR("Failed to read superblock %u: %08x\n", i, Status);
             ExFreePool(sb);
@@ -2983,6 +2984,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
 
                 RtlZeroMemory(dev, sizeof(device));
                 dev->devobj = vc->devobj;
+                dev->fileobj = vc->fileobj;
                 dev->devitem.device_uuid = *uuid;
                 dev->devitem.dev_id = vc->devid;
                 dev->devitem.num_bytes = vc->size;
@@ -3217,6 +3219,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                                 RtlZeroMemory(dev, sizeof(device));
 
                                 dev->devobj = vc->devobj;
+                                dev->fileobj = vc->fileobj;
                                 RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
                                 dev->seeding = vc->seeding;
                                 init_device(Vcb, dev, FALSE);
@@ -3905,7 +3908,7 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ BOOL*
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = sync_read_phys(DeviceObject, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+    Status = sync_read_phys(DeviceObject, NULL, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("sync_read_phys returned %08x\n", Status);
         goto end;
@@ -3952,7 +3955,7 @@ end:
     return Status;
 }
 
-static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device) {
+static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
@@ -3969,7 +3972,7 @@ static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device) {
         return FALSE;
     }
 
-    Status = sync_read_phys(device, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+    Status = sync_read_phys(device, fileobj, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("Failed to read superblock: %08x\n", Status);
         ExFreePool(sb);
@@ -4005,6 +4008,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
     PDEVICE_OBJECT DeviceToMount, readobj;
+    PFILE_OBJECT fileobj;
     NTSTATUS Status;
     device_extension* Vcb = NULL;
     LIST_ENTRY *le, batchlist;
@@ -4082,7 +4086,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
             vc = CONTAINING_RECORD(pdode->children.Flink, volume_child, list_entry);
 
-            if (!still_has_superblock(vc->devobj)) {
+            if (!still_has_superblock(vc->devobj, vc->fileobj)) {
                 remove_volume_child(vde, vc, FALSE);
 
                 if (pdode->num_children == 0) {
@@ -4109,6 +4113,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         vc = CONTAINING_RECORD(pdode->children.Flink, volume_child, list_entry);
 
         readobj = vc->devobj;
+        fileobj = vc->fileobj;
         readobjsize = vc->size;
 
         vde->device->Characteristics &= ~FILE_DEVICE_SECURE_OPEN;
@@ -4117,6 +4122,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         vc = NULL;
         readobj = DeviceToMount;
+        fileobj = NULL;
 
         Status = dev_ioctl(readobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
                            &gli, sizeof(gli), TRUE, NULL);
@@ -4165,7 +4171,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     DeviceToMount->Flags |= DO_DIRECT_IO;
 
-    Status = read_superblock(Vcb, readobj, readobjsize);
+    Status = read_superblock(Vcb, readobj, fileobj, readobjsize);
     if (!NT_SUCCESS(Status)) {
         if (!IoIsErrorUserInduced(Status))
             Status = STATUS_UNRECOGNIZED_VOLUME;
@@ -4714,7 +4720,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = sync_read_phys(dev->devobj, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
+    Status = sync_read_phys(dev->devobj, dev->fileobj, superblock_addrs[0], to_read, (PUCHAR)sb, TRUE);
     if (!NT_SUCCESS(Status)) {
         ERR("Failed to read superblock: %08x\n", Status);
         ExFreePool(sb);

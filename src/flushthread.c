@@ -5528,7 +5528,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
         stripe = (parity + (offset / sl) + 1) % c->chunk_item->num_stripes;
 
         if (c->devices[stripe]->devobj) {
-            Status = sync_read_phys(c->devices[stripe]->devobj, cis[stripe].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
                                     readlen * Vcb->superblock.sector_size, ps->data + (offset * Vcb->superblock.sector_size), FALSE);
             if (!NT_SUCCESS(Status)) {
                 ERR("sync_read_phys returned %08x\n", Status);
@@ -5552,7 +5552,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                     }
 
                     if (i == 0 || (stripe == 0 && i == 1)) {
-                        Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
                                                 readlen * Vcb->superblock.sector_size, ps->data + (offset * Vcb->superblock.sector_size), FALSE);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08x\n", Status);
@@ -5560,7 +5560,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                             return Status;
                         }
                     } else {
-                        Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
                                                 readlen * Vcb->superblock.sector_size, scratch, FALSE);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08x\n", Status);
@@ -5588,7 +5588,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             for (k = 0; k < c->chunk_item->num_stripes; k++) {
                 if (i != stripe) {
                     if (c->devices[i]->devobj) {
-                        Status = sync_read_phys(c->devices[i]->devobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
                                                 readlen * Vcb->superblock.sector_size, scratch + (k * readlen * Vcb->superblock.sector_size), FALSE);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08x\n", Status);

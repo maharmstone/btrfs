@@ -492,6 +492,7 @@ typedef struct {
 
 typedef struct {
     PDEVICE_OBJECT devobj;
+    PFILE_OBJECT fileobj;
     DEV_ITEM devitem;
     BOOL removable;
     BOOL seeding;
@@ -1131,7 +1132,7 @@ void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 sta
 void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length);
 void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_nums);
 void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs);
-NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
+NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ PFILE_OBJECT FileObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
                         _Out_writes_bytes_(Length) PUCHAR Buffer, _In_ BOOL override);
 NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_STRING pnp_name, _Out_ const GUID** guid);
 void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int error);
