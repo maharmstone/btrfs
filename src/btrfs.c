@@ -5655,8 +5655,6 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     if (!NT_SUCCESS(Status))
         WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
 
-    DeviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
-
     IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
 
     Status = PsCreateSystemThread(&degraded_wait_handle, 0, NULL, NULL, NULL, degraded_wait_thread, NULL);
