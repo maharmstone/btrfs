@@ -738,6 +738,7 @@ static NTSTATUS vol_ioctl_passthrough(volume_device_extension* vde, PIRP Irp) {
 
     IrpSp2->MajorFunction = IrpSp->MajorFunction;
     IrpSp2->MinorFunction = IrpSp->MinorFunction;
+    IrpSp2->FileObject = vc->fileobj;
 
     IrpSp2->Parameters.DeviceIoControl.OutputBufferLength = IrpSp->Parameters.DeviceIoControl.OutputBufferLength;
     IrpSp2->Parameters.DeviceIoControl.InputBufferLength = IrpSp->Parameters.DeviceIoControl.InputBufferLength;
