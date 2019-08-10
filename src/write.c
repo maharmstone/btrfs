@@ -2049,6 +2049,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ UINT64 address, _In_reads_b
 
             IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
             IrpSp->MajorFunction = IRP_MJ_WRITE;
+            IrpSp->FileObject = stripe->device->fileobj;
 
             if (stripe->device->devobj->Flags & DO_BUFFERED_IO) {
                 stripe->Irp->AssociatedIrp.SystemBuffer = MmGetSystemAddressForMdlSafe(stripes[i].mdl, priority);
