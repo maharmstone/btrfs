@@ -6646,6 +6646,7 @@ static void flush_disk_caches(device_extension* Vcb) {
 
             IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
             IrpSp->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+            IrpSp->FileObject = dev->fileobj;
 
             IrpSp->Parameters.DeviceIoControl.IoControlCode = IOCTL_ATA_PASS_THROUGH;
             IrpSp->Parameters.DeviceIoControl.InputBufferLength = sizeof(ATA_PASS_THROUGH_EX);
