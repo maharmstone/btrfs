@@ -732,7 +732,7 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
     NTSTATUS Status;
     LIST_ENTRY* le;
     BOOL need_remove = FALSE;
-    volume_child* vc2;
+    volume_child* vc2 = NULL;
 
     ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
 
