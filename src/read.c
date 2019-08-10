@@ -2532,6 +2532,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ UINT64 addr, _In_ UINT32 len
 
             IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_READ;
+            IrpSp->FileObject = devices[i]->fileobj;
 
             if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
                 context.stripes[i].Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(context.stripes[i].stripeend - context.stripes[i].stripestart), ALLOC_TAG);
