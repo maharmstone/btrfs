@@ -2110,6 +2110,7 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
 
         IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
         IrpSp->MajorFunction = IRP_MJ_WRITE;
+        IrpSp->FileObject = device->fileobj;
 
         if (i == 0)
             IrpSp->Flags |= SL_WRITE_THROUGH;
