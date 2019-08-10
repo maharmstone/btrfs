@@ -731,7 +731,8 @@ NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
 static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING device_name) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    BOOL done = FALSE;
+    BOOL need_remove = FALSE;
+    volume_child* vc2;
 
     ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
 
@@ -766,13 +767,8 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
                             ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
                         else {
                             if (mdn2->NameLength == device_name->Length && RtlCompareMemory(mdn2->Name, device_name->Buffer, device_name->Length) == device_name->Length) {
-                                Status = remove_drive_letter(mountmgr, device_name);
-                                if (!NT_SUCCESS(Status))
-                                    ERR("remove_drive_letter returned %08x\n", Status);
-                                else
-                                    vc->had_drive_letter = TRUE;
-
-                                done = TRUE;
+                                vc2 = vc;
+                                need_remove = TRUE;
                                 break;
                             }
                         }
@@ -787,13 +783,21 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
 
         ExReleaseResourceLite(&pdode->child_lock);
 
-        if (done)
+        if (need_remove)
             break;
 
         le = le->Flink;
     }
 
     ExReleaseResourceLite(&pdo_list_lock);
+
+    if (need_remove) {
+        Status = remove_drive_letter(mountmgr, device_name);
+        if (!NT_SUCCESS(Status))
+            ERR("remove_drive_letter returned %08x\n", Status);
+        else
+            vc2->had_drive_letter = TRUE;
+    }
 }
 
 static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmps) {
