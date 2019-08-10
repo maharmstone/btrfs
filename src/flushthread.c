@@ -406,6 +406,7 @@ static void clean_space_cache(device_extension* Vcb) {
 
                 IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
                 IrpSp->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+                IrpSp->FileObject = dev->fileobj;
 
                 IrpSp->Parameters.DeviceIoControl.IoControlCode = IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES;
                 IrpSp->Parameters.DeviceIoControl.InputBufferLength = datalen;
