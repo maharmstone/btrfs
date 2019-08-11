@@ -1569,7 +1569,7 @@ NTSTATUS vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void add_volume_device(superblock* sb, PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num, ULONG part_num);
+void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num, ULONG part_num);
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
