@@ -3126,6 +3126,10 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_
 
     ExFreePool(apte);
 
+#ifdef DEBUG_TRIM_EMULATION
+    dev->trim = TRUE;
+    Vcb->trim = TRUE;
+#else
     spq.PropertyId = StorageDeviceTrimProperty;
     spq.QueryType = PropertyStandardQuery;
     spq.AdditionalParameters[0] = 0;
@@ -3141,6 +3145,7 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_
         } else
             TRACE("TRIM not supported\n");
     }
+#endif
 
     RtlZeroMemory(dev->stats, sizeof(UINT64) * 5);
 }

@@ -62,6 +62,7 @@
 // #define DEBUG_FLUSH_TIMES
 // #define DEBUG_STATS
 // #define DEBUG_CHUNK_LOCKS
+// #define DEBUG_TRIM_EMULATION
 #define DEBUG_PARANOID
 #endif
 

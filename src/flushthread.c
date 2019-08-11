@@ -274,6 +274,10 @@ typedef struct {
     ATA_PASS_THROUGH_EX apte;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
+#ifdef DEBUG_TRIM_EMULATION
+    PMDL mdl;
+    void* buf;
+#endif
 } ioctl_context_stripe;
 
 typedef struct {
@@ -296,10 +300,102 @@ static NTSTATUS ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID co
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+#ifdef DEBUG_TRIM_EMULATION
+static void trim_emulation(device* dev) {
+    LIST_ENTRY* le;
+    ioctl_context context;
+    unsigned int i = 0, count = 0;
+
+    le = dev->trim_list.Flink;
+    while (le != &dev->trim_list) {
+        count++;
+        le = le->Flink;
+    }
+
+    context.left = count;
+
+    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+
+    context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(ioctl_context_stripe) * context.left, ALLOC_TAG);
+    if (!context.stripes) {
+        ERR("out of memory\n");
+        return;
+    }
+
+    RtlZeroMemory(context.stripes, sizeof(ioctl_context_stripe) * context.left);
+
+    i = 0;
+    le = dev->trim_list.Flink;
+    while (le != &dev->trim_list) {
+        ioctl_context_stripe* stripe = &context.stripes[i];
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        WARN("(%llx, %llx)\n", s->address, s->size);
+
+        stripe->Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
+
+        if (!stripe->Irp) {
+            ERR("IoAllocateIrp failed\n");
+        } else {
+            PIO_STACK_LOCATION IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
+            IrpSp->MajorFunction = IRP_MJ_WRITE;
+            IrpSp->FileObject = dev->fileobj;
+
+            stripe->buf = ExAllocatePoolWithTag(NonPagedPool, (UINT32)s->size, ALLOC_TAG);
+
+            if (!stripe->buf) {
+                ERR("out of memory\n");
+            } else {
+                RtlZeroMemory(stripe->buf, (UINT32)s->size); // FIXME - randomize instead?
+
+                stripe->mdl = IoAllocateMdl(stripe->buf, (UINT32)s->size, FALSE, FALSE, NULL);
+
+                if (!stripe->mdl) {
+                    ERR("IoAllocateMdl failed\n");
+                } else {
+                    MmBuildMdlForNonPagedPool(stripe->mdl);
+
+                    stripe->Irp->MdlAddress = stripe->mdl;
+
+                    IrpSp->Parameters.Write.ByteOffset.QuadPart = s->address;
+                    IrpSp->Parameters.Write.Length = s->size;
+
+                    stripe->Irp->UserIosb = &stripe->iosb;
+
+                    IoSetCompletionRoutine(stripe->Irp, ioctl_completion, &context, TRUE, TRUE, TRUE);
+
+                    IoCallDriver(dev->devobj, stripe->Irp);
+                }
+            }
+        }
+
+        i++;
+
+        le = le->Flink;
+    }
+
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+
+    for (i = 0; i < count; i++) {
+        ioctl_context_stripe* stripe = &context.stripes[i];
+
+        if (stripe->mdl)
+            IoFreeMdl(stripe->mdl);
+
+        if (stripe->buf)
+            ExFreePool(stripe->buf);
+    }
+
+    ExFreePool(context.stripes);
+}
+#endif
+
 static void clean_space_cache(device_extension* Vcb) {
     LIST_ENTRY* le;
     chunk* c;
+#ifndef DEBUG_TRIM_EMULATION
     ULONG num;
+#endif
 
     TRACE("(%p)\n", Vcb);
 
@@ -326,6 +422,7 @@ static void clean_space_cache(device_extension* Vcb) {
     ExReleaseResourceLite(&Vcb->chunk_lock);
 
     if (Vcb->trim && !Vcb->options.no_trim) {
+#ifndef DEBUG_TRIM_EMULATION
         ioctl_context context;
         ULONG total_num;
 
@@ -356,12 +453,16 @@ static void clean_space_cache(device_extension* Vcb) {
         }
 
         RtlZeroMemory(context.stripes, sizeof(ioctl_context_stripe) * context.left);
+#endif
 
         le = Vcb->devices.Flink;
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (dev->devobj && !dev->readonly && dev->trim && dev->num_trim_entries > 0) {
+#ifdef DEBUG_TRIM_EMULATION
+                trim_emulation(dev);
+#else
                 LIST_ENTRY* le2;
                 ioctl_context_stripe* stripe = &context.stripes[num];
                 DEVICE_DATA_SET_RANGE* ranges;
@@ -422,6 +523,7 @@ static void clean_space_cache(device_extension* Vcb) {
                 IoCallDriver(dev->devobj, stripe->Irp);
 
 nextdev:
+#endif
                 while (!IsListEmpty(&dev->trim_list)) {
                     space* s = CONTAINING_RECORD(RemoveHeadList(&dev->trim_list), space, list_entry);
                     ExFreePool(s);
@@ -429,12 +531,15 @@ nextdev:
 
                 dev->num_trim_entries = 0;
 
+#ifndef DEBUG_TRIM_EMULATION
                 num++;
+#endif
             }
 
             le = le->Flink;
         }
 
+#ifndef DEBUG_TRIM_EMULATION
         KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
 
         for (num = 0; num < total_num; num++) {
@@ -443,6 +548,7 @@ nextdev:
         }
 
         ExFreePool(context.stripes);
+#endif
     }
 }
 
