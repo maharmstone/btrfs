@@ -408,8 +408,9 @@ the equivalent of the `compress` flag on Linux.
 flag and even attempt compression of incompressible files. This isn't a good idea, but is the equivalent
 of the `compress-force` flag on Linux.
 
-* `CompressType` (DWORD): set this to 1 to prefer zlib compression, and 2 to prefer lzo compression. The
-default is 0, which uses lzo compression if the incompat flag is set, and zlib otherwise.
+* `CompressType` (DWORD): set this to 1 to prefer zlib compression, 2 to prefer lzo compression, or 3
+to prefer zstd compression. The default is 0, which uses zstd or lzo compression if the incompat flags
+are set, and zlib otherwise.
 
 * `FlushInterval` (DWORD): the interval in seconds between metadata flushes. The default is 30, as on Linux -
 the parameter is called `commit` there.
@@ -436,6 +437,8 @@ when the system last powered down. The default is 0. The equivalent parameter on
 via the usual Plug and Play method.
 
 * `ZstdLevel` (DWORD): Zstd compression level, default 3.
+
+* `NoTrim` (DWORD): set this to 1 to disable TRIM support.
 
 Contact
 -------
