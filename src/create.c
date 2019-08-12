@@ -1695,6 +1695,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
 #ifdef DEBUG_STATS
         time1 = KeQueryPerformanceCounter(NULL);
 #endif
+        {
         BOOL cs = case_sensitive;
 
         if (!cs) {
@@ -1705,6 +1706,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         }
 
         Status = open_fileref_child(Vcb, sf, &nb->us, cs, lastpart, streampart, pooltype, &sf2, Irp);
+        }
 #ifdef DEBUG_STATS
         time2 = KeQueryPerformanceCounter(NULL);
         Vcb->stats.open_fileref_child_calls++;
