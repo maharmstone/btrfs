@@ -3450,9 +3450,12 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
     if (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) {
         LARGE_INTEGER zero;
 
+/*
+// FIXME: open_type exists in open_file() only!
 #ifdef DEBUG_STATS
         open_type = 1;
 #endif
+*/
         if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || is_subvol_readonly(fileref->fcb->subvol, Irp)) {
             free_fileref(fileref);
 
