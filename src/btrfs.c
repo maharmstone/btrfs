@@ -1678,11 +1678,7 @@ void free_fcb(_Inout_ fcb* fcb) {
 #endif
 
 #ifdef DEBUG_FCB_REFCOUNTS
-#ifdef DEBUG_LONG_MESSAGES
     ERR("fcb %p (%s): refcount now %i (subvol %I64x, inode %I64x)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
-#else
-    ERR("fcb %p (%s): refcount now %i (subvol %I64x, inode %I64x)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
-#endif
 #endif
 }
 
