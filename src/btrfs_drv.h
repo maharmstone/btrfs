@@ -57,6 +57,7 @@
 #include "btrfsioctl.h"
 
 #ifdef _DEBUG
+#define DEBUG_EXFREEPOOLWITHTAG
 // #define DEBUG_FCB_REFCOUNTS
 // #define DEBUG_LONG_MESSAGES
 // #define DEBUG_FLUSH_TIMES
@@ -72,6 +73,9 @@
 
 #define ALLOC_TAG 0x7442484D //'MHBt'
 #define ALLOC_TAG_ZLIB 0x7A42484D //'MHBz'
+#ifndef DEBUG_EXFREEPOOLWITHTAG
+#define ExFreePoolWithTag(addr, tag) ExFreePool(addr)
+#endif
 
 #define UID_NOBODY 65534
 #define GID_NOBODY 65534
