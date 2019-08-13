@@ -50,6 +50,13 @@ typedef struct _FILE_STANDARD_INFORMATION {
 
 #define FileStandardInformation (FILE_INFORMATION_CLASS)5
 
+typedef struct _FILE_FS_SIZE_INFORMATION {
+    LARGE_INTEGER TotalAllocationUnits;
+    LARGE_INTEGER AvailableAllocationUnits;
+    ULONG SectorsPerAllocationUnit;
+    ULONG BytesPerSector;
+} FILE_FS_SIZE_INFORMATION, *PFILE_FS_SIZE_INFORMATION;
+
 #endif
 
 HRESULT __stdcall BtrfsPropSheet::QueryInterface(REFIID riid, void **ppObj) {
@@ -270,6 +277,18 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
         if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
             if (filesize.QuadPart != 0)
                 can_change_nocow = false;
+        }
+
+        {
+            FILE_FS_SIZE_INFORMATION ffsi;
+
+            Status = NtQueryVolumeInformationFile(h, &iosb, &ffsi, sizeof(ffsi), FileFsSizeInformation);
+
+            if (NT_SUCCESS(Status))
+                sector_size = ffsi.BytesPerSector;
+
+            if (sector_size == 0)
+                sector_size = 4096;
         }
     } else
         return E_FAIL;
@@ -701,7 +720,6 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     if (cr != old_text)
         SetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr.c_str());
 
-    uint32_t sector_size = 4096; // FIXME!!!
     uint64_t extent_size = (allocsize - sparsesize - sizes[0]) / sector_size;
 
     if (num_extents == 0 || extent_size <= 1)

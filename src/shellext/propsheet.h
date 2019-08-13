@@ -108,6 +108,7 @@ public:
         sizes[0] = sizes[1] = sizes[2] = sizes[3] = sizes[4] = 0;
         totalsize = allocsize = sparsesize = 0;
         num_extents = 0;
+        sector_size = 0;
         size_format[0] = 0;
         cr_format[0] = 0;
         frag_format[0] = 0;
@@ -185,6 +186,7 @@ private:
     uint64_t sizes[5], totalsize, allocsize, sparsesize, num_extents;
     deque<wstring> search_list;
     wstring filename;
+    uint32_t sector_size;
 
     void apply_changes_file(HWND hDlg, const wstring& fn);
     HRESULT check_file(const wstring& fn, UINT i, UINT num_files, UINT* sv);
