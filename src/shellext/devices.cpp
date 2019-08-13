@@ -37,7 +37,6 @@ static wstring get_mountdev_name(const nt_handle& h ) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     MOUNTDEV_NAME mdn, *mdn2;
-    ULONG mdnsize;
     wstring name;
 
     Status = NtDeviceIoControlFile(h, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
@@ -45,12 +44,12 @@ static wstring get_mountdev_name(const nt_handle& h ) {
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
         return L"";
 
-    mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    size_t mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
 
     mdn2 = (MOUNTDEV_NAME*)malloc(mdnsize);
 
     Status = NtDeviceIoControlFile(h, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
-                                   nullptr, 0, mdn2, mdnsize);
+                                   nullptr, 0, mdn2, (ULONG)mdnsize);
     if (!NT_SUCCESS(Status)) {
         free(mdn2);
         return L"";
@@ -198,7 +197,7 @@ static void find_devices(HWND hwnd, const GUID* guid, const mountmgr& mm, vector
                                 if (ss > 0) {
                                     WCHAR* desc3 = (WCHAR*)malloc(ss * sizeof(WCHAR));
 
-                                    if (MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, desc2.c_str(), -1, desc3, ss * sizeof(WCHAR)))
+                                    if (MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, desc2.c_str(), -1, desc3, (int)(ss * sizeof(WCHAR))))
                                         dev.friendly_name = desc3;
 
                                     free(desc3);
@@ -458,7 +457,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
             name += L")";
 
             tis.itemex.pszText = (WCHAR*)name.c_str();
-            tis.itemex.cchTextMax = name.length();
+            tis.itemex.cchTextMax = (int)name.length();
             tis.itemex.lParam = (LPARAM)&device_list[i];
 
             item = (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&tis);

@@ -304,7 +304,7 @@ void BtrfsContextMenu::get_uac_icon() {
 
                 hr = Create32BitHBITMAP(nullptr, &sz, (void**)&buf, &uacicon);
                 if (SUCCEEDED(hr)) {
-                    UINT stride = cx * sizeof(DWORD);
+                    UINT stride = (UINT)(cx * sizeof(DWORD));
                     UINT buflen = cy * stride;
                     bitmap->CopyPixels(nullptr, stride, buflen, buf);
                 }
@@ -443,8 +443,6 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
         if (NT_SUCCESS(Status) && bgfi.inode == 0x100 && !bgfi.top) {
             wstring subvolname, parpath, searchpath, temp1, name, nameorig;
             win_handle h2;
-            btrfs_create_snapshot* bcs;
-            ULONG namelen;
             WIN32_FIND_DATAW wfd;
             SYSTEMTIME time;
 
@@ -483,16 +481,17 @@ static void create_snapshot(HWND hwnd, const wstring& fn) {
                 } while (fff != INVALID_HANDLE_VALUE);
             }
 
-            namelen = name.length() * sizeof(WCHAR);
+            size_t namelen = name.length() * sizeof(WCHAR);
 
-            bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - 1 + namelen);
+            auto bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - 1 + namelen);
             bcs->readonly = false;
             bcs->posix = false;
             bcs->subvol = h;
             bcs->namelen = (uint16_t)namelen;
             memcpy(bcs->name, name.c_str(), namelen);
 
-            Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - 1 + namelen, nullptr, 0);
+            Status = NtFsControlFile(h2, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs,
+                                     (ULONG)(sizeof(btrfs_create_snapshot) - 1 + namelen), nullptr, 0);
 
             if (!NT_SUCCESS(Status))
                 throw ntstatus_error(Status);
@@ -591,7 +590,8 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bcs->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
 
-        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen, nullptr, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs,
+                                 (ULONG)(sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + bcs->namelen), nullptr, 0);
 
         free(bcs);
 
@@ -606,14 +606,13 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
         win_handle dirh;
-        ULONG bmnsize;
         btrfs_mknod* bmn;
 
         dirh = CreateFileW(dir, FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE)
             throw last_error(GetLastError());
 
-        bmnsize = offsetof(btrfs_mknod, name[0]) + (wcslen(name) * sizeof(WCHAR));
+        size_t bmnsize = offsetof(btrfs_mknod, name[0]) + (wcslen(name) * sizeof(WCHAR));
         bmn = (btrfs_mknod*)malloc(bmnsize);
 
         bmn->inode = 0;
@@ -622,7 +621,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         bmn->namelen = (uint16_t)(wcslen(name) * sizeof(WCHAR));
         memcpy(bmn->name, name, bmn->namelen);
 
-        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, (ULONG)bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             free(bmn);
             throw ntstatus_error(Status);
@@ -735,7 +734,6 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
             if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
                 reparse_header rh;
-                ULONG rplen;
                 uint8_t* rp;
 
                 if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, &rh, sizeof(reparse_header), &bytesret, nullptr)) {
@@ -743,13 +741,13 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                         throw last_error(GetLastError());
                 }
 
-                rplen = sizeof(reparse_header) + rh.ReparseDataLength;
+                size_t rplen = sizeof(reparse_header) + rh.ReparseDataLength;
                 rp = (uint8_t*)malloc(rplen);
 
-                if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, rplen, &bytesret, nullptr))
+                if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, (ULONG)rplen, &bytesret, nullptr))
                     throw last_error(GetLastError());
 
-                if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, nullptr, 0, &bytesret, nullptr))
+                if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, (ULONG)rplen, nullptr, 0, &bytesret, nullptr))
                     throw last_error(GetLastError());
 
                 free(rp);
@@ -881,7 +879,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
             xa2 = xa;
             while (xa2->valuelen > 0) {
                 Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
-                                        offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
+                                         (ULONG)(offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen), nullptr, 0);
                 if (!NT_SUCCESS(Status)) {
                     free(xa);
                     throw ntstatus_error(Status);
@@ -979,7 +977,6 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 win_handle h;
                 IO_STATUS_BLOCK iosb;
                 NTSTATUS Status;
-                ULONG bcslen;
                 wstring name, nameorig, searchpath;
                 btrfs_create_subvol* bcs;
                 WIN32_FIND_DATAW wfd;
@@ -1011,7 +1008,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                     }
                 }
 
-                bcslen = offsetof(btrfs_create_subvol, name[0]) + (name.length() * sizeof(WCHAR));
+                size_t bcslen = offsetof(btrfs_create_subvol, name[0]) + (name.length() * sizeof(WCHAR));
                 bcs = (btrfs_create_subvol*)malloc(bcslen);
 
                 bcs->readonly = false;
@@ -1019,7 +1016,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                 bcs->namelen = (uint16_t)(name.length() * sizeof(WCHAR));
                 memcpy(bcs->name, name.c_str(), name.length() * sizeof(WCHAR));
 
-                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
+                Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, (ULONG)bcslen, nullptr, 0);
 
                 free(bcs);
 
@@ -1282,7 +1279,6 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
     // if subvol, do snapshot instead
     if (bii.inode == SUBVOL_ROOT_INODE) {
-        ULONG bcslen;
         btrfs_create_snapshot* bcs;
         win_handle dirh;
 
@@ -1290,13 +1286,13 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         if (dirh == INVALID_HANDLE_VALUE)
             throw last_error(GetLastError());
 
-        bcslen = offsetof(btrfs_create_snapshot, name[0]) + (destname.length() * sizeof(WCHAR));
+        size_t bcslen = offsetof(btrfs_create_snapshot, name[0]) + (destname.length() * sizeof(WCHAR));
         bcs = (btrfs_create_snapshot*)malloc(bcslen);
         bcs->subvol = source;
         bcs->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
 
-        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, (ULONG)bcslen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             free(bcs);
             throw ntstatus_error(Status);
@@ -1312,14 +1308,13 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
         win_handle dirh;
-        ULONG bmnsize;
         btrfs_mknod* bmn;
 
         dirh = CreateFileW(destdir.c_str(), FILE_ADD_FILE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (dirh == INVALID_HANDLE_VALUE)
             throw last_error(GetLastError());
 
-        bmnsize = offsetof(btrfs_mknod, name[0]) + (destname.length() * sizeof(WCHAR));
+        size_t bmnsize = offsetof(btrfs_mknod, name[0]) + (destname.length() * sizeof(WCHAR));
         bmn = (btrfs_mknod*)malloc(bmnsize);
 
         bmn->inode = 0;
@@ -1328,7 +1323,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         bmn->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bmn->name, destname.c_str(), bmn->namelen);
 
-        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
+        Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, (ULONG)bmnsize, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             free(bmn);
             throw ntstatus_error(Status);
@@ -1395,7 +1390,6 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
             if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
                 reparse_header rh;
-                ULONG rplen;
                 uint8_t* rp;
 
                 if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, &rh, sizeof(reparse_header), &bytesret, nullptr)) {
@@ -1403,14 +1397,14 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                         throw last_error(GetLastError());
                 }
 
-                rplen = sizeof(reparse_header) + rh.ReparseDataLength;
+                size_t rplen = sizeof(reparse_header) + rh.ReparseDataLength;
                 rp = (uint8_t*)malloc(rplen);
 
                 try {
-                    if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, rplen, &bytesret, nullptr))
+                    if (!DeviceIoControl(source, FSCTL_GET_REPARSE_POINT, nullptr, 0, rp, (DWORD)rplen, &bytesret, nullptr))
                         throw last_error(GetLastError());
 
-                    if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, rplen, nullptr, 0, &bytesret, nullptr))
+                    if (!DeviceIoControl(dest, FSCTL_SET_REPARSE_POINT, rp, (DWORD)rplen, nullptr, 0, &bytesret, nullptr))
                         throw last_error(GetLastError());
                 } catch (...) {
                     free(rp);
@@ -1546,7 +1540,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
             xa2 = xa;
             while (xa2->valuelen > 0) {
                 Status = NtFsControlFile(dest, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, xa2,
-                                        offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen, nullptr, 0);
+                                         (ULONG)(offsetof(btrfs_set_xattr, data[0]) + xa2->namelen + xa2->valuelen), nullptr, 0);
                 if (!NT_SUCCESS(Status)) {
                     free(xa);
                     throw ntstatus_error(Status);

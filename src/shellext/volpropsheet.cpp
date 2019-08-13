@@ -679,7 +679,7 @@ void BtrfsVolPropSheet::RefreshDevList(HWND devlist) {
 
         RtlZeroMemory(&lvi, sizeof(LVITEMW));
         lvi.mask = LVIF_TEXT | LVIF_PARAM;
-        lvi.iItem = SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
+        lvi.iItem = (int)SendMessageW(devlist, LVM_GETITEMCOUNT, 0, 0);
         lvi.lParam = (LPARAM)bd->dev_id;
 
         s = to_wstring(bd->dev_id);
@@ -1001,19 +1001,18 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             {
                                 WCHAR sel[MAX_PATH];
                                 HWND devlist;
-                                int index;
                                 LVITEMW lvi;
 
                                 devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
-                                index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+                                auto index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 
                                 if (index == -1)
                                     return true;
 
                                 RtlZeroMemory(&lvi, sizeof(LVITEMW));
                                 lvi.mask = LVIF_TEXT;
-                                lvi.iItem = index;
+                                lvi.iItem = (int)index;
                                 lvi.iSubItem = 0;
                                 lvi.pszText = sel;
                                 lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
@@ -1029,19 +1028,18 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                                 WCHAR modfn[MAX_PATH], sel[MAX_PATH], sel2[MAX_PATH];
                                 HWND devlist;
                                 SHELLEXECUTEINFOW sei;
-                                int index;
                                 LVITEMW lvi;
 
                                 devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
-                                index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+                                auto index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 
                                 if (index == -1)
                                     return true;
 
                                 RtlZeroMemory(&lvi, sizeof(LVITEMW));
                                 lvi.mask = LVIF_TEXT;
-                                lvi.iItem = index;
+                                lvi.iItem = (int)index;
                                 lvi.iSubItem = 0;
                                 lvi.pszText = sel;
                                 lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);
@@ -1091,7 +1089,6 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                             case IDC_DEVICE_RESIZE:
                             {
                                 HWND devlist;
-                                int index;
                                 LVITEMW lvi;
                                 wstring t;
                                 WCHAR modfn[MAX_PATH], sel[100];
@@ -1099,14 +1096,14 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                                 devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
-                                index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+                                auto index = SendMessageW(devlist, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 
                                 if (index == -1)
                                     return true;
 
                                 RtlZeroMemory(&lvi, sizeof(LVITEMW));
                                 lvi.mask = LVIF_TEXT;
-                                lvi.iItem = index;
+                                lvi.iItem = (int)index;
                                 lvi.iSubItem = 0;
                                 lvi.pszText = sel;
                                 lvi.cchTextMax = sizeof(sel) / sizeof(WCHAR);

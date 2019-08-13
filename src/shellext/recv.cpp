@@ -80,8 +80,8 @@ static const uint32_t crctable[] = {
 #define ALIGN_MASK      (ALIGN_SIZE - 1)
 #define CALC_CRC(op, crc, type, buf, len)                               \
 do {                                                                  \
-    for (; (len) >= sizeof (type); (len) -= sizeof(type), buf += sizeof (type)) { \
-        (crc) = op((crc), *(type *) (buf));                               \
+    for (; (len) >= sizeof (type); (len) -= (ULONG)sizeof(type), buf += sizeof (type)) { \
+        (crc) = (uint32_t)op((crc), *(type *) (buf));                               \
     }                                                                   \
 } while(0)
 
@@ -143,7 +143,7 @@ static uint32_t calc_crc32c(uint32_t seed, uint8_t* msg, ULONG msglen) {
 }
 
 bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len) {
-    ULONG off = 0;
+    size_t off = 0;
 
     while (off < datalen) {
         btrfs_send_tlv* tlv = (btrfs_send_tlv*)(data + off);
@@ -168,7 +168,7 @@ void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
     string name;
     BTRFS_UUID* uuid;
     uint64_t* gen;
-    ULONG uuidlen, genlen, bcslen;
+    ULONG uuidlen, genlen;
     btrfs_create_subvol* bcs;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -200,7 +200,7 @@ void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
 
     auto nameu = utf8_to_utf16(name);
 
-    bcslen = offsetof(btrfs_create_subvol, name[0]) + (nameu.length() * sizeof(WCHAR));
+    size_t bcslen = offsetof(btrfs_create_subvol, name[0]) + (nameu.length() * sizeof(WCHAR));
     bcs = (btrfs_create_subvol*)malloc(bcslen);
 
     bcs->readonly = true;
@@ -208,7 +208,7 @@ void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
     bcs->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
     memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
-    Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
+    Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, (ULONG)bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status))
         throw string_error(IDS_RECV_CREATE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
@@ -227,7 +227,7 @@ void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, co
     if (master == INVALID_HANDLE_VALUE)
         throw string_error(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
-    Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, nullptr, 0);
+    Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, (ULONG)bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status))
         throw string_error(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
@@ -258,13 +258,14 @@ void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
     string name;
     BTRFS_UUID *uuid, *parent_uuid;
     uint64_t *gen, *parent_transid;
-    ULONG uuidlen, genlen, paruuidlen, partransidlen, bcslen;
+    ULONG uuidlen, genlen, paruuidlen, partransidlen;
     btrfs_create_snapshot* bcs;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     wstring parpath;
     btrfs_find_subvol bfs;
     WCHAR parpathw[MAX_PATH], volpathw[MAX_PATH];
+    size_t bcslen;
 
     {
         char* namebuf;
@@ -339,7 +340,7 @@ void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
         bcs->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
         memcpy(bcs->name, nameu.c_str(), bcs->namelen);
 
-        Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
+        Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, (ULONG)bcslen, nullptr, 0);
         if (!NT_SUCCESS(Status))
             throw string_error(IDS_RECV_CREATE_SNAPSHOT_FAILED, Status, format_ntstatus(Status).c_str());
     }
@@ -359,7 +360,7 @@ void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
     if (master == INVALID_HANDLE_VALUE)
         throw string_error(IDS_RECV_CANT_OPEN_PATH, subvolpath.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
-    Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, bcslen, nullptr, 0);
+    Status = NtFsControlFile(master, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RESERVE_SUBVOL, bcs, (ULONG)bcslen, nullptr, 0);
     if (!NT_SUCCESS(Status))
         throw string_error(IDS_RECV_RESERVE_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
 
@@ -378,7 +379,7 @@ void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
 
 void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t *inode, *rdev = nullptr, *mode = nullptr;
-    ULONG inodelen, bmnsize;
+    ULONG inodelen;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     btrfs_mknod* bmn;
@@ -424,7 +425,7 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         pathlinku = utf8_to_utf16(string(pathlink, pathlinklen));
     }
 
-    bmnsize = sizeof(btrfs_mknod) - sizeof(WCHAR) + (nameu.length() * sizeof(WCHAR));
+    size_t bmnsize = sizeof(btrfs_mknod) - sizeof(WCHAR) + (nameu.length() * sizeof(WCHAR));
     bmn = (btrfs_mknod*)malloc(bmnsize);
 
     bmn->inode = *inode;
@@ -444,7 +445,7 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     bmn->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
     memcpy(bmn->name, nameu.c_str(), bmn->namelen);
 
-    Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, bmnsize, nullptr, 0);
+    Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_MKNOD, bmn, (ULONG)bmnsize, nullptr, 0);
     if (!NT_SUCCESS(Status)) {
         free(bmn);
         throw string_error(IDS_RECV_MKNOD_FAILED, Status, format_ntstatus(Status).c_str());
@@ -454,10 +455,9 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
     if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
         REPARSE_DATA_BUFFER* rdb;
-        ULONG rdblen;
         btrfs_set_inode_info bsii;
 
-        rdblen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer[0]) + (2 * pathlinku.length() * sizeof(WCHAR));
+        size_t rdblen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer[0]) + (2 * pathlinku.length() * sizeof(WCHAR));
 
         if (rdblen >= 0x10000)
             throw string_error(IDS_RECV_PATH_TOO_LONG, funcname);
@@ -484,7 +484,7 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
             throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, nameu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
         }
 
-        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_SET_REPARSE_POINT, rdb, rdblen, nullptr, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_SET_REPARSE_POINT, rdb, (ULONG)rdblen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             free(rdb);
             throw string_error(IDS_RECV_SET_REPARSE_POINT_FAILED, Status, format_ntstatus(Status).c_str());
@@ -698,7 +698,7 @@ void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
     } else {
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
-        ULONG bsxalen, perms = FILE_WRITE_ATTRIBUTES;
+        ULONG perms = FILE_WRITE_ATTRIBUTES;
         btrfs_set_xattr* bsxa;
 
         if (xattrname == EA_NTACL)
@@ -711,7 +711,7 @@ void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         if (h == INVALID_HANDLE_VALUE)
             throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
-        bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrname.length() + xattrdatalen;
+        size_t bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrname.length() + xattrdatalen;
         bsxa = (btrfs_set_xattr*)malloc(bsxalen);
         if (!bsxa)
             throw string_error(IDS_OUT_OF_MEMORY);
@@ -721,7 +721,7 @@ void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
         memcpy(bsxa->data, xattrname.c_str(), xattrname.length());
         memcpy(&bsxa->data[xattrname.length()], xattrdata, xattrdatalen);
 
-        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, nullptr, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, (ULONG)bsxalen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             free(bsxa);
             throw string_error(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());
@@ -781,7 +781,7 @@ void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
     } else {
         IO_STATUS_BLOCK iosb;
         NTSTATUS Status;
-        ULONG bsxalen, perms = FILE_WRITE_ATTRIBUTES;
+        ULONG perms = FILE_WRITE_ATTRIBUTES;
         btrfs_set_xattr* bsxa;
 
         if (xattrname == EA_NTACL)
@@ -794,7 +794,7 @@ void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
         if (h == INVALID_HANDLE_VALUE)
             throw string_error(IDS_RECV_CANT_OPEN_FILE, funcname, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
-        bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrname.length();
+        size_t bsxalen = offsetof(btrfs_set_xattr, data[0]) + xattrname.length();
         bsxa = (btrfs_set_xattr*)malloc(bsxalen);
         if (!bsxa)
             throw string_error(IDS_OUT_OF_MEMORY);
@@ -803,7 +803,7 @@ void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
         bsxa->valuelen = 0;
         memcpy(bsxa->data, xattrname.c_str(), xattrname.length());
 
-        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, bsxalen, nullptr, 0);
+        Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_XATTR, bsxa, (ULONG)bsxalen, nullptr, 0);
         if (!NT_SUCCESS(Status)) {
             free(bsxa);
             throw string_error(IDS_RECV_SETXATTR_FAILED, Status, format_ntstatus(Status).c_str());

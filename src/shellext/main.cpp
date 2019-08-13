@@ -290,7 +290,7 @@ static void write_reg_key(HKEY root, const wstring& keyname, const WCHAR* val, c
     if (l != ERROR_SUCCESS)
         throw string_error(IDS_REGCREATEKEY_FAILED, l);
 
-    l = RegSetValueExW(hk, val, 0, REG_SZ, (const BYTE*)data.c_str(), (data.length() + 1) * sizeof(WCHAR));
+    l = RegSetValueExW(hk, val, 0, REG_SZ, (const BYTE*)data.c_str(), (DWORD)((data.length() + 1) * sizeof(WCHAR)));
     if (l != ERROR_SUCCESS)
         throw string_error(IDS_REGSETVALUEEX_FAILED, l);
 
@@ -484,7 +484,6 @@ static void create_subvol(const wstring& fn) {
     size_t found = fn.rfind(L"\\");
     wstring path, file;
     win_handle h;
-    ULONG bcslen;
     btrfs_create_subvol* bcs;
     IO_STATUS_BLOCK iosb;
 
@@ -502,7 +501,7 @@ static void create_subvol(const wstring& fn) {
     if (h == INVALID_HANDLE_VALUE)
         return;
 
-    bcslen = offsetof(btrfs_create_subvol, name[0]) + (file.length() * sizeof(WCHAR));
+    size_t bcslen = offsetof(btrfs_create_subvol, name[0]) + (file.length() * sizeof(WCHAR));
     bcs = (btrfs_create_subvol*)malloc(bcslen);
 
     bcs->readonly = false;
@@ -510,7 +509,7 @@ static void create_subvol(const wstring& fn) {
     bcs->namelen = (uint16_t)(file.length() * sizeof(WCHAR));
     memcpy(bcs->name, file.c_str(), bcs->namelen);
 
-    NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, bcslen, nullptr, 0);
+    NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, (ULONG)bcslen, nullptr, 0);
 }
 
 extern "C" void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -526,7 +525,6 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
     size_t found = fn.rfind(L"\\");
     wstring path, file;
     win_handle h, src;
-    ULONG bcslen;
     btrfs_create_snapshot* bcs;
     IO_STATUS_BLOCK iosb;
 
@@ -548,7 +546,7 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
     if (h == INVALID_HANDLE_VALUE)
         return;
 
-    bcslen = offsetof(btrfs_create_snapshot, name[0]) + (file.length() * sizeof(WCHAR));
+    size_t bcslen = offsetof(btrfs_create_snapshot, name[0]) + (file.length() * sizeof(WCHAR));
     bcs = (btrfs_create_snapshot*)malloc(bcslen);
 
     bcs->readonly = false;
@@ -557,7 +555,7 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
     memcpy(bcs->name, file.c_str(), bcs->namelen);
     bcs->subvol = src;
 
-    NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, bcslen, nullptr, 0);
+    NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, (ULONG)bcslen, nullptr, 0);
 }
 
 extern "C" void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
@@ -600,7 +598,7 @@ static string utf16_to_utf8(const wstring_view& utf16) {
     string utf8;
     char* buf;
 
-    Status = RtlUnicodeToUTF8N(nullptr, 0, &utf8len, utf16.data(), utf16.length() * sizeof(WCHAR));
+    Status = RtlUnicodeToUTF8N(nullptr, 0, &utf8len, utf16.data(), (ULONG)(utf16.length() * sizeof(WCHAR)));
     if (!NT_SUCCESS(Status))
         throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
 
@@ -609,7 +607,7 @@ static string utf16_to_utf8(const wstring_view& utf16) {
     if (!buf)
         throw string_error(IDS_OUT_OF_MEMORY);
 
-    Status = RtlUnicodeToUTF8N(buf, utf8len, &utf8len, utf16.data(), utf16.length() * sizeof(WCHAR));
+    Status = RtlUnicodeToUTF8N(buf, utf8len, &utf8len, utf16.data(), (ULONG)(utf16.length() * sizeof(WCHAR)));
     if (!NT_SUCCESS(Status)) {
         free(buf);
         throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
@@ -662,7 +660,7 @@ wstring utf8_to_utf16(const string_view& utf8) {
     wstring ret;
     WCHAR* buf;
 
-    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.data(), utf8.length());
+    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.data(), (ULONG)utf8.length());
     if (!NT_SUCCESS(Status))
         throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
 
@@ -671,7 +669,7 @@ wstring utf8_to_utf16(const string_view& utf8) {
     if (!buf)
         throw string_error(IDS_OUT_OF_MEMORY);
 
-    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.data(), utf8.length());
+    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.data(), (ULONG)utf8.length());
     if (!NT_SUCCESS(Status)) {
         free(buf);
         throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());

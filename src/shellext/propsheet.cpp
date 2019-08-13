@@ -1178,7 +1178,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                         case CBN_SELCHANGE: {
                             switch (LOWORD(wParam)) {
                                 case IDC_COMPRESS_TYPE: {
-                                    int sel = SendMessageW(GetDlgItem(hwndDlg, LOWORD(wParam)), CB_GETCURSEL, 0, 0);
+                                    auto sel = SendMessageW(GetDlgItem(hwndDlg, LOWORD(wParam)), CB_GETCURSEL, 0, 0);
 
                                     if (bps->min_compression_type != bps->max_compression_type) {
                                         if (sel == 0)

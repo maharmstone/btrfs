@@ -31,7 +31,7 @@ DWORD BtrfsSend::Thread() {
         btrfs_send_subvol* bss;
         btrfs_send_header header;
         btrfs_send_command end;
-        ULONG bss_size, i;
+        ULONG i;
 
         buf = (char*)malloc(SEND_BUFFER_LEN);
 
@@ -41,7 +41,7 @@ DWORD BtrfsSend::Thread() {
                 throw string_error(IDS_SEND_CANT_OPEN_DIR, subvol.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 
             try {
-                bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
+                size_t bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
                 bss = (btrfs_send_subvol*)malloc(bss_size);
                 memset(bss, 0, bss_size);
 
@@ -61,7 +61,7 @@ DWORD BtrfsSend::Thread() {
                 } else
                     bss->parent = nullptr;
 
-                bss->num_clones = clones.size();
+                bss->num_clones = (ULONG)clones.size();
 
                 for (i = 0; i < bss->num_clones; i++) {
                     HANDLE h;
@@ -83,7 +83,7 @@ DWORD BtrfsSend::Thread() {
                     bss->clones[i] = h;
                 }
 
-                Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, nullptr, 0);
+                Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, (ULONG)bss_size, nullptr, 0);
 
                 for (i = 0; i < bss->num_clones; i++) {
                     CloseHandle(bss->clones[i]);
@@ -138,7 +138,7 @@ DWORD BtrfsSend::Thread() {
                         Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, nullptr, 0, buf, SEND_BUFFER_LEN);
 
                         if (NT_SUCCESS(Status)) {
-                            if (!WriteFile(stream, buf, iosb.Information, nullptr, nullptr))
+                            if (!WriteFile(stream, buf, (DWORD)iosb.Information, nullptr, nullptr))
                                 throw string_error(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
                         }
                     } while (NT_SUCCESS(Status));
@@ -227,7 +227,6 @@ static DWORD WINAPI send_thread(LPVOID lpParameter) {
 void BtrfsSend::StartSend(HWND hwnd) {
     wstring s;
     HWND cl;
-    ULONG num_clones;
 
     if (started)
         return;
@@ -264,16 +263,13 @@ void BtrfsSend::StartSend(HWND hwnd) {
     clones.clear();
 
     cl = GetDlgItem(hwnd, IDC_CLONE_LIST);
-    num_clones = SendMessageW(cl, LB_GETCOUNT, 0, 0);
+    auto num_clones = SendMessageW(cl, LB_GETCOUNT, 0, 0);
 
-    if ((LRESULT)num_clones != LB_ERR) {
-        ULONG i;
-
-        for (i = 0; i < num_clones; i++) {
+    if (num_clones != LB_ERR) {
+        for (unsigned int i = 0; i < (unsigned int)num_clones; i++) {
             WCHAR* t;
-            ULONG len;
 
-            len = SendMessageW(cl, LB_GETTEXTLEN, i, 0);
+            auto len = SendMessageW(cl, LB_GETTEXTLEN, i, 0);
             t = (WCHAR*)malloc((len + 1) * sizeof(WCHAR));
 
             SendMessageW(cl, LB_GETTEXT, i, (LPARAM)t);
@@ -555,7 +551,7 @@ void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
 static void send_subvol(const wstring& subvol, const wstring& file, const wstring& parent, const vector<wstring>& clones) {
     char* buf;
     win_handle dirh, stream;
-    ULONG bss_size, i;
+    ULONG i;
     btrfs_send_subvol* bss;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
@@ -574,7 +570,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
             throw last_error(GetLastError());
 
         try {
-            bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
+            size_t bss_size = offsetof(btrfs_send_subvol, clones[0]) + (clones.size() * sizeof(HANDLE));
             bss = (btrfs_send_subvol*)malloc(bss_size);
             memset(bss, 0, bss_size);
 
@@ -589,7 +585,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
             } else
                 bss->parent = nullptr;
 
-            bss->num_clones = clones.size();
+            bss->num_clones = (ULONG)clones.size();
 
             for (i = 0; i < bss->num_clones; i++) {
                 HANDLE h;
@@ -611,7 +607,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
                 bss->clones[i] = h;
             }
 
-            Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, bss_size, nullptr, 0);
+            Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SEND_SUBVOL, bss, (ULONG)bss_size, nullptr, 0);
 
             for (i = 0; i < bss->num_clones; i++) {
                 CloseHandle(bss->clones[i]);
@@ -632,7 +628,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
                 Status = NtFsControlFile(dirh, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_READ_SEND_BUFFER, nullptr, 0, buf, SEND_BUFFER_LEN);
 
                 if (NT_SUCCESS(Status))
-                    WriteFile(stream, buf, iosb.Information, nullptr, nullptr);
+                    WriteFile(stream, buf, (DWORD)iosb.Information, nullptr, nullptr);
             } while (NT_SUCCESS(Status));
 
             if (Status != STATUS_END_OF_FILE)
