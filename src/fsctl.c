@@ -1263,6 +1263,31 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
 
         if (!extents_inline && !old_style && sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) > last_end)
             bii->sparse_size += sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size) - last_end;
+
+        if (length >= offsetof(btrfs_inode_info, num_extents) + sizeof(((btrfs_inode_info*)NULL)->num_extents)) {
+            LIST_ENTRY* le = fcb->extents.Flink;
+            EXTENT_DATA2* last_ed2 = NULL;
+
+            bii->num_extents = 0;
+
+            while (le != &fcb->extents) {
+                extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+                if (!ext->ignore && ext->extent_data.type != EXTENT_TYPE_INLINE) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+
+                    if (ed2->size != 0) {
+                        if (!last_ed2 || ed2->offset != last_ed2->offset + last_ed2->num_bytes)
+                            bii->num_extents++;
+
+                        last_ed2 = ed2;
+                    } else
+                        last_ed2 = NULL;
+                }
+
+                le = le->Flink;
+            }
+        }
     }
 
     switch (fcb->prop_compression) {
