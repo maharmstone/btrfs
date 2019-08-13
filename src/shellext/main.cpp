@@ -594,6 +594,36 @@ void command_line_to_args(LPWSTR cmdline, vector<wstring>& args) {
     LocalFree(l);
 }
 
+static string utf16_to_utf8(const wstring_view& utf16) {
+    NTSTATUS Status;
+    ULONG utf8len;
+    string utf8;
+    char* buf;
+
+    Status = RtlUnicodeToUTF8N(nullptr, 0, &utf8len, utf16.data(), utf16.length() * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status))
+        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
+
+    buf = (char*)malloc(utf8len + sizeof(char));
+
+    if (!buf)
+        throw string_error(IDS_OUT_OF_MEMORY);
+
+    Status = RtlUnicodeToUTF8N(buf, utf8len, &utf8len, utf16.data(), utf16.length() * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status)) {
+        free(buf);
+        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
+    }
+
+    buf[utf8len] = 0;
+
+    utf8 = buf;
+
+    free(buf);
+
+    return utf8;
+}
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
@@ -619,19 +649,20 @@ string_error::string_error(int resno, ...) {
 
     va_end(args);
 
-    utf16_to_utf8(s, msg);
+    msg = utf16_to_utf8(s);
 }
 
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
 
-void utf8_to_utf16(const string& utf8, wstring& utf16) {
+wstring utf8_to_utf16(const string_view& utf8) {
     NTSTATUS Status;
     ULONG utf16len;
+    wstring ret;
     WCHAR* buf;
 
-    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.c_str(), utf8.length());
+    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.data(), utf8.length());
     if (!NT_SUCCESS(Status))
         throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
 
@@ -640,7 +671,7 @@ void utf8_to_utf16(const string& utf8, wstring& utf16) {
     if (!buf)
         throw string_error(IDS_OUT_OF_MEMORY);
 
-    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.c_str(), utf8.length());
+    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.data(), utf8.length());
     if (!NT_SUCCESS(Status)) {
         free(buf);
         throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
@@ -648,36 +679,11 @@ void utf8_to_utf16(const string& utf8, wstring& utf16) {
 
     buf[utf16len / sizeof(WCHAR)] = 0;
 
-    utf16 = buf;
+    ret = buf;
 
     free(buf);
-}
 
-void utf16_to_utf8(const wstring& utf16, string& utf8) {
-    NTSTATUS Status;
-    ULONG utf8len;
-    char* buf;
-
-    Status = RtlUnicodeToUTF8N(nullptr, 0, &utf8len, utf16.c_str(), utf16.length() * sizeof(WCHAR));
-    if (!NT_SUCCESS(Status))
-        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
-
-    buf = (char*)malloc(utf8len + sizeof(char));
-
-    if (!buf)
-        throw string_error(IDS_OUT_OF_MEMORY);
-
-    Status = RtlUnicodeToUTF8N(buf, utf8len, &utf8len, utf16.c_str(), utf16.length() * sizeof(WCHAR));
-    if (!NT_SUCCESS(Status)) {
-        free(buf);
-        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
-    }
-
-    buf[utf8len] = 0;
-
-    utf8 = buf;
-
-    free(buf);
+    return ret;
 }
 
 last_error::last_error(DWORD errnum) {
@@ -688,7 +694,7 @@ last_error::last_error(DWORD errnum) {
         throw runtime_error("FormatMessage failed");
 
     try {
-        utf16_to_utf8(buf, msg);
+        msg = utf16_to_utf8(buf);
     } catch (...) {
         LocalFree(buf);
         throw;
@@ -698,11 +704,11 @@ last_error::last_error(DWORD errnum) {
 }
 
 void error_message(HWND hwnd, const char* msg) {
-    wstring title, wmsg;
+    wstring title;
 
     load_string(module, IDS_ERROR, title);
 
-    utf8_to_utf16(msg, wmsg);
+    auto wmsg = utf8_to_utf16(msg);
 
     MessageBoxW(hwnd, wmsg.c_str(), title.c_str(), MB_ICONERROR);
 }
@@ -726,7 +732,7 @@ ntstatus_error::ntstatus_error(NTSTATUS Status) : Status(Status) {
             throw runtime_error("FormatMessage failed");
 
         try {
-            utf16_to_utf8(buf, msg);
+            msg = utf16_to_utf8(buf);
         } catch (...) {
             LocalFree(buf);
             throw;

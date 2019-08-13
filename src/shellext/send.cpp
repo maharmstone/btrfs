@@ -192,9 +192,7 @@ DWORD BtrfsSend::Thread() {
             throw;
         }
     } catch (const exception& e) {
-        wstring msg;
-
-        utf8_to_utf16(e.what(), msg);
+        auto msg = utf8_to_utf16(e.what());
 
         SetDlgItemTextW(hwnd, IDC_SEND_STATUS, msg.c_str());
         return 0;
