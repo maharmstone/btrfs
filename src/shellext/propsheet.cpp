@@ -106,6 +106,7 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
                         sizes[4] += bii2.disk_size_zstd;
                         totalsize += bii2.inline_length + bii2.disk_size_uncompressed + bii2.disk_size_zlib + bii2.disk_size_lzo + bii2.disk_size_zstd;
                         sparsesize += bii2.sparse_size;
+                        num_extents += bii2.num_extents == 0 ? 0 : (bii2.num_extents - 1);
                     }
 
                     FILE_STANDARD_INFORMATION fsi;
@@ -228,6 +229,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
         }
 
         sparsesize += bii2.sparse_size;
+        num_extents += bii2.num_extents == 0 ? 0 : (bii2.num_extents - 1);
 
         FILE_STANDARD_INFORMATION fsi;
 
@@ -674,7 +676,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 }
 
 void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
-    wstring s, size_on_disk, cr;
+    wstring s, size_on_disk, cr, frag;
     WCHAR old_text[1024];
     float ratio;
 
@@ -698,6 +700,22 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
 
     if (cr != old_text)
         SetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr.c_str());
+
+    uint32_t sector_size = 4096; // FIXME!!!
+    uint64_t extent_size = (allocsize - sparsesize - sizes[0]) / sector_size;
+
+    if (num_extents == 0 || extent_size <= 1)
+        ratio = 0.0f;
+    else
+        ratio = 100.0f * ((float)num_extents / (float)(extent_size - 1));
+
+    wstring_sprintf(frag, frag_format, ratio);
+
+    GetDlgItemTextW(hwndDlg, IDC_FRAGMENTATION, old_text, sizeof(old_text) / sizeof(WCHAR));
+
+
+    if (frag != old_text)
+        SetDlgItemTextW(hwndDlg, IDC_FRAGMENTATION, frag.c_str());
 }
 
 void BtrfsPropSheet::change_perm_flag(HWND hDlg, ULONG flag, UINT state) {
@@ -921,6 +939,9 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 
     if (cr_format[0] == 0)
         GetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr_format, sizeof(cr_format) / sizeof(WCHAR));
+
+    if (frag_format[0] == 0)
+        GetDlgItemTextW(hwndDlg, IDC_FRAGMENTATION, frag_format, sizeof(frag_format) / sizeof(WCHAR));
 
     set_size_on_disk(hwndDlg);
 

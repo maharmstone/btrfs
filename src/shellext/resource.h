@@ -241,6 +241,7 @@
 #define IDC_SIZE_ZSTD                   1023
 #define IDC_COMPRESSION_RATIO           1023
 #define IDC_PROFILES                    1024
+#define IDC_FRAGMENTATION               1024
 #define IDC_PROFILES_SINGLE             1025
 #define IDC_PROFILES_DUP                1026
 #define IDC_VOL_DEVICES                 1026
