@@ -1031,9 +1031,16 @@ void clear_rollback(LIST_ENTRY* rollback) {
         rollback_item* ri = CONTAINING_RECORD(le, rollback_item, list_entry);
 
         switch (ri->type) {
+            case ROLLBACK_INSERT_EXTENT:
+            {
+                rollback_extent* re = ri->ptr;
+
+                re->ext->ignore = TRUE;
+
+                // Fall through.
+            }
             case ROLLBACK_ADD_SPACE:
             case ROLLBACK_SUBTRACT_SPACE:
-            case ROLLBACK_INSERT_EXTENT:
             case ROLLBACK_DELETE_EXTENT:
                 ExFreePool(ri->ptr);
                 break;
