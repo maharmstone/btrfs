@@ -1154,12 +1154,12 @@ end2:
 }
 
 static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length) {
-    btrfs_inode_info2* bii = data;
+    btrfs_inode_info* bii = data;
     fcb* fcb;
     ccb* ccb;
     BOOL old_style;
 
-    if (length < sizeof(btrfs_inode_info))
+    if (length < offsetof(btrfs_inode_info, disk_size_zstd))
         return STATUS_BUFFER_OVERFLOW;
 
     if (!FileObject)
@@ -1183,7 +1183,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     if (fcb->ads)
         fcb = ccb->fileref->parent->fcb;
 
-    old_style = length < sizeof(btrfs_inode_info2);
+    old_style = length < offsetof(btrfs_inode_info, sparse_size) + sizeof(((btrfs_inode_info*)NULL)->sparse_size);
 
     ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
 
