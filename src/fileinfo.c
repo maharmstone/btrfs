@@ -520,7 +520,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
                 else
                     len = (ULONG)ed2->size;
 
-                len = len * sizeof(UINT32) / Vcb->superblock.sector_size;
+                len = len * sizeof(uint32_t) / Vcb->superblock.sector_size;
 
                 ext2->csum = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
                 if (!ext2->csum) {
@@ -696,7 +696,7 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
 }
 
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
-    UINT8 c;
+    uint8_t c;
 
     c = dc->hash >> 24;
 
@@ -1195,8 +1195,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                         goto end;
                     }
 
-                    me->fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
-                    me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
+                    me->fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
+                    me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
                 }
 
                 if (me->fileref->dc->key.obj_type == TYPE_INODE_ITEM)
@@ -1373,7 +1373,7 @@ end:
 void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     BOOL inserted;
     LIST_ENTRY* le;
-    UINT8 c, d;
+    uint8_t c, d;
 
     c = dc->hash >> 24;
 
@@ -1527,7 +1527,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     fnus.Buffer = fn;
-    fnus.Length = fnus.MaximumLength = (UINT16)(fnlen * sizeof(WCHAR));
+    fnus.Length = fnus.MaximumLength = (uint16_t)(fnlen * sizeof(WCHAR));
 
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
 
@@ -1537,7 +1537,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     if (!NT_SUCCESS(Status))
         goto end;
 
-    utf8.MaximumLength = utf8.Length = (UINT16)utf8len;
+    utf8.MaximumLength = utf8.Length = (uint16_t)utf8len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
     if (!utf8.Buffer) {
         ERR("out of memory\n");
@@ -1675,7 +1675,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             goto end;
         }
 
-        oldfn.MaximumLength = (UINT16)reqlen;
+        oldfn.MaximumLength = (uint16_t)reqlen;
 
         Status = fileref_get_filename(fileref, &oldfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
@@ -1743,8 +1743,8 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
             remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
 
-            fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name.Buffer, fileref->dc->name.Length);
-            fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
+            fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name.Buffer, fileref->dc->name.Length);
+            fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
 
             insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
 
@@ -1768,7 +1768,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             goto end;
         }
 
-        newfn.MaximumLength = (UINT16)reqlen;
+        newfn.MaximumLength = (uint16_t)reqlen;
 
         Status = fileref_get_filename(fileref, &newfn, &name_offset, &reqlen);
         if (!NT_SUCCESS(Status)) {
@@ -1909,8 +1909,8 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
                 goto end;
             }
 
-            fileref->dc->hash = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name.Buffer, fileref->dc->name.Length);
-            fileref->dc->hash_uc = calc_crc32c(0xffffffff, (UINT8*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
+            fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name.Buffer, fileref->dc->name.Length);
+            fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
         }
 
         // add to new parent
@@ -2068,7 +2068,7 @@ end:
     return Status;
 }
 
-NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, UINT16 end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
+NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end, fcb* fcb, file_ref* fileref, BOOL advance_only) {
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
@@ -2177,7 +2177,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             goto end;
         }
 
-        Status = stream_set_end_of_file_information(Vcb, (UINT16)feofi->EndOfFile.QuadPart, fcb, fileref, advance_only);
+        Status = stream_set_end_of_file_information(Vcb, (uint16_t)feofi->EndOfFile.QuadPart, fcb, fileref, advance_only);
 
         if (NT_SUCCESS(Status)) {
             ccfs.AllocationSize = fcb->Header.AllocationSize;
@@ -2209,7 +2209,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
     TRACE("setting new end to %llx bytes (currently %llx)\n", feofi->EndOfFile.QuadPart, fcb->inode_item.st_size);
 
-    if ((UINT64)feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
+    if ((uint64_t)feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
         if (advance_only) {
             Status = STATUS_SUCCESS;
             goto end;
@@ -2227,7 +2227,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             ERR("error - truncate_file failed\n");
             goto end;
         }
-    } else if ((UINT64)feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
+    } else if ((uint64_t)feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
         if (Irp->Flags & IRP_PAGING_IO) {
             TRACE("paging IO tried to extend file size\n");
             Status = STATUS_SUCCESS;
@@ -2241,7 +2241,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             ERR("error - extend_file failed\n");
             goto end;
         }
-    } else if ((UINT64)feofi->EndOfFile.QuadPart == fcb->inode_item.st_size && advance_only) {
+    } else if ((uint64_t)feofi->EndOfFile.QuadPart == fcb->inode_item.st_size && advance_only) {
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -2389,7 +2389,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     }
 
     fnus.Buffer = fn;
-    fnus.Length = fnus.MaximumLength = (UINT16)(fnlen * sizeof(WCHAR));
+    fnus.Length = fnus.MaximumLength = (uint16_t)(fnlen * sizeof(WCHAR));
 
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
 
@@ -2397,7 +2397,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     if (!NT_SUCCESS(Status))
         goto end;
 
-    utf8.MaximumLength = utf8.Length = (UINT16)utf8len;
+    utf8.MaximumLength = utf8.Length = (uint16_t)utf8len;
     utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
     if (!utf8.Buffer) {
         ERR("out of memory\n");
@@ -3213,7 +3213,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
     UNICODE_STRING fn;
     NTSTATUS Status;
     static const WCHAR datasuf[] = {':','$','D','A','T','A',0};
-    UINT16 datasuflen = sizeof(datasuf) - sizeof(WCHAR);
+    uint16_t datasuflen = sizeof(datasuf) - sizeof(WCHAR);
 
     if (!fileref) {
         ERR("called without fileref\n");
@@ -3229,7 +3229,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
 
     fn.Buffer = fni->FileName;
     fn.Length = 0;
-    fn.MaximumLength = (UINT16)*length;
+    fn.MaximumLength = (uint16_t)*length;
 
     Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
@@ -3347,7 +3347,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR), sizeof(LONGLONG));
 
         lastentry = entry;
-        entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
+        entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
     }
 
     le = fileref->fcb->dir_children_index.Flink;
@@ -3373,12 +3373,12 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
             RtlCopyMemory(&entry->StreamName[1 + (dc->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
 
             if (lastentry)
-                lastentry->NextEntryOffset = (UINT32)((UINT8*)entry - (UINT8*)lastentry);
+                lastentry->NextEntryOffset = (uint32_t)((uint8_t*)entry - (uint8_t*)lastentry);
 
             off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
 
             lastentry = entry;
-            entry = (FILE_STREAM_INFORMATION*)((UINT8*)entry + off);
+            entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
         } else
             break;
 
@@ -3536,7 +3536,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                         if (!overflow) {
                             if (feli) {
                                 feli->NextEntryOffset = (ULONG)sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) + ((feli->FileNameLength - 1) * sizeof(WCHAR)), 8);
-                                feli = (FILE_LINK_ENTRY_INFORMATION*)((UINT8*)feli + feli->NextEntryOffset);
+                                feli = (FILE_LINK_ENTRY_INFORMATION*)((uint8_t*)feli + feli->NextEntryOffset);
                             } else
                                 feli = &fli->Entry;
 
@@ -3618,8 +3618,8 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                 flefii->FileNameLength = 1;
                 flefii->FileName[0] = '.';
             } else {
-                RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &fileref->parent->fcb->inode, sizeof(UINT64));
-                RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(UINT64)], &fileref->parent->fcb->subvol->id, sizeof(UINT64));
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &fileref->parent->fcb->inode, sizeof(uint64_t));
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(uint64_t)], &fileref->parent->fcb->subvol->id, sizeof(uint64_t));
 
                 flefii->FileNameLength = fileref->dc->name.Length / sizeof(WCHAR);
                 RtlCopyMemory(flefii->FileName, fileref->dc->name.Buffer, fileref->dc->name.Length);
@@ -3643,8 +3643,8 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
 
                 flefii->NextEntryOffset = 0;
 
-                RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &fileref->parent->fcb->inode, sizeof(UINT64));
-                RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(UINT64)], &fileref->parent->fcb->subvol->id, sizeof(UINT64));
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &fileref->parent->fcb->inode, sizeof(uint64_t));
+                RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(uint64_t)], &fileref->parent->fcb->subvol->id, sizeof(uint64_t));
 
                 flefii->FileNameLength = fileref->dc->name.Length / sizeof(WCHAR);
                 RtlCopyMemory(flefii->FileName, fileref->dc->name.Buffer, fileref->dc->name.Length);
@@ -3704,14 +3704,14 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                         if (!overflow) {
                             if (flefii) {
                                 flefii->NextEntryOffset = (ULONG)sector_align(offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + (flefii->FileNameLength * sizeof(WCHAR)), 8);
-                                flefii = (FILE_LINK_ENTRY_FULL_ID_INFORMATION*)((UINT8*)flefii + flefii->NextEntryOffset);
+                                flefii = (FILE_LINK_ENTRY_FULL_ID_INFORMATION*)((uint8_t*)flefii + flefii->NextEntryOffset);
                             } else
                                 flefii = &flfii->Entry;
 
                             flefii->NextEntryOffset = 0;
 
-                            RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &parfr->fcb->inode, sizeof(UINT64));
-                            RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(UINT64)], &parfr->fcb->subvol->id, sizeof(UINT64));
+                            RtlCopyMemory(&flefii->ParentFileId.Identifier[0], &parfr->fcb->inode, sizeof(uint64_t));
+                            RtlCopyMemory(&flefii->ParentFileId.Identifier[sizeof(uint64_t)], &parfr->fcb->subvol->id, sizeof(uint64_t));
 
                             flefii->FileNameLength = fn->Length / sizeof(WCHAR);
                             RtlCopyMemory(flefii->FileName, fn->Buffer, fn->Length);
@@ -3744,9 +3744,9 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
 }
 
 static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, LONG* length) {
-    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.uuid.uuid[8], sizeof(UINT64));
-    RtlCopyMemory(&fii->FileId.Identifier[0], &fcb->inode, sizeof(UINT64));
-    RtlCopyMemory(&fii->FileId.Identifier[sizeof(UINT64)], &fcb->subvol->id, sizeof(UINT64));
+    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.uuid.uuid[8], sizeof(uint64_t));
+    RtlCopyMemory(&fii->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
+    RtlCopyMemory(&fii->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
 
     *length -= sizeof(FILE_ID_INFORMATION);
 
@@ -3756,8 +3756,8 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
 static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* fcb, ccb* ccb, LONG* length) {
     INODE_ITEM* ii;
 
-    fsi->FileId.LowPart = (UINT32)fcb->inode;
-    fsi->FileId.HighPart = (UINT32)fcb->subvol->id;
+    fsi->FileId.LowPart = (uint32_t)fcb->inode;
+    fsi->FileId.HighPart = (uint32_t)fcb->subvol->id;
 
     if (fcb->ads)
         ii = &ccb->fileref->parent->fcb->inode_item;
@@ -3816,8 +3816,8 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
 static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, LONG* length) {
     INODE_ITEM* ii;
 
-    fsli->FileId.LowPart = (UINT32)fcb->inode;
-    fsli->FileId.HighPart = (UINT32)fcb->subvol->id;
+    fsli->FileId.LowPart = (uint32_t)fcb->inode;
+    fsli->FileId.HighPart = (uint32_t)fcb->subvol->id;
 
     if (fcb->ads)
         ii = &ccb->fileref->parent->fcb->inode_item;
@@ -4402,7 +4402,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             if (in->NextEntryOffset == 0)
                 break;
 
-            in = (FILE_GET_EA_INFORMATION*)(((UINT8*)in) + in->NextEntryOffset);
+            in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
         } while (TRUE);
 
         ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
@@ -4422,11 +4422,11 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 if (in->NextEntryOffset == 0)
                     break;
 
-                in = (FILE_GET_EA_INFORMATION*)(((UINT8*)in) + in->NextEntryOffset);
+                in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
             } while (TRUE);
 
             if (found) {
-                UINT8 padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
+                uint8_t padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
 
                 if (offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength > IrpSp->Parameters.QueryEa.Length - retlen - padding) {
                     Status = STATUS_BUFFER_OVERFLOW;
@@ -4438,7 +4438,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
                 if (out) {
                     out->NextEntryOffset = (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
-                    out = (FILE_FULL_EA_INFORMATION*)(((UINT8*)out) + out->NextEntryOffset);
+                    out = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)out) + out->NextEntryOffset);
                 } else
                     out = ffei;
 
@@ -4457,7 +4457,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             if (ea->NextEntryOffset == 0)
                 break;
 
-            ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+            ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
         } while (TRUE);
     } else {
         FILE_FULL_EA_INFORMATION *ea, *out;
@@ -4484,14 +4484,14 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 if (ea->NextEntryOffset == 0) // last item
                     goto end2;
 
-                ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+                ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
             }
         }
 
         out = NULL;
 
         do {
-            UINT8 padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
+            uint8_t padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
 
             if (offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength > IrpSp->Parameters.QueryEa.Length - retlen - padding) {
                 Status = retlen == 0 ? STATUS_BUFFER_TOO_SMALL : STATUS_BUFFER_OVERFLOW;
@@ -4502,7 +4502,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
             if (out) {
                 out->NextEntryOffset = (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
-                out = (FILE_FULL_EA_INFORMATION*)(((UINT8*)out) + out->NextEntryOffset);
+                out = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)out) + out->NextEntryOffset);
             } else
                 out = ffei;
 
@@ -4520,7 +4520,7 @@ NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             if (ea->NextEntryOffset == 0 || IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
                 break;
 
-            ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+            ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
         } while (TRUE);
     }
 
@@ -4657,7 +4657,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             if (ea->NextEntryOffset == 0)
                 break;
 
-            ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+            ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
         } while (TRUE);
     }
 
@@ -4710,7 +4710,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (ea->NextEntryOffset == 0)
             break;
 
-        ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+        ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
     } while (TRUE);
 
     // remove entries with zero-length value
@@ -4736,14 +4736,14 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         item = CONTAINING_RECORD(le, ea_item, list_entry);
 
         if (item->name.Length == sizeof(lxuid) - 1 && RtlCompareMemory(item->name.Buffer, lxuid, item->name.Length) == item->name.Length) {
-            if (item->value.Length < sizeof(UINT32)) {
+            if (item->value.Length < sizeof(uint32_t)) {
                 ERR("uid value was shorter than expected\n");
                 Status = STATUS_INVALID_PARAMETER;
                 goto end2;
             }
 
             if (Irp->RequestorMode == KernelMode) {
-                RtlCopyMemory(&fcb->inode_item.st_uid, item->value.Buffer, sizeof(UINT32));
+                RtlCopyMemory(&fcb->inode_item.st_uid, item->value.Buffer, sizeof(uint32_t));
                 fcb->sd_dirty = TRUE;
                 fcb->sd_deleted = FALSE;
             }
@@ -4751,29 +4751,29 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             RemoveEntryList(&item->list_entry);
             ExFreePool(item);
         } else if (item->name.Length == sizeof(lxgid) - 1 && RtlCompareMemory(item->name.Buffer, lxgid, item->name.Length) == item->name.Length) {
-            if (item->value.Length < sizeof(UINT32)) {
+            if (item->value.Length < sizeof(uint32_t)) {
                 ERR("gid value was shorter than expected\n");
                 Status = STATUS_INVALID_PARAMETER;
                 goto end2;
             }
 
             if (Irp->RequestorMode == KernelMode)
-                RtlCopyMemory(&fcb->inode_item.st_gid, item->value.Buffer, sizeof(UINT32));
+                RtlCopyMemory(&fcb->inode_item.st_gid, item->value.Buffer, sizeof(uint32_t));
 
             RemoveEntryList(&item->list_entry);
             ExFreePool(item);
         } else if (item->name.Length == sizeof(lxmod) - 1 && RtlCompareMemory(item->name.Buffer, lxmod, item->name.Length) == item->name.Length) {
-            if (item->value.Length < sizeof(UINT32)) {
+            if (item->value.Length < sizeof(uint32_t)) {
                 ERR("mode value was shorter than expected\n");
                 Status = STATUS_INVALID_PARAMETER;
                 goto end2;
             }
 
             if (Irp->RequestorMode == KernelMode) {
-                UINT32 allowed = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH | S_ISGID | S_ISVTX | S_ISUID;
-                UINT32 val;
+                uint32_t allowed = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH | S_ISGID | S_ISVTX | S_ISUID;
+                uint32_t val;
 
-                RtlCopyMemory(&val, item->value.Buffer, sizeof(UINT32));
+                RtlCopyMemory(&val, item->value.Buffer, sizeof(uint32_t));
 
                 fcb->inode_item.st_mode &= ~allowed;
                 fcb->inode_item.st_mode |= val & allowed;
@@ -4795,7 +4795,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = 0;
         fcb->ea_xattr.Buffer = NULL;
     } else {
-        UINT16 size = 0;
+        uint16_t size = 0;
         char *buf, *oldbuf;
 
         le = ealist.Flink;
@@ -4805,7 +4805,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             if (size % 4 > 0)
                 size += 4 - (size % 4);
 
-            size += (UINT16)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + item->name.Length + 1 + item->value.Length;
+            size += (uint16_t)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + item->name.Length + 1 + item->value.Length;
 
             le = le->Flink;
         }
@@ -4835,7 +4835,7 @@ NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                 if (ea->NextEntryOffset % 4 > 0)
                     ea->NextEntryOffset += 4 - (ea->NextEntryOffset % 4);
 
-                ea = (FILE_FULL_EA_INFORMATION*)(((UINT8*)ea) + ea->NextEntryOffset);
+                ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
             } else
                 ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
 

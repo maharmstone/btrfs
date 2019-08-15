@@ -19,7 +19,7 @@
 
 #define SECTOR_BLOCK 16
 
-NTSTATUS add_calc_job(device_extension* Vcb, UINT8* data, UINT32 sectors, UINT32* csum, calc_job** pcj) {
+NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job** pcj) {
     calc_job* cj;
 
     cj = ExAllocatePoolWithTag(NonPagedPool, sizeof(calc_job), ALLOC_TAG);
@@ -59,13 +59,13 @@ void free_calc_job(calc_job* cj) {
 
 static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
     LONG pos, done;
-    UINT32* csum;
-    UINT8* data;
+    uint32_t* csum;
+    uint8_t* data;
     ULONG blocksize, i;
 
     pos = InterlockedIncrement(&cj->pos) - 1;
 
-    if ((UINT32)pos * SECTOR_BLOCK >= cj->sectors)
+    if ((uint32_t)pos * SECTOR_BLOCK >= cj->sectors)
         return FALSE;
 
     csum = &cj->csum[pos * SECTOR_BLOCK];
@@ -80,7 +80,7 @@ static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
 
     done = InterlockedIncrement(&cj->done);
 
-    if ((UINT32)done * SECTOR_BLOCK >= cj->sectors) {
+    if ((uint32_t)done * SECTOR_BLOCK >= cj->sectors) {
         ExAcquireResourceExclusiveLite(&Vcb->calcthreads.lock, TRUE);
         RemoveEntryList(&cj->list_entry);
         ExReleaseResourceLite(&Vcb->calcthreads.lock);

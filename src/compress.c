@@ -42,17 +42,17 @@
 #define LINUX_PAGE_SIZE 4096
 
 typedef struct {
-    UINT8* in;
-    UINT32 inlen;
-    UINT32 inpos;
-    UINT8* out;
-    UINT32 outlen;
-    UINT32 outpos;
+    uint8_t* in;
+    uint32_t inlen;
+    uint32_t inpos;
+    uint8_t* out;
+    uint32_t outlen;
+    uint32_t outpos;
     BOOL error;
     void* wrkmem;
 } lzo_stream;
 
-#define LZO1X_MEM_COMPRESS ((UINT32) (16384L * sizeof(UINT8*)))
+#define LZO1X_MEM_COMPRESS ((uint32_t) (16384L * sizeof(uint8_t*)))
 
 #define M1_MAX_OFFSET 0x0400
 #define M2_MAX_OFFSET 0x0800
@@ -66,8 +66,8 @@ typedef struct {
 #define M3_MARKER 32
 #define M4_MARKER 16
 
-#define _DV2(p, shift1, shift2) (((( (UINT32)(p[2]) << shift1) ^ p[1]) << shift2) ^ p[0])
-#define DVAL_NEXT(dv, p) dv ^= p[-1]; dv = (((dv) >> 5) ^ ((UINT32)(p[2]) << (2*5)))
+#define _DV2(p, shift1, shift2) (((( (uint32_t)(p[2]) << shift1) ^ p[1]) << shift2) ^ p[0])
+#define DVAL_NEXT(dv, p) dv ^= p[-1]; dv = (((dv) >> 5) ^ ((uint32_t)(p[2]) << (2*5)))
 #define _DV(p, shift) _DV2(p, shift, shift)
 #define DVAL_FIRST(dv, p) dv = _DV((p), 5)
 #define _DINDEX(dv, p) ((40799u * (dv)) >> 5)
@@ -77,7 +77,7 @@ typedef struct {
 
 #define LZO_CHECK_MPOS_NON_DET(m_pos, m_off, in, ip, max_offset) \
     ((void*) m_pos < (void*) in || \
-    (m_off = (UINT8*) ip - (UINT8*) m_pos) <= 0 || \
+    (m_off = (uint8_t*) ip - (uint8_t*) m_pos) <= 0 || \
     m_off > max_offset)
 
 #define LZO_BYTE(x) ((unsigned char) (x))
@@ -92,8 +92,8 @@ static void zstd_free(void* opaque, void* address);
 
 ZSTD_customMem zstd_mem = { .customAlloc = zstd_malloc, .customFree = zstd_free, .opaque = NULL };
 
-static UINT8 lzo_nextbyte(lzo_stream* stream) {
-    UINT8 c;
+static uint8_t lzo_nextbyte(lzo_stream* stream) {
+    uint8_t c;
 
     if (stream->inpos >= stream->inlen) {
         stream->error = TRUE;
@@ -141,7 +141,7 @@ static void lzo_copy(lzo_stream* stream, int len) {
     } while (len > 0);
 }
 
-static void lzo_copyback(lzo_stream* stream, UINT32 back, int len) {
+static void lzo_copyback(lzo_stream* stream, uint32_t back, int len) {
     if (stream->outpos < back) {
         stream->error = TRUE;
         return;
@@ -160,8 +160,8 @@ static void lzo_copyback(lzo_stream* stream, UINT32 back, int len) {
 }
 
 static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
-    UINT8 byte;
-    UINT32 len, back;
+    uint8_t byte;
+    uint32_t len, back;
     BOOL backcopy = FALSE;
 
     stream->error = FALSE;
@@ -170,7 +170,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     if (stream->error) return STATUS_INTERNAL_ERROR;
 
     if (byte > 17) {
-        lzo_copy(stream, min((UINT8)(byte - 17), (UINT32)(stream->outlen - stream->outpos)));
+        lzo_copy(stream, min((uint8_t)(byte - 17), (uint32_t)(stream->outlen - stream->outpos)));
         if (stream->error) return STATUS_INTERNAL_ERROR;
 
         if (stream->outlen == stream->outpos)
@@ -267,23 +267,23 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS lzo_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen, UINT32 inpageoff) {
+NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t inpageoff) {
     NTSTATUS Status;
-    UINT32 partlen, inoff, outoff;
+    uint32_t partlen, inoff, outoff;
     lzo_stream stream;
 
     inoff = 0;
     outoff = 0;
 
     do {
-        partlen = *(UINT32*)&inbuf[inoff];
+        partlen = *(uint32_t*)&inbuf[inoff];
 
         if (partlen + inoff > inlen) {
             ERR("overflow: %x + %x > %llx\n", partlen, inoff, inlen);
             return STATUS_INTERNAL_ERROR;
         }
 
-        inoff += sizeof(UINT32);
+        inoff += sizeof(uint32_t);
 
         stream.in = &inbuf[inoff];
         stream.inlen = partlen;
@@ -304,7 +304,7 @@ NTSTATUS lzo_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen
         inoff += partlen;
         outoff += stream.outlen;
 
-        if (LINUX_PAGE_SIZE - ((inpageoff + inoff) % LINUX_PAGE_SIZE) < sizeof(UINT32))
+        if (LINUX_PAGE_SIZE - ((inpageoff + inoff) % LINUX_PAGE_SIZE) < sizeof(uint32_t))
             inoff = ((((inpageoff + inoff) / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE) - inpageoff;
 
         outlen -= stream.outlen;
@@ -325,7 +325,7 @@ static void zlib_free(void* opaque, void* ptr) {
     ExFreePool(ptr);
 }
 
-NTSTATUS zlib_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen) {
+NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen) {
     z_stream c_stream;
     int ret;
 
@@ -371,18 +371,18 @@ NTSTATUS zlib_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outle
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    UINT8 compression;
-    UINT32 comp_length;
-    UINT8* comp_data;
-    UINT32 out_left;
+    uint8_t compression;
+    uint32_t comp_length;
+    uint8_t* comp_data;
+    uint32_t out_left;
     LIST_ENTRY* le;
     chunk* c;
     z_stream c_stream;
     int ret;
 
-    comp_data = ExAllocatePoolWithTag(PagedPool, (UINT32)(end_data - start_data), ALLOC_TAG);
+    comp_data = ExAllocatePoolWithTag(PagedPool, (uint32_t)(end_data - start_data), ALLOC_TAG);
     if (!comp_data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -407,9 +407,9 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         return STATUS_INTERNAL_ERROR;
     }
 
-    c_stream.avail_in = (UINT32)(end_data - start_data);
+    c_stream.avail_in = (uint32_t)(end_data - start_data);
     c_stream.next_in = data;
-    c_stream.avail_out = (UINT32)(end_data - start_data);
+    c_stream.avail_out = (uint32_t)(end_data - start_data);
     c_stream.next_out = comp_data;
 
     do {
@@ -435,17 +435,17 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     if (out_left < fcb->Vcb->superblock.sector_size) { // compressed extent would be larger than or same size as uncompressed extent
         ExFreePool(comp_data);
 
-        comp_length = (UINT32)(end_data - start_data);
+        comp_length = (uint32_t)(end_data - start_data);
         comp_data = data;
         compression = BTRFS_COMPRESSION_NONE;
 
         *compressed = FALSE;
     } else {
-        UINT32 cl;
+        uint32_t cl;
 
         compression = BTRFS_COMPRESSION_ZLIB;
-        cl = (UINT32)(end_data - start_data - out_left);
-        comp_length = (UINT32)sector_align(cl, fcb->Vcb->superblock.sector_size);
+        cl = (uint32_t)(end_data - start_data - out_left);
+        comp_length = (uint32_t)sector_align(cl, fcb->Vcb->superblock.sector_size);
 
         RtlZeroMemory(comp_data + cl, comp_length - cl);
 
@@ -518,14 +518,14 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS lzo_do_compress(const UINT8* in, UINT32 in_len, UINT8* out, UINT32* out_len, void* wrkmem) {
-    const UINT8* ip;
-    UINT32 dv;
-    UINT8* op;
-    const UINT8* in_end = in + in_len;
-    const UINT8* ip_end = in + in_len - 9 - 4;
-    const UINT8* ii;
-    const UINT8** dict = (const UINT8**)wrkmem;
+static NTSTATUS lzo_do_compress(const uint8_t* in, uint32_t in_len, uint8_t* out, uint32_t* out_len, void* wrkmem) {
+    const uint8_t* ip;
+    uint32_t dv;
+    uint8_t* op;
+    const uint8_t* in_end = in + in_len;
+    const uint8_t* ip_end = in + in_len - 9 - 4;
+    const uint8_t* ii;
+    const uint8_t** dict = (const uint8_t**)wrkmem;
 
     op = out;
     ip = in;
@@ -537,17 +537,17 @@ static NTSTATUS lzo_do_compress(const UINT8* in, UINT32 in_len, UINT8* out, UINT
     DVAL_NEXT(dv, ip);  UPDATE_D(dict, cycle, dv, ip); ip++;
 
     while (1) {
-        const UINT8* m_pos;
-        UINT32 m_len;
+        const uint8_t* m_pos;
+        uint32_t m_len;
         ptrdiff_t m_off;
-        UINT32 lit, dindex;
+        uint32_t lit, dindex;
 
         dindex = DINDEX(dv, ip);
         m_pos = dict[dindex];
         UPDATE_I(dict, cycle, dindex, ip);
 
         if (!LZO_CHECK_MPOS_NON_DET(m_pos, m_off, in, ip, M4_MAX_OFFSET) && m_pos[0] == ip[0] && m_pos[1] == ip[1] && m_pos[2] == ip[2]) {
-            lit = (UINT32)(ip - ii);
+            lit = (uint32_t)(ip - ii);
             m_pos += 3;
             if (m_off <= M2_MAX_OFFSET)
                 goto match;
@@ -576,7 +576,7 @@ static NTSTATUS lzo_do_compress(const UINT8* in, UINT32 in_len, UINT8* out, UINT
 match:
         /* store current literal run */
         if (lit > 0) {
-            UINT32 t = lit;
+            uint32_t t = lit;
 
             if (t <= 3) {
                 if (op - 2 <= out)
@@ -586,7 +586,7 @@ match:
             } else if (t <= 18)
                 *op++ = LZO_BYTE(t - 3);
             else {
-                UINT32 tt = t - 18;
+                uint32_t tt = t - 18;
 
                 *op++ = 0;
                 while (tt > 255) {
@@ -615,7 +615,7 @@ code_match:
         if (*m_pos++ != *ip++ || *m_pos++ != *ip++ || *m_pos++ != *ip++ ||
             *m_pos++ != *ip++ || *m_pos++ != *ip++ || *m_pos++ != *ip++) {
             --ip;
-            m_len = (UINT32)(ip - ii);
+            m_len = (uint32_t)(ip - ii);
 
             if (m_len < 3 || m_len > 8)
                 return STATUS_INTERNAL_ERROR;
@@ -638,11 +638,11 @@ code_match:
                 goto m3_m4_offset;
             }
         } else {
-            const UINT8* end;
+            const uint8_t* end;
             end = in_end;
             while (ip < end && *m_pos == *ip)
                 m_pos++, ip++;
-            m_len = (UINT32)(ip - ii);
+            m_len = (uint32_t)(ip - ii);
 
             if (m_len < 3)
                 return STATUS_INTERNAL_ERROR;
@@ -693,7 +693,7 @@ m3_m4_offset:
 
     /* store final literal run */
     if (in_end - ii > 0) {
-        UINT32 t = (UINT32)(in_end - ii);
+        uint32_t t = (uint32_t)(in_end - ii);
 
         if (op == out && t <= 238)
             *op++ = LZO_BYTE(17 + t);
@@ -702,7 +702,7 @@ m3_m4_offset:
         else if (t <= 18)
             *op++ = LZO_BYTE(t - 3);
         else {
-            UINT32 tt = t - 18;
+            uint32_t tt = t - 18;
 
             *op++ = 0;
             while (tt > 255) {
@@ -721,13 +721,13 @@ m3_m4_offset:
         } while (--t > 0);
     }
 
-    *out_len = (UINT32)(op - out);
+    *out_len = (uint32_t)(op - out);
 
     return STATUS_SUCCESS;
 }
 
 static NTSTATUS lzo1x_1_compress(lzo_stream* stream) {
-    UINT8 *op = stream->out;
+    uint8_t *op = stream->out;
     NTSTATUS Status = STATUS_SUCCESS;
 
     if (stream->inlen <= 0)
@@ -740,7 +740,7 @@ static NTSTATUS lzo1x_1_compress(lzo_stream* stream) {
             *op++ = stream->in[stream->inpos];
             stream->inpos++;
         } while (stream->inlen < stream->inpos);
-        stream->outlen = (UINT32)(op - stream->out);
+        stream->outlen = (uint32_t)(op - stream->out);
     } else
         Status = lzo_do_compress(stream->in, stream->inlen, stream->out, &stream->outlen, stream->wrkmem);
 
@@ -755,19 +755,19 @@ static NTSTATUS lzo1x_1_compress(lzo_stream* stream) {
     return Status;
 }
 
-static __inline UINT32 lzo_max_outlen(UINT32 inlen) {
+static __inline uint32_t lzo_max_outlen(uint32_t inlen) {
     return inlen + (inlen / 16) + 64 + 3; // formula comes from LZO.FAQ
 }
 
-static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    UINT8 compression;
-    UINT64 comp_length;
+    uint8_t compression;
+    uint64_t comp_length;
     ULONG comp_data_len, num_pages, i;
-    UINT8* comp_data;
+    uint8_t* comp_data;
     BOOL skip_compression = FALSE;
     lzo_stream stream;
-    UINT32* out_size;
+    uint32_t* out_size;
     LIST_ENTRY* le;
     chunk* c;
 
@@ -777,7 +777,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     // Another four-byte header page
     // Each page has a maximum size of lzo_max_outlen(LINUX_PAGE_SIZE)
     // Plus another four bytes for possible padding
-    comp_data_len = sizeof(UINT32) + ((lzo_max_outlen(LINUX_PAGE_SIZE) + (2 * sizeof(UINT32))) * num_pages);
+    comp_data_len = sizeof(uint32_t) + ((lzo_max_outlen(LINUX_PAGE_SIZE) + (2 * sizeof(uint32_t))) * num_pages);
 
     comp_data = ExAllocatePoolWithTag(PagedPool, comp_data_len, ALLOC_TAG);
     if (!comp_data) {
@@ -800,16 +800,16 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         return Status;
     }
 
-    out_size = (UINT32*)comp_data;
-    *out_size = sizeof(UINT32);
+    out_size = (uint32_t*)comp_data;
+    *out_size = sizeof(uint32_t);
 
     stream.in = data;
-    stream.out = comp_data + (2 * sizeof(UINT32));
+    stream.out = comp_data + (2 * sizeof(uint32_t));
 
     for (i = 0; i < num_pages; i++) {
-        UINT32* pagelen = (UINT32*)(stream.out - sizeof(UINT32));
+        uint32_t* pagelen = (uint32_t*)(stream.out - sizeof(uint32_t));
 
-        stream.inlen = (UINT32)min(LINUX_PAGE_SIZE, end_data - start_data - (i * LINUX_PAGE_SIZE));
+        stream.inlen = (uint32_t)min(LINUX_PAGE_SIZE, end_data - start_data - (i * LINUX_PAGE_SIZE));
 
         Status = lzo1x_1_compress(&stream);
         if (!NT_SUCCESS(Status)) {
@@ -819,12 +819,12 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
         }
 
         *pagelen = stream.outlen;
-        *out_size += stream.outlen + sizeof(UINT32);
+        *out_size += stream.outlen + sizeof(uint32_t);
 
         stream.in += LINUX_PAGE_SIZE;
-        stream.out += stream.outlen + sizeof(UINT32);
+        stream.out += stream.outlen + sizeof(uint32_t);
 
-        if (LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE) < sizeof(UINT32)) {
+        if (LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE) < sizeof(uint32_t)) {
             RtlZeroMemory(stream.out, LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE));
             stream.out += LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE);
             *out_size += LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE);
@@ -916,12 +916,12 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    UINT8 compression;
-    UINT32 comp_length;
-    UINT8* comp_data;
-    UINT32 out_left;
+    uint8_t compression;
+    uint32_t comp_length;
+    uint8_t* comp_data;
+    uint32_t out_left;
     LIST_ENTRY* le;
     chunk* c;
     ZSTD_CStream* stream;
@@ -930,7 +930,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     ZSTD_outBuffer output;
     ZSTD_parameters params;
 
-    comp_data = ExAllocatePoolWithTag(PagedPool, (UINT32)(end_data - start_data), ALLOC_TAG);
+    comp_data = ExAllocatePoolWithTag(PagedPool, (uint32_t)(end_data - start_data), ALLOC_TAG);
     if (!comp_data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -951,12 +951,12 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
         return STATUS_INTERNAL_ERROR;
     }
 
-    params = ZSTD_getParams(fcb->Vcb->options.zstd_level, (UINT32)(end_data - start_data), 0);
+    params = ZSTD_getParams(fcb->Vcb->options.zstd_level, (uint32_t)(end_data - start_data), 0);
 
     if (params.cParams.windowLog > ZSTD_BTRFS_MAX_WINDOWLOG)
         params.cParams.windowLog = ZSTD_BTRFS_MAX_WINDOWLOG;
 
-    init_res = ZSTD_initCStream_advanced(stream, NULL, 0, params, (UINT32)(end_data - start_data));
+    init_res = ZSTD_initCStream_advanced(stream, NULL, 0, params, (uint32_t)(end_data - start_data));
 
     if (ZSTD_isError(init_res)) {
         ERR("ZSTD_initCStream_advanced failed: %s\n", ZSTD_getErrorName(init_res));
@@ -966,11 +966,11 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     }
 
     input.src = data;
-    input.size = (UINT32)(end_data - start_data);
+    input.size = (uint32_t)(end_data - start_data);
     input.pos = 0;
 
     output.dst = comp_data;
-    output.size = (UINT32)(end_data - start_data);
+    output.size = (uint32_t)(end_data - start_data);
     output.pos = 0;
 
     while (input.pos < input.size && output.pos < output.size) {
@@ -999,17 +999,17 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     if (out_left < fcb->Vcb->superblock.sector_size) { // compressed extent would be larger than or same size as uncompressed extent
         ExFreePool(comp_data);
 
-        comp_length = (UINT32)(end_data - start_data);
+        comp_length = (uint32_t)(end_data - start_data);
         comp_data = data;
         compression = BTRFS_COMPRESSION_NONE;
 
         *compressed = FALSE;
     } else {
-        UINT32 cl;
+        uint32_t cl;
 
         compression = BTRFS_COMPRESSION_ZSTD;
-        cl = (UINT32)(end_data - start_data - out_left);
-        comp_length = (UINT32)sector_align(cl, fcb->Vcb->superblock.sector_size);
+        cl = (uint32_t)(end_data - start_data - out_left);
+        comp_length = (uint32_t)sector_align(cl, fcb->Vcb->superblock.sector_size);
 
         RtlZeroMemory(comp_data + cl, comp_length - cl);
 
@@ -1082,8 +1082,8 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 en
     return STATUS_DISK_FULL;
 }
 
-NTSTATUS write_compressed_bit(fcb* fcb, UINT64 start_data, UINT64 end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
-    UINT8 type;
+NTSTATUS write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+    uint8_t type;
 
     if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
         type = fcb->Vcb->options.compress_type;
@@ -1122,7 +1122,7 @@ static void zstd_free(void* opaque, void* address) {
     ExFreePool(address);
 }
 
-NTSTATUS zstd_decompress(UINT8* inbuf, UINT32 inlen, UINT8* outbuf, UINT32 outlen) {
+NTSTATUS zstd_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen) {
     NTSTATUS Status;
     ZSTD_DStream* stream;
     size_t init_res, read;

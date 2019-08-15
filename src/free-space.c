@@ -21,7 +21,7 @@
 // this be a constant number of sectors, a constant 256 KB, or what?
 #define CACHE_INCREMENTS    64
 
-static NTSTATUS remove_free_space_inode(device_extension* Vcb, UINT64 inode, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
 
@@ -186,7 +186,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
     return Status;
 }
 
-NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 offset, UINT64 size) {
+NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t offset, uint64_t size) {
     space* s;
 
     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
@@ -254,13 +254,13 @@ size:
     return STATUS_SUCCESS;
 }
 
-static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offset, void* data, UINT64* total_space) {
+static void load_free_space_bitmap(device_extension* Vcb, chunk* c, uint64_t offset, void* data, uint64_t* total_space) {
     RTL_BITMAP bmph;
-    UINT32 i, *dwords = data;
+    uint32_t i, *dwords = data;
     ULONG runlength, index;
 
     // flip bits
-    for (i = 0; i < Vcb->superblock.sector_size / sizeof(UINT32); i++) {
+    for (i = 0; i < Vcb->superblock.sector_size / sizeof(uint32_t); i++) {
         dwords[i] = ~dwords[i];
     }
 
@@ -270,7 +270,7 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, UINT64 offse
     runlength = RtlFindFirstRunClear(&bmph, &index);
 
     while (runlength != 0) {
-        UINT64 addr, length;
+        uint64_t addr, length;
 
         addr = offset + (index * Vcb->superblock.sector_size);
         length = Vcb->superblock.sector_size * runlength;
@@ -308,12 +308,12 @@ static void order_space_entry(space* s, LIST_ENTRY* list_size) {
 }
 
 typedef struct {
-    UINT64 stripe;
+    uint64_t stripe;
     LIST_ENTRY list_entry;
 } superblock_stripe;
 
-static NTSTATUS add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 len) {
-    UINT64 i;
+static NTSTATUS add_superblock_stripe(LIST_ENTRY* stripes, uint64_t off, uint64_t len) {
+    uint64_t i;
 
     for (i = 0; i < len; i++) {
         LIST_ENTRY* le;
@@ -348,12 +348,12 @@ static NTSTATUS add_superblock_stripe(LIST_ENTRY* stripes, UINT64 off, UINT64 le
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS get_superblock_size(chunk* c, UINT64* size) {
+static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
     NTSTATUS Status;
     CHUNK_ITEM* ci = c->chunk_item;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-    UINT64 off_start, off_end, space = 0;
-    UINT16 i = 0, j;
+    uint64_t off_start, off_end, space = 0;
+    uint16_t i = 0, j;
     LIST_ENTRY stripes;
 
     InitializeListHead(&stripes);
@@ -380,7 +380,7 @@ static NTSTATUS get_superblock_size(chunk* c, UINT64* size) {
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
             for (j = 0; j < ci->num_stripes; j++) {
-                UINT64 stripe_size = ci->size / (ci->num_stripes - 1);
+                uint64_t stripe_size = ci->size / (ci->num_stripes - 1);
 
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
                     off_start = superblock_addrs[i] - cis[j].offset;
@@ -398,7 +398,7 @@ static NTSTATUS get_superblock_size(chunk* c, UINT64* size) {
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
             for (j = 0; j < ci->num_stripes; j++) {
-                UINT64 stripe_size = ci->size / (ci->num_stripes - 2);
+                uint64_t stripe_size = ci->size / (ci->num_stripes - 2);
 
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
                     off_start = superblock_addrs[i] - cis[j].offset;
@@ -454,12 +454,12 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     KEY searchkey;
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
-    UINT64 inode, *generation;
-    UINT8* data;
+    uint64_t inode, *generation;
+    uint8_t* data;
     NTSTATUS Status;
-    UINT32 *checksums, crc32, i, num_sectors, num_valid_sectors, size;
+    uint32_t *checksums, crc32, i, num_sectors, num_valid_sectors, size;
     FREE_SPACE_ENTRY* fse;
-    UINT64 num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
+    uint64_t num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
     LIST_ENTRY *le, rollback;
 
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
@@ -518,7 +518,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     if (num_entries == 0 && num_bitmaps == 0)
         return STATUS_SUCCESS;
 
-    size = (UINT32)sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
+    size = (uint32_t)sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
 
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
 
@@ -552,14 +552,14 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
 
     num_sectors = size / Vcb->superblock.sector_size;
 
-    generation = (UINT64*)(data + (num_sectors * sizeof(UINT32)));
+    generation = (uint64_t*)(data + (num_sectors * sizeof(uint32_t)));
 
     if (*generation != fsi->generation) {
         WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, *generation, fsi->generation);
         goto clearcache;
     }
 
-    extent_length = (num_sectors * sizeof(UINT32)) + sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
+    extent_length = (num_sectors * sizeof(uint32_t)) + sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
     num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) / Vcb->superblock.sector_size) + num_bitmaps);
 
@@ -568,15 +568,15 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
         goto clearcache;
     }
 
-    checksums = (UINT32*)data;
+    checksums = (uint32_t*)data;
 
     for (i = 0; i < num_valid_sectors; i++) {
-        if (i * Vcb->superblock.sector_size > sizeof(UINT32) * num_sectors)
+        if (i * Vcb->superblock.sector_size > sizeof(uint32_t) * num_sectors)
             crc32 = ~calc_crc32c(0xffffffff, &data[i * Vcb->superblock.sector_size], Vcb->superblock.sector_size);
-        else if ((i + 1) * Vcb->superblock.sector_size < sizeof(UINT32) * num_sectors)
+        else if ((i + 1) * Vcb->superblock.sector_size < sizeof(uint32_t) * num_sectors)
             crc32 = 0; // FIXME - test this
         else
-            crc32 = ~calc_crc32c(0xffffffff, &data[sizeof(UINT32) * num_sectors], ((i + 1) * Vcb->superblock.sector_size) - (sizeof(UINT32) * num_sectors));
+            crc32 = ~calc_crc32c(0xffffffff, &data[sizeof(uint32_t) * num_sectors], ((i + 1) * Vcb->superblock.sector_size) - (sizeof(uint32_t) * num_sectors));
 
         if (crc32 != checksums[i]) {
             WARN("checksum %llu was %08x, expected %08x\n", i, crc32, checksums[i]);
@@ -584,7 +584,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
         }
     }
 
-    off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
+    off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
     bmpnum = 0;
     for (i = 0; i < num_entries; i++) {
@@ -611,7 +611,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
 
     if (num_bitmaps > 0) {
         bmpnum = sector_align(off, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
-        off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
+        off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
         for (i = 0; i < num_entries; i++) {
             if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
@@ -762,7 +762,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
         } else if (tp.item->key.obj_type == TYPE_FREE_SPACE_BITMAP) {
             ULONG explen, index, runlength;
             RTL_BITMAP bmp;
-            UINT64 lastoff;
+            uint64_t lastoff;
 
             explen = (ULONG)(tp.item->key.offset / (Vcb->superblock.sector_size * 8));
 
@@ -796,8 +796,8 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             runlength = RtlFindFirstRunClear(&bmp, &index);
 
             while (runlength != 0) {
-                UINT64 runstart = tp.item->key.obj_id + (index * Vcb->superblock.sector_size);
-                UINT64 runend = runstart + (runlength * Vcb->superblock.sector_size);
+                uint64_t runstart = tp.item->key.obj_id + (index * Vcb->superblock.sector_size);
+                uint64_t runend = runstart + (runlength * Vcb->superblock.sector_size);
 
                 if (runstart > lastoff) {
                     Status = add_space_entry(&c->space, &c->space_size, lastoff, runstart - lastoff);
@@ -858,7 +858,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
 static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
-    UINT64 lastaddr;
+    uint64_t lastaddr;
     BOOL b;
     space* s;
     NTSTATUS Status;
@@ -968,11 +968,11 @@ NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_ENTRY* rollback) {
+static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le = fcb->Vcb->chunks.Flink;
     chunk* c;
-    UINT64 flags;
+    uint64_t flags;
 
     flags = fcb->Vcb->data_flags;
 
@@ -1015,8 +1015,8 @@ static NTSTATUS insert_cache_extent(fcb* fcb, UINT64 start, UINT64 length, LIST_
 static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* changed, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
-    UINT64 num_entries, new_cache_size, i;
-    UINT32 num_sectors;
+    uint64_t num_entries, new_cache_size, i;
+    uint32_t num_sectors;
     BOOL realloc_extents = FALSE;
 
     // FIXME - also do bitmaps
@@ -1047,14 +1047,14 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         }
     }
 
-    new_cache_size = sizeof(UINT64) + (num_entries * sizeof(FREE_SPACE_ENTRY));
+    new_cache_size = sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_sectors = (UINT32)sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
-    num_sectors = (UINT32)sector_align(num_sectors, CACHE_INCREMENTS);
+    num_sectors = (uint32_t)sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+    num_sectors = (uint32_t)sector_align(num_sectors, CACHE_INCREMENTS);
 
     // adjust for padding
     // FIXME - there must be a more efficient way of doing this
-    new_cache_size = sizeof(UINT64) + (sizeof(UINT32) * num_sectors);
+    new_cache_size = sizeof(uint64_t) + (sizeof(uint32_t) * num_sectors);
     for (i = 0; i < num_entries; i++) {
         if ((new_cache_size / Vcb->superblock.sector_size) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size))
             new_cache_size = sector_align(new_cache_size, Vcb->superblock.sector_size);
@@ -1394,7 +1394,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
     return STATUS_SUCCESS;
 }
 
-static void add_rollback_space(LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c) {
+static void add_rollback_space(LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c) {
     rollback_space* rs;
 
     rs = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_space), ALLOC_TAG);
@@ -1412,7 +1412,7 @@ static void add_rollback_space(LIST_ENTRY* rollback, BOOL add, LIST_ENTRY* list,
     add_rollback(rollback, add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE, rs);
 }
 
-void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback) {
+void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     space *s, *s2;
 
@@ -1644,8 +1644,8 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
     void* data;
-    UINT64 num_entries, *cachegen, off;
-    UINT32 *checksums, num_sectors, i;
+    uint64_t num_entries, *cachegen, off;
+    uint32_t *checksums, num_sectors, i;
     LIST_ENTRY* le;
 
     space_list_merge(&c->space, &c->space_size, &c->deleting);
@@ -1659,8 +1659,8 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     RtlZeroMemory(data, (ULONG)c->cache->inode_item.st_size);
 
     num_entries = 0;
-    num_sectors = (UINT32)(c->cache->inode_item.st_size / Vcb->superblock.sector_size);
-    off = (sizeof(UINT32) * num_sectors) + sizeof(UINT64);
+    num_sectors = (uint32_t)(c->cache->inode_item.st_size / Vcb->superblock.sector_size);
+    off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
     le = c->space.Flink;
     while (le != &c->space) {
@@ -1671,7 +1671,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
         if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
             off = sector_align(off, Vcb->superblock.sector_size);
 
-        fse = (FREE_SPACE_ENTRY*)((UINT8*)data + off);
+        fse = (FREE_SPACE_ENTRY*)((uint8_t*)data + off);
 
         fse->offset = s->address;
         fse->size = s->size;
@@ -1728,22 +1728,22 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
     // set cache generation
 
-    cachegen = (UINT64*)((UINT8*)data + (sizeof(UINT32) * num_sectors));
+    cachegen = (uint64_t*)((uint8_t*)data + (sizeof(uint32_t) * num_sectors));
     *cachegen = Vcb->superblock.generation;
 
     // calculate cache checksums
 
-    checksums = (UINT32*)data;
+    checksums = (uint32_t*)data;
 
     // FIXME - if we know sector is fully zeroed, use cached checksum
 
     for (i = 0; i < num_sectors; i++) {
-        if (i * Vcb->superblock.sector_size > sizeof(UINT32) * num_sectors)
-            checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-        else if ((i + 1) * Vcb->superblock.sector_size < sizeof(UINT32) * num_sectors)
+        if (i * Vcb->superblock.sector_size > sizeof(uint32_t) * num_sectors)
+            checksums[i] = ~calc_crc32c(0xffffffff, (uint8_t*)data + (i * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+        else if ((i + 1) * Vcb->superblock.sector_size < sizeof(uint32_t) * num_sectors)
             checksums[i] = 0; // FIXME - test this
         else
-            checksums[i] = ~calc_crc32c(0xffffffff, (UINT8*)data + (sizeof(UINT32) * num_sectors), ((i + 1) * Vcb->superblock.sector_size) - (sizeof(UINT32) * num_sectors));
+            checksums[i] = ~calc_crc32c(0xffffffff, (uint8_t*)data + (sizeof(uint32_t) * num_sectors), ((i + 1) * Vcb->superblock.sector_size) - (sizeof(uint32_t) * num_sectors));
     }
 
     // write cache
@@ -1928,7 +1928,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-void space_list_add(chunk* c, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void space_list_add(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
     TRACE("(%p, %llx, %llx, %p)\n", c, address, length, rollback);
 
     c->changed = TRUE;
@@ -1937,7 +1937,7 @@ void space_list_add(chunk* c, UINT64 address, UINT64 length, LIST_ENTRY* rollbac
     space_list_add2(&c->deleting, NULL, address, length, c, rollback);
 }
 
-void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 address, UINT64 length, chunk* c, LIST_ENTRY* rollback) {
+void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     space *s, *s2;
 
@@ -2016,7 +2016,7 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, UINT64 addres
     }
 }
 
-void space_list_subtract(chunk* c, BOOL deleting, UINT64 address, UINT64 length, LIST_ENTRY* rollback) {
+void space_list_subtract(chunk* c, BOOL deleting, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
     LIST_ENTRY* list;
 
     list = deleting ? &c->deleting : &c->space;

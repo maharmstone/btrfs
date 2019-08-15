@@ -73,7 +73,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
 
         if (bfs) {
             bfs->next_entry = itemsize;
-            bfs = (btrfs_filesystem*)((UINT8*)bfs + itemsize);
+            bfs = (btrfs_filesystem*)((uint8_t*)bfs + itemsize);
         } else
             bfs = data;
 
@@ -90,7 +90,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
 
         ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-        bfs->num_devices = (UINT32)Vcb->superblock.num_devices;
+        bfs->num_devices = (uint32_t)Vcb->superblock.num_devices;
 
         bfd = NULL;
 
@@ -100,7 +100,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
             MOUNTDEV_NAME mdn;
 
             if (bfd)
-                bfd = (btrfs_filesystem_device*)((UINT8*)bfd + offsetof(btrfs_filesystem_device, name[0]) + bfd->name_length);
+                bfd = (btrfs_filesystem_device*)((uint8_t*)bfd + offsetof(btrfs_filesystem_device, name[0]) + bfd->name_length);
             else
                 bfd = &bfs->device;
 

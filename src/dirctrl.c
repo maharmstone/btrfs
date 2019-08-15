@@ -69,7 +69,7 @@ enum DirEntryType {
 typedef struct {
     KEY key;
     UNICODE_STRING name;
-    UINT8 type;
+    uint8_t type;
     enum DirEntryType dir_entry_type;
     dir_child* dc;
 } dir_entry;
@@ -88,7 +88,7 @@ ULONG get_reparse_tag_fcb(fcb* fcb) {
         NTSTATUS Status;
         ULONG br;
 
-        Status = read_file(fcb, (UINT8*)&tag, 0, sizeof(ULONG), &br, NULL);
+        Status = read_file(fcb, (uint8_t*)&tag, 0, sizeof(ULONG), &br, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08x\n", Status);
             return 0;
@@ -98,7 +98,7 @@ ULONG get_reparse_tag_fcb(fcb* fcb) {
     return tag;
 }
 
-ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 type, ULONG atts, BOOL lxss, PIRP Irp) {
+ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type, ULONG atts, BOOL lxss, PIRP Irp) {
     fcb* fcb;
     ULONG tag = 0;
     NTSTATUS Status;
@@ -139,9 +139,9 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, UINT64 inode, UINT8 t
     return tag;
 }
 
-static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP Irp) {
-    UINT8* eadata;
-    UINT16 len;
+static ULONG get_ea_len(device_extension* Vcb, root* subvol, uint64_t inode, PIRP Irp) {
+    uint8_t* eadata;
+    uint16_t len;
 
     if (get_xattr(Vcb, subvol, inode, EA_EA, EA_EA_HASH, &eadata, &len, Irp)) {
         ULONG offset;
@@ -165,7 +165,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP 
                 if (eainfo->NextEntryOffset == 0)
                     break;
 
-                eainfo = (FILE_FULL_EA_INFORMATION*)(((UINT8*)eainfo) + eainfo->NextEntryOffset);
+                eainfo = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)eainfo) + eainfo->NextEntryOffset);
             } while (TRUE);
 
             ExFreePool(eadata);
@@ -179,7 +179,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, UINT64 inode, PIRP 
 static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
     PIO_STACK_LOCATION IrpSp;
     LONG needed;
-    UINT64 inode;
+    uint64_t inode;
     INODE_ITEM ii;
     NTSTATUS Status;
     ULONG atts = 0, ealen = 0;
@@ -549,8 +549,8 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fiedi->EaSize = ealen;
             fiedi->ReparsePointTag = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp);
 
-            RtlCopyMemory(&fiedi->FileId.Identifier[0], &fcb->inode, sizeof(UINT64));
-            RtlCopyMemory(&fiedi->FileId.Identifier[sizeof(UINT64)], &fcb->subvol->id, sizeof(UINT64));
+            RtlCopyMemory(&fiedi->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
+            RtlCopyMemory(&fiedi->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
 
             RtlCopyMemory(fiedi->FileName, de->name.Buffer, de->name.Length);
 
@@ -592,8 +592,8 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fiebdi->EaSize = ealen;
             fiebdi->ReparsePointTag = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp);
 
-            RtlCopyMemory(&fiebdi->FileId.Identifier[0], &fcb->inode, sizeof(UINT64));
-            RtlCopyMemory(&fiebdi->FileId.Identifier[sizeof(UINT64)], &fcb->subvol->id, sizeof(UINT64));
+            RtlCopyMemory(&fiebdi->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
+            RtlCopyMemory(&fiebdi->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
 
             fiebdi->ShortNameLength = 0;
 
@@ -652,7 +652,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS next_dir_entry(file_ref* fileref, UINT64* offset, dir_entry* de, dir_child** pdc) {
+static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* de, dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
 
@@ -739,12 +739,12 @@ static NTSTATUS query_directory(PIRP Irp) {
     file_ref* fileref;
     device_extension* Vcb;
     void* buf;
-    UINT8 *curitem, *lastitem;
+    uint8_t *curitem, *lastitem;
     LONG length;
     ULONG count;
     BOOL has_wildcard = FALSE, specific_file = FALSE, initial;
     dir_entry de;
-    UINT64 newoffset;
+    uint64_t newoffset;
     dir_child* dc = NULL;
 
     TRACE("query directory\n");
@@ -898,8 +898,8 @@ static NTSTATUS query_directory(PIRP Irp) {
         BOOL found = FALSE;
         UNICODE_STRING us;
         LIST_ENTRY* le;
-        UINT32 hash;
-        UINT8 c;
+        uint32_t hash;
+        uint8_t c;
 
         us.Buffer = NULL;
 
@@ -910,9 +910,9 @@ static NTSTATUS query_directory(PIRP Irp) {
                 goto end;
             }
 
-            hash = calc_crc32c(0xffffffff, (UINT8*)us.Buffer, us.Length);
+            hash = calc_crc32c(0xffffffff, (uint8_t*)us.Buffer, us.Length);
         } else
-            hash = calc_crc32c(0xffffffff, (UINT8*)ccb->query_string.Buffer, ccb->query_string.Length);
+            hash = calc_crc32c(0xffffffff, (uint8_t*)ccb->query_string.Buffer, ccb->query_string.Length);
 
         c = hash >> 24;
 
@@ -996,7 +996,7 @@ static NTSTATUS query_directory(PIRP Irp) {
 
     count = 0;
     if (NT_SUCCESS(Status) && !(IrpSp->Flags & SL_RETURN_SINGLE_ENTRY) && !specific_file) {
-        lastitem = (UINT8*)buf;
+        lastitem = (uint8_t*)buf;
 
         while (length > 0) {
             switch (IrpSp->Parameters.QueryDirectory.FileInformationClass) {
@@ -1031,10 +1031,10 @@ static NTSTATUS query_directory(PIRP Irp) {
                 Status = next_dir_entry(fileref, &newoffset, &de, &dc);
                 if (NT_SUCCESS(Status)) {
                     if (!has_wildcard || FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
-                        curitem = (UINT8*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
+                        curitem = (uint8_t*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
                         count++;
 
-                        TRACE("file(%u) %u = %.*S\n", count, curitem - (UINT8*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
+                        TRACE("file(%u) %u = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
                         TRACE("offset = %u\n", ccb->query_dir_offset - 1);
 
                         status2 = query_dir_item(fcb, ccb, curitem, &length, Irp, &de, fcb->subvol);
@@ -1124,7 +1124,7 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
                 goto end;
             }
 
-            ccb->filename.MaximumLength = (UINT16)reqlen;
+            ccb->filename.MaximumLength = (uint16_t)reqlen;
 
             Status = fileref_get_filename(fileref, &ccb->filename, NULL, &reqlen);
             if (!NT_SUCCESS(Status)) {

@@ -134,63 +134,63 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
             us.Buffer = kvfi->Name;
 
             if (FsRtlAreNamesEqual(&ignoreus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->ignore = *val != 0 ? TRUE : FALSE;
             } else if (FsRtlAreNamesEqual(&compressus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->compress = *val != 0 ? TRUE : FALSE;
             } else if (FsRtlAreNamesEqual(&compressforceus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->compress_force = *val != 0 ? TRUE : FALSE;
             } else if (FsRtlAreNamesEqual(&compresstypeus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
-                options->compress_type = (UINT8)(*val > BTRFS_COMPRESSION_ZSTD ? 0 : *val);
+                options->compress_type = (uint8_t)(*val > BTRFS_COMPRESSION_ZSTD ? 0 : *val);
             } else if (FsRtlAreNamesEqual(&readonlyus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->readonly = *val != 0 ? TRUE : FALSE;
             } else if (FsRtlAreNamesEqual(&zliblevelus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->zlib_level = *val;
             } else if (FsRtlAreNamesEqual(&flushintervalus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->flush_interval = *val;
             } else if (FsRtlAreNamesEqual(&maxinlineus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->max_inline = min(*val, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - sizeof(EXTENT_DATA) + 1);
             } else if (FsRtlAreNamesEqual(&subvolidus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_QWORD) {
-                UINT64* val = (UINT64*)((UINT8*)kvfi + kvfi->DataOffset);
+                uint64_t* val = (uint64_t*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->subvol_id = *val;
             } else if (FsRtlAreNamesEqual(&skipbalanceus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->skip_balance = *val;
             } else if (FsRtlAreNamesEqual(&nobarrierus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->no_barrier = *val;
             } else if (FsRtlAreNamesEqual(&notrimus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->no_trim = *val;
             } else if (FsRtlAreNamesEqual(&clearcacheus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->clear_cache = *val;
             } else if (FsRtlAreNamesEqual(&allowdegradedus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->allow_degraded = *val;
             } else if (FsRtlAreNamesEqual(&zstdlevelus, &us, TRUE, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                DWORD* val = (DWORD*)((UINT8*)kvfi + kvfi->DataOffset);
+                DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
                 options->zstd_level = *val;
             }
@@ -206,7 +206,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     if (options->zlib_level > 9)
         options->zlib_level = 9;
 
-    if (options->zstd_level > (UINT32)ZSTD_maxCLevel())
+    if (options->zstd_level > (uint32_t)ZSTD_maxCLevel())
         options->zstd_level = ZSTD_maxCLevel();
 
     if (options->flush_interval == 0)
@@ -552,7 +552,7 @@ static void read_mappings(PUNICODE_STRING regpath) {
     }
 
     RtlCopyMemory(path, regpath->Buffer, regpath->Length);
-    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, sizeof(mappings) - sizeof(WCHAR));
+    RtlCopyMemory((uint8_t*)path + regpath->Length, mappings, sizeof(mappings) - sizeof(WCHAR));
 
     us.Buffer = path;
     us.Length = us.MaximumLength = regpath->Length + sizeof(mappings) - sizeof(WCHAR);
@@ -586,9 +586,9 @@ static void read_mappings(PUNICODE_STRING regpath) {
             Status = ZwEnumerateValueKey(h, i, KeyValueFullInformation, kvfi, kvfilen, &retlen);
 
             if (NT_SUCCESS(Status) && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                UINT32 val = 0;
+                uint32_t val = 0;
 
-                RtlCopyMemory(&val, (UINT8*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(UINT32)));
+                RtlCopyMemory(&val, (uint8_t*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(uint32_t)));
 
                 TRACE("entry %u = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
 
@@ -630,7 +630,7 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
     }
 
     RtlCopyMemory(path, regpath->Buffer, regpath->Length);
-    RtlCopyMemory((UINT8*)path + regpath->Length, mappings, sizeof(mappings) - sizeof(WCHAR));
+    RtlCopyMemory((uint8_t*)path + regpath->Length, mappings, sizeof(mappings) - sizeof(WCHAR));
 
     us.Buffer = path;
     us.Length = us.MaximumLength = regpath->Length + sizeof(mappings) - sizeof(WCHAR);
@@ -665,9 +665,9 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
             Status = ZwEnumerateValueKey(h, i, KeyValueFullInformation, kvfi, kvfilen, &retlen);
 
             if (NT_SUCCESS(Status) && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
-                UINT32 val = 0;
+                uint32_t val = 0;
 
-                RtlCopyMemory(&val, (UINT8*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(UINT32)));
+                RtlCopyMemory(&val, (uint8_t*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(uint32_t)));
 
                 TRACE("entry %u = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
 
@@ -734,7 +734,7 @@ static void get_registry_value(HANDLE h, WCHAR* string, ULONG type, void* val, U
 
         if (NT_SUCCESS(Status)) {
             if (kvfi->Type == type && kvfi->DataLength >= size) {
-                RtlCopyMemory(val, ((UINT8*)kvfi) + kvfi->DataOffset, size);
+                RtlCopyMemory(val, ((uint8_t*)kvfi) + kvfi->DataOffset, size);
             } else {
                 Status = ZwDeleteValueKey(h, &us);
                 if (!NT_SUCCESS(Status)) {
@@ -849,7 +849,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
                     return;
                 }
 
-                RtlCopyMemory(log_device.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, log_device.Length);
+                RtlCopyMemory(log_device.Buffer, ((uint8_t*)kvfi) + kvfi->DataOffset, log_device.Length);
 
                 if (log_device.Buffer[(log_device.Length / sizeof(WCHAR)) - 1] == 0)
                     log_device.Length -= sizeof(WCHAR);
@@ -926,7 +926,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
                     return;
                 }
 
-                RtlCopyMemory(log_file.Buffer, ((UINT8*)kvfi) + kvfi->DataOffset, log_file.Length);
+                RtlCopyMemory(log_file.Buffer, ((uint8_t*)kvfi) + kvfi->DataOffset, log_file.Length);
 
                 if (log_file.Buffer[(log_file.Length / sizeof(WCHAR)) - 1] == 0)
                     log_file.Length -= sizeof(WCHAR);

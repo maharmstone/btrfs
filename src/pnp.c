@@ -86,7 +86,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
             context.stripes[i].Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
 
             if (!context.stripes[i].Irp) {
-                UINT64 j;
+                uint64_t j;
 
                 ERR("IoAllocateIrp failed\n");
 

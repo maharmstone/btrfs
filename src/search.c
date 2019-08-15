@@ -97,8 +97,8 @@ static BOOL fs_ignored(BTRFS_UUID* uuid) {
 
     Status = ZwQueryValueKey(h, &ignoreus, KeyValueFullInformation, kvfi, kvfilen, &retlen);
     if (NT_SUCCESS(Status)) {
-        if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
-            UINT32* pr = (UINT32*)((UINT8*)kvfi + kvfi->DataOffset);
+        if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(uint32_t)) {
+            uint32_t* pr = (uint32_t*)((uint8_t*)kvfi + kvfi->DataOffset);
 
             ret = *pr;
         }
@@ -112,11 +112,11 @@ static BOOL fs_ignored(BTRFS_UUID* uuid) {
 }
 
 static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
-                     PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, UINT64 length) {
+                     PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, uint64_t length) {
     NTSTATUS Status;
     ULONG toread;
-    UINT8* data = NULL;
-    UINT32 sector_size;
+    uint8_t* data = NULL;
+    uint32_t sector_size;
 
     TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
 
@@ -159,9 +159,9 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
 
     if (NT_SUCCESS(Status) && ((superblock*)data)->magic == BTRFS_MAGIC) {
         superblock* sb = (superblock*)data;
-        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
 
-        if (crc32 != *((UINT32*)sb->checksum))
+        if (crc32 != *((uint32_t*)sb->checksum))
             ERR("checksum error on superblock\n");
         else {
             TRACE("volume found\n");
@@ -179,9 +179,9 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                     Status = sync_read_phys(DeviceObject, FileObject, superblock_addrs[i], toread, (PUCHAR)sb2, TRUE);
 
                     if (NT_SUCCESS(Status) && sb2->magic == BTRFS_MAGIC) {
-                        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb2->uuid, (ULONG)sizeof(superblock) - sizeof(sb2->checksum));
+                        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb2->uuid, (ULONG)sizeof(superblock) - sizeof(sb2->checksum));
 
-                        if (crc32 == *((UINT32*)sb2->checksum) && sb2->generation > sb->generation)
+                        if (crc32 == *((uint32_t*)sb2->checksum) && sb2->generation > sb->generation)
                             RtlCopyMemory(sb, sb2, toread);
                     }
 
@@ -789,7 +789,7 @@ static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmp
         UNICODE_STRING symlink, device_name;
 
         if (mmps->MountPoints[i].SymbolicLinkNameOffset != 0) {
-            symlink.Buffer = (WCHAR*)(((UINT8*)mmps) + mmps->MountPoints[i].SymbolicLinkNameOffset);
+            symlink.Buffer = (WCHAR*)(((uint8_t*)mmps) + mmps->MountPoints[i].SymbolicLinkNameOffset);
             symlink.Length = symlink.MaximumLength = mmps->MountPoints[i].SymbolicLinkNameLength;
         } else {
             symlink.Buffer = NULL;
@@ -797,7 +797,7 @@ static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmp
         }
 
         if (mmps->MountPoints[i].DeviceNameOffset != 0) {
-            device_name.Buffer = (WCHAR*)(((UINT8*)mmps) + mmps->MountPoints[i].DeviceNameOffset);
+            device_name.Buffer = (WCHAR*)(((uint8_t*)mmps) + mmps->MountPoints[i].DeviceNameOffset);
             device_name.Length = device_name.MaximumLength = mmps->MountPoints[i].DeviceNameLength;
         } else {
             device_name.Buffer = NULL;

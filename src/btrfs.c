@@ -58,25 +58,25 @@ DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x6
 PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT master_devobj;
 BOOL have_sse42 = FALSE, have_sse2 = FALSE;
-UINT64 num_reads = 0;
+uint64_t num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
-UINT32 debug_log_level = 0;
-UINT32 mount_compress = 0;
-UINT32 mount_compress_force = 0;
-UINT32 mount_compress_type = 0;
-UINT32 mount_zlib_level = 3;
-UINT32 mount_zstd_level = 3;
-UINT32 mount_flush_interval = 30;
-UINT32 mount_max_inline = 2048;
-UINT32 mount_skip_balance = 0;
-UINT32 mount_no_barrier = 0;
-UINT32 mount_no_trim = 0;
-UINT32 mount_clear_cache = 0;
-UINT32 mount_allow_degraded = 0;
-UINT32 mount_readonly = 0;
-UINT32 no_pnp = 0;
+uint32_t debug_log_level = 0;
+uint32_t mount_compress = 0;
+uint32_t mount_compress_force = 0;
+uint32_t mount_compress_type = 0;
+uint32_t mount_zlib_level = 3;
+uint32_t mount_zstd_level = 3;
+uint32_t mount_flush_interval = 30;
+uint32_t mount_max_inline = 2048;
+uint32_t mount_skip_balance = 0;
+uint32_t mount_no_barrier = 0;
+uint32_t mount_no_trim = 0;
+uint32_t mount_clear_cache = 0;
+uint32_t mount_allow_degraded = 0;
+uint32_t mount_readonly = 0;
+uint32_t no_pnp = 0;
 BOOL log_started = FALSE;
 UNICODE_STRING log_device, log_file, registry_path;
 tPsUpdateDiskCounters fPsUpdateDiskCounters;
@@ -136,7 +136,7 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
     va_list ap;
     char *buf2, *buf;
     read_context context;
-    UINT32 length;
+    uint32_t length;
 
     buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
 
@@ -166,7 +166,7 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
             goto exit2;
         }
 
-        length = (UINT32)strlen(buf2);
+        length = (uint32_t)strlen(buf2);
 
         offset.u.LowPart = 0;
         offset.u.HighPart = 0;
@@ -231,7 +231,7 @@ exit:
     } else if (log_handle != NULL) {
         IO_STATUS_BLOCK iosb;
 
-        length = (UINT32)strlen(buf2);
+        length = (uint32_t)strlen(buf2);
 
         Status = ZwWriteFile(log_handle, NULL, NULL, NULL, &iosb, buf2, length, NULL, NULL);
 
@@ -370,7 +370,7 @@ static BOOL get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
 }
 
 _Success_(return)
-static BOOL extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _In_z_ char* name, _Out_ UINT8** data, _Out_ UINT16* datalen) {
+static BOOL extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _In_z_ char* name, _Out_ uint8_t** data, _Out_ uint16_t* datalen) {
     DIR_ITEM* xa = (DIR_ITEM*)item;
     USHORT xasize;
 
@@ -414,8 +414,8 @@ static BOOL extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _
 }
 
 _Success_(return)
-BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ UINT64 inode, _In_z_ char* name, _In_ UINT32 crc32,
-               _Out_ UINT8** data, _Out_ UINT16* datalen, _In_opt_ PIRP Irp) {
+BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ uint64_t inode, _In_z_ char* name, _In_ uint32_t crc32,
+               _Out_ uint8_t** data, _Out_ uint16_t* datalen, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -560,8 +560,8 @@ end:
     return Status;
 }
 
-static void calculate_total_space(_In_ device_extension* Vcb, _Out_ UINT64* totalsize, _Out_ UINT64* freespace) {
-    UINT64 nfactor, dfactor, sectors_used;
+static void calculate_total_space(_In_ device_extension* Vcb, _Out_ uint64_t* totalsize, _Out_ uint64_t* freespace) {
+    uint64_t nfactor, dfactor, sectors_used;
 
     if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10) {
         nfactor = 1;
@@ -799,7 +799,7 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
 
             TRACE("FileFsFullSizeInformation\n");
 
-            calculate_total_space(Vcb, (UINT64*)&ffsi->TotalAllocationUnits.QuadPart, (UINT64*)&ffsi->ActualAvailableAllocationUnits.QuadPart);
+            calculate_total_space(Vcb, (uint64_t*)&ffsi->TotalAllocationUnits.QuadPart, (uint64_t*)&ffsi->ActualAvailableAllocationUnits.QuadPart);
             ffsi->CallerAvailableAllocationUnits.QuadPart = ffsi->ActualAvailableAllocationUnits.QuadPart;
             ffsi->SectorsPerAllocationUnit = 1;
             ffsi->BytesPerSector = Vcb->superblock.sector_size;
@@ -831,7 +831,7 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
 
             TRACE("FileFsSizeInformation\n");
 
-            calculate_total_space(Vcb, (UINT64*)&ffsi->TotalAllocationUnits.QuadPart, (UINT64*)&ffsi->AvailableAllocationUnits.QuadPart);
+            calculate_total_space(Vcb, (uint64_t*)&ffsi->TotalAllocationUnits.QuadPart, (uint64_t*)&ffsi->AvailableAllocationUnits.QuadPart);
             ffsi->SectorsPerAllocationUnit = 1;
             ffsi->BytesPerSector = Vcb->superblock.sector_size;
 
@@ -961,8 +961,8 @@ static NTSTATUS read_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp,
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ UINT64 id,
-                     _Out_ root** rootptr, _In_ BOOL no_tree, _In_ UINT64 offset, _In_opt_ PIRP Irp) {
+NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t id,
+                     _Out_ root** rootptr, _In_ BOOL no_tree, _In_ uint64_t offset, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     root* r;
     tree* t = NULL;
@@ -1230,7 +1230,7 @@ static WCHAR* file_desc_fcb(_In_ fcb* fcb) {
     // GCC doesn't like %llx in sprintf, and MSVC won't let us use swprintf
     // without the CRT, which breaks drivers.
 
-    sprintf(s, "subvol %x, inode %x", (UINT32)fcb->subvol->id, (UINT32)fcb->inode);
+    sprintf(s, "subvol %x, inode %x", (uint32_t)fcb->subvol->id, (uint32_t)fcb->inode);
 
     as.Buffer = s;
     as.Length = as.MaximumLength = (USHORT)strlen(s);
@@ -1470,7 +1470,7 @@ void free_fcb(_Inout_ fcb* fcb) {
 }
 
 void reap_fcb(fcb* fcb) {
-    UINT8 c = fcb->hash >> 24;
+    uint8_t c = fcb->hash >> 24;
 
     if (fcb->subvol && fcb->subvol->fcbs_ptrs[c] == &fcb->list_entry) {
         if (fcb->list_entry.Flink != &fcb->subvol->fcbs && (CONTAINING_RECORD(fcb->list_entry.Flink, struct _fcb, list_entry)->hash >> 24) == c)
@@ -1725,7 +1725,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
 }
 
 void uninit(_In_ device_extension* Vcb) {
-    UINT64 i;
+    uint64_t i;
     KIRQL irql;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2329,7 +2329,7 @@ exit:
 }
 
 _Success_(return)
-BOOL get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ UINT16 len, _Out_ ULONG* atts) {
+BOOL get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ uint16_t len, _Out_ ULONG* atts) {
     if (len > 2 && val[0] == '0' && val[1] == 'x') {
         int i;
         ULONG dosnum = 0;
@@ -2355,13 +2355,13 @@ BOOL get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ UINT16
     return FALSE;
 }
 
-ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ UINT64 inode,
-                          _In_ UINT8 type, _In_ BOOL dotfile, _In_ BOOL ignore_xa, _In_opt_ PIRP Irp) {
+ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t inode,
+                          _In_ uint8_t type, _In_ BOOL dotfile, _In_ BOOL ignore_xa, _In_opt_ PIRP Irp) {
     ULONG att;
     char* eaval;
-    UINT16 ealen;
+    uint16_t ealen;
 
-    if (!ignore_xa && get_xattr(Vcb, r, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (UINT8**)&eaval, &ealen, Irp)) {
+    if (!ignore_xa && get_xattr(Vcb, r, inode, EA_DOSATTRIB, EA_DOSATTRIB_HASH, (uint8_t**)&eaval, &ealen, Irp)) {
         ULONG dosnum = 0;
 
         if (get_file_attributes_from_xattr(eaval, ealen, &dosnum)) {
@@ -2424,7 +2424,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     return att;
 }
 
-NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ PFILE_OBJECT FileObject, _In_ UINT64 StartingOffset, _In_ ULONG Length,
+NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ PFILE_OBJECT FileObject, _In_ uint64_t StartingOffset, _In_ ULONG Length,
                         _Out_writes_bytes_(Length) PUCHAR Buffer, _In_ BOOL override) {
     IO_STATUS_BLOCK IoStatus;
     LARGE_INTEGER Offset;
@@ -2517,11 +2517,11 @@ exit:
     return Status;
 }
 
-static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ UINT64 length) {
+static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ uint64_t length) {
     NTSTATUS Status;
     superblock* sb;
     ULONG i, to_read;
-    UINT8 valid_superblocks;
+    uint8_t valid_superblocks;
 
     to_read = device->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), device->SectorSize);
 
@@ -2541,7 +2541,7 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
     valid_superblocks = 0;
 
     while (superblock_addrs[i] > 0) {
-        UINT32 crc32;
+        uint32_t crc32;
 
         if (i > 0 && superblock_addrs[i] + to_read > length)
             break;
@@ -2562,10 +2562,10 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
         } else {
             TRACE("got superblock %u!\n", i);
 
-            crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+            crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
 
-            if (crc32 != *((UINT32*)sb->checksum))
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+            if (crc32 != *((uint32_t*)sb->checksum))
+                WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
             else if (sb->sector_size == 0)
                 WARN("superblock sector size was 0\n");
             else if (sb->node_size < sizeof(tree_header) + sizeof(internal_node) || sb->node_size > 0x10000)
@@ -2634,8 +2634,8 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
 }
 
 _Requires_exclusive_lock_held_(Vcb->tree_lock)
-static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ UINT64 id, _In_ UINT64 addr,
-                         _In_ UINT64 generation, _In_opt_ traverse_ptr* tp) {
+static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ uint64_t addr,
+                         _In_ uint64_t generation, _In_opt_ traverse_ptr* tp) {
     root* r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
     if (!r) {
         ERR("out of memory\n");
@@ -2670,7 +2670,7 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ UINT64 id, _In_ UIN
     if (tp) {
         RtlCopyMemory(&r->root_item, tp->item->data, min(sizeof(ROOT_ITEM), tp->item->size));
         if (tp->item->size < sizeof(ROOT_ITEM))
-            RtlZeroMemory(((UINT8*)&r->root_item) + tp->item->size, sizeof(ROOT_ITEM) - tp->item->size);
+            RtlZeroMemory(((uint8_t*)&r->root_item) + tp->item->size, sizeof(ROOT_ITEM) - tp->item->size);
     } else
         RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
 
@@ -2770,7 +2770,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     if (!Vcb->readonly && !Vcb->data_reloc_root) {
         root* reloc_root;
         INODE_ITEM* ii;
-        UINT16 irlen;
+        uint16_t irlen;
         INODE_REF* ir;
         LARGE_INTEGER time;
         BTRFS_TIME now;
@@ -2818,7 +2818,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
             return Status;
         }
 
-        irlen = (UINT16)offsetof(INODE_REF, name[0]) + 2;
+        irlen = (uint16_t)offsetof(INODE_REF, name[0]) + 2;
         ir = ExAllocatePoolWithTag(PagedPool, irlen, ALLOC_TAG);
         if (!ir) {
             ERR("out of memory\n");
@@ -2848,7 +2848,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     KEY searchkey;
     traverse_ptr tp, next_tp;
     BOOL b;
-    UINT64 lastaddr;
+    uint64_t lastaddr;
     NTSTATUS Status;
 
     InitializeListHead(&dev->space);
@@ -2859,7 +2859,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, FALSE, Irp);
     if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey))
-        RtlCopyMemory(dev->stats, tp.item->data, min(sizeof(UINT64) * 5, tp.item->size));
+        RtlCopyMemory(dev->stats, tp.item->data, min(sizeof(uint64_t) * 5, tp.item->size));
 
     searchkey.obj_id = dev->devitem.dev_id;
     searchkey.obj_type = TYPE_DEV_EXTENT;
@@ -3115,7 +3115,7 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_
     if (!NT_SUCCESS(Status))
         TRACE("IOCTL_ATA_PASS_THROUGH returned %08x for IDENTIFY DEVICE\n", Status);
     else {
-        IDENTIFY_DEVICE_DATA* idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
+        IDENTIFY_DEVICE_DATA* idd = (IDENTIFY_DEVICE_DATA*)((uint8_t*)apte + sizeof(ATA_PASS_THROUGH_EX));
 
         if (idd->CommandSetSupport.FlushCache) {
             dev->can_flush = TRUE;
@@ -3147,7 +3147,7 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ BOOL get_
     }
 #endif
 
-    RtlZeroMemory(dev->stats, sizeof(UINT64) * 5);
+    RtlZeroMemory(dev->stats, sizeof(uint64_t) * 5);
 }
 
 static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
@@ -3332,7 +3332,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 if (c->chunk_item->num_stripes > 0) {
                     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-                    UINT16 i;
+                    uint16_t i;
 
                     c->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
 
@@ -3415,8 +3415,8 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 }
 
 void protect_superblocks(_Inout_ chunk* c) {
-    UINT16 i = 0, j;
-    UINT64 off_start, off_end;
+    uint16_t i = 0, j;
+    uint64_t off_start, off_end;
 
     // The Linux driver also protects all the space before the first superblock.
     // I realize this confuses physical and logical addresses, but this is what btrfs-progs does -
@@ -3430,12 +3430,12 @@ void protect_superblocks(_Inout_ chunk* c) {
 
         if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
-                UINT16 sub_stripes = max(ci->sub_stripes, 1);
+                uint16_t sub_stripes = max(ci->sub_stripes, 1);
 
                 if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
 #ifdef _DEBUG
-                    UINT64 startoff;
-                    UINT16 startoffstripe;
+                    uint64_t startoff;
+                    uint16_t startoffstripe;
 #endif
 
                     TRACE("cut out superblock in chunk %llx\n", c->offset);
@@ -3457,7 +3457,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
-            UINT64 stripe_size = ci->size / (ci->num_stripes - 1);
+            uint64_t stripe_size = ci->size / (ci->num_stripes - 1);
 
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
@@ -3476,7 +3476,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
-            UINT64 stripe_size = ci->size / (ci->num_stripes - 2);
+            uint64_t stripe_size = ci->size / (ci->num_stripes - 2);
 
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
@@ -3513,8 +3513,8 @@ void protect_superblocks(_Inout_ chunk* c) {
     }
 }
 
-UINT64 chunk_estimate_phys_size(device_extension* Vcb, chunk* c, UINT64 u) {
-    UINT64 nfactor, dfactor;
+uint64_t chunk_estimate_phys_size(device_extension* Vcb, chunk* c, uint64_t u) {
+    uint64_t nfactor, dfactor;
 
     if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE || c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_RAID10) {
         nfactor = 1;
@@ -3642,7 +3642,7 @@ static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) de
     LIST_ENTRY* le;
 
     static const char fn[] = "default";
-    static UINT32 crc32 = 0x8dbfc2d2;
+    static uint32_t crc32 = 0x8dbfc2d2;
 
     if (Vcb->options.subvol_id != 0) {
         le = Vcb->roots.Flink;
@@ -3901,7 +3901,7 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ BOOL*
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
-    UINT32 crc32;
+    uint32_t crc32;
     UNICODE_STRING pnp_name;
     const GUID* guid;
 
@@ -3924,10 +3924,10 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ BOOL*
         goto end;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
 
-    if (crc32 != *((UINT32*)sb->checksum)) {
-        WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+    if (crc32 != *((uint32_t*)sb->checksum)) {
+        WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -3989,10 +3989,10 @@ static BOOL still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT f
         ExFreePool(sb);
         return FALSE;
     } else {
-        UINT32 crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
 
-        if (crc32 != *((UINT32*)sb->checksum)) {
-            WARN("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+        if (crc32 != *((uint32_t*)sb->checksum)) {
+            WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
             ExFreePool(sb);
             return FALSE;
         }
@@ -4027,7 +4027,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     pdo_device_extension* pdode = NULL;
     volume_child* vc;
     BOOL no_pnp = FALSE;
-    UINT64 readobjsize;
+    uint64_t readobjsize;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
@@ -4458,7 +4458,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     root_fcb->Vcb = Vcb;
     root_fcb->inode = SUBVOL_ROOT_INODE;
-    root_fcb->hash = calc_crc32c(0xffffffff, (UINT8*)&root_fcb->inode, sizeof(UINT64));
+    root_fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&root_fcb->inode, sizeof(uint64_t));
     root_fcb->type = BTRFS_TYPE_DIRECTORY;
 
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -4667,7 +4667,7 @@ exit2:
 static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
     NTSTATUS Status;
     superblock* sb;
-    UINT32 crc32;
+    uint32_t crc32;
     ULONG to_read, cc;
 
     if (!dev->devobj)
@@ -4739,10 +4739,10 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
         return STATUS_WRONG_VOLUME;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-    TRACE("crc32 was %08x, expected %08x\n", crc32, *((UINT32*)sb->checksum));
+    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    TRACE("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
 
-    if (crc32 != *((UINT32*)sb->checksum)) {
+    if (crc32 != *((uint32_t*)sb->checksum)) {
         ERR("checksum error\n");
         ExFreePool(sb);
         return STATUS_WRONG_VOLUME;
@@ -4765,7 +4765,7 @@ static NTSTATUS verify_volume(_In_ PDEVICE_OBJECT devobj) {
     device_extension* Vcb = devobj->DeviceExtension;
     NTSTATUS Status;
     LIST_ENTRY* le;
-    UINT64 failed_devices = 0;
+    uint64_t failed_devices = 0;
     BOOL locked = FALSE, remove = FALSE;
 
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
@@ -5119,7 +5119,7 @@ BOOL is_file_name_valid(_In_ PUNICODE_STRING us, _In_ BOOL posix) {
     return TRUE;
 }
 
-void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length) {
+void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length) {
     LIST_ENTRY* le;
     BOOL locked;
     range_lock* rl;
@@ -5166,7 +5166,7 @@ void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 sta
     }
 }
 
-void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ UINT64 start, _In_ UINT64 length) {
+void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length) {
     LIST_ENTRY* le;
 
     ExAcquireResourceExclusiveLite(&c->range_locks_lock, TRUE);
@@ -5205,7 +5205,7 @@ static void serial_thread(void* context) {
 
     KeInitializeTimer(&timer);
 
-    due_time.QuadPart = (UINT64)-10000000;
+    due_time.QuadPart = (uint64_t)-10000000;
 
     KeSetTimer(&timer, due_time, NULL);
 

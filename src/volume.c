@@ -405,12 +405,12 @@ static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
 
 static NTSTATUS vol_is_dynamic(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    UINT8* buf;
+    uint8_t* buf;
 
     if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength == 0 || !Irp->AssociatedIrp.SystemBuffer)
         return STATUS_INVALID_PARAMETER;
 
-    buf = (UINT8*)Irp->AssociatedIrp.SystemBuffer;
+    buf = (uint8_t*)Irp->AssociatedIrp.SystemBuffer;
 
     *buf = 1;
 
@@ -602,7 +602,7 @@ static NTSTATUS vol_get_drive_geometry(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     pdo_device_extension* pdode = vde->pdode;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     DISK_GEOMETRY* geom;
-    UINT64 length;
+    uint64_t length;
     LIST_ENTRY* le;
 
     if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(DISK_GEOMETRY))
@@ -942,7 +942,7 @@ static BOOL allow_degraded_mount(BTRFS_UUID* uuid) {
     NTSTATUS Status;
     OBJECT_ATTRIBUTES oa;
     UNICODE_STRING path, adus;
-    UINT32 degraded = mount_allow_degraded;
+    uint32_t degraded = mount_allow_degraded;
     ULONG i, j, kvfilen, retlen;
     KEY_VALUE_FULL_INFORMATION* kvfi;
 
@@ -994,8 +994,8 @@ static BOOL allow_degraded_mount(BTRFS_UUID* uuid) {
     adus.Length = adus.MaximumLength = sizeof(adus.Buffer) - sizeof(WCHAR);
 
     if (NT_SUCCESS(ZwQueryValueKey(h, &adus, KeyValueFullInformation, kvfi, kvfilen, &retlen))) {
-        if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(UINT32)) {
-            UINT32* val = (UINT32*)((UINT8*)kvfi + kvfi->DataOffset);
+        if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(uint32_t)) {
+            uint32_t* val = (uint32_t*)((uint8_t*)kvfi + kvfi->DataOffset);
 
             degraded = *val;
         }
@@ -1117,7 +1117,7 @@ static void add_drive_letter_work_item(pdo_device_extension* pdode) {
     IoQueueWorkItem(work_item, drive_letter_callback, DelayedWorkQueue, context);
 }
 
-void add_volume_device(superblock* sb, PUNICODE_STRING devpath, UINT64 length, ULONG disk_num, ULONG part_num) {
+void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     PDEVICE_OBJECT DeviceObject;

@@ -36,7 +36,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
 
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
         if (ccb->lxss) {
-            reqlen = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(UINT32);
+            reqlen = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(uint32_t);
 
             if (buflen < reqlen) {
                 Status = STATUS_BUFFER_OVERFLOW;
@@ -44,10 +44,10 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             }
 
             rdb->ReparseTag = IO_REPARSE_TAG_LXSS_SYMLINK;
-            rdb->ReparseDataLength = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(UINT32);
+            rdb->ReparseDataLength = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(uint32_t);
             rdb->Reserved = 0;
 
-            *((UINT32*)rdb->GenericReparseBuffer.DataBuffer) = 1;
+            *((uint32_t*)rdb->GenericReparseBuffer.DataBuffer) = 1;
 
             *retlen = reqlen;
         } else {
@@ -66,7 +66,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             }
 
             TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
-            Status = read_file(fcb, (UINT8*)data, 0, fcb->inode_item.st_size, NULL, NULL);
+            Status = read_file(fcb, (uint8_t*)data, 0, fcb->inode_item.st_size, NULL, NULL);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08x\n", Status);
@@ -81,8 +81,8 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 goto end;
             }
 
-            subnamelen = (UINT16)stringlen;
-            printnamelen = (UINT16)stringlen;
+            subnamelen = (uint16_t)stringlen;
+            printnamelen = (uint16_t)stringlen;
 
             reqlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + subnamelen + printnamelen;
 
@@ -310,7 +310,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
-            buf.Length = buf.MaximumLength = (UINT16)buflen;
+            buf.Length = buf.MaximumLength = (uint16_t)buflen;
 
             if (fcb->reparse_xattr.Buffer)
                 ExFreePool(fcb->reparse_xattr.Buffer);

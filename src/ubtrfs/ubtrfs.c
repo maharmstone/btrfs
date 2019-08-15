@@ -76,9 +76,9 @@ typedef struct {
 #define FORMAT_FLAG_INTEGRITY_DISABLE   0x00000100
 
 typedef struct {
-    UINT16 unk1;
-    UINT16 unk2;
-    UINT32 flags;
+    uint16_t unk1;
+    uint16_t unk2;
+    uint32_t flags;
     DSTRING* label;
 } options;
 
@@ -98,21 +98,21 @@ FORCEINLINE VOID InsertTailList(PLIST_ENTRY ListHead, PLIST_ENTRY Entry) {
 
 typedef struct {
     KEY key;
-    UINT16 size;
+    uint16_t size;
     void* data;
     LIST_ENTRY list_entry;
 } btrfs_item;
 
 typedef struct {
-    UINT64 offset;
+    uint64_t offset;
     CHUNK_ITEM* chunk_item;
-    UINT64 lastoff;
-    UINT64 used;
+    uint64_t lastoff;
+    uint64_t used;
     LIST_ENTRY list_entry;
 } btrfs_chunk;
 
 typedef struct {
-    UINT64 id;
+    uint64_t id;
     tree_header header;
     btrfs_chunk* c;
     LIST_ENTRY items;
@@ -121,7 +121,7 @@ typedef struct {
 
 typedef struct {
     DEV_ITEM dev_item;
-    UINT64 last_alloc;
+    uint64_t last_alloc;
 } btrfs_dev;
 
 #define keycmp(key1, key2)\
@@ -135,7 +135,7 @@ typedef struct {
 
 HMODULE module;
 ULONG def_sector_size = 0, def_node_size = 0;
-UINT64 def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+uint64_t def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
 
 // the following definitions come from fmifs.h in ReactOS
 
@@ -193,7 +193,7 @@ typedef enum {
 
 typedef BOOLEAN (NTAPI* PFMIFSCALLBACK)(CALLBACKCOMMAND Command, ULONG SubAction, PVOID ActionInfo);
 
-static const UINT32 crctable[] = {
+static const uint32_t crctable[] = {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
     0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b, 0x4d43cfd0, 0xbf284cd3, 0xac78bf27, 0x5e133c24,
     0x105ec76f, 0xe235446c, 0xf165b798, 0x030e349b, 0xd7c45070, 0x25afd373, 0x36ff2087, 0xc494a384,
@@ -228,8 +228,8 @@ static const UINT32 crctable[] = {
     0x79b737ba, 0x8bdcb4b9, 0x988c474d, 0x6ae7c44e, 0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351,
 };
 
-static UINT32 calc_crc32c(UINT32 seed, UINT8* msg, ULONG msglen) {
-    UINT32 rem;
+static uint32_t calc_crc32c(uint32_t seed, uint8_t* msg, ULONG msglen) {
+    uint32_t rem;
     ULONG i;
 
     rem = seed;
@@ -257,7 +257,7 @@ NTSTATUS WINAPI ChkdskEx(PUNICODE_STRING DriveRoot, BOOLEAN FixErrors, BOOLEAN V
     return STATUS_SUCCESS;
 }
 
-static btrfs_root* add_root(LIST_ENTRY* roots, UINT64 id) {
+static btrfs_root* add_root(LIST_ENTRY* roots, uint64_t id) {
     btrfs_root* root;
 
     root = malloc(sizeof(btrfs_root));
@@ -312,7 +312,7 @@ static void free_chunks(LIST_ENTRY* chunks) {
     }
 }
 
-static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset, void* data, UINT16 size) {
+static void add_item(btrfs_root* r, uint64_t obj_id, uint8_t obj_type, uint64_t offset, void* data, uint16_t size) {
     LIST_ENTRY* le;
     btrfs_item* item;
 
@@ -345,8 +345,8 @@ static void add_item(btrfs_root* r, UINT64 obj_id, UINT8 obj_type, UINT64 offset
     InsertTailList(&r->items, &item->list_entry);
 }
 
-static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
-    UINT64 off;
+static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
+    uint64_t off;
     DEV_EXTENT de;
 
     off = dev->last_alloc;
@@ -365,9 +365,9 @@ static UINT64 find_chunk_offset(UINT64 size, UINT64 offset, btrfs_dev* dev, btrf
     return off;
 }
 
-static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chunk_root, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid, UINT32 sector_size) {
-    UINT64 off, size;
-    UINT16 stripes, i;
+static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* chunk_root, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid, uint32_t sector_size) {
+    uint64_t off, size;
+    uint16_t stripes, i;
     btrfs_chunk* c;
     LIST_ENTRY* le;
     CHUNK_ITEM_STRIPE* cis;
@@ -431,16 +431,16 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, UINT64 flags, btrfs_root* chun
     return c;
 }
 
-static BOOL superblock_collision(btrfs_chunk* c, UINT64 address) {
+static BOOL superblock_collision(btrfs_chunk* c, uint64_t address) {
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
-    UINT64 stripe = (address - c->offset) / c->chunk_item->stripe_length;
-    UINT16 i, j;
+    uint64_t stripe = (address - c->offset) / c->chunk_item->stripe_length;
+    uint16_t i, j;
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         j = 0;
         while (superblock_addrs[j] != 0) {
             if (superblock_addrs[j] >= cis[i].offset) {
-                UINT64 stripe2 = (superblock_addrs[j] - cis[i].offset) / c->chunk_item->stripe_length;
+                uint64_t stripe2 = (superblock_addrs[j] - cis[i].offset) / c->chunk_item->stripe_length;
 
                 if (stripe2 == stripe)
                     return TRUE;
@@ -452,8 +452,8 @@ static BOOL superblock_collision(btrfs_chunk* c, UINT64 address) {
     return FALSE;
 }
 
-static UINT64 get_next_address(btrfs_chunk* c) {
-    UINT64 addr;
+static uint64_t get_next_address(btrfs_chunk* c) {
+    uint64_t addr;
 
     addr = c->lastoff;
 
@@ -469,18 +469,18 @@ static UINT64 get_next_address(btrfs_chunk* c) {
 
 typedef struct {
     EXTENT_ITEM ei;
-    UINT8 type;
+    uint8_t type;
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_METADATA;
 
 typedef struct {
     EXTENT_ITEM ei;
     EXTENT_ITEM2 ei2;
-    UINT8 type;
+    uint8_t type;
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_METADATA2;
 
-static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, UINT32 node_size,
+static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, uint32_t node_size,
                              btrfs_root* root_root, btrfs_root* extent_root, BOOL skinny) {
     LIST_ENTRY* le;
 
@@ -553,9 +553,9 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
     }
 }
 
-static NTSTATUS write_data(HANDLE h, UINT64 address, btrfs_chunk* c, void* data, ULONG size) {
+static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* data, ULONG size) {
     NTSTATUS Status;
-    UINT16 i;
+    uint16_t i;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
     CHUNK_ITEM_STRIPE* cis;
@@ -573,19 +573,19 @@ static NTSTATUS write_data(HANDLE h, UINT64 address, btrfs_chunk* c, void* data,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, UINT32 node_size, BTRFS_UUID* fsuuid, BTRFS_UUID* chunkuuid) {
+static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTRFS_UUID* fsuuid, BTRFS_UUID* chunkuuid) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
-    UINT8* tree;
+    uint8_t* tree;
 
     tree = malloc(node_size);
 
     le = roots->Flink;
     while (le != roots) {
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
-        UINT8* dp;
+        uint8_t* dp;
         leaf_node* ln;
-        UINT32 crc32;
+        uint32_t crc32;
 
         memset(tree, 0, node_size);
 
@@ -624,8 +624,8 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, UINT32 node_size, BTRFS
 
         memcpy(tree, &r->header, sizeof(tree_header));
 
-        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&((tree_header*)tree)->fs_uuid, node_size - sizeof(((tree_header*)tree)->csum));
-        memcpy(tree, &crc32, sizeof(UINT32));
+        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&((tree_header*)tree)->fs_uuid, node_size - sizeof(((tree_header*)tree)->csum));
+        memcpy(tree, &crc32, sizeof(uint32_t));
 
         Status = write_data(h, r->header.address, r->c, tree, node_size);
         if (!NT_SUCCESS(Status)) {
@@ -642,7 +642,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, UINT32 node_size, BTRFS
 }
 
 static void get_uuid(BTRFS_UUID* uuid) {
-    UINT8 i;
+    uint8_t i;
 
     for (i = 0; i < 16; i+=2) {
         ULONG r = rand();
@@ -652,7 +652,7 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
-static void init_device(btrfs_dev* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuuid, UINT32 sector_size) {
+static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* fsuuid, uint32_t sector_size) {
     dev->dev_item.dev_id = id;
     dev->dev_item.num_bytes = size;
     dev->dev_item.bytes_used = 0;
@@ -672,15 +672,15 @@ static void init_device(btrfs_dev* dev, UINT64 id, UINT64 size, BTRFS_UUID* fsuu
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
-                                  btrfs_chunk* sys_chunk, UINT32 node_size, BTRFS_UUID* fsuuid, UINT32 sector_size, PUNICODE_STRING label, UINT64 incompat_flags) {
+                                  btrfs_chunk* sys_chunk, uint32_t node_size, BTRFS_UUID* fsuuid, uint32_t sector_size, PUNICODE_STRING label, uint64_t incompat_flags) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
     int i;
-    UINT32 crc32;
+    uint32_t crc32;
     superblock* sb;
     KEY* key;
-    UINT64 bytes_used;
+    uint64_t bytes_used;
     LIST_ENTRY* le;
 
     sblen = sizeof(*sb);
@@ -768,8 +768,8 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
 
         sb->sb_phys_addr = superblock_addrs[i];
 
-        crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-        memcpy(&sb->checksum, &crc32, sizeof(UINT32));
+        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        memcpy(&sb->checksum, &crc32, sizeof(uint32_t));
 
         off.QuadPart = superblock_addrs[i];
 
@@ -794,7 +794,7 @@ static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
     out->nanoseconds = (l % 10000000) * 100;
 }
 
-static void init_fs_tree(btrfs_root* r, UINT32 node_size) {
+static void init_fs_tree(btrfs_root* r, uint32_t node_size) {
     INODE_ITEM ii;
     INODE_REF* ir;
     FILETIME filetime;
@@ -849,7 +849,7 @@ static NTSTATUS clear_first_megabyte(HANDLE h) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER zero;
-    UINT8* mb;
+    uint8_t* mb;
 
     mb = malloc(0x100000);
     memset(mb, 0, 0x100000);
@@ -885,7 +885,7 @@ static BOOL is_ssd(HANDLE h) {
     Status = NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_ATA_PASS_THROUGH, apte, aptelen, apte, aptelen);
 
     if (NT_SUCCESS(Status)) {
-        idd = (IDENTIFY_DEVICE_DATA*)((UINT8*)apte + sizeof(ATA_PASS_THROUGH_EX));
+        idd = (IDENTIFY_DEVICE_DATA*)((uint8_t*)apte + sizeof(ATA_PASS_THROUGH_EX));
 
         if (idd->NominalMediaRotationRate == 1) {
             free(apte);
@@ -898,7 +898,7 @@ static BOOL is_ssd(HANDLE h) {
     return FALSE;
 }
 
-static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32 sector_size, UINT32 node_size, UINT64 incompat_flags) {
+static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint32_t sector_size, uint32_t node_size, uint64_t incompat_flags) {
     NTSTATUS Status;
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
@@ -906,7 +906,7 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
     btrfs_dev dev;
     BTRFS_UUID fsuuid, chunkuuid;
     BOOL ssd;
-    UINT64 metadata_flags;
+    uint64_t metadata_flags;
 
     srand(time(0));
     get_uuid(&fsuuid);
@@ -971,14 +971,14 @@ static NTSTATUS write_btrfs(HANDLE h, UINT64 size, PUNICODE_STRING label, UINT32
 }
 
 static BOOL look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
-    UINT32 i;
+    uint32_t i;
     btrfs_filesystem_device* dev;
 
     for (i = 0; i < bfs->num_devices; i++) {
         if (i == 0)
             dev = &bfs->device;
         else
-            dev = (btrfs_filesystem_device*)((UINT8*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
+            dev = (btrfs_filesystem_device*)((uint8_t*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
 
         if (RtlCompareMemory(&dev->uuid, devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
             return TRUE;
@@ -987,14 +987,14 @@ static BOOL look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
     return FALSE;
 }
 
-static BOOL is_mounted_multi_device(HANDLE h, UINT32 sector_size) {
+static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     NTSTATUS Status;
     superblock* sb;
     ULONG sblen;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
     BTRFS_UUID fsuuid, devuuid;
-    UINT32 crc32;
+    uint32_t crc32;
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES atts;
     HANDLE h2;
@@ -1023,8 +1023,8 @@ static BOOL is_mounted_multi_device(HANDLE h, UINT32 sector_size) {
         return FALSE;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (UINT8*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-    if (crc32 != *((UINT32*)sb)) {
+    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    if (crc32 != *((uint32_t*)sb)) {
         free(sb);
         return FALSE;
     }
@@ -1077,7 +1077,7 @@ static BOOL is_mounted_multi_device(HANDLE h, UINT32 sector_size) {
             if (bfs2->next_entry == 0)
                 break;
             else
-                bfs2 = (btrfs_filesystem*)((UINT8*)bfs2 + bfs2->next_entry);
+                bfs2 = (btrfs_filesystem*)((uint8_t*)bfs2 + bfs2->next_entry);
         }
     }
 
@@ -1120,12 +1120,12 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
     DISK_GEOMETRY dg;
-    UINT32 sector_size, node_size;
+    uint32_t sector_size, node_size;
     UNICODE_STRING btrfsus;
     HANDLE token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    UINT64 incompat_flags;
+    uint64_t incompat_flags;
     UNICODE_STRING empty_label;
 
     static WCHAR btrfs[] = L"\\Btrfs";
@@ -1266,7 +1266,7 @@ end:
     return Status;
 }
 
-BOOL __stdcall FormatEx(DSTRING* root, STREAM_MESSAGE* message, options* opts, UINT32 unk1) {
+BOOL __stdcall FormatEx(DSTRING* root, STREAM_MESSAGE* message, options* opts, uint32_t unk1) {
     UNICODE_STRING DriveRoot, Label;
     NTSTATUS Status;
 
@@ -1297,11 +1297,11 @@ void __stdcall SetSizes(ULONG sector, ULONG node) {
         def_node_size = node;
 }
 
-void __stdcall SetIncompatFlags(UINT64 incompat_flags) {
+void __stdcall SetIncompatFlags(uint64_t incompat_flags) {
     def_incompat_flags = incompat_flags;
 }
 
-BOOL __stdcall GetFilesystemInformation(UINT32 unk1, UINT32 unk2, void* unk3) {
+BOOL __stdcall GetFilesystemInformation(uint32_t unk1, uint32_t unk2, void* unk3) {
     // STUB - undocumented
 
     return TRUE;

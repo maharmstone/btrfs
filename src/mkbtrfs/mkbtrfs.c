@@ -48,15 +48,15 @@ typedef struct {
 #define FORMAT_FLAG_INTEGRITY_DISABLE   0x00000100
 
 typedef struct {
-    UINT16 unk1;
-    UINT16 unk2;
-    UINT32 flags;
+    uint16_t unk1;
+    uint16_t unk2;
+    uint32_t flags;
     DSTRING* label;
 } options;
 
-typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, UINT32 unk1);
+typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, uint32_t unk1);
 typedef void (__stdcall* pSetSizes)(ULONG sector, ULONG node);
-typedef void (__stdcall* pSetIncompatFlags)(UINT64 incompat_flags);
+typedef void (__stdcall* pSetIncompatFlags)(uint64_t incompat_flags);
 
 static void print_string(FILE* f, int resid, ...) {
     WCHAR s[1024], t[1024];
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     ULONG sector_size = 0, node_size = 0;
     int i;
     BOOL invalid_args = FALSE;
-    UINT64 incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+    uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
     pSetIncompatFlags SetIncompatFlags;
 
     if (argc >= 2) {
