@@ -95,6 +95,7 @@ NTSTATUS WINAPI NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
 
 NTSTATUS NTAPI NtQueryInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len, FILE_INFORMATION_CLASS FileInformationClass);
 
+#ifdef _MSC_VER
 typedef enum _FSINFOCLASS {
     FileFsVolumeInformation = 1,
     FileFsLabelInformation,
@@ -112,6 +113,7 @@ typedef enum _FSINFOCLASS {
     FileFsFullSizeInformationEx,
     FileFsMaximumInformation
 } FS_INFORMATION_CLASS, *PFS_INFORMATION_CLASS;
+#endif
 
 NTSTATUS NTAPI NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation, ULONG Length,
                                             FS_INFORMATION_CLASS FsInformationClass);
