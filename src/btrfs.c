@@ -697,6 +697,81 @@ static BOOL lie_about_fs_type() {
     return FALSE;
 }
 
+// version of RtlUTF8ToUnicodeN for Vista and below
+NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, ULONG src_len) {
+    uint8_t* in = (uint8_t*)src;
+    uint16_t* out = (uint16_t*)dest;
+    ULONG needed = 0, left = dest_max / sizeof(uint16_t);
+
+    for (ULONG i = 0; i < src_len; i++) {
+        uint32_t cp;
+
+        if (!(in[i] & 0x80))
+            cp = in[i];
+        else if ((in[i] & 0xe0) == 0xc0) {
+            if (i == src_len - 1 || (in[i+1] & 0xc0) != 0x80)
+                cp = 0xfffd;
+            else {
+                cp = ((in[i] & 0x1f) << 6) | (in[i+1] & 0x3f);
+                i++;
+            }
+        } else if ((in[i] & 0xf0) == 0xe0) {
+            if (i >= src_len - 2 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80)
+                cp = 0xfffd;
+            else {
+                cp = ((in[i] & 0xf) << 12) | ((in[i+1] & 0x3f) << 6) | (in[i+2] & 0x3f);
+                i += 2;
+            }
+        } else if ((in[i] & 0xf8) == 0xf0) {
+            if (i >= src_len - 3 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80 || (in[i+3] & 0xc0) != 0x80)
+                cp = 0xfffd;
+            else {
+                cp = ((in[i] & 0x7) << 18) | ((in[i+1] & 0x3f) << 12) | ((in[i+2] & 0x3f) << 6) | (in[i+3] & 0x3f);
+                i += 3;
+            }
+        } else
+            cp = 0xfffd;
+
+        if (cp > 0x10ffff)
+            cp = 0xfffd;
+
+        if (dest) {
+            if (cp <= 0xffff) {
+                if (left < 1)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = (uint16_t)cp;
+                out++;
+
+                left--;
+            } else {
+                if (left < 2)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                cp -= 0x10000;
+
+                *out = 0xd800 | ((cp & 0xffc00) >> 10);
+                out++;
+
+                *out = 0xdc00 | (cp & 0x3ff);
+                out++;
+
+                left -= 2;
+            }
+        }
+
+        if (cp <= 0xffff)
+            needed += sizeof(uint16_t);
+        else
+            needed += 2 * sizeof(uint16_t);
+    }
+
+    if (dest_len)
+        *dest_len = needed;
+
+    return STATUS_SUCCESS;
+}
+
 _Dispatch_type_(IRP_MJ_QUERY_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
@@ -853,9 +928,9 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
 
             ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
-            Status = RtlUTF8ToUnicodeN(NULL, 0, &label_len, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
+            Status = utf8_to_utf16(NULL, 0, &label_len, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                ERR("utf8_to_utf16 returned %08x\n", Status);
                 ExReleaseResourceLite(&Vcb->tree_lock);
                 break;
             }
@@ -883,9 +958,9 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
             if (label_len > 0) {
                 ULONG bytecount;
 
-                Status = RtlUTF8ToUnicodeN(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
+                Status = utf8_to_utf16(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
                 if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
-                    ERR("RtlUTF8ToUnicodeN returned %08x\n", Status);
+                    ERR("utf8_to_utf16 returned %08x\n", Status);
                     ExReleaseResourceLite(&Vcb->tree_lock);
                     break;
                 }

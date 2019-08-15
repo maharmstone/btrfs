@@ -74,9 +74,9 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 goto end;
             }
 
-            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, data, (ULONG)fcb->inode_item.st_size);
+            Status = utf8_to_utf16(NULL, 0, &stringlen, data, (ULONG)fcb->inode_item.st_size);
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                ERR("utf8_to_utf16 1 returned %08x\n", Status);
                 ExFreePool(data);
                 goto end;
             }
@@ -108,11 +108,11 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
             rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
 
-            Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+            Status = utf8_to_utf16(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
                                        stringlen, &stringlen, data, (ULONG)fcb->inode_item.st_size);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                ERR("utf8_to_utf16 2 returned %08x\n", Status);
                 ExFreePool(data);
                 goto end;
             }

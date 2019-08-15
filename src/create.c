@@ -517,9 +517,9 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             goto cont;
         }
 
-        Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, di->name, di->n);
+        Status = utf8_to_utf16(NULL, 0, &utf16len, di->name, di->n);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+            ERR("utf8_to_utf16 1 returned %08x\n", Status);
             goto cont;
         }
 
@@ -553,9 +553,9 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        Status = RtlUTF8ToUnicodeN(dc->name.Buffer, utf16len, &utf16len, di->name, di->n);
+        Status = utf8_to_utf16(dc->name.Buffer, utf16len, &utf16len, di->name, di->n);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+            ERR("utf8_to_utf16 2 returned %08x\n", Status);
             ExFreePool(dc->utf8.Buffer);
             ExFreePool(dc->name.Buffer);
             ExFreePool(dc);
@@ -745,9 +745,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     RtlCopyMemory(hl->utf8.Buffer, ir->name, ir->n);
                 }
 
-                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
+                Status = utf8_to_utf16(NULL, 0, &stringlen, ir->name, ir->n);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                    ERR("utf8_to_utf16 1 returned %08x\n", Status);
                     ExFreePool(hl);
                     reap_fcb(fcb);
                     return Status;
@@ -767,9 +767,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                    Status = utf8_to_utf16(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 2 returned %08x\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
                         reap_fcb(fcb);
@@ -810,9 +810,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     RtlCopyMemory(hl->utf8.Buffer, ier->name, ier->n);
                 }
 
-                Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
+                Status = utf8_to_utf16(NULL, 0, &stringlen, ier->name, ier->n);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                    ERR("utf8_to_utf16 1 returned %08x\n", Status);
                     ExFreePool(hl);
                     reap_fcb(fcb);
                     return Status;
@@ -832,9 +832,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    Status = RtlUTF8ToUnicodeN(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
+                    Status = utf8_to_utf16(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 2 returned %08x\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
                         reap_fcb(fcb);
@@ -978,9 +978,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                     dir_child* dc;
                     ULONG utf16len;
 
-                    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, &di->name[sizeof(xapref) - 1], di->n + 1 - sizeof(xapref));
+                    Status = utf8_to_utf16(NULL, 0, &utf16len, &di->name[sizeof(xapref) - 1], di->n + 1 - sizeof(xapref));
                     if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 1 returned %08x\n", Status);
                         reap_fcb(fcb);
                         return Status;
                     }
@@ -1015,9 +1015,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    Status = RtlUTF8ToUnicodeN(dc->name.Buffer, utf16len, &utf16len, dc->utf8.Buffer, dc->utf8.Length);
+                    Status = utf8_to_utf16(dc->name.Buffer, utf16len, &utf16len, dc->utf8.Buffer, dc->utf8.Length);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 2 returned %08x\n", Status);
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
                         ExFreePool(dc);
@@ -3311,9 +3311,9 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
             uint16_t subnamelen, printnamelen;
             REPARSE_DATA_BUFFER* rdb;
 
-            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, (char*)*data, bytes_read);
+            Status = utf8_to_utf16(NULL, 0, &stringlen, (char*)*data, bytes_read);
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                ERR("utf8_to_utf16 1 returned %08x\n", Status);
                 ExFreePool(*data);
                 return Status;
             }
@@ -3340,11 +3340,11 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
             rdb->SymbolicLinkReparseBuffer.PrintNameLength = printnamelen;
             rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
 
-            Status = RtlUTF8ToUnicodeN(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
+            Status = utf8_to_utf16(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
                                     stringlen, &stringlen, (char*)*data, size);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                ERR("utf8_to_utf16 2 returned %08x\n", Status);
                 ExFreePool(rdb);
                 ExFreePool(*data);
                 return Status;
@@ -4021,9 +4021,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                         ULONG stringlen;
 
-                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ir->name, ir->n);
+                        Status = utf8_to_utf16(NULL, 0, &stringlen, ir->name, ir->n);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                            ERR("utf8_to_utf16 1 returned %08x\n", Status);
                             free_fcb(fcb);
                             return Status;
                         }
@@ -4041,9 +4041,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
 
-                            Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                            Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
                             if (!NT_SUCCESS(Status)) {
-                                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                                ERR("utf8_to_utf16 2 returned %08x\n", Status);
                                 ExFreePool(name.Buffer);
                                 free_fcb(fcb);
                                 return Status;
@@ -4066,9 +4066,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                         ULONG stringlen;
 
-                        Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, ier->name, ier->n);
+                        Status = utf8_to_utf16(NULL, 0, &stringlen, ier->name, ier->n);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                            ERR("utf8_to_utf16 1 returned %08x\n", Status);
                             free_fcb(fcb);
                             return Status;
                         }
@@ -4086,9 +4086,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
 
-                            Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, ier->name, ier->n);
+                            Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, ier->name, ier->n);
                             if (!NT_SUCCESS(Status)) {
-                                ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                                ERR("utf8_to_utf16 2 returned %08x\n", Status);
                                 ExFreePool(name.Buffer);
                                 free_fcb(fcb);
                                 return Status;
@@ -4182,9 +4182,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                 return Status;
             }
 
-            Status = RtlUTF8ToUnicodeN(NULL, 0, &stringlen, rr->name, rr->n);
+            Status = utf8_to_utf16(NULL, 0, &stringlen, rr->name, rr->n);
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+                ERR("utf8_to_utf16 1 returned %08x\n", Status);
                 free_fcb(fcb);
                 return Status;
             }
@@ -4205,9 +4205,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                Status = RtlUTF8ToUnicodeN(name.Buffer, stringlen, &stringlen, rr->name, rr->n);
+                Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, rr->name, rr->n);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+                    ERR("utf8_to_utf16 2 returned %08x\n", Status);
                     ExFreePool(name.Buffer);
                     free_fcb(fcb);
                     return Status;

@@ -278,9 +278,9 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     else
         ERR("%.*s, offset %llx\n", fn.Length, fn.Buffer, offset);
 
-    Status = RtlUTF8ToUnicodeN(NULL, 0, &utf16len, fn.Buffer, fn.Length);
+    Status = utf8_to_utf16(NULL, 0, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUTF8ToUnicodeN 1 returned %08x\n", Status);
+        ERR("utf8_to_utf16 1 returned %08x\n", Status);
         ExFreePool(fn.Buffer);
         goto end;
     }
@@ -302,9 +302,9 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     err->data.offset = offset;
     err->data.filename_length = (uint16_t)utf16len;
 
-    Status = RtlUTF8ToUnicodeN(err->data.filename, utf16len, &utf16len, fn.Buffer, fn.Length);
+    Status = utf8_to_utf16(err->data.filename, utf16len, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUTF8ToUnicodeN 2 returned %08x\n", Status);
+        ERR("utf8_to_utf16 2 returned %08x\n", Status);
         ExFreePool(fn.Buffer);
         ExFreePool(err);
         goto end;
