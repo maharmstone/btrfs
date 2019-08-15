@@ -601,14 +601,14 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
     utf8.Buffer = NULL;
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &len, nameus.Buffer, nameus.Length);
+    Status = utf16_to_utf8(NULL, 0, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        ERR("utf16_to_utf8 failed with error %08x\n", Status);
         return Status;
     }
 
     if (len == 0) {
-        ERR("RtlUnicodeToUTF8N returned a length of 0\n");
+        ERR("utf16_to_utf8 returned a length of 0\n");
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -625,9 +625,9 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, nameus.Buffer, nameus.Length);
+    Status = utf16_to_utf8(utf8.Buffer, len, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        ERR("utf16_to_utf8 failed with error %08x\n", Status);
         goto end2;
     }
 
@@ -823,14 +823,14 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     utf8.Buffer = NULL;
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &len, nameus.Buffer, nameus.Length);
+    Status = utf16_to_utf8(NULL, 0, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        ERR("utf16_to_utf8 failed with error %08x\n", Status);
         return Status;
     }
 
     if (len == 0) {
-        ERR("RtlUnicodeToUTF8N returned a length of 0\n");
+        ERR("utf16_to_utf8 returned a length of 0\n");
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -847,9 +847,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, nameus.Buffer, nameus.Length);
+    Status = utf16_to_utf8(utf8.Buffer, len, &len, nameus.Buffer, nameus.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        ERR("utf16_to_utf8 failed with error %08x\n", Status);
         goto end2;
     }
 
@@ -3750,14 +3750,14 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     if (bmn->name[0] == '.' && (bmn->namelen == sizeof(WCHAR) || (bmn->namelen == 2 * sizeof(WCHAR) && bmn->name[1] == '.')))
         return STATUS_OBJECT_NAME_INVALID;
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &len, bmn->name, bmn->namelen);
+    Status = utf16_to_utf8(NULL, 0, &len, bmn->name, bmn->namelen);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N return %08x\n", Status);
+        ERR("utf16_to_utf8 return %08x\n", Status);
         return Status;
     }
 
     if (len == 0) {
-        ERR("RtlUnicodeToUTF8N returned a length of 0\n");
+        ERR("utf16_to_utf8 returned a length of 0\n");
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -3774,9 +3774,9 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, len, &len, bmn->name, bmn->namelen);
+    Status = utf16_to_utf8(utf8.Buffer, len, &len, bmn->name, bmn->namelen);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N failed with error %08x\n", Status);
+        ERR("utf16_to_utf8 failed with error %08x\n", Status);
         ExFreePool(utf8.Buffer);
         return Status;
     }

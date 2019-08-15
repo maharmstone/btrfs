@@ -1533,7 +1533,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     origutf8len = fileref->dc->utf8.Length;
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
+    Status = utf16_to_utf8(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
         goto end;
 
@@ -1545,7 +1545,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         goto end;
     }
 
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, utf8len, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
+    Status = utf16_to_utf8(utf8.Buffer, utf8len, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
         goto end;
 
@@ -2393,7 +2393,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
+    Status = utf16_to_utf8(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
         goto end;
 
@@ -2405,7 +2405,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
         goto end;
     }
 
-    Status = RtlUnicodeToUTF8N(utf8.Buffer, utf8len, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
+    Status = utf16_to_utf8(utf8.Buffer, utf8len, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
         goto end;
 

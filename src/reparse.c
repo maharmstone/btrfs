@@ -211,9 +211,9 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
             return Status;
         }
 
-        Status = RtlUnicodeToUTF8N(NULL, 0, (PULONG)&target.Length, subname.Buffer, subname.Length);
+        Status = utf16_to_utf8(NULL, 0, (PULONG)&target.Length, subname.Buffer, subname.Length);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUnicodeToUTF8N 1 failed with error %08x\n", Status);
+            ERR("utf16_to_utf8 1 failed with error %08x\n", Status);
             return Status;
         }
 
@@ -224,9 +224,9 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        Status = RtlUnicodeToUTF8N(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
+        Status = utf16_to_utf8(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUnicodeToUTF8N 2 failed with error %08x\n", Status);
+            ERR("utf16_to_utf8 2 failed with error %08x\n", Status);
             ExFreePool(target.Buffer);
             return Status;
         }

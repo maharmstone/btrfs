@@ -699,6 +699,7 @@ static BOOL lie_about_fs_type() {
 
 // version of RtlUTF8ToUnicodeN for Vista and below
 NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, ULONG src_len) {
+    NTSTATUS Status = STATUS_SUCCESS;
     uint8_t* in = (uint8_t*)src;
     uint16_t* out = (uint16_t*)dest;
     ULONG needed = 0, left = dest_max / sizeof(uint16_t);
@@ -709,31 +710,38 @@ NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, 
         if (!(in[i] & 0x80))
             cp = in[i];
         else if ((in[i] & 0xe0) == 0xc0) {
-            if (i == src_len - 1 || (in[i+1] & 0xc0) != 0x80)
+            if (i == src_len - 1 || (in[i+1] & 0xc0) != 0x80) {
                 cp = 0xfffd;
-            else {
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
                 cp = ((in[i] & 0x1f) << 6) | (in[i+1] & 0x3f);
                 i++;
             }
         } else if ((in[i] & 0xf0) == 0xe0) {
-            if (i >= src_len - 2 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80)
+            if (i >= src_len - 2 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80) {
                 cp = 0xfffd;
-            else {
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
                 cp = ((in[i] & 0xf) << 12) | ((in[i+1] & 0x3f) << 6) | (in[i+2] & 0x3f);
                 i += 2;
             }
         } else if ((in[i] & 0xf8) == 0xf0) {
-            if (i >= src_len - 3 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80 || (in[i+3] & 0xc0) != 0x80)
+            if (i >= src_len - 3 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80 || (in[i+3] & 0xc0) != 0x80) {
                 cp = 0xfffd;
-            else {
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
                 cp = ((in[i] & 0x7) << 18) | ((in[i+1] & 0x3f) << 12) | ((in[i+2] & 0x3f) << 6) | (in[i+3] & 0x3f);
                 i += 3;
             }
-        } else
+        } else {
             cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
 
-        if (cp > 0x10ffff)
+        if (cp > 0x10ffff) {
             cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
 
         if (dest) {
             if (cp <= 0xffff) {
@@ -769,7 +777,111 @@ NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, 
     if (dest_len)
         *dest_len = needed;
 
-    return STATUS_SUCCESS;
+    return Status;
+}
+
+// version of RtlUnicodeToUTF8N for Vista and below
+NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len) {
+    NTSTATUS Status = STATUS_SUCCESS;
+    uint16_t* in = (uint16_t*)src;
+    uint8_t* out = (uint8_t*)dest;
+    ULONG in_len = src_len / sizeof(uint16_t);
+    ULONG needed = 0, left = dest_max;
+
+    for (ULONG i = 0; i < in_len; i++) {
+        uint32_t cp = *in;
+        in++;
+
+        if ((cp & 0xfc00) == 0xd800) {
+            if (i == in_len - 1 || (*in & 0xfc00) != 0xdc00) {
+                cp = 0xfffd;
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
+                cp = (cp & 0x3ff) << 10;
+                cp |= *in & 0x3ff;
+                cp += 0x10000;
+
+                in++;
+                i++;
+            }
+        } else if ((cp & 0xfc00) == 0xdc00) {
+            cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
+
+        if (cp > 0x10ffff) {
+            cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
+
+        if (dest) {
+            if (cp < 0x80) {
+                if (left < 1)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = (uint8_t)cp;
+                out++;
+
+                left--;
+            } else if (cp < 0x800) {
+                if (left < 2)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = 0xc0 | ((cp & 0x7c0) >> 6);
+                out++;
+
+                *out = 0x80 | (cp & 0x3f);
+                out++;
+
+                left -= 2;
+            } else if (cp < 0x10000) {
+                if (left < 3)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = 0xe0 | ((cp & 0xf000) >> 12);
+                out++;
+
+                *out = 0x80 | ((cp & 0xfc0) >> 6);
+                out++;
+
+                *out = 0x80 | (cp & 0x3f);
+                out++;
+
+                left -= 3;
+            } else {
+                if (left < 4)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = 0xf0 | ((cp & 0x1c0000) >> 18);
+                out++;
+
+                *out = 0x80 | ((cp & 0x3f000) >> 12);
+                out++;
+
+                *out = 0x80 | ((cp & 0xfc0) >> 6);
+                out++;
+
+                *out = 0x80 | (cp & 0x3f);
+                out++;
+
+                left -= 4;
+            }
+        }
+
+        if (cp < 0x80)
+            needed++;
+        else if (cp < 0x800)
+            needed += 2;
+        else if (cp < 0x10000)
+            needed += 3;
+        else
+            needed += 4;
+    }
+
+    if (dest_len)
+        *dest_len = needed;
+
+    return Status;
 }
 
 _Dispatch_type_(IRP_MJ_QUERY_VOLUME_INFORMATION)
@@ -1182,7 +1294,7 @@ static NTSTATUS set_label(_In_ device_extension* Vcb, _In_ FILE_FS_LABEL_INFORMA
     if (vollen == 0) {
         utf8len = 0;
     } else {
-        Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, ffli->VolumeLabel, vollen);
+        Status = utf16_to_utf8(NULL, 0, &utf8len, ffli->VolumeLabel, vollen);
         if (!NT_SUCCESS(Status))
             goto end;
 
@@ -1195,7 +1307,7 @@ static NTSTATUS set_label(_In_ device_extension* Vcb, _In_ FILE_FS_LABEL_INFORMA
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
 
     if (utf8len > 0) {
-        Status = RtlUnicodeToUTF8N((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE, &utf8len, ffli->VolumeLabel, vollen);
+        Status = utf16_to_utf8((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE, &utf8len, ffli->VolumeLabel, vollen);
         if (!NT_SUCCESS(Status))
             goto release;
     } else

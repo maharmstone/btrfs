@@ -2098,9 +2098,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     if (options & FILE_DIRECTORY_FILE && IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_TEMPORARY)
         return STATUS_INVALID_PARAMETER;
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
+    Status = utf16_to_utf8(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N returned %08x\n", Status);
+        ERR("utf16_to_utf8 returned %08x\n", Status);
         return Status;
     }
 
@@ -2110,9 +2110,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = RtlUnicodeToUTF8N(utf8, utf8len, &utf8len, fpus->Buffer, fpus->Length);
+    Status = utf16_to_utf8(utf8, utf8len, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N returned %08x\n", Status);
+        ERR("utf16_to_utf8 returned %08x\n", Status);
         ExFreePool(utf8);
         return Status;
     }
@@ -2669,9 +2669,9 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     fcb->ads = TRUE;
 
-    Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, stream->Buffer, stream->Length);
+    Status = utf16_to_utf8(NULL, 0, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N 1 returned %08x\n", Status);
+        ERR("utf16_to_utf8 1 returned %08x\n", Status);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return Status;
@@ -2689,9 +2689,9 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     RtlCopyMemory(fcb->adsxattr.Buffer, xapref, sizeof(xapref) - 1);
 
-    Status = RtlUnicodeToUTF8N(&fcb->adsxattr.Buffer[sizeof(xapref) - 1], utf8len, &utf8len, stream->Buffer, stream->Length);
+    Status = utf16_to_utf8(&fcb->adsxattr.Buffer[sizeof(xapref) - 1], utf8len, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUnicodeToUTF8N 2 returned %08x\n", Status);
+        ERR("utf16_to_utf8 2 returned %08x\n", Status);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return Status;
