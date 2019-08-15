@@ -85,6 +85,8 @@ tCcCopyWriteEx fCcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx fCcSetAdditionalCacheAttributesEx;
 tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
+tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
+tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -5772,6 +5774,19 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         fIoUnregisterPlugPlayNotificationEx = (tIoUnregisterPlugPlayNotificationEx)MmGetSystemRoutineAddress(&name);
     } else
         fIoUnregisterPlugPlayNotificationEx = NULL;
+
+    if (RtlIsNtDdiVersionAvailable(NTDDI_VISTA)) {
+        UNICODE_STRING name;
+
+        RtlInitUnicodeString(&name, L"FsRtlGetEcpListFromIrp");
+        fFsRtlGetEcpListFromIrp = (tFsRtlGetEcpListFromIrp)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"FsRtlGetNextExtraCreateParameter");
+        fFsRtlGetNextExtraCreateParameter = (tFsRtlGetNextExtraCreateParameter)MmGetSystemRoutineAddress(&name);
+    } else {
+        fFsRtlGetEcpListFromIrp = NULL;
+        fFsRtlGetNextExtraCreateParameter = NULL;
+    }
 
     drvobj = DriverObject;
 

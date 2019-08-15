@@ -1770,6 +1770,11 @@ typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten
 
 typedef NTSTATUS (*tIoUnregisterPlugPlayNotificationEx)(PVOID NotificationEntry);
 
+typedef NTSTATUS (*tFsRtlGetEcpListFromIrp)(PIRP Irp, PECP_LIST* EcpList);
+
+typedef NTSTATUS (*tFsRtlGetNextExtraCreateParameter)(PECP_LIST EcpList, PVOID CurrentEcpContext, LPGUID NextEcpType,
+                                                      PVOID* NextEcpContext, ULONG* NextEcpContextSize);
+
 #ifndef _MSC_VER
 
 #undef RtlIsNtDdiVersionAvailable

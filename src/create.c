@@ -20,6 +20,8 @@
 #include <ntddstor.h>
 
 extern PDEVICE_OBJECT master_devobj;
+extern tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
+extern tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 
 static const WCHAR datastring[] = L"::$DATA";
 
@@ -2910,21 +2912,23 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     if (options & FILE_DELETE_ON_CLOSE && IrpSp->Parameters.Create.FileAttributes & FILE_ATTRIBUTE_READONLY)
         return STATUS_CANNOT_DELETE;
 
-    if (NT_SUCCESS(FsRtlGetEcpListFromIrp(Irp, &ecp_list)) && ecp_list) {
-        void* ctx = NULL;
-        GUID type;
-        ULONG ctxsize;
+    if (fFsRtlGetEcpListFromIrp && fFsRtlGetNextExtraCreateParameter) {
+        if (NT_SUCCESS(fFsRtlGetEcpListFromIrp(Irp, &ecp_list)) && ecp_list) {
+            void* ctx = NULL;
+            GUID type;
+            ULONG ctxsize;
 
-        do {
-            Status = FsRtlGetNextExtraCreateParameter(ecp_list, ctx, &type, &ctx, &ctxsize);
+            do {
+                Status = fFsRtlGetNextExtraCreateParameter(ecp_list, ctx, &type, &ctx, &ctxsize);
 
-            if (NT_SUCCESS(Status)) {
-                if (RtlCompareMemory(&type, &GUID_ECP_ATOMIC_CREATE, sizeof(GUID)) == sizeof(GUID) && ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT)) {
-                    acec = ctx;
-                    break;
+                if (NT_SUCCESS(Status)) {
+                    if (RtlCompareMemory(&type, &GUID_ECP_ATOMIC_CREATE, sizeof(GUID)) == sizeof(GUID) && ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT)) {
+                        acec = ctx;
+                        break;
+                    }
                 }
-            }
-        } while (NT_SUCCESS(Status));
+            } while (NT_SUCCESS(Status));
+        }
     }
 
     dsus.Buffer = (WCHAR*)datasuf;
