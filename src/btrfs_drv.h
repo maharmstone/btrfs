@@ -15,8 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
-#ifndef BTRFS_DRV_H_DEFINED
-#define BTRFS_DRV_H_DEFINED
+#pragma once
 
 #undef _WIN32_WINNT
 #undef NTDDI_VERSION
@@ -1832,6 +1831,4 @@ NTSTATUS NTAPI ZwQueryInformationProcess(
     IN ULONG ProcessInformationLength,
     OUT PULONG ReturnLength OPTIONAL
 );
-#endif
-
 #endif

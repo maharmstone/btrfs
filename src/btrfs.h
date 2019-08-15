@@ -6,8 +6,7 @@
  * you want with it. You don't have to, but I'd appreciate if you let me know if you
  * use it anything cool - mark@harmstone.com. */
 
-#ifndef BTRFS_H_DEFINED
-#define BTRFS_H_DEFINED
+#pragma once
 
 #include <stdint.h>
 
@@ -587,5 +586,3 @@ typedef struct {
 } btrfs_send_tlv;
 
 #pragma pack(pop)
-
-#endif

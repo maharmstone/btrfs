@@ -1,7 +1,6 @@
 // No copyright claimed in this file - do what you want with it.
 
-#ifndef BTRFSIOCTL_H_DEFINED
-#define BTRFSIOCTL_H_DEFINED
+#pragma once
 
 #include "btrfs.h"
 
@@ -279,5 +278,3 @@ typedef struct {
     uint64_t device;
     uint64_t size;
 } btrfs_resize;
-
-#endif
