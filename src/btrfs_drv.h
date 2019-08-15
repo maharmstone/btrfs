@@ -1768,6 +1768,8 @@ typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG
 
 typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten);
 
+typedef NTSTATUS (*tIoUnregisterPlugPlayNotificationEx)(PVOID NotificationEntry);
+
 #ifndef _MSC_VER
 
 #undef RtlIsNtDdiVersionAvailable

@@ -33,6 +33,7 @@ extern UNICODE_STRING registry_path;
 extern KEVENT mountmgr_thread_event;
 extern HANDLE mountmgr_thread_handle;
 extern BOOL shutting_down;
+extern tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 
@@ -329,8 +330,12 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
     pdo_device_extension* pdode = vde->pdode;
     device_extension* Vcb = vde->mounted_device ? vde->mounted_device->DeviceExtension : NULL;
 
-    if (vc->notification_entry)
-        IoUnregisterPlugPlayNotificationEx(vc->notification_entry);
+    if (vc->notification_entry) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(vc->notification_entry);
+        else
+            IoUnregisterPlugPlayNotification(vc->notification_entry);
+    }
 
     if (vde->mounted_device && (!Vcb || !Vcb->options.allow_degraded)) {
         Status = pnp_surprise_removal(vde->mounted_device, NULL);

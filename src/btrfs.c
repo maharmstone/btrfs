@@ -84,6 +84,7 @@ tCcCopyReadEx fCcCopyReadEx;
 tCcCopyWriteEx fCcCopyWriteEx;
 tCcSetAdditionalCacheAttributesEx fCcSetAdditionalCacheAttributesEx;
 tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
+tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -269,14 +270,26 @@ static void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
 
     IoUnregisterFileSystem(DriverObject->DeviceObject);
 
-    if (notification_entry2)
-        IoUnregisterPlugPlayNotificationEx(notification_entry2);
+    if (notification_entry2) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(notification_entry2);
+        else
+            IoUnregisterPlugPlayNotification(notification_entry2);
+    }
 
-    if (notification_entry3)
-        IoUnregisterPlugPlayNotificationEx(notification_entry3);
+    if (notification_entry3) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(notification_entry3);
+        else
+            IoUnregisterPlugPlayNotification(notification_entry3);
+    }
 
-    if (notification_entry)
-        IoUnregisterPlugPlayNotificationEx(notification_entry);
+    if (notification_entry) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(notification_entry);
+        else
+            IoUnregisterPlugPlayNotification(notification_entry);
+    }
 
     dosdevice_nameW.Buffer = (WCHAR*)dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
@@ -5751,6 +5764,14 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         fCcSetAdditionalCacheAttributesEx = NULL;
         fFsRtlUpdateDiskCounters = NULL;
     }
+
+    if (RtlIsNtDdiVersionAvailable(NTDDI_WIN7)) {
+        UNICODE_STRING name;
+
+        RtlInitUnicodeString(&name, L"IoUnregisterPlugPlayNotificationEx");
+        fIoUnregisterPlugPlayNotificationEx = (tIoUnregisterPlugPlayNotificationEx)MmGetSystemRoutineAddress(&name);
+    } else
+        fIoUnregisterPlugPlayNotificationEx = NULL;
 
     drvobj = DriverObject;
 
