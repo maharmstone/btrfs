@@ -307,6 +307,7 @@
     <ClCompile Include="src\flushthread.c" />
     <ClCompile Include="src\free-space.c" />
     <ClCompile Include="src\fsctl.c" />
+    <ClCompile Include="src\fsrtl.c" />
     <ClCompile Include="src\galois.c" />
     <ClCompile Include="src\pnp.c" />
     <ClCompile Include="src\read.c" />

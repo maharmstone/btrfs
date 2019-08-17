@@ -17,6 +17,8 @@
 
 #include "btrfs_drv.h"
 
+extern tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
+
 NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject, void* buffer, DWORD buflen, ULONG_PTR* retlen) {
     USHORT subnamelen, printnamelen, i;
     ULONG stringlen;
@@ -286,7 +288,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
         return STATUS_INVALID_BUFFER_SIZE;
     }
 
-    Status = FsRtlValidateReparsePointBuffer(buflen, rdb);
+    Status = fFsRtlValidateReparsePointBuffer(buflen, rdb);
     if (!NT_SUCCESS(Status)) {
         ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
         return Status;

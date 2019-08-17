@@ -1589,6 +1589,9 @@ NTSTATUS stop_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJECT FileObject, PIRP Irp);
 NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen, KPROCESSOR_MODE processor_mode);
 
+// in fsrtl.c
+NTSTATUS compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength, IN PREPARSE_DATA_BUFFER ReparseBuffer);
+
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
 
@@ -1774,6 +1777,8 @@ typedef NTSTATUS (*tFsRtlGetEcpListFromIrp)(PIRP Irp, PECP_LIST* EcpList);
 
 typedef NTSTATUS (*tFsRtlGetNextExtraCreateParameter)(PECP_LIST EcpList, PVOID CurrentEcpContext, LPGUID NextEcpType,
                                                       PVOID* NextEcpContext, ULONG* NextEcpContextSize);
+
+typedef NTSTATUS (*tFsRtlValidateReparsePointBuffer)(ULONG BufferLength, PREPARSE_DATA_BUFFER ReparseBuffer);
 
 #ifndef _MSC_VER
 

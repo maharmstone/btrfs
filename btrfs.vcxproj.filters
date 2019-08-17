@@ -280,5 +280,8 @@
     <ClCompile Include="src\zstd\zstd_opt.c">
       <Filter>Source Files\zstd</Filter>
     </ClCompile>
+    <ClCompile Include="src\fsrtl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

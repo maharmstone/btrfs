@@ -22,6 +22,7 @@
 extern PDEVICE_OBJECT master_devobj;
 extern tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
 extern tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
+extern tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 
 static const WCHAR datastring[] = L"::$DATA";
 
@@ -3367,7 +3368,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
 
             *data = (uint8_t*)rdb;
         } else {
-            Status = FsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)*data);
+            Status = fFsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)*data);
             if (!NT_SUCCESS(Status)) {
                 ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
                 ExFreePool(*data);
@@ -3383,7 +3384,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
             return STATUS_INTERNAL_ERROR;
         }
 
-        Status = FsRtlValidateReparsePointBuffer(fcb->reparse_xattr.Length, (REPARSE_DATA_BUFFER*)fcb->reparse_xattr.Buffer);
+        Status = fFsRtlValidateReparsePointBuffer(fcb->reparse_xattr.Length, (REPARSE_DATA_BUFFER*)fcb->reparse_xattr.Buffer);
         if (!NT_SUCCESS(Status)) {
             ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
             return Status;

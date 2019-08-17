@@ -87,6 +87,7 @@ tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
 tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
+tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 BOOL diskacc = FALSE;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -5783,9 +5784,13 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
         RtlInitUnicodeString(&name, L"FsRtlGetNextExtraCreateParameter");
         fFsRtlGetNextExtraCreateParameter = (tFsRtlGetNextExtraCreateParameter)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"FsRtlValidateReparsePointBuffer");
+        fFsRtlValidateReparsePointBuffer = (tFsRtlValidateReparsePointBuffer)MmGetSystemRoutineAddress(&name);
     } else {
         fFsRtlGetEcpListFromIrp = NULL;
         fFsRtlGetNextExtraCreateParameter = NULL;
+        fFsRtlValidateReparsePointBuffer = compat_FsRtlValidateReparsePointBuffer;
     }
 
     drvobj = DriverObject;
