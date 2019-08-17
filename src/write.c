@@ -2788,7 +2788,7 @@ NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->sup
     // From experimenting, it seems that 40 sectors is roughly the crossover
     // point where offloading the crc32 calculation becomes worth it.
 
-    if (sectors < 40 || KeQueryActiveProcessorCount(NULL) < 2) {
+    if (sectors < 40 || get_num_of_processors() < 2) {
         ULONG j;
 
         for (j = 0; j < sectors; j++) {

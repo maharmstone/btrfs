@@ -3940,11 +3940,25 @@ void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs) {
     CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
 }
 
+uint32_t get_num_of_processors() {
+    KAFFINITY p = KeQueryActiveProcessors();
+    uint32_t r = 0;
+
+    while (p != 0) {
+        if (p & 1)
+            r++;
+
+        p >>= 1;
+    }
+
+    return r;
+}
+
 static NTSTATUS create_calc_threads(_In_ PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG i;
 
-    Vcb->calcthreads.num_threads = KeQueryActiveProcessorCount(NULL);
+    Vcb->calcthreads.num_threads = get_num_of_processors();
 
     Vcb->calcthreads.threads = ExAllocatePoolWithTag(NonPagedPool, sizeof(drv_calc_thread) * Vcb->calcthreads.num_threads, ALLOC_TAG);
     if (!Vcb->calcthreads.threads) {
