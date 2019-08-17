@@ -56,7 +56,7 @@ static const WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e',
 DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x69, 0x17, 0x9a, 0x7d, 0x1d);
 
 PDRIVER_OBJECT drvobj;
-PDEVICE_OBJECT master_devobj;
+PDEVICE_OBJECT master_devobj, busobj;
 BOOL have_sse42 = FALSE, have_sse2 = FALSE;
 uint64_t num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
@@ -5239,6 +5239,7 @@ _Dispatch_type_(IRP_MJ_POWER)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
 
@@ -5249,10 +5250,11 @@ static NTSTATUS drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Irp->IoStatus.Information = 0;
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_power(DeviceObject, Irp);
+        volume_device_extension* vde = DeviceObject->DeviceExtension;
 
-        Irp->IoStatus.Status = Status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        PoStartNextPowerIrp(Irp);
+        IoSkipCurrentIrpStackLocation(Irp);
+        Status = PoCallDriver(vde->attached_device, Irp);
 
         goto exit;
     } else if (Vcb && Vcb->type == VCB_TYPE_FS) {
@@ -5261,10 +5263,23 @@ static NTSTATUS drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
 
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_BUS) {
+        bus_device_extension* bde = DeviceObject->DeviceExtension;
+
+        PoStartNextPowerIrp(Irp);
+        IoSkipCurrentIrpStackLocation(Irp);
+        Status = PoCallDriver(bde->attached_device, Irp);
+
+        goto exit;
     }
 
-    Status = STATUS_INVALID_DEVICE_REQUEST;
-    Irp->IoStatus.Status = Status;
+    if (IrpSp->MinorFunction == IRP_MN_SET_POWER || IrpSp->MinorFunction == IRP_MN_QUERY_POWER)
+        Irp->IoStatus.Status = STATUS_SUCCESS;
+
+    Status = Irp->IoStatus.Status;
+
+    PoStartNextPowerIrp(Irp);
+
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
 exit:
@@ -5709,6 +5724,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     UNICODE_STRING device_nameW;
     UNICODE_STRING dosdevice_nameW;
     control_device_extension* cde;
+    bus_device_extension* bde;
     HANDLE regh;
     OBJECT_ATTRIBUTES oa;
     ULONG dispos;
@@ -5889,24 +5905,39 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     watch_registry(regh);
 
+    Status = IoCreateDevice(DriverObject, sizeof(bus_device_extension), NULL, FILE_DEVICE_UNKNOWN,
+                            FILE_DEVICE_SECURE_OPEN, FALSE, &busobj);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoCreateDevice returned %08x\n", Status);
+        return Status;
+    }
+
+    bde = (bus_device_extension*)busobj->DeviceExtension;
+
+    RtlZeroMemory(bde, sizeof(bus_device_extension));
+
+    bde->type = VCB_TYPE_BUS;
+
     Status = IoReportDetectedDevice(drvobj, InterfaceTypeUndefined, 0xFFFFFFFF, 0xFFFFFFFF,
-                                    NULL, NULL, 0, &cde->buspdo);
+                                    NULL, NULL, 0, &bde->buspdo);
     if (!NT_SUCCESS(Status)) {
         ERR("IoReportDetectedDevice returned %08x\n", Status);
         return Status;
     }
 
-    Status = IoRegisterDeviceInterface(cde->buspdo, &BtrfsBusInterface, NULL, &cde->bus_name);
+    Status = IoRegisterDeviceInterface(bde->buspdo, &BtrfsBusInterface, NULL, &bde->bus_name);
     if (!NT_SUCCESS(Status))
         WARN("IoRegisterDeviceInterface returned %08x\n", Status);
 
-    cde->attached_device = IoAttachDeviceToDeviceStack(DeviceObject, cde->buspdo);
+    bde->attached_device = IoAttachDeviceToDeviceStack(busobj, bde->buspdo);
 
-    Status = IoSetDeviceInterfaceState(&cde->bus_name, TRUE);
+    busobj->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    Status = IoSetDeviceInterfaceState(&bde->bus_name, TRUE);
     if (!NT_SUCCESS(Status))
         WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
 
-    IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
+    IoInvalidateDeviceRelations(bde->buspdo, BusRelations);
 
     Status = PsCreateSystemThread(&degraded_wait_handle, 0, NULL, NULL, NULL, degraded_wait_thread, NULL);
     if (!NT_SUCCESS(Status))

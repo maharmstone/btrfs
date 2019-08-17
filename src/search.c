@@ -33,6 +33,7 @@ extern UNICODE_STRING registry_path;
 extern KEVENT mountmgr_thread_event;
 extern HANDLE mountmgr_thread_handle;
 extern BOOL shutting_down;
+extern PDEVICE_OBJECT busobj;
 extern tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
@@ -466,9 +467,9 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         ExReleaseResourceLite(&pdode->child_lock);
 
         if (!no_pnp) {
-            control_device_extension* cde = master_devobj->DeviceExtension;
+            bus_device_extension* bde = busobj->DeviceExtension;
 
-            IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
+            IoInvalidateDeviceRelations(bde->buspdo, BusRelations);
         }
 
         if (remove) {

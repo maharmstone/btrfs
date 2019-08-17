@@ -640,6 +640,7 @@ typedef struct {
 #define VCB_TYPE_CONTROL    2
 #define VCB_TYPE_VOLUME     3
 #define VCB_TYPE_PDO        4
+#define VCB_TYPE_BUS        5
 
 #ifdef DEBUG_STATS
 typedef struct {
@@ -814,10 +815,14 @@ typedef struct _device_extension {
 
 typedef struct {
     uint32_t type;
+} control_device_extension;
+
+typedef struct {
+    uint32_t type;
     PDEVICE_OBJECT buspdo;
     PDEVICE_OBJECT attached_device;
     UNICODE_STRING bus_name;
-} control_device_extension;
+} bus_device_extension;
 
 typedef struct {
     BTRFS_UUID uuid;
@@ -1572,7 +1577,6 @@ NTSTATUS vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_shutdown(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-NTSTATUS vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num);
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 

@@ -353,7 +353,7 @@ static NTSTATUS bus_query_hardware_ids(PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
+static NTSTATUS bus_pnp(bus_device_extension* bde, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     switch (IrpSp->MinorFunction) {
@@ -384,7 +384,7 @@ static NTSTATUS bus_pnp(control_device_extension* cde, PIRP Irp) {
     }
 
     IoSkipCurrentIrpStackLocation(Irp);
-    return IoCallDriver(cde->attached_device, Irp);
+    return IoCallDriver(bde->attached_device, Irp);
 }
 
 static NTSTATUS pdo_query_device_id(pdo_device_extension* pdode, PIRP Irp) {
@@ -490,7 +490,7 @@ NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     top_level = is_top_level(Irp);
 
-    if (Vcb && Vcb->type == VCB_TYPE_CONTROL) {
+    if (Vcb && Vcb->type == VCB_TYPE_BUS) {
         Status = bus_pnp(DeviceObject->DeviceExtension, Irp);
         goto exit;
     } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {

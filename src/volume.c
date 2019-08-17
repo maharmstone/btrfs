@@ -27,6 +27,7 @@
 
 extern PDRIVER_OBJECT drvobj;
 extern PDEVICE_OBJECT master_devobj;
+extern PDEVICE_OBJECT busobj;
 extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
 extern UNICODE_STRING registry_path;
@@ -877,21 +878,6 @@ NTSTATUS vol_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
-NTSTATUS vol_power(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
-    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    NTSTATUS Status;
-
-    TRACE("(%p, %p)\n", DeviceObject, Irp);
-
-    if (IrpSp->MinorFunction == IRP_MN_SET_POWER || IrpSp->MinorFunction == IRP_MN_QUERY_POWER)
-        Irp->IoStatus.Status = STATUS_SUCCESS;
-
-    Status = Irp->IoStatus.Status;
-    PoStartNextPowerIrp(Irp);
-
-    return Status;
-}
-
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     NTSTATUS Status;
     ULONG mmdltsize;
@@ -1341,8 +1327,8 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         if (no_pnp)
             AddDevice(drvobj, pdo);
         else {
-            control_device_extension* cde = master_devobj->DeviceExtension;
-            IoInvalidateDeviceRelations(cde->buspdo, BusRelations);
+            bus_device_extension* bde = busobj->DeviceExtension;
+            IoInvalidateDeviceRelations(bde->buspdo, BusRelations);
         }
     }
 
