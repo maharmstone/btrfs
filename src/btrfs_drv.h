@@ -1782,11 +1782,6 @@ typedef NTSTATUS (*tFsRtlGetNextExtraCreateParameter)(PECP_LIST EcpList, PVOID C
 typedef NTSTATUS (*tFsRtlValidateReparsePointBuffer)(ULONG BufferLength, PREPARSE_DATA_BUFFER ReparseBuffer);
 
 #ifndef _MSC_VER
-
-#undef RtlIsNtDdiVersionAvailable
-
-BOOLEAN RtlIsNtDdiVersionAvailable(ULONG Version);
-
 PEPROCESS PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
 #endif
 

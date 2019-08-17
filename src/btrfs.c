@@ -115,6 +115,9 @@ typedef struct {
     IO_STATUS_BLOCK iosb;
 } read_context;
 
+// no longer in Windows headers??
+extern BOOLEAN WdmlibRtlIsNtDdiVersionAvailable(ULONG Version);
+
 #ifdef _DEBUG
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS dbg_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
@@ -5652,7 +5655,7 @@ NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObj
     volname.Buffer[j] = '}';
 
     Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK,
-                            RtlIsNtDdiVersionAvailable(NTDDI_WIN8) ? FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL : 0, FALSE, &voldev);
+                            WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN8) ? FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL : 0, FALSE, &voldev);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08x\n", Status);
         goto end2;
@@ -5746,7 +5749,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     check_cpu();
 
-    if (RtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
+    if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
         UNICODE_STRING name;
         tPsIsDiskCountersEnabled fPsIsDiskCountersEnabled;
 
@@ -5782,7 +5785,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         fFsRtlUpdateDiskCounters = NULL;
     }
 
-    if (RtlIsNtDdiVersionAvailable(NTDDI_WIN7)) {
+    if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN7)) {
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"IoUnregisterPlugPlayNotificationEx");
@@ -5790,7 +5793,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     } else
         fIoUnregisterPlugPlayNotificationEx = NULL;
 
-    if (RtlIsNtDdiVersionAvailable(NTDDI_VISTA)) {
+    if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_VISTA)) {
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"FsRtlGetEcpListFromIrp");
