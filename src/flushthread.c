@@ -2551,6 +2551,8 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
     ULONG* bmparr;
     ULONG runlength, index;
 
+    TRACE("(%p, %I64x, %x, %p, %p)\n", Vcb, address, length, csum, Irp);
+
     searchkey.obj_id = EXTENT_CSUM_ID;
     searchkey.obj_type = TYPE_EXTENT_CSUM;
     searchkey.offset = address;
