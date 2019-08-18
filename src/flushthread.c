@@ -68,7 +68,7 @@ NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, 
     PIO_STACK_LOCATION IrpSp;
     write_context context;
 
-    TRACE("(%p, %llx, %p, %x)\n", device, address, data, length);
+    TRACE("(%p, %I64x, %p, %x)\n", device, address, data, length);
 
     RtlZeroMemory(&context, sizeof(write_context));
 
@@ -330,7 +330,7 @@ static void trim_emulation(device* dev) {
         ioctl_context_stripe* stripe = &context.stripes[i];
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
-        WARN("(%llx, %llx)\n", s->address, s->size);
+        WARN("(%I64x, %I64x)\n", s->address, s->size);
 
         stripe->Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
 
@@ -603,7 +603,7 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
             tree* t = CONTAINING_RECORD(le, tree, list_entry);
 
             if (t->write && t->header.level == level) {
-                TRACE("tree %p: root = %llx, level = %x, parent = %p\n", t, t->header.tree_id, t->header.level, t->parent);
+                TRACE("tree %p: root = %I64x, level = %x, parent = %p\n", t, t->header.tree_id, t->header.level, t->parent);
 
                 nothing_found = FALSE;
 
@@ -628,7 +628,7 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                     }
 
                     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                        ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+                        ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.obj_id);
                         return STATUS_INTERNAL_ERROR;
                     }
 
@@ -722,7 +722,7 @@ BOOL find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* a
     LIST_ENTRY* le;
     space* s;
 
-    TRACE("(%p, %llx, %p)\n", Vcb, c->offset, address);
+    TRACE("(%p, %I64x, %p)\n", Vcb, c->offset, address);
 
     if (Vcb->superblock.node_size > c->chunk_item->size - c->used)
         return FALSE;
@@ -805,7 +805,7 @@ static BOOL insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     EXTENT_ITEM_TREE2* eit2;
     traverse_ptr insert_tp;
 
-    TRACE("(%p, %x, %llx, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, rollback);
+    TRACE("(%p, %x, %I64x, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, rollback);
 
     if (!find_metadata_address_in_chunk(Vcb, c, &address))
         return FALSE;
@@ -934,11 +934,11 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
     NTSTATUS Status;
     uint64_t rc, root;
 
-    TRACE("(%p, %llx, %p)\n", Vcb, address, t);
+    TRACE("(%p, %I64x, %p)\n", Vcb, address, t);
 
     rc = get_extent_refcount(Vcb, address, Vcb->superblock.node_size, Irp);
     if (rc == 0) {
-        ERR("error - refcount for extent %llx was 0\n", address);
+        ERR("error - refcount for extent %I64x was 0\n", address);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -975,7 +975,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
 
             release_chunk_lock(c, Vcb);
         } else
-            ERR("could not find chunk for address %llx\n", address);
+            ERR("could not find chunk for address %I64x\n", address);
     }
 
     return STATUS_SUCCESS;
@@ -1090,7 +1090,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     uint64_t flags = get_extent_flags(Vcb, t->header.address, Irp);
 
     if (rc == 0) {
-        ERR("refcount for extent %llx was 0\n", t->header.address);
+        ERR("refcount for extent %I64x was 0\n", t->header.address);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1482,14 +1482,14 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
                 return Status;
             }
 
-            TRACE("allocated extent %llx\n", t->new_address);
+            TRACE("allocated extent %I64x\n", t->new_address);
 
             c = get_chunk_from_address(Vcb, t->new_address);
 
             if (c)
                 c->used += Vcb->superblock.node_size;
             else {
-                ERR("could not find chunk for address %llx\n", t->new_address);
+                ERR("could not find chunk for address %I64x\n", t->new_address);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -1557,11 +1557,11 @@ static NTSTATUS update_root_root(device_extension* Vcb, BOOL no_cache, PIRP Irp,
                 }
 
                 if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                    ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+                    ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.obj_id);
                     return STATUS_INTERNAL_ERROR;
                 }
 
-                TRACE("updating the address for root %llx to %llx\n", searchkey.obj_id, t->new_address);
+                TRACE("updating the address for root %I64x to %I64x\n", searchkey.obj_id, t->new_address);
 
                 t->root->root_item.block_number = t->new_address;
                 t->root->root_item.root_level = t->header.level;
@@ -1673,7 +1673,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, BOOL no_
     while (le != tree_writes) {
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
 
-        TRACE("address: %llx, size: %x\n", tw->address, tw->length);
+        TRACE("address: %I64x, size: %x\n", tw->address, tw->length);
 
         KeInitializeEvent(&wtc[bit_num].Event, NotificationEvent, FALSE);
         InitializeListHead(&wtc[bit_num].stripes);
@@ -1841,12 +1841,12 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                     }
 
                     if (keycmp(searchkey, tp.item->key)) {
-                        ERR("could not find %llx,%x,%llx in extent_root (found %llx,%x,%llx instead)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        ERR("could not find %I64x,%x,%I64x in extent_root (found %I64x,%x,%I64x instead)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                         return STATUS_INTERNAL_ERROR;
                     }
 
                     if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
                         return STATUS_INTERNAL_ERROR;
                     }
 
@@ -1888,10 +1888,10 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
 
                     if (!first) {
                         if (keycmp(td->key, lastkey) == 0) {
-                            ERR("(%llx,%x,%llx): duplicate key\n", td->key.obj_id, td->key.obj_type, td->key.offset);
+                            ERR("(%I64x,%x,%I64x): duplicate key\n", td->key.obj_id, td->key.obj_type, td->key.offset);
                             crash = TRUE;
                         } else if (keycmp(td->key, lastkey) == -1) {
-                            ERR("(%llx,%x,%llx): key out of order\n", td->key.obj_id, td->key.obj_type, td->key.offset);
+                            ERR("(%I64x,%x,%I64x): key out of order\n", td->key.obj_id, td->key.obj_type, td->key.offset);
                             crash = TRUE;
                         }
                     } else
@@ -1911,22 +1911,22 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 size += num_items * sizeof(internal_node);
 
             if (num_items != t->header.num_items) {
-                ERR("tree %llx, level %x: num_items was %x, expected %x\n", t->root->id, t->header.level, num_items, t->header.num_items);
+                ERR("tree %I64x, level %x: num_items was %x, expected %x\n", t->root->id, t->header.level, num_items, t->header.num_items);
                 crash = TRUE;
             }
 
             if (size != t->size) {
-                ERR("tree %llx, level %x: size was %x, expected %x\n", t->root->id, t->header.level, size, t->size);
+                ERR("tree %I64x, level %x: size was %x, expected %x\n", t->root->id, t->header.level, size, t->size);
                 crash = TRUE;
             }
 
             if (t->header.num_items == 0 && t->parent) {
-                ERR("tree %llx, level %x: tried to write empty tree with parent\n", t->root->id, t->header.level);
+                ERR("tree %I64x, level %x: tried to write empty tree with parent\n", t->root->id, t->header.level);
                 crash = TRUE;
             }
 
             if (t->size > Vcb->superblock.node_size - sizeof(tree_header)) {
-                ERR("tree %llx, level %x: tried to write overlarge tree (%x > %x)\n", t->root->id, t->header.level, t->size, Vcb->superblock.node_size - sizeof(tree_header));
+                ERR("tree %I64x, level %x: tried to write overlarge tree (%x > %x)\n", t->root->id, t->header.level, t->size, Vcb->superblock.node_size - sizeof(tree_header));
                 crash = TRUE;
             }
 
@@ -1936,7 +1936,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 while (le2 != &t->itemlist) {
                     tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
                     if (!td->ignore) {
-                        ERR("%llx,%x,%llx inserted=%u\n", td->key.obj_id, td->key.obj_type, td->key.offset, td->inserted);
+                        ERR("%I64x,%x,%I64x inserted=%u\n", td->key.obj_id, td->key.obj_type, td->key.offset, td->inserted);
                     }
                     le2 = le2->Flink;
                 }
@@ -2337,7 +2337,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
         write_superblocks_stripe* stripe = CONTAINING_RECORD(le, write_superblocks_stripe, list_entry);
 
         if (!NT_SUCCESS(stripe->Status)) {
-            ERR("device %llx returned %08x\n", stripe->device->devitem.dev_id, stripe->Status);
+            ERR("device %I64x returned %08x\n", stripe->device->devitem.dev_id, stripe->Status);
             log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
             Status = stripe->Status;
             goto end;
@@ -2486,7 +2486,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
                 }
 
                 if (keycmp(searchkey, tp.item->key)) {
-                    ERR("could not find (%llx,%x,%llx) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                    ERR("could not find (%I64x,%x,%I64x) in extent tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                     return STATUS_INTERNAL_ERROR;
                 }
 
@@ -2621,9 +2621,9 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
         else
             endaddr = address + (length * Vcb->superblock.sector_size);
 
-        TRACE("cs starts at %llx (%x sectors)\n", address, length);
-        TRACE("startaddr = %llx\n", startaddr);
-        TRACE("endaddr = %llx\n", endaddr);
+        TRACE("cs starts at %I64x (%x sectors)\n", address, length);
+        TRACE("startaddr = %I64x\n", startaddr);
+        TRACE("endaddr = %I64x\n", endaddr);
 
         len = (ULONG)((endaddr - startaddr) / Vcb->superblock.sector_size);
 
@@ -2830,14 +2830,14 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             }
 
             if (keycmp(searchkey, tp.item->key)) {
-                ERR("could not find (%llx,%x,%llx) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                ERR("could not find (%I64x,%x,%I64x) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                 Status = STATUS_INTERNAL_ERROR;
                 release_chunk_lock(c, Vcb);
                 goto end;
             }
 
             if (tp.item->size < sizeof(BLOCK_GROUP_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
                 Status = STATUS_INTERNAL_ERROR;
                 release_chunk_lock(c, Vcb);
                 goto end;
@@ -2854,7 +2854,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             RtlCopyMemory(bgi, tp.item->data, tp.item->size);
             bgi->used = c->used;
 
-            TRACE("adjusting usage of chunk %llx to %llx\n", c->offset, c->used);
+            TRACE("adjusting usage of chunk %I64x to %I64x\n", c->offset, c->used);
 
             Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
@@ -2913,7 +2913,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     tree_data* td;
     tree_data* oldlastitem;
 
-    TRACE("splitting tree in %llx at (%llx,%x,%llx)\n", t->root->id, newfirstitem->key.obj_id, newfirstitem->key.obj_type, newfirstitem->key.offset);
+    TRACE("splitting tree in %I64x at (%I64x,%x,%I64x)\n", t->root->id, newfirstitem->key.obj_id, newfirstitem->key.obj_type, newfirstitem->key.offset);
 
     nt = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!nt) {
@@ -3147,7 +3147,7 @@ static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
                 ds = sizeof(internal_node);
 
             if (numitems == 0 && ds > Vcb->superblock.node_size - sizeof(tree_header)) {
-                ERR("(%llx,%x,%llx) in tree %llx is too large (%x > %x)\n",
+                ERR("(%I64x,%x,%I64x) in tree %I64x is too large (%x > %x)\n",
                     td->key.obj_id, td->key.obj_type, td->key.offset, t->root->id,
                     ds, Vcb->superblock.node_size - sizeof(tree_header));
                 return STATUS_INTERNAL_ERROR;
@@ -3238,7 +3238,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
 
     *done = FALSE;
 
-    TRACE("trying to amalgamate tree in root %llx, level %x (size %u)\n", t->root->id, t->header.level, t->size);
+    TRACE("trying to amalgamate tree in root %I64x, level %x (size %u)\n", t->root->id, t->header.level, t->size);
 
     // FIXME - doesn't capture everything, as it doesn't ascend
     le = t->paritem->list_entry.Flink;
@@ -3256,7 +3256,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, BOOL* done, 
     if (!nextparitem)
         return STATUS_SUCCESS;
 
-    TRACE("nextparitem: key = %llx,%x,%llx\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
+    TRACE("nextparitem: key = %I64x,%x,%I64x\n", nextparitem->key.obj_id, nextparitem->key.obj_type, nextparitem->key.offset);
 
     if (!nextparitem->treeholder.tree) {
         Status = do_load_tree(Vcb, &nextparitem->treeholder, t->root, t->parent, nextparitem, NULL);
@@ -3523,7 +3523,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
         EXTENT_ITEM_TREE* eit;
 
         if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -3555,7 +3555,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
         return STATUS_SUCCESS;
     }
 
-    ERR("could not find EXTENT_ITEM for address %llx\n", address);
+    ERR("could not find EXTENT_ITEM for address %I64x\n", address);
 
     return STATUS_INTERNAL_ERROR;
 }
@@ -3610,7 +3610,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                     if (t->parent) {
                         done_deletions = TRUE;
 
-                        TRACE("deleting tree in root %llx\n", t->root->id);
+                        TRACE("deleting tree in root %I64x\n", t->root->id);
 
                         t->root->root_item.bytes_used -= Vcb->superblock.node_size;
 
@@ -3739,7 +3739,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                             le2 = le2->Flink;
                         }
 
-                        TRACE("deleting top-level tree in root %llx with one item\n", t->root->id);
+                        TRACE("deleting top-level tree in root %I64x with one item\n", t->root->id);
 
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
                             Status = reduce_tree_extent(Vcb, t->new_address, t, t->header.tree_id, t->header.level, Irp, rollback);
@@ -3823,7 +3823,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
             ExFreePool(buf);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("load_tree(%llx) returned %08x\n", th->address, Status);
+            ERR("load_tree(%I64x) returned %08x\n", th->address, Status);
             return Status;
         }
     }
@@ -3859,7 +3859,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
         Status = reduce_tree_extent(Vcb, th->address, NULL, parent ? parent->header.tree_id : r->id, level, Irp, rollback);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("reduce_tree_extent(%llx) returned %08x\n", th->address, Status);
+            ERR("reduce_tree_extent(%I64x) returned %08x\n", th->address, Status);
             return Status;
         }
     }
@@ -3896,7 +3896,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
                         return Status;
                     }
                 } else
-                    WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                    WARN("could not find (%I64x,%x,%I64x) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             }
         }
 
@@ -3960,7 +3960,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
                         }
                     }
                 } else
-                    WARN("could not find (%llx,%x,%llx) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                    WARN("could not find (%I64x,%x,%I64x) in uuid tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             }
         }
     }
@@ -3985,7 +3985,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
             return Status;
         }
     } else
-        WARN("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        WARN("could not find (%I64x,%x,%I64x) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
 
     // delete items in tree cache
 
@@ -4005,7 +4005,7 @@ static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback
 
         Status = drop_root(Vcb, r, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("drop_root(%llx) returned %08x\n", r->id, Status);
+            ERR("drop_root(%I64x) returned %08x\n", r->id, Status);
             return Status;
         }
 
@@ -4032,7 +4032,7 @@ NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        ERR("error - could not find DEV_ITEM for device %llx\n", device->devitem.dev_id);
+        ERR("error - could not find DEV_ITEM for device %I64x\n", device->devitem.dev_id);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -4070,7 +4070,7 @@ static void regen_bootstrap(device_extension* Vcb) {
     while (le != &Vcb->sys_chunks) {
         sc2 = CONTAINING_RECORD(le, sys_chunk, list_entry);
 
-        TRACE("%llx,%x,%llx\n", sc2->key.obj_id, sc2->key.obj_type, sc2->key.offset);
+        TRACE("%I64x,%x,%I64x\n", sc2->key.obj_id, sc2->key.obj_type, sc2->key.offset);
 
         RtlCopyMemory(&Vcb->superblock.sys_chunk_array[i], &sc2->key, sizeof(KEY));
         i += sizeof(KEY);
@@ -4259,7 +4259,7 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
     uint16_t xasize;
     DIR_ITEM* xa;
 
-    TRACE("(%p, %llx, %llx, %.*s, %08x, %p, %u)\n", Vcb, subvol->id, inode, namelen, name, crc32, data, datalen);
+    TRACE("(%p, %I64x, %I64x, %.*s, %08x, %p, %u)\n", Vcb, subvol->id, inode, namelen, name, crc32, data, datalen);
 
     xasize = (uint16_t)offsetof(DIR_ITEM, name[0]) + namelen + datalen;
 
@@ -4295,7 +4295,7 @@ static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root*
     uint16_t xasize;
     DIR_ITEM* xa;
 
-    TRACE("(%p, %llx, %llx, %.*s, %08x)\n", Vcb, subvol->id, inode, namelen, name, crc32);
+    TRACE("(%p, %I64x, %I64x, %.*s, %08x)\n", Vcb, subvol->id, inode, namelen, name, crc32);
 
     xasize = (uint16_t)offsetof(DIR_ITEM, name[0]) + namelen;
 
@@ -4329,7 +4329,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t s
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
 
-    TRACE("((%llx, %llx), %llx, %llx)\n", fcb->subvol->id, fcb->inode, start, length);
+    TRACE("((%I64x, %I64x), %I64x, %I64x)\n", fcb->subvol->id, fcb->inode, start, length);
 
     ed = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
     if (!ed) {
@@ -4511,7 +4511,7 @@ cont:
             er->chunk = get_chunk_from_address(fcb->Vcb, er->address);
 
             if (!er->chunk) {
-                ERR("get_chunk_from_address(%llx) failed\n", er->address);
+                ERR("get_chunk_from_address(%I64x) failed\n", er->address);
                 goto end;
             }
 
@@ -4883,7 +4883,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
                             c = get_chunk_from_address(fcb->Vcb, ed2->address);
 
                             if (!c) {
-                                ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                                ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
                                                                 fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -5017,7 +5017,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
                 ii_offset = 0;
             } else {
-                ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
+                ERR("could not find INODE_ITEM for inode %I64x in subvol %I64x\n", fcb->inode, fcb->subvol->id);
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
@@ -5049,7 +5049,7 @@ NTSTATUS flush_fcb(fcb* fcb, BOOL cache, LIST_ENTRY* batchlist, PIRP Irp) {
             }
 
             if (keycmp(tp.item->key, searchkey)) {
-                ERR("could not find INODE_ITEM for inode %llx in subvol %llx\n", fcb->inode, fcb->subvol->id);
+                ERR("could not find INODE_ITEM for inode %I64x in subvol %I64x\n", fcb->inode, fcb->subvol->id);
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             } else
@@ -5348,7 +5348,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     uint64_t i, factor;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];;
 
-    TRACE("dropping chunk %llx\n", c->offset);
+    TRACE("dropping chunk %I64x\n", c->offset);
 
     if (c->chunk_item->type & BLOCK_FLAG_RAID0)
         factor = c->chunk_item->num_stripes;
@@ -5460,7 +5460,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                         space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, NULL, rollback);
                 }
             } else
-                WARN("could not find (%llx,%x,%llx) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                WARN("could not find (%I64x,%x,%I64x) in dev tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         } else {
             uint64_t len = c->chunk_item->size / factor;
 
@@ -5539,7 +5539,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                 return Status;
             }
         } else
-            WARN("could not find CHUNK_ITEM for chunk %llx\n", c->offset);
+            WARN("could not find CHUNK_ITEM for chunk %I64x\n", c->offset);
 
         // remove BLOCK_GROUP_ITEM from extent tree
         searchkey.obj_id = c->offset;
@@ -5560,7 +5560,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                 return Status;
             }
         } else
-            WARN("could not find BLOCK_GROUP_ITEM for chunk %llx\n", c->offset);
+            WARN("could not find BLOCK_GROUP_ITEM for chunk %I64x\n", c->offset);
     }
 
     if (c->chunk_item->type & BLOCK_FLAG_SYSTEM)
@@ -6045,7 +6045,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
 
     if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(ROOT_REF)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
             return STATUS_INTERNAL_ERROR;
         } else {
             ROOT_REF* rr;
@@ -6058,7 +6058,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
                 uint16_t itemlen;
 
                 if (len < sizeof(ROOT_REF) || len < offsetof(ROOT_REF, name[0]) + rr->n) {
-                    ERR("(%llx,%x,%llx) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     break;
                 }
 
@@ -6074,7 +6074,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
                     }
 
                     if (newlen == 0) {
-                        TRACE("deleting (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        TRACE("deleting (%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                     } else {
                         uint8_t *newrr = ExAllocatePoolWithTag(PagedPool, newlen, ALLOC_TAG), *rroff;
 
@@ -6083,7 +6083,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
-                        TRACE("modifying (%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                        TRACE("modifying (%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
                         if ((uint8_t*)rr > tp.item->data) {
                             RtlCopyMemory(newrr, tp.item->data, (uint8_t*)rr - tp.item->data);
@@ -6114,7 +6114,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
             } while (len > 0);
         }
     } else {
-        WARN("could not find ROOT_REF entry for subvol %llx in %llx\n", searchkey.offset, searchkey.obj_id);
+        WARN("could not find ROOT_REF entry for subvol %I64x in %I64x\n", searchkey.offset, searchkey.obj_id);
         return STATUS_NOT_FOUND;
     }
 
@@ -6270,7 +6270,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, uint64_t root, PIR
     }
 
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+        ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.obj_id);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -6842,7 +6842,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
         }
 
         if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-            ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+            ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.obj_id);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -7128,7 +7128,7 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             fcb* fcb;
 
-            TRACE("removing orphaned inode %llx\n", tp.item->key.offset);
+            TRACE("removing orphaned inode %I64x\n", tp.item->key.offset);
 
             Status = open_fcb(Vcb, r, tp.item->key.offset, 0, NULL, FALSE, NULL, &fcb, PagedPool, Irp);
             if (!NT_SUCCESS(Status))
@@ -7253,7 +7253,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 #ifdef DEBUG_FLUSH_TIMES
     time2 = KeQueryPerformanceCounter(NULL);
 
-    ERR("flushed %llu filerefs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
+    ERR("flushed %I64u filerefs in %I64u (freq = %I64u)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
 
     time1 = KeQueryPerformanceCounter(&freq);
 #endif
@@ -7335,7 +7335,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 #ifdef DEBUG_FLUSH_TIMES
     time2 = KeQueryPerformanceCounter(NULL);
 
-    ERR("flushed %llu fcbs in %llu (freq = %llu)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
+    ERR("flushed %I64u fcbs in %I64u (freq = %I64u)\n", filerefs, time2.QuadPart - time1.QuadPart, freq.QuadPart);
 #endif
 
     // no need to get dirty_subvols_lock here, as we have tree_lock exclusively
@@ -7517,7 +7517,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             }
 
             if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                ERR("error - could not find entry in extent tree for tree at %llx\n", t->header.address);
+                ERR("error - could not find entry in extent tree for tree at %I64x\n", t->header.address);
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
@@ -7622,27 +7622,27 @@ static void print_stats(device_extension* Vcb) {
     LARGE_INTEGER freq;
 
     ERR("READ STATS:\n");
-    ERR("number of reads: %llu\n", Vcb->stats.num_reads);
-    ERR("data read: %llu bytes\n", Vcb->stats.data_read);
-    ERR("total time taken: %llu\n", Vcb->stats.read_total_time);
-    ERR("csum time taken: %llu\n", Vcb->stats.read_csum_time);
-    ERR("disk time taken: %llu\n", Vcb->stats.read_disk_time);
-    ERR("other time taken: %llu\n", Vcb->stats.read_total_time - Vcb->stats.read_csum_time - Vcb->stats.read_disk_time);
+    ERR("number of reads: %I64u\n", Vcb->stats.num_reads);
+    ERR("data read: %I64u bytes\n", Vcb->stats.data_read);
+    ERR("total time taken: %I64u\n", Vcb->stats.read_total_time);
+    ERR("csum time taken: %I64u\n", Vcb->stats.read_csum_time);
+    ERR("disk time taken: %I64u\n", Vcb->stats.read_disk_time);
+    ERR("other time taken: %I64u\n", Vcb->stats.read_total_time - Vcb->stats.read_csum_time - Vcb->stats.read_disk_time);
 
     KeQueryPerformanceCounter(&freq);
 
-    ERR("OPEN STATS (freq = %llu):\n", freq.QuadPart);
-    ERR("number of opens: %llu\n", Vcb->stats.num_opens);
-    ERR("total time taken: %llu\n", Vcb->stats.open_total_time);
-    ERR("number of overwrites: %llu\n", Vcb->stats.num_overwrites);
-    ERR("total time taken: %llu\n", Vcb->stats.overwrite_total_time);
-    ERR("number of creates: %llu\n", Vcb->stats.num_creates);
-    ERR("calls to open_fcb: %llu\n", Vcb->stats.open_fcb_calls);
-    ERR("time spent in open_fcb: %llu\n", Vcb->stats.open_fcb_time);
-    ERR("calls to open_fileref_child: %llu\n", Vcb->stats.open_fileref_child_calls);
-    ERR("time spent in open_fileref_child: %llu\n", Vcb->stats.open_fileref_child_time);
-    ERR("time spent waiting for fcb_lock: %llu\n", Vcb->stats.fcb_lock_time);
-    ERR("total time taken: %llu\n", Vcb->stats.create_total_time);
+    ERR("OPEN STATS (freq = %I64u):\n", freq.QuadPart);
+    ERR("number of opens: %I64u\n", Vcb->stats.num_opens);
+    ERR("total time taken: %I64u\n", Vcb->stats.open_total_time);
+    ERR("number of overwrites: %I64u\n", Vcb->stats.num_overwrites);
+    ERR("total time taken: %I64u\n", Vcb->stats.overwrite_total_time);
+    ERR("number of creates: %I64u\n", Vcb->stats.num_creates);
+    ERR("calls to open_fcb: %I64u\n", Vcb->stats.open_fcb_calls);
+    ERR("time spent in open_fcb: %I64u\n", Vcb->stats.open_fcb_time);
+    ERR("calls to open_fileref_child: %I64u\n", Vcb->stats.open_fileref_child_calls);
+    ERR("time spent in open_fileref_child: %I64u\n", Vcb->stats.open_fileref_child_time);
+    ERR("time spent waiting for fcb_lock: %I64u\n", Vcb->stats.fcb_lock_time);
+    ERR("total time taken: %I64u\n", Vcb->stats.create_total_time);
 
     RtlZeroMemory(&Vcb->stats, sizeof(debug_stats));
 }

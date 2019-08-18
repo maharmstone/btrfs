@@ -39,7 +39,7 @@ BOOL find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length
     LIST_ENTRY* le;
     space* s;
 
-    TRACE("(%p, %llx, %llx, %p)\n", Vcb, c->offset, length, address);
+    TRACE("(%p, %I64x, %I64x, %p)\n", Vcb, c->offset, length, address);
 
     if (length > c->chunk_item->size - c->used)
         return FALSE;
@@ -378,7 +378,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, BOOL ful
         le = le->Flink;
     }
 
-    TRACE("total_size = %llx\n", total_size);
+    TRACE("total_size = %I64x\n", total_size);
 
     // We purposely check for DATA first - mixed blocks have the same size
     // as DATA ones.
@@ -449,7 +449,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, BOOL ful
         max_stripe_size = max_chunk_size / min_stripes;
     }
 
-    TRACE("would allocate a new chunk of %llx bytes and stripe %llx\n", max_chunk_size, max_stripe_size);
+    TRACE("would allocate a new chunk of %I64x bytes and stripe %I64x\n", max_chunk_size, max_stripe_size);
 
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * max_stripes, ALLOC_TAG);
     if (!stripes) {
@@ -1888,12 +1888,12 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
     uint64_t total_writing = 0;
     ULONG allowed_missing, missing;
 
-    TRACE("(%p, %llx, %p, %x)\n", Vcb, address, data, length);
+    TRACE("(%p, %I64x, %p, %x)\n", Vcb, address, data, length);
 
     if (!c) {
         c = get_chunk_from_address(Vcb, address);
         if (!c) {
-            ERR("could not get chunk for address %llx\n", address);
+            ERR("could not get chunk for address %I64x\n", address);
             return STATUS_INTERNAL_ERROR;
         }
     }
@@ -2062,7 +2062,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
 
 #ifdef DEBUG_PARANOID
             if (stripes[i].end < stripes[i].start) {
-                ERR("trying to write stripe with negative length (%llx < %llx)\n", stripes[i].end, stripes[i].start);
+                ERR("trying to write stripe with negative length (%I64x < %I64x)\n", stripes[i].end, stripes[i].start);
                 int3;
             }
 #endif
@@ -2178,7 +2178,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
     if (!c) {
         c = get_chunk_from_address(Vcb, address);
         if (!c) {
-            ERR("could not get chunk for address %llx\n", address);
+            ERR("could not get chunk for address %I64x\n", address);
             return STATUS_INTERNAL_ERROR;
         }
     }
@@ -2410,7 +2410,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                             c = get_chunk_from_address(Vcb, ed2->address);
 
                             if (!c) {
-                                ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                                ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
                                                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -2562,7 +2562,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                             c = get_chunk_from_address(Vcb, ed2->address);
 
                             if (!c) {
-                                ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                                ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
                             } else {
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
                                                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -2821,7 +2821,7 @@ BOOL insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     uint16_t edsize = (uint16_t)(offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
     uint32_t* csum = NULL;
 
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %llx, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
+    TRACE("(%p, (%I64x, %I64x), %I64x, %I64x, %I64x, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
 
     if (!find_data_address_in_chunk(Vcb, c, length, &address))
         return FALSE;
@@ -2942,7 +2942,7 @@ static BOOL try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
     ed2 = (EXTENT_DATA2*)ed->data;
 
     if (ext->offset + ed2->num_bytes != start_data) {
-        TRACE("last EXTENT_DATA does not run up to start_data (%llx + %llx != %llx)\n", ext->offset, ed2->num_bytes, start_data);
+        TRACE("last EXTENT_DATA does not run up to start_data (%I64x + %I64x != %I64x)\n", ext->offset, ed2->num_bytes, start_data);
         return FALSE;
     }
 
@@ -3130,7 +3130,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
     chunk* c;
     uint64_t flags, orig_length = length, written = 0;
 
-    TRACE("(%p, (%llx, %llx), %llx, %llx, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data);
+    TRACE("(%p, (%I64x, %I64x), %I64x, %I64x, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data);
 
     if (start_data > 0) {
         try_extend_data(Vcb, fcb, start_data, length, data, Irp, &written, file_write, irp_offset, rollback);
@@ -3305,14 +3305,14 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
 
     fcb->inode_item.st_size = end;
     fcb->inode_item_changed = TRUE;
-    TRACE("setting st_size to %llx\n", end);
+    TRACE("setting st_size to %I64x\n", end);
 
     fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
     fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
     fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
     // FIXME - inform cache manager of this
 
-    TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
+    TRACE("fcb %p FileSize = %I64x\n", fcb, fcb->Header.FileSize.QuadPart);
 
     return STATUS_SUCCESS;
 }
@@ -3367,7 +3367,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, BOOL prealloc, P
 
                 data = ExAllocatePoolWithTag(PagedPool, (ULONG)length, ALLOC_TAG);
                 if (!data) {
-                    ERR("could not allocate %llx bytes for data\n", length);
+                    ERR("could not allocate %I64x bytes for data\n", length);
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
@@ -3442,10 +3442,10 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, BOOL prealloc, P
                     mark_fcb_dirty(fcb);
                 }
 
-                TRACE("extending inline file (oldalloc = %llx, end = %llx)\n", oldalloc, end);
+                TRACE("extending inline file (oldalloc = %I64x, end = %I64x)\n", oldalloc, end);
 
                 fcb->inode_item.st_size = end;
-                TRACE("setting st_size to %llx\n", end);
+                TRACE("setting st_size to %I64x\n", end);
 
                 fcb->inode_item.st_blocks = end;
 
@@ -3472,9 +3472,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, BOOL prealloc, P
                 fcb->inode_item_changed = TRUE;
                 mark_fcb_dirty(fcb);
 
-                TRACE("setting st_size to %llx\n", end);
+                TRACE("setting st_size to %I64x\n", end);
 
-                TRACE("newalloc = %llx\n", newalloc);
+                TRACE("newalloc = %I64x\n", newalloc);
 
                 fcb->Header.AllocationSize.QuadPart = newalloc;
                 fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
@@ -3497,9 +3497,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, BOOL prealloc, P
                 mark_fcb_dirty(fcb);
 
                 fcb->inode_item.st_size = end;
-                TRACE("setting st_size to %llx\n", end);
+                TRACE("setting st_size to %I64x\n", end);
 
-                TRACE("newalloc = %llx\n", newalloc);
+                TRACE("newalloc = %I64x\n", newalloc);
 
                 fcb->Header.AllocationSize.QuadPart = newalloc;
                 fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
@@ -3538,7 +3538,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, BOOL prealloc, P
                 mark_fcb_dirty(fcb);
 
                 fcb->inode_item.st_size = end;
-                TRACE("setting st_size to %llx\n", end);
+                TRACE("setting st_size to %I64x\n", end);
 
                 fcb->inode_item.st_blocks = end;
 
@@ -3697,7 +3697,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
 
         if (!c)
-            ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+            ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
                                                 fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -3794,7 +3794,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
 
         if (!c)
-            ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+            ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -3917,7 +3917,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         c = get_chunk_from_address(fcb->Vcb, ed2->address);
 
         if (!c)
-            ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+            ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
         else {
             Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -3996,7 +3996,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                     uint64_t write_len = min(len, length);
                     chunk* c;
 
-                    TRACE("doing non-COW write to %llx\n", writeaddr);
+                    TRACE("doing non-COW write to %I64x\n", writeaddr);
 
                     Status = write_data_complete(fcb->Vcb, writeaddr, (uint8_t*)data + written, (uint32_t)write_len, Irp, NULL, file_write, irp_offset + written, priority);
                     if (!NT_SUCCESS(Status)) {
@@ -4071,7 +4071,7 @@ nextitem:
 
         if (!ext->ignore) {
             if (ext->offset == last_off) {
-                ERR("offset %llx duplicated\n", ext->offset);
+                ERR("offset %I64x duplicated\n", ext->offset);
                 int3;
             } else if (ext->offset < last_off && last_off != 0xffffffffffffffff) {
                 ERR("offsets out of order\n");
@@ -4152,7 +4152,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     BOOL paging_lock = FALSE, fcb_lock = FALSE, tree_lock = FALSE, pagefile;
     ULONG filter = 0;
 
-    TRACE("(%p, %p, %llx, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
+    TRACE("(%p, %p, %I64x, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
 
     if (*length == 0) {
         WARN("returning success for zero-length write\n");
@@ -4169,7 +4169,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fileref = ccb ? ccb->fileref : NULL;
 
     if (!fcb->ads && fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK) {
-        WARN("tried to write to something other than a file or symlink (inode %llx, type %u, %p, %p)\n", fcb->inode, fcb->type, &fcb->type, fcb);
+        WARN("tried to write to something other than a file or symlink (inode %I64x, type %u, %p, %p)\n", fcb->inode, fcb->type, &fcb->type, fcb);
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -4243,14 +4243,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     if (fcb->deleted)
         newlength = 0;
 
-    TRACE("newlength = %llx\n", newlength);
+    TRACE("newlength = %I64x\n", newlength);
 
     if (off64 + *length > newlength) {
         if (paging_io) {
             if (off64 >= newlength) {
-                TRACE("paging IO tried to write beyond end of file (file size = %llx, offset = %llx, length = %x)\n", newlength, off64, *length);
+                TRACE("paging IO tried to write beyond end of file (file size = %I64x, offset = %I64x, length = %x)\n", newlength, off64, *length);
                 TRACE("filename %S\n", file_desc(FileObject));
-                TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
+                TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 Status = STATUS_SUCCESS;
                 goto end;
@@ -4261,7 +4261,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             newlength = off64 + *length;
             changed_length = TRUE;
 
-            TRACE("extending length to %llx\n", newlength);
+            TRACE("extending length to %I64x\n", newlength);
         }
     }
 
@@ -4296,9 +4296,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         fcb->Header.FileSize.QuadPart = newlength;
         fcb->Header.ValidDataLength.QuadPart = newlength;
 
-        TRACE("AllocationSize = %llx\n", fcb->Header.AllocationSize.QuadPart);
-        TRACE("FileSize = %llx\n", fcb->Header.FileSize.QuadPart);
-        TRACE("ValidDataLength = %llx\n", fcb->Header.ValidDataLength.QuadPart);
+        TRACE("AllocationSize = %I64x\n", fcb->Header.AllocationSize.QuadPart);
+        TRACE("FileSize = %I64x\n", fcb->Header.FileSize.QuadPart);
+        TRACE("ValidDataLength = %I64x\n", fcb->Header.ValidDataLength.QuadPart);
     }
 
     if (!no_cache) {
@@ -4325,14 +4325,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             } else {
                 if (fCcCopyWriteEx) {
-                    TRACE("CcCopyWriteEx(%p, %llx, %x, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
+                    TRACE("CcCopyWriteEx(%p, %I64x, %x, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
                     if (!fCcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
                         Status = STATUS_PENDING;
                         goto end;
                     }
                     TRACE("CcCopyWriteEx finished\n");
                 } else {
-                    TRACE("CcCopyWrite(%p, %llx, %x, %u, %p)\n", FileObject, off64, *length, wait, buf);
+                    TRACE("CcCopyWrite(%p, %I64x, %x, %u, %p)\n", FileObject, off64, *length, wait, buf);
                     if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
                         Status = STATUS_PENDING;
                         goto end;
@@ -4357,7 +4357,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             char* data2;
 
             if (newlength > fcb->adsmaxlen) {
-                ERR("error - xattr too long (%llu > %u)\n", newlength, fcb->adsmaxlen);
+                ERR("error - xattr too long (%I64u > %u)\n", newlength, fcb->adsmaxlen);
                 Status = STATUS_DISK_FULL;
                 goto end;
             }
@@ -4418,7 +4418,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             end_data = max(end_data, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size));
 
         fcb->Header.ValidDataLength.QuadPart = newlength;
-        TRACE("fcb %p FileSize = %llx\n", fcb, fcb->Header.FileSize.QuadPart);
+        TRACE("fcb %p FileSize = %I64x\n", fcb, fcb->Header.FileSize.QuadPart);
 
         if (!make_inline && !compress && off64 == start_data && off64 + *length == end_data) {
             data = buf;
@@ -4433,8 +4433,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
             RtlZeroMemory(data + bufhead, (ULONG)(end_data - start_data));
 
-            TRACE("start_data = %llx\n", start_data);
-            TRACE("end_data = %llx\n", end_data);
+            TRACE("start_data = %I64x\n", start_data);
+            TRACE("end_data = %I64x\n", end_data);
 
             if (off64 > start_data || off64 + *length < end_data) {
                 if (changed_length) {
@@ -4556,7 +4556,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
         if (!fcb->ads) {
             if (changed_length) {
-                TRACE("setting st_size to %llx\n", newlength);
+                TRACE("setting st_size to %I64x\n", newlength);
                 origii->st_size = newlength;
                 filter |= FILE_NOTIFY_CHANGE_SIZE;
             }
@@ -4605,9 +4605,9 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
 end:
     if (NT_SUCCESS(Status) && FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {
-        TRACE("CurrentByteOffset was: %llx\n", FileObject->CurrentByteOffset.QuadPart);
+        TRACE("CurrentByteOffset was: %I64x\n", FileObject->CurrentByteOffset.QuadPart);
         FileObject->CurrentByteOffset.QuadPart = offset.QuadPart + (NT_SUCCESS(Status) ? *length : 0);
-        TRACE("CurrentByteOffset now: %llx\n", FileObject->CurrentByteOffset.QuadPart);
+        TRACE("CurrentByteOffset now: %I64x\n", FileObject->CurrentByteOffset.QuadPart);
     }
 
     if (fcb_lock)
@@ -4637,7 +4637,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, BOOLEAN wait, BOOLEAN defer
 
     Irp->IoStatus.Information = 0;
 
-    TRACE("offset = %llx\n", offset.QuadPart);
+    TRACE("offset = %I64x\n", offset.QuadPart);
     TRACE("length = %x\n", IrpSp->Parameters.Write.Length);
 
     if (!Irp->AssociatedIrp.SystemBuffer) {

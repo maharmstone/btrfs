@@ -279,7 +279,7 @@ NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_
         partlen = *(uint32_t*)&inbuf[inoff];
 
         if (partlen + inoff > inlen) {
-            ERR("overflow: %x + %x > %llx\n", partlen, inoff, inlen);
+            ERR("overflow: %x + %x > %I64x\n", partlen, inoff, inlen);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -510,7 +510,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
         release_chunk_lock(c, fcb->Vcb);
     }
 
-    WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
+    WARN("couldn't find any data chunks with %I64x bytes free\n", comp_length);
 
     if (compression != BTRFS_COMPRESSION_NONE)
         ExFreePool(comp_data);
@@ -908,7 +908,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
         release_chunk_lock(c, fcb->Vcb);
     }
 
-    WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
+    WARN("couldn't find any data chunks with %I64x bytes free\n", comp_length);
 
     if (compression != BTRFS_COMPRESSION_NONE)
         ExFreePool(comp_data);
@@ -1074,7 +1074,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
         release_chunk_lock(c, fcb->Vcb);
     }
 
-    WARN("couldn't find any data chunks with %llx bytes free\n", comp_length);
+    WARN("couldn't find any data chunks with %I64x bytes free\n", comp_length);
 
     if (compression != BTRFS_COMPRESSION_NONE)
         ExFreePool(comp_data);

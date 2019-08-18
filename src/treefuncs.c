@@ -66,7 +66,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         unsigned int i;
 
         if ((t->header.num_items * sizeof(leaf_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
-            ERR("tree at %llx has more items than expected (%x)\n", t->header.num_items);
+            ERR("tree at %I64x has more items than expected (%x)\n", t->header.num_items);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -87,7 +87,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
                 td->data = NULL;
 
             if (ln[i].size + sizeof(tree_header) + sizeof(leaf_node) > Vcb->superblock.node_size) {
-                ERR("overlarge item in tree %llx: %u > %u\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
+                ERR("overlarge item in tree %I64x: %u > %u\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
                 ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
                 ExFreePool(t);
                 return STATUS_INTERNAL_ERROR;
@@ -109,7 +109,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         unsigned int i;
 
         if ((t->header.num_items * sizeof(internal_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
-            ERR("tree at %llx has more items than expected (%x)\n", t->header.num_items);
+            ERR("tree at %I64x has more items than expected (%x)\n", t->header.num_items);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -868,7 +868,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
 #endif
     NTSTATUS Status;
 
-    TRACE("(%p, %p, %llx, %x, %llx, %p, %x, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp);
+    TRACE("(%p, %p, %I64x, %x, %I64x, %p, %x, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp);
 
     searchkey.obj_id = obj_id;
     searchkey.obj_type = obj_type;
@@ -889,7 +889,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 tp.tree = r->treeholder.tree;
                 tp.item = NULL;
             } else {
-                ERR("error: unable to load tree for root %llx\n", r->id);
+                ERR("error: unable to load tree for root %I64x\n", r->id);
                 return STATUS_INTERNAL_ERROR;
             }
         } else {
@@ -908,7 +908,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         cmp = keycmp(searchkey, tp.item->key);
 
         if (cmp == 0 && !tp.item->ignore) {
-            ERR("error: key (%llx,%x,%llx) already present\n", obj_id, obj_type, offset);
+            ERR("error: key (%I64x,%x,%I64x) already present\n", obj_id, obj_type, offset);
 #ifdef DEBUG_PARANOID
             int3;
 #endif
@@ -937,7 +937,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         break;
     }
 
-    TRACE("inserting %llx,%x,%llx into tree beginning %llx,%x,%llx (num_items %x)\n", obj_id, obj_type, offset, firstitem.obj_id, firstitem.obj_type, firstitem.offset, tp.tree->header.num_items);
+    TRACE("inserting %I64x,%x,%I64x into tree beginning %I64x,%x,%I64x (num_items %x)\n", obj_id, obj_type, offset, firstitem.obj_id, firstitem.obj_type, firstitem.offset, tp.tree->header.num_items);
 #endif
 
     if (cmp == -1) { // very first key in root
@@ -990,11 +990,11 @@ NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
     tree* t;
     uint64_t gen;
 
-    TRACE("deleting item %llx,%x,%llx (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
+    TRACE("deleting item %I64x,%x,%I64x (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "TRUE" : "FALSE");
 
 #ifdef DEBUG_PARANOID
     if (tp->item->ignore) {
-        ERR("trying to delete already-deleted item %llx,%x,%llx\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+        ERR("trying to delete already-deleted item %I64x,%x,%I64x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
         int3;
         return STATUS_INTERNAL_ERROR;
     }
@@ -1273,7 +1273,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
         switch (bi->operation) {
             case Batch_SetXattr: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
                 } else {
                     uint8_t* newdata;
                     ULONG size = td->size;
@@ -1284,7 +1284,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                         ULONG oldxasize;
 
                         if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                            ERR("(%llx,%x,%llx) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+                            ERR("(%I64x,%x,%I64x) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
                             break;
                         }
 
@@ -1840,7 +1840,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
             InsertHeadList(td->list_entry.Blink, &newtd->list_entry);
         }
     } else {
-        ERR("(%llx,%x,%llx) already exists\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        ERR("(%I64x,%x,%I64x) already exists\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1852,7 +1852,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
     LIST_ENTRY* le;
     NTSTATUS Status;
 
-    TRACE("root: %llx\n", br->r->id);
+    TRACE("root: %I64x\n", br->r->id);
 
     le = br->items.Flink;
     while (le != &br->items) {
@@ -1866,7 +1866,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
         tree* t;
         BOOL ignore = FALSE;
 
-        TRACE("(%llx,%x,%llx)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        TRACE("(%I64x,%x,%I64x)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
 
         Status = find_item(Vcb, br->r, &tp, &bi->key, TRUE, Irp);
         if (!NT_SUCCESS(Status)) { // FIXME - handle STATUS_NOT_FOUND

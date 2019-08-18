@@ -374,25 +374,25 @@ static BOOL get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
 
     if (tp.item->key.obj_type == TYPE_INODE_ITEM || (tp.item->key.obj_type == TYPE_ROOT_ITEM && !(tp.item->key.obj_id & 0x8000000000000000))) {
         r->lastinode = tp.item->key.obj_id;
-        TRACE("last inode for tree %llx is %llx\n", r->id, r->lastinode);
+        TRACE("last inode for tree %I64x is %I64x\n", r->id, r->lastinode);
         return TRUE;
     }
 
     while (find_prev_item(Vcb, &tp, &prev_tp, Irp)) {
         tp = prev_tp;
 
-        TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
         if (tp.item->key.obj_type == TYPE_INODE_ITEM || (tp.item->key.obj_type == TYPE_ROOT_ITEM && !(tp.item->key.obj_id & 0x8000000000000000))) {
             r->lastinode = tp.item->key.obj_id;
-            TRACE("last inode for tree %llx is %llx\n", r->id, r->lastinode);
+            TRACE("last inode for tree %I64x is %I64x\n", r->id, r->lastinode);
             return TRUE;
         }
     }
 
     r->lastinode = SUBVOL_ROOT_INODE;
 
-    WARN("no INODE_ITEMs in tree %llx\n", r->id);
+    WARN("no INODE_ITEMs in tree %I64x\n", r->id);
 
     return TRUE;
 }
@@ -448,7 +448,7 @@ BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
     traverse_ptr tp;
     NTSTATUS Status;
 
-    TRACE("(%p, %llx, %llx, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
+    TRACE("(%p, %I64x, %I64x, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
 
     searchkey.obj_id = inode;
     searchkey.obj_type = TYPE_XATTR_ITEM;
@@ -461,12 +461,12 @@ BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        TRACE("could not find item (%llx,%x,%llx)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        TRACE("could not find item (%I64x,%x,%I64x)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return FALSE;
     }
 
     if (tp.item->size < sizeof(DIR_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         return FALSE;
     }
 
@@ -1677,9 +1677,9 @@ void free_fcb(_Inout_ fcb* fcb) {
 
 #ifdef DEBUG_FCB_REFCOUNTS
 #ifdef DEBUG_LONG_MESSAGES
-    ERR("fcb %p (%s): refcount now %i (subvol %llx, inode %llx)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
+    ERR("fcb %p (%s): refcount now %i (subvol %I64x, inode %I64x)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #else
-    ERR("fcb %p (%s): refcount now %i (subvol %llx, inode %llx)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
+    ERR("fcb %p (%s): refcount now %i (subvol %I64x, inode %I64x)\n", fcb, func, rc, fcb->subvol ? fcb->subvol->id : 0, fcb->inode);
 #endif
 #endif
 }
@@ -2327,9 +2327,9 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
     fileref->parent->fcb->inode_item.st_ctime = now;
 
     if (!fileref->fcb->ads) {
-        TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
+        TRACE("fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
         fileref->parent->fcb->inode_item.st_size -= utf8len * 2;
-        TRACE("fileref->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
+        TRACE("fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
         fileref->parent->fcb->inode_item.st_mtime = now;
     }
 
@@ -2508,7 +2508,7 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
                     CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
 
-                    TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx)\n",
+                    TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x)\n",
                         FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 }
             }
@@ -2953,15 +2953,15 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     }
 
     do {
-        TRACE("(%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        TRACE("(%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
         if (tp.item->key.obj_type == TYPE_ROOT_ITEM) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
             if (tp.item->size < offsetof(ROOT_ITEM, byte_limit)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
             } else {
-                TRACE("root %llx - address %llx\n", tp.item->key.obj_id, ri->block_number);
+                TRACE("root %I64x - address %I64x\n", tp.item->key.obj_id, ri->block_number);
 
                 Status = add_root(Vcb, tp.item->key.obj_id, ri->block_number, ri->generation, &tp);
                 if (!NT_SUCCESS(Status)) {
@@ -3103,7 +3103,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 lastaddr = tp.item->key.offset + de->length;
             } else {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
             }
         }
 
@@ -3160,12 +3160,12 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-        TRACE("device %llx, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", dev->devitem.dev_id,
+        TRACE("device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", dev->devitem.dev_id,
             dev->devitem.device_uuid.uuid[0], dev->devitem.device_uuid.uuid[1], dev->devitem.device_uuid.uuid[2], dev->devitem.device_uuid.uuid[3], dev->devitem.device_uuid.uuid[4], dev->devitem.device_uuid.uuid[5], dev->devitem.device_uuid.uuid[6], dev->devitem.device_uuid.uuid[7],
             dev->devitem.device_uuid.uuid[8], dev->devitem.device_uuid.uuid[9], dev->devitem.device_uuid.uuid[10], dev->devitem.device_uuid.uuid[11], dev->devitem.device_uuid.uuid[12], dev->devitem.device_uuid.uuid[13], dev->devitem.device_uuid.uuid[14], dev->devitem.device_uuid.uuid[15]);
 
         if (RtlCompareMemory(&dev->devitem.device_uuid, uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            TRACE("returning device %llx\n", dev->devitem.dev_id);
+            TRACE("returning device %I64x\n", dev->devitem.dev_id);
             return dev;
         }
 
@@ -3387,11 +3387,11 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     }
 
     do {
-        TRACE("(%llx,%x,%llx)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        TRACE("(%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
 
         if (tp.item->key.obj_id == 1 && tp.item->key.obj_type == TYPE_DEV_ITEM) {
             if (tp.item->size < sizeof(DEV_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
             } else {
                 DEV_ITEM* di = (DEV_ITEM*)tp.item->data;
                 LIST_ENTRY* le;
@@ -3445,7 +3445,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                                 init_device(Vcb, dev, FALSE);
 
                                 if (dev->devitem.num_bytes > vc->size) {
-                                    WARN("device %llx: DEV_ITEM says %llx bytes, but Windows only reports %llx\n", tp.item->key.offset,
+                                    WARN("device %I64x: DEV_ITEM says %I64x bytes, but Windows only reports %I64x\n", tp.item->key.offset,
                                          dev->devitem.num_bytes, vc->size);
 
                                     dev->devitem.num_bytes = vc->size;
@@ -3465,7 +3465,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                         if (!done) {
                             if (!Vcb->options.allow_degraded) {
-                                ERR("volume not found: device %llx, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", tp.item->key.offset,
+                                ERR("volume not found: device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", tp.item->key.offset,
                                     di->device_uuid.uuid[0], di->device_uuid.uuid[1], di->device_uuid.uuid[2], di->device_uuid.uuid[3], di->device_uuid.uuid[4], di->device_uuid.uuid[5], di->device_uuid.uuid[6], di->device_uuid.uuid[7],
                                     di->device_uuid.uuid[8], di->device_uuid.uuid[9], di->device_uuid.uuid[10], di->device_uuid.uuid[11], di->device_uuid.uuid[12], di->device_uuid.uuid[13], di->device_uuid.uuid[14], di->device_uuid.uuid[15]);
                             } else {
@@ -3489,14 +3489,14 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                             }
                         }
                     } else
-                        ERR("unexpected device %llx found\n", tp.item->key.offset);
+                        ERR("unexpected device %I64x found\n", tp.item->key.offset);
 
                     ExReleaseResourceLite(&pdode->child_lock);
                 }
             }
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
             if (tp.item->size < sizeof(CHUNK_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
             } else {
                 c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
 
@@ -3538,7 +3538,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
                     if (c->chunk_item->sub_stripes == 0 || c->chunk_item->sub_stripes > c->chunk_item->num_stripes) {
-                        ERR("chunk %llx: invalid stripes (num_stripes %u, sub_stripes %u)\n", c->offset, c->chunk_item->num_stripes, c->chunk_item->sub_stripes);
+                        ERR("chunk %I64x: invalid stripes (num_stripes %u, sub_stripes %u)\n", c->offset, c->chunk_item->num_stripes, c->chunk_item->sub_stripes);
                         ExFreePool(c->chunk_item);
                         ExFreePool(c);
                         return STATUS_INTERNAL_ERROR;
@@ -3560,7 +3560,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                     for (i = 0; i < c->chunk_item->num_stripes; i++) {
                         c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
-                        TRACE("device %llu = %p\n", i, c->devices[i]);
+                        TRACE("device %I64u = %p\n", i, c->devices[i]);
 
                         if (!c->devices[i]) {
                             ERR("missing device\n");
@@ -3573,7 +3573,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                             c->readonly = TRUE;
                     }
                 } else {
-                    ERR("chunk %llx: number of stripes is 0\n", c->offset);
+                    ERR("chunk %I64x: number of stripes is 0\n", c->offset);
                     ExFreePool(c->chunk_item);
                     ExFreePool(c);
                     return STATUS_INTERNAL_ERROR;
@@ -3653,7 +3653,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     uint16_t startoffstripe;
 #endif
 
-                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
@@ -3665,7 +3665,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 #ifdef _DEBUG
                     get_raid0_offset(off_start, ci->stripe_length, ci->num_stripes / sub_stripes, &startoff, &startoffstripe);
                     TRACE("j = %u, startoffstripe = %u\n", j, startoffstripe);
-                    TRACE("startoff = %llx, superblock = %llx\n", startoff + cis[j].offset, superblock_addrs[i]);
+                    TRACE("startoff = %I64x, superblock = %I64x\n", startoff + cis[j].offset, superblock_addrs[i]);
 #endif
 
                     space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
@@ -3676,7 +3676,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
-                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
@@ -3685,7 +3685,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), ci->stripe_length);
                     off_end *= ci->num_stripes - 1;
 
-                    TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
+                    TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
 
                     space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
@@ -3695,7 +3695,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
-                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
@@ -3704,7 +3704,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), ci->stripe_length);
                     off_end *= ci->num_stripes - 2;
 
-                    TRACE("cutting out %llx, size %llx\n", c->offset + off_start, off_end - off_start);
+                    TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
 
                     space_list_subtract(c, FALSE, c->offset + off_start, off_end - off_start, NULL);
                 }
@@ -3712,7 +3712,7 @@ void protect_superblocks(_Inout_ chunk* c) {
         } else { // SINGLE, DUPLICATE, RAID1
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
-                    TRACE("cut out superblock in chunk %llx\n", c->offset);
+                    TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     // The Linux driver protects the whole stripe in which the superblock lives
 
@@ -3778,11 +3778,11 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 
                 c->used = c->oldused = bgi->used;
 
-                TRACE("chunk %llx has %llx bytes used\n", c->offset, c->used);
+                TRACE("chunk %I64x has %I64x bytes used\n", c->offset, c->used);
 
                 Vcb->superblock.bytes_used += chunk_estimate_phys_size(Vcb, c, bgi->used);
             } else {
-                ERR("(%llx;%llx,%x,%llx) is %u bytes, expected %u\n",
+                ERR("(%I64x;%I64x,%x,%I64x) is %u bytes, expected %u\n",
                     Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
             }
         }
@@ -3806,7 +3806,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
         } else
             return STATUS_SUCCESS;
 
-        TRACE("bootstrap: %llx,%x,%llx\n", key.obj_id, key.obj_type, key.offset);
+        TRACE("bootstrap: %I64x,%x,%I64x\n", key.obj_id, key.obj_type, key.offset);
 
         if (key.obj_type == TYPE_CHUNK_ITEM) {
             CHUNK_ITEM* ci;
@@ -3844,7 +3844,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
 
             n -= cisize;
         } else {
-            ERR("unexpected item %llx,%x,%llx in bootstrap\n", key.obj_id, key.obj_type, key.offset);
+            ERR("unexpected item %I64x,%x,%I64x in bootstrap\n", key.obj_id, key.obj_type, key.offset);
             return STATUS_INTERNAL_ERROR;
         }
     }
@@ -3888,19 +3888,19 @@ static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) de
         }
 
         if (keycmp(tp.item->key, searchkey)) {
-            ERR("could not find (%llx,%x,%llx) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            ERR("could not find (%I64x,%x,%I64x) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             goto end;
         }
 
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             goto end;
         }
 
         di = (DIR_ITEM*)tp.item->data;
 
         if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
             goto end;
         }
 
@@ -3910,7 +3910,7 @@ static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) de
         }
 
         if (di->key.obj_type != TYPE_ROOT_ITEM) {
-            ERR("default root has key (%llx,%x,%llx), expected subvolume\n", di->key.obj_id, di->key.obj_type, di->key.offset);
+            ERR("default root has key (%I64x,%x,%I64x), expected subvolume\n", di->key.obj_id, di->key.obj_type, di->key.offset);
             goto end;
         }
 
@@ -3924,7 +3924,7 @@ static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) de
             le = le->Flink;
         }
 
-        ERR("could not find root %llx, using default instead\n", di->key.obj_id);
+        ERR("could not find root %I64x, using default instead\n", di->key.obj_id);
     }
 
 end:
@@ -4440,14 +4440,14 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     if (Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED) {
-        WARN("cannot mount because of unsupported incompat flags (%llx)\n", Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED);
+        WARN("cannot mount because of unsupported incompat flags (%I64x)\n", Vcb->superblock.incompat_flags & ~INCOMPAT_SUPPORTED);
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
 
     Vcb->readonly = FALSE;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
-        WARN("mounting read-only because of unsupported flags (%llx)\n", Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED);
+        WARN("mounting read-only because of unsupported flags (%I64x)\n", Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED);
         Vcb->readonly = TRUE;
     }
 
@@ -4470,7 +4470,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
 
     if (dev->devitem.num_bytes > readobjsize) {
-        WARN("device %llx: DEV_ITEM says %llx bytes, but Windows only reports %llx\n", dev->devitem.dev_id,
+        WARN("device %I64x: DEV_ITEM says %I64x bytes, but Windows only reports %I64x\n", dev->devitem.dev_id,
                 dev->devitem.num_bytes, readobjsize);
 
         dev->devitem.num_bytes = readobjsize;
@@ -4619,7 +4619,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         else if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID))
             WARN("clearing free-space tree created by buggy Linux driver\n");
         else
-            WARN("generation was %llx, free-space cache generation was %llx; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
+            WARN("generation was %I64x, free-space cache generation was %I64x; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);
 
         Status = clear_free_space_cache(Vcb, &batchlist, Irp);
         if (!NT_SUCCESS(Status)) {

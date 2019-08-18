@@ -251,7 +251,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                         }
 
                         if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                            ERR("could not find inode item for inode %llx in root %llx\n", inode, r->id);
+                            ERR("could not find inode item for inode %I64x in root %I64x\n", inode, r->id);
                             return STATUS_INTERNAL_ERROR;
                         }
 

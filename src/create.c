@@ -437,7 +437,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
                 j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
 
             if (j * sizeof(uint32_t) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
-                ERR("checksum not found for %llx\n", start + (i * Vcb->superblock.sector_size));
+                ERR("checksum not found for %I64x\n", start + (i * Vcb->superblock.sector_size));
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -456,7 +456,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
     } while (b);
 
     if (i < length) {
-        ERR("could not read checksums: offset %llx, length %llx sectors\n", start, length);
+        ERR("could not read checksums: offset %I64x, length %I64x sectors\n", start, length);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -501,7 +501,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     if (keycmp(tp.item->key, searchkey) == -1) {
         if (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
             tp = next_tp;
-            TRACE("moving on to %llx,%x,%llx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
         }
     }
 
@@ -511,12 +511,12 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         ULONG utf16len;
 
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             goto cont;
         }
 
         if (di->n == 0) {
-            WARN("(%llx,%x,%llx): DIR_ITEM name length is zero\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            WARN("(%I64x,%x,%I64x): DIR_ITEM name length is zero\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
             goto cont;
         }
 
@@ -623,7 +623,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 #ifdef DEBUG_FCB_REFCOUNTS
                         LONG rc = InterlockedIncrement(&fcb->refcount);
 
-                        WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb, rc, fcb->subvol->id, fcb->inode);
+                        WARN("fcb %p: refcount now %i (subvol %I64x, inode %I64x)\n", fcb, rc, fcb->subvol->id, fcb->inode);
 #else
                         InterlockedIncrement(&fcb->refcount);
 #endif
@@ -684,7 +684,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     }
 
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        WARN("couldn't find INODE_ITEM for inode %llx in subvol %llx\n", inode, subvol->id);
+        WARN("couldn't find INODE_ITEM for inode %I64x in subvol %I64x\n", inode, subvol->id);
         reap_fcb(fcb);
         return STATUS_INVALID_PARAMETER;
     }
@@ -857,7 +857,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             static const char xapref[] = "user.";
 
             if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
                 continue;
             }
 
@@ -1073,7 +1073,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             ed = (EXTENT_DATA*)tp.item->data;
 
             if (tp.item->size < sizeof(EXTENT_DATA)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
 
                 reap_fcb(fcb);
@@ -1084,7 +1084,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
 
                 if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
 
                     reap_fcb(fcb);
@@ -1165,7 +1165,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 #ifdef DEBUG_FCB_REFCOUNTS
                             LONG rc = InterlockedIncrement(&fcb2->refcount);
 
-                            WARN("fcb %p: refcount now %i (subvol %llx, inode %llx)\n", fcb2, rc, fcb2->subvol->id, fcb2->inode);
+                            WARN("fcb %p: refcount now %i (subvol %I64x, inode %I64x)\n", fcb2, rc, fcb2->subvol->id, fcb2->inode);
 #else
                             InterlockedIncrement(&fcb2->refcount);
 #endif
@@ -1314,7 +1314,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     }
 
     if (tp.item->size < xattrlen) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, xattrlen);
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, xattrlen);
         reap_fcb(fcb);
         return STATUS_INTERNAL_ERROR;
     }
@@ -2127,9 +2127,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     TRACE("create file %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
     ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, TRUE);
-    TRACE("parfileref->fcb->inode_item.st_size (inode %llx) was %llx\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
+    TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) was %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
     parfileref->fcb->inode_item.st_size += utf8len * 2;
-    TRACE("parfileref->fcb->inode_item.st_size (inode %llx) now %llx\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
+    TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) now %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
     parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
     parfileref->fcb->inode_item.sequence++;
     parfileref->fcb->inode_item.st_ctime = now;
@@ -2522,7 +2522,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     *pfr = fileref;
 
-    TRACE("created new file %S in subvol %llx, inode %llx\n", file_desc_fileref(fileref), fcb->subvol->id, fcb->inode);
+    TRACE("created new file %S in subvol %I64x, inode %I64x\n", file_desc_fileref(fileref), fcb->subvol->id, fcb->inode);
 
     return STATUS_SUCCESS;
 }
@@ -4151,13 +4151,13 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             ULONG stringlen;
 
             if (tp.item->size < sizeof(ROOT_REF)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -4175,7 +4175,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             }
 
             if (!r) {
-                ERR("couldn't find subvol %llx\n", tp.item->key.offset);
+                ERR("couldn't find subvol %I64x\n", tp.item->key.offset);
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -4221,7 +4221,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                 hl_alloc = TRUE;
             }
         } else {
-            ERR("couldn't find parent for subvol %llx\n", subvol->id);
+            ERR("couldn't find parent for subvol %I64x\n", subvol->id);
             free_fcb(fcb);
             return STATUS_INTERNAL_ERROR;
         }
@@ -4394,7 +4394,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             }
 
             if (!subvol) {
-                WARN("subvol %llx not found\n", subvol_id);
+                WARN("subvol %I64x not found\n", subvol_id);
                 Status = STATUS_OBJECT_NAME_NOT_FOUND;
             } else
                 Status = open_fileref_by_inode(Vcb, subvol, inode, &fileref, Irp);

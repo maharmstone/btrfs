@@ -979,7 +979,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                                 chunk* c = get_chunk_from_address(me->fileref->fcb->Vcb, ed2->address);
 
                                 if (!c) {
-                                    ERR("get_chunk_from_address(%llx) failed\n", ed2->address);
+                                    ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
                                 } else {
                                     Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ed2->address, ed2->size, me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
                                                                        ext->offset - ed2->offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, FALSE, Irp);
@@ -1226,9 +1226,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
             ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
-            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
+            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
             me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
-            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
+            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
             me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
             me->fileref->parent->fcb->inode_item.sequence++;
             me->fileref->parent->fcb->inode_item.st_ctime = now;
@@ -1795,9 +1795,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         // update parent's INODE_ITEM
 
         related->fcb->inode_item.transid = Vcb->superblock.generation;
-        TRACE("related->fcb->inode_item.st_size (inode %llx) was %llx\n", related->fcb->inode, related->fcb->inode_item.st_size);
+        TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
         related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2* oldutf8len);
-        TRACE("related->fcb->inode_item.st_size (inode %llx) now %llx\n", related->fcb->inode, related->fcb->inode_item.st_size);
+        TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
         related->fcb->inode_item.sequence++;
         related->fcb->inode_item.st_ctime = now;
         related->fcb->inode_item.st_mtime = now;
@@ -2015,9 +2015,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // update new parent's INODE_ITEM
 
     related->fcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("related->fcb->inode_item.st_size (inode %llx) was %llx\n", related->fcb->inode, related->fcb->inode_item.st_size);
+    TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
     related->fcb->inode_item.st_size += 2 * utf8len;
-    TRACE("related->fcb->inode_item.st_size (inode %llx) now %llx\n", related->fcb->inode, related->fcb->inode_item.st_size);
+    TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
     related->fcb->inode_item.sequence++;
     related->fcb->inode_item.st_ctime = now;
     related->fcb->inode_item.st_mtime = now;
@@ -2028,9 +2028,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // update old parent's INODE_ITEM
 
     fr2->parent->fcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("fr2->parent->fcb->inode_item.st_size (inode %llx) was %llx\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
+    TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
     fr2->parent->fcb->inode_item.st_size -= 2 * origutf8len;
-    TRACE("fr2->parent->fcb->inode_item.st_size (inode %llx) now %llx\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
+    TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
     fr2->parent->fcb->inode_item.sequence++;
     fr2->parent->fcb->inode_item.st_ctime = now;
     fr2->parent->fcb->inode_item.st_mtime = now;
@@ -2072,7 +2072,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
-    TRACE("setting new end to %llx bytes (currently %x)\n", end, fcb->adsdata.Length);
+    TRACE("setting new end to %I64x bytes (currently %x)\n", end, fcb->adsdata.Length);
 
     if (!fileref || !fileref->parent) {
         ERR("no fileref for stream\n");
@@ -2083,11 +2083,11 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
         if (advance_only)
             return STATUS_SUCCESS;
 
-        TRACE("truncating stream to %llx bytes\n", end);
+        TRACE("truncating stream to %I64x bytes\n", end);
 
         fcb->adsdata.Length = end;
     } else if (end > fcb->adsdata.Length) {
-        TRACE("extending stream to %llx bytes\n", end);
+        TRACE("extending stream to %I64x bytes\n", end);
 
         if (end > fcb->adsmaxlen) {
             ERR("error - xattr too long (%u > %u)\n", end, fcb->adsmaxlen);
@@ -2204,10 +2204,10 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
     TRACE("file: %S\n", file_desc(FileObject));
     TRACE("paging IO: %s\n", Irp->Flags & IRP_PAGING_IO ? "TRUE" : "FALSE");
-    TRACE("FileObject: AllocationSize = %llx, FileSize = %llx, ValidDataLength = %llx\n",
+    TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
 
-    TRACE("setting new end to %llx bytes (currently %llx)\n", feofi->EndOfFile.QuadPart, fcb->inode_item.st_size);
+    TRACE("setting new end to %I64x bytes (currently %I64x)\n", feofi->EndOfFile.QuadPart, fcb->inode_item.st_size);
 
     if ((uint64_t)feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
         if (advance_only) {
@@ -2215,7 +2215,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             goto end;
         }
 
-        TRACE("truncating file to %llx bytes\n", feofi->EndOfFile.QuadPart);
+        TRACE("truncating file to %I64x bytes\n", feofi->EndOfFile.QuadPart);
 
         if (!MmCanFileBeTruncated(&fcb->nonpaged->segment_object, &feofi->EndOfFile)) {
             Status = STATUS_USER_MAPPED_FILE;
@@ -2234,7 +2234,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             goto end;
         }
 
-        TRACE("extending file to %llx bytes\n", feofi->EndOfFile.QuadPart);
+        TRACE("extending file to %I64x bytes\n", feofi->EndOfFile.QuadPart);
 
         Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, prealloc, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
@@ -2292,7 +2292,7 @@ end:
 static NTSTATUS set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
 
-    TRACE("setting the position on %S to %llx\n", file_desc(FileObject), fpi->CurrentByteOffset.QuadPart);
+    TRACE("setting the position on %S to %I64x\n", file_desc(FileObject), fpi->CurrentByteOffset.QuadPart);
 
     // FIXME - make sure aligned for FO_NO_INTERMEDIATE_BUFFERING
 
@@ -2615,9 +2615,9 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     // update parent's INODE_ITEM
 
     parfcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("parfcb->inode_item.st_size (inode %llx) was %llx\n", parfcb->inode, parfcb->inode_item.st_size);
+    TRACE("parfcb->inode_item.st_size (inode %I64x) was %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
     parfcb->inode_item.st_size += 2 * utf8len;
-    TRACE("parfcb->inode_item.st_size (inode %llx) now %llx\n", parfcb->inode, parfcb->inode_item.st_size);
+    TRACE("parfcb->inode_item.st_size (inode %I64x) now %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
     parfcb->inode_item.sequence++;
     parfcb->inode_item.st_ctime = now;
 
@@ -2685,7 +2685,7 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
     }
 
     if (fvdli->ValidDataLength.QuadPart <= fcb->Header.ValidDataLength.QuadPart || fvdli->ValidDataLength.QuadPart > fcb->Header.FileSize.QuadPart) {
-        TRACE("invalid VDL of %llu (current VDL = %llu, file size = %llu)\n", fvdli->ValidDataLength.QuadPart,
+        TRACE("invalid VDL of %I64u (current VDL = %I64u, file size = %I64u)\n", fvdli->ValidDataLength.QuadPart,
               fcb->Header.ValidDataLength.QuadPart, fcb->Header.FileSize.QuadPart);
         Status = STATUS_INVALID_PARAMETER;
         goto end;
@@ -3083,7 +3083,7 @@ static NTSTATUS fill_in_file_standard_information(FILE_STANDARD_INFORMATION* fsi
         fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
     }
 
-    TRACE("length = %llu\n", fsi->EndOfFile.QuadPart);
+    TRACE("length = %I64u\n", fsi->EndOfFile.QuadPart);
 
     fsi->DeletePending = fileref ? fileref->delete_on_close : FALSE;
 
@@ -3491,7 +3491,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                 hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
                 file_ref* parfr;
 
-                TRACE("parent %llx, index %llx, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
+                TRACE("parent %I64x, index %I64x, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
 
                 Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr, Irp);
 
@@ -3659,7 +3659,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                 hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
                 file_ref* parfr;
 
-                TRACE("parent %llx, index %llx, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
+                TRACE("parent %I64x, index %I64x, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
 
                 Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr, Irp);
 

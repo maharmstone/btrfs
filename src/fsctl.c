@@ -131,7 +131,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
     if (c)
         c->used += Vcb->superblock.node_size;
     else {
-        ERR("could not find chunk for address %llx\n", t.new_address);
+        ERR("could not find chunk for address %I64x\n", t.new_address);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
@@ -408,7 +408,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     // FIXME - do we need to copy over the send and receive fields too?
 
     if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        ERR("error - could not find ROOT_ITEM for subvol %llx\n", r->id);
+        ERR("error - could not find ROOT_ITEM for subvol %I64x\n", r->id);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
@@ -667,7 +667,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     }
 
     if (subvol_fcb->inode != subvol_fcb->subvol->root_item.objid) {
-        WARN("handle inode was %llx, expected %llx\n", subvol_fcb->inode, subvol_fcb->subvol->root_item.objid);
+        WARN("handle inode was %I64x, expected %I64x\n", subvol_fcb->inode, subvol_fcb->subvol->root_item.objid);
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
@@ -882,7 +882,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
 
-    TRACE("created root %llx\n", id);
+    TRACE("created root %I64x\n", id);
 
     if (!Vcb->uuid_root) {
         root* uuid_root;
@@ -1919,7 +1919,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
 
     if (fzdi->BeyondFinalZero.QuadPart <= fzdi->FileOffset.QuadPart) {
-        WARN("BeyondFinalZero was less than or equal to FileOffset (%llx <= %llx)\n", fzdi->BeyondFinalZero.QuadPart, fzdi->FileOffset.QuadPart);
+        WARN("BeyondFinalZero was less than or equal to FileOffset (%I64x <= %I64x)\n", fzdi->BeyondFinalZero.QuadPart, fzdi->FileOffset.QuadPart);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -2854,7 +2854,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     size = gli.Length.QuadPart;
 
     if (size < 0x100000) {
-        ERR("device was not large enough to hold FS (%llx bytes, need at least 1 MB)\n", size);
+        ERR("device was not large enough to hold FS (%I64x bytes, need at least 1 MB)\n", size);
         ObDereferenceObject(fileobj);
         return STATUS_INTERNAL_ERROR;
     }
@@ -3176,7 +3176,7 @@ static NTSTATUS reset_stats(device_extension* Vcb, void* data, ULONG length, KPR
         le = le->Flink;
     }
 
-    WARN("device %llx not found\n", devid);
+    WARN("device %I64x not found\n", devid);
     Status = STATUS_INVALID_PARAMETER;
 
 end:
@@ -3555,7 +3555,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
                     c = get_chunk_from_address(Vcb, ed2s->address);
                     if (!c) {
-                        ERR("get_chunk_from_address(%llx) failed\n", ed2s->address);
+                        ERR("get_chunk_from_address(%I64x) failed\n", ed2s->address);
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
@@ -4495,7 +4495,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, uint64_t id, WCHAR* out, 
     }
 
     if (!r) {
-        ERR("couldn't find subvol %llx\n", id);
+        ERR("couldn't find subvol %I64x\n", id);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -4584,13 +4584,13 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
                 ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
 
                 if (ri->ctransid == bfs->ctransid) {
-                    TRACE("found subvol %llx\n", *id);
+                    TRACE("found subvol %I64x\n", *id);
                     Status = get_subvol_path(Vcb, *id, out, outlen, Irp);
                     goto end;
                 }
             }
         } else {
-            TRACE("found subvol %llx\n", *id);
+            TRACE("found subvol %I64x\n", *id);
             Status = get_subvol_path(Vcb, *id, out, outlen, Irp);
             goto end;
         }
@@ -4629,13 +4629,13 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
                     ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
 
                     if (ri->ctransid == bfs->ctransid) {
-                        TRACE("found subvol %llx\n", ids[i]);
+                        TRACE("found subvol %I64x\n", ids[i]);
                         Status = get_subvol_path(Vcb, ids[i], out, outlen, Irp);
                         goto end;
                     }
                 }
             } else {
-                TRACE("found subvol %llx\n", ids[i]);
+                TRACE("found subvol %I64x\n", ids[i]);
                 Status = get_subvol_path(Vcb, ids[i], out, outlen, Irp);
                 goto end;
             }
@@ -4682,7 +4682,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
     }
 
     if (!dev) {
-        ERR("could not find device %llx\n", br->device);
+        ERR("could not find device %I64x\n", br->device);
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
@@ -4798,7 +4798,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
                 goto end;
             }
         } else if ((uint64_t)gli.Length.QuadPart < br->size) {
-            ERR("device was %llx bytes, trying to extend to %llx\n", gli.Length.QuadPart, br->size);
+            ERR("device was %I64x bytes, trying to extend to %I64x\n", gli.Length.QuadPart, br->size);
             Status = STATUS_INVALID_PARAMETER;
             goto end;
         }

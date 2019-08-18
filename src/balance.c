@@ -132,12 +132,12 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         len--;
 
         if (sectlen > len) {
-            ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (sectlen == 0) {
-            ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
+            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -263,11 +263,11 @@ static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_-
         EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
         if (!(ei->flags & EXTENT_ITEM_TREE_BLOCK)) {
-            ERR("EXTENT_ITEM for %llx found, but tree flag not set\n", address);
+            ERR("EXTENT_ITEM for %I64x found, but tree flag not set\n", address);
             return STATUS_INTERNAL_ERROR;
         }
     } else {
-        ERR("could not find valid EXTENT_ITEM for address %llx\n", address);
+        ERR("could not find valid EXTENT_ITEM for address %I64x\n", address);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -650,7 +650,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 }
 
                 if (!r) {
-                    ERR("could not find subvol with id %llx\n", ref->tbr.offset);
+                    ERR("could not find subvol with id %I64x\n", ref->tbr.offset);
                     return STATUS_INTERNAL_ERROR;
                 }
 
@@ -885,7 +885,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                 }
 
                                 if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                                    ERR("could not find ROOT_ITEM for tree %llx\n", searchkey.obj_id);
+                                    ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.obj_id);
                                     Status = STATUS_INTERNAL_ERROR;
                                     goto end;
                                 }
@@ -1103,7 +1103,7 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, BOOL* ch
     LIST_ENTRY items, rollback;
     uint32_t loaded = 0;
 
-    TRACE("chunk %llx\n", c->offset);
+    TRACE("chunk %I64x\n", c->offset);
 
     InitializeListHead(&rollback);
     InitializeListHead(&items);
@@ -1233,7 +1233,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
     }
 
     if (!r) {
-        ERR("could not find subvol %llx\n", edr->count);
+        ERR("could not find subvol %I64x\n", edr->count);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1253,7 +1253,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
         if (find_next_item(Vcb, &tp, &tp2, FALSE, NULL))
             tp = tp2;
         else {
-            ERR("could not find EXTENT_DATA for inode %llx in root %llx\n", searchkey.obj_id, r->id);
+            ERR("could not find EXTENT_DATA for inode %I64x in root %I64x\n", searchkey.obj_id, r->id);
             return STATUS_INTERNAL_ERROR;
         }
     }
@@ -1360,12 +1360,12 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         len--;
 
         if (sectlen > len) {
-            ERR("(%llx,%x,%llx): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (sectlen == 0) {
-            ERR("(%llx,%x,%llx): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
+            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1673,7 +1673,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
     chunk* newchunk = NULL;
     uint8_t* data = NULL;
 
-    TRACE("chunk %llx\n", c->offset);
+    TRACE("chunk %I64x\n", c->offset);
 
     InitializeListHead(&rollback);
     InitializeListHead(&items);
@@ -2810,7 +2810,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
                 lastoff = tp.item->key.offset + de->length;
             } else {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
                 return;
             }
         }
@@ -3109,7 +3109,7 @@ void balance_thread(void* context) {
         else if (c->chunk_item->type & BLOCK_FLAG_SYSTEM)
             sort = BALANCE_OPTS_SYSTEM;
         else {
-            ERR("unexpected chunk type %llx\n", c->chunk_item->type);
+            ERR("unexpected chunk type %I64x\n", c->chunk_item->type);
             release_chunk_lock(c, Vcb);
             break;
         }
@@ -3413,7 +3413,7 @@ end:
             }
 
             if (!dev) {
-                ERR("could not find device %llx\n", Vcb->balance.opts[0].devid);
+                ERR("could not find device %I64x\n", Vcb->balance.opts[0].devid);
                 Vcb->balance.status = STATUS_INTERNAL_ERROR;
             }
 
@@ -3619,7 +3619,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     }
 
     if (tp.item->size < sizeof(BALANCE_ITEM)) {
-        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
              tp.item->size, sizeof(BALANCE_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
@@ -3806,7 +3806,7 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
 
     if (!dev) {
         ExReleaseResourceLite(&Vcb->tree_lock);
-        WARN("device %llx not found\n", devid);
+        WARN("device %I64x not found\n", devid);
         return STATUS_NOT_FOUND;
     }
 

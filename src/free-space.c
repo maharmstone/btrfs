@@ -89,14 +89,14 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                 FREE_SPACE_ITEM* fsi = (FREE_SPACE_ITEM*)tp.item->data;
 
                 if (fsi->key.obj_type != TYPE_INODE_ITEM)
-                    WARN("key (%llx,%x,%llx) does not point to an INODE_ITEM\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset);
+                    WARN("key (%I64x,%x,%I64x) does not point to an INODE_ITEM\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset);
                 else {
                     LIST_ENTRY* le;
 
                     Status = remove_free_space_inode(Vcb, fsi->key.obj_id, batchlist, Irp, &rollback);
 
                     if (!NT_SUCCESS(Status))
-                        ERR("remove_free_space_inode for (%llx,%x,%llx) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
+                        ERR("remove_free_space_inode for (%I64x,%x,%I64x) returned %08x\n", fsi->key.obj_id, fsi->key.obj_type, fsi->key.offset, Status);
 
                     le = Vcb->chunks.Flink;
                     while (le != &Vcb->chunks) {
@@ -111,7 +111,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                     }
                 }
             } else
-                WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+                WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         }
 
         b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
@@ -165,7 +165,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
 
                 Status = load_cache_chunk(Vcb, c, NULL);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("load_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+                    ERR("load_cache_chunk(%I64x) returned %08x\n", c->offset, Status);
                     release_chunk_lock(c, Vcb);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
                     return Status;
@@ -464,7 +464,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
 
     // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
 
-    TRACE("(%p, %llx)\n", Vcb, c->offset);
+    TRACE("(%p, %I64x)\n", Vcb, c->offset);
 
     searchkey.obj_id = FREE_SPACE_CACHE_ID;
     searchkey.obj_type = 0;
@@ -477,12 +477,12 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        TRACE("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        TRACE("(%I64x,%x,%I64x) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return STATUS_NOT_FOUND;
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         return STATUS_NOT_FOUND;
     }
 
@@ -555,7 +555,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     generation = (uint64_t*)(data + (num_sectors * sizeof(uint32_t)));
 
     if (*generation != fsi->generation) {
-        WARN("free space cache generation for %llx was %llx, expected %llx\n", c->offset, *generation, fsi->generation);
+        WARN("free space cache generation for %I64x was %I64x, expected %I64x\n", c->offset, *generation, fsi->generation);
         goto clearcache;
     }
 
@@ -564,7 +564,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) / Vcb->superblock.sector_size) + num_bitmaps);
 
     if (num_valid_sectors > num_sectors) {
-        ERR("free space cache for %llx was %llx sectors, expected at least %llx\n", c->offset, num_sectors, num_valid_sectors);
+        ERR("free space cache for %I64x was %I64x sectors, expected at least %I64x\n", c->offset, num_sectors, num_valid_sectors);
         goto clearcache;
     }
 
@@ -579,7 +579,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
             crc32 = ~calc_crc32c(0xffffffff, &data[sizeof(uint32_t) * num_sectors], ((i + 1) * Vcb->superblock.sector_size) - (sizeof(uint32_t) * num_sectors));
 
         if (crc32 != checksums[i]) {
-            WARN("checksum %llu was %08x, expected %08x\n", i, crc32, checksums[i]);
+            WARN("checksum %I64u was %08x, expected %08x\n", i, crc32, checksums[i]);
             goto clearcache;
         }
     }
@@ -639,7 +639,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, BOOL load
     }
 
     if (c->chunk_item->size - c->used != total_space + superblock_size) {
-        WARN("invalidating cache for chunk %llx: space was %llx, expected %llx\n", c->offset, total_space + superblock_size, c->chunk_item->size - c->used);
+        WARN("invalidating cache for chunk %I64x: space was %I64x, expected %I64x\n", c->offset, total_space + superblock_size, c->chunk_item->size - c->used);
         goto clearcache;
     }
 
@@ -721,7 +721,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     ULONG bmplen = 0;
     LIST_ENTRY* le;
 
-    TRACE("(%p, %llx)\n", Vcb, c->offset);
+    TRACE("(%p, %I64x)\n", Vcb, c->offset);
 
     if (!Vcb->space_root)
         return STATUS_NOT_FOUND;
@@ -737,12 +737,12 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        TRACE("(%llx,%x,%llx) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        TRACE("(%I64x,%x,%I64x) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         return STATUS_NOT_FOUND;
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_INFO)) {
-        WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_INFO));
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_INFO));
         return STATUS_NOT_FOUND;
     }
 
@@ -767,10 +767,10 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             explen = (ULONG)(tp.item->key.offset / (Vcb->superblock.sector_size * 8));
 
             if (tp.item->size < explen) {
-                WARN("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, explen);
+                WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, explen);
                 return STATUS_NOT_FOUND;
             } else if (tp.item->size == 0) {
-                WARN("(%llx,%x,%llx) has size of 0\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                WARN("(%I64x,%x,%I64x) has size of 0\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
                 return STATUS_NOT_FOUND;
             }
 
@@ -881,7 +881,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
         Status = STATUS_NOT_FOUND;
 
     if (Status == STATUS_NOT_FOUND) {
-        TRACE("generating free space cache for chunk %llx\n", c->offset);
+        TRACE("generating free space cache for chunk %I64x\n", c->offset);
 
         searchkey.obj_id = c->offset;
         searchkey.obj_type = TYPE_EXTENT_ITEM;
@@ -914,7 +914,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
 
                     order_space_entry(s, &c->space_size);
 
-                    TRACE("(%llx,%llx)\n", s->address, s->size);
+                    TRACE("(%I64x,%I64x)\n", s->address, s->size);
                 }
 
                 if (tp.item->key.obj_type == TYPE_METADATA_ITEM)
@@ -942,7 +942,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
 
             order_space_entry(s, &c->space_size);
 
-            TRACE("(%llx,%llx)\n", s->address, s->size);
+            TRACE("(%I64x,%I64x)\n", s->address, s->size);
         }
     }
 
@@ -1064,7 +1064,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
 
     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS * Vcb->superblock.sector_size);
 
-    TRACE("chunk %llx: cache_size = %llx, new_cache_size = %llx\n", c->offset, c->cache ? c->cache->inode_item.st_size : 0, new_cache_size);
+    TRACE("chunk %I64x: cache_size = %I64x, new_cache_size = %I64x\n", c->offset, c->cache ? c->cache->inode_item.st_size : 0, new_cache_size);
 
     if (c->cache) {
         if (new_cache_size > c->cache->inode_item.st_size)
@@ -1214,12 +1214,12 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         }
 
         if (keycmp(searchkey, tp.item->key)) {
-            ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            ERR("could not find (%I64x,%x,%I64x) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1313,7 +1313,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
             *changed = TRUE;
         } else {
             if (tp.item->size < sizeof(INODE_ITEM)) {
-                ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -1331,12 +1331,12 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, BOOL* chan
         }
 
         if (keycmp(searchkey, tp.item->key)) {
-            ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            ERR("could not find (%I64x,%x,%I64x) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1373,7 +1373,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, BOOL* changed, PIRP Irp, LIST_ENT
                 *changed = TRUE;
 
             if (!NT_SUCCESS(Status)) {
-                ERR("allocate_cache_chunk(%llx) returned %08x\n", c->offset, Status);
+                ERR("allocate_cache_chunk(%I64x) returned %08x\n", c->offset, Status);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 clear_batch_list(Vcb, &batchlist);
                 return Status;
@@ -1709,13 +1709,13 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     }
 
     if (keycmp(searchkey, tp.item->key)) {
-        ERR("could not find (%llx,%x,%llx) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        ERR("could not find (%I64x,%x,%I64x) in root_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
@@ -1838,7 +1838,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
             release_chunk_lock(c, Vcb);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("update_chunk_cache(%llx) returned %08x\n", c->offset, Status);
+                ERR("update_chunk_cache(%I64x) returned %08x\n", c->offset, Status);
                 clear_batch_list(Vcb, &batchlist);
                 return Status;
             }
@@ -1907,7 +1907,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
             release_chunk_lock(c, Vcb);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("update_chunk_cache_tree(%llx) returned %08x\n", c->offset, Status);
+                ERR("update_chunk_cache_tree(%I64x) returned %08x\n", c->offset, Status);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
                 clear_batch_list(Vcb, &batchlist);
                 return Status;
@@ -1929,7 +1929,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
 }
 
 void space_list_add(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
-    TRACE("(%p, %llx, %llx, %p)\n", c, address, length, rollback);
+    TRACE("(%p, %I64x, %I64x, %p)\n", c, address, length, rollback);
 
     c->changed = TRUE;
     c->space_changed = TRUE;

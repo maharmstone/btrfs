@@ -69,7 +69,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     }
 
     if (!r) {
-        ERR("could not find subvol %llx\n", subvol);
+        ERR("could not find subvol %I64x\n", subvol);
         return;
     }
 
@@ -97,12 +97,12 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                 path_part* pp;
 
                 if (tp.item->size < sizeof(ROOT_REF)) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
                     goto end;
                 }
 
                 if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
                     goto end;
                 }
@@ -134,7 +134,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                 }
 
                 if (!r) {
-                    ERR("could not find subvol %llx\n", tp.item->key.offset);
+                    ERR("could not find subvol %I64x\n", tp.item->key.offset);
                     goto end;
                 }
 
@@ -160,12 +160,12 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                 path_part* pp;
 
                 if (tp.item->size < sizeof(INODE_REF)) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
                     goto end;
                 }
 
                 if (tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, offsetof(INODE_REF, name[0]) + ir->n);
                     goto end;
                 }
@@ -191,13 +191,13 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                 path_part* pp;
 
                 if (tp.item->size < sizeof(INODE_EXTREF)) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                                                                                tp.item->size, sizeof(INODE_EXTREF));
                     goto end;
                 }
 
                 if (tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, offsetof(INODE_EXTREF, name[0]) + ier->n);
                     goto end;
                 }
@@ -219,7 +219,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 
                 dir = ier->dir;
             } else {
-                ERR("could not find INODE_REF for inode %llx in subvol %llx\n", dir, r->id);
+                ERR("could not find INODE_REF for inode %I64x in subvol %I64x\n", dir, r->id);
                 goto end;
             }
         }
@@ -274,9 +274,9 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     }
 
     if (not_in_tree)
-        ERR("subvol %llx, %.*s, offset %llx\n", subvol, fn.Length, fn.Buffer, offset);
+        ERR("subvol %I64x, %.*s, offset %I64x\n", subvol, fn.Length, fn.Buffer, offset);
     else
-        ERR("%.*s, offset %llx\n", fn.Length, fn.Buffer, offset);
+        ERR("%.*s, offset %I64x\n", fn.Length, fn.Buffer, offset);
 
     Status = utf8_to_utf16(NULL, 0, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
@@ -385,12 +385,12 @@ static void log_tree_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     err->metadata.level = level;
 
     if (firstitem) {
-        ERR("root %llx, level %u, first item (%llx,%x,%llx)\n", root, level, firstitem->obj_id,
+        ERR("root %I64x, level %u, first item (%I64x,%x,%I64x)\n", root, level, firstitem->obj_id,
                                                                 firstitem->obj_type, firstitem->offset);
 
         err->metadata.firstitem = *firstitem;
     } else {
-        ERR("root %llx, level %u\n", root, level);
+        ERR("root %I64x, level %u\n", root, level);
 
         RtlZeroMemory(&err->metadata.firstitem, sizeof(KEY));
     }
@@ -469,7 +469,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
         return;
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return;
     }
 
@@ -479,7 +479,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
 
     if (tp.item->key.obj_id == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
-            ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                                                                        tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
             return;
         }
@@ -584,7 +584,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
                     EXTENT_DATA_REF* edr;
 
                     if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                                                                           tp.item->size, sizeof(EXTENT_DATA_REF));
                         break;
                     }
@@ -607,12 +607,12 @@ static void log_error(device_extension* Vcb, uint64_t addr, uint64_t devid, BOOL
         scrub_error* err;
 
         if (parity) {
-            ERR("recovering from parity error at %llx on device %llx\n", addr, devid);
+            ERR("recovering from parity error at %I64x on device %I64x\n", addr, devid);
         } else {
             if (metadata)
-                ERR("recovering from metadata checksum error at %llx on device %llx\n", addr, devid);
+                ERR("recovering from metadata checksum error at %I64x on device %I64x\n", addr, devid);
             else
-                ERR("recovering from data checksum error at %llx on device %llx\n", addr, devid);
+                ERR("recovering from data checksum error at %I64x on device %I64x\n", addr, devid);
         }
 
         err = ExAllocatePoolWithTag(PagedPool, sizeof(scrub_error), ALLOC_TAG);
@@ -640,9 +640,9 @@ static void log_error(device_extension* Vcb, uint64_t addr, uint64_t devid, BOOL
         ExReleaseResourceLite(&Vcb->scrub.stats_lock);
     } else {
         if (metadata)
-            ERR("unrecoverable metadata checksum error at %llx\n", addr);
+            ERR("unrecoverable metadata checksum error at %I64x\n", addr);
         else
-            ERR("unrecoverable data checksum error at %llx\n", addr);
+            ERR("unrecoverable data checksum error at %I64x\n", addr);
 
         log_unrecoverable_error(Vcb, addr, devid);
     }
@@ -1389,7 +1389,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
     NTSTATUS Status;
     uint16_t startoffstripe, num_missing, allowed_missing;
 
-    TRACE("(%p, %p, %llx, %llx, %p)\n", Vcb, c, offset, size, csum);
+    TRACE("(%p, %p, %I64x, %I64x, %p)\n", Vcb, c, offset, size, csum);
 
     context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
     if (!context.stripes) {
@@ -1436,7 +1436,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
         get_raid0_offset(offset + size - c->offset - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &endoff, &endoffstripe);
 
         if ((c->chunk_item->num_stripes % sub_stripes) != 0) {
-            ERR("chunk %llx: num_stripes %x was not a multiple of sub_stripes %x!\n", c->offset, c->chunk_item->num_stripes, sub_stripes);
+            ERR("chunk %I64x: num_stripes %x was not a multiple of sub_stripes %x!\n", c->offset, c->chunk_item->num_stripes, sub_stripes);
             Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
@@ -2434,7 +2434,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
     uint16_t i;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 
-    TRACE("(%p, %p, %llx, %llx)\n", Vcb, c, stripe_start, stripe_end);
+    TRACE("(%p, %p, %I64x, %I64x)\n", Vcb, c, stripe_start, stripe_end);
 
     full_stripe_len = (c->chunk_item->num_stripes - num_parity_stripes) * c->chunk_item->stripe_length;
     run_start = c->offset + (stripe_start * full_stripe_len);
@@ -2543,7 +2543,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
                     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-                        ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
@@ -2867,10 +2867,10 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
         if (tp.item->key.obj_id >= *offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
             uint64_t size = tp.item->key.obj_type == TYPE_METADATA_ITEM ? Vcb->superblock.node_size : tp.item->key.offset;
 
-            TRACE("%llx\n", tp.item->key.obj_id);
+            TRACE("%I64x\n", tp.item->key.obj_id);
 
             if (size < Vcb->superblock.sector_size) {
-                ERR("extent %llx has size less than sector_size (%llx < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
+                ERR("extent %I64x has size less than sector_size (%I64x < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -2928,7 +2928,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
     ULONG type, num_extents = 0;
     uint64_t total_data = 0, tree_run_start, tree_run_end;
 
-    TRACE("chunk %llx\n", c->offset);
+    TRACE("chunk %I64x\n", c->offset);
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
 
@@ -2972,7 +2972,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
             RTL_BITMAP bmp;
             ULONG* bmparr = NULL;
 
-            TRACE("%llx\n", tp.item->key.obj_id);
+            TRACE("%I64x\n", tp.item->key.obj_id);
 
             is_tree = FALSE;
 
@@ -2982,7 +2982,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
                 EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
                 if (tp.item->size < sizeof(EXTENT_ITEM)) {
-                    ERR("(%llx,%x,%llx) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
                     Status = STATUS_INTERNAL_ERROR;
                     goto end;
                 }
@@ -2992,7 +2992,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
             }
 
             if (size < Vcb->superblock.sector_size) {
-                ERR("extent %llx has size less than sector_size (%llx < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
+                ERR("extent %I64x has size less than sector_size (%I64x < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }

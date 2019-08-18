@@ -1607,7 +1607,7 @@ static __inline void print_open_trees(device_extension* Vcb) {
     while (le != &Vcb->trees) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         tree_data* td = CONTAINING_RECORD(t->itemlist.Flink, tree_data, list_entry);
-        ERR("tree %p: root %llx, level %u, first key (%llx,%x,%llx)\n",
+        ERR("tree %p: root %I64x, level %u, first key (%I64x,%x,%I64x)\n",
                       t, t->root->id, t->header.level, td->key.obj_id, td->key.obj_type, td->key.offset);
 
         le = le->Flink;
