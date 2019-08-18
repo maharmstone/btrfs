@@ -2693,6 +2693,16 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
         runlength = RtlFindFirstRunClear(&bmp, &index);
 
         while (runlength != 0) {
+            if (index >= len)
+                break;
+
+            if (index + runlength >= len) {
+                runlength = len - index;
+
+                if (runlength == 0)
+                    break;
+            }
+
             do {
                 uint16_t rl;
                 uint64_t off;
