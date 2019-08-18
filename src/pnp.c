@@ -525,6 +525,24 @@ NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             Status = pnp_surprise_removal(DeviceObject, Irp);
             break;
 
+        case IRP_MN_DEVICE_USAGE_NOTIFICATION:
+            if (IrpSp->Parameters.UsageNotification.InPath) {
+                switch (IrpSp->Parameters.UsageNotification.Type) {
+                    case DeviceUsageTypePaging:
+                    case DeviceUsageTypeHibernation:
+                    case DeviceUsageTypeDumpFile:
+                        // FIXME - we should be passing this call down to the child devices as well
+                        Vcb->disallow_dismount = TRUE;
+                    break;
+
+                    default:
+                        break;
+                }
+            }
+
+            Status = STATUS_SUCCESS;
+            break;
+
         default:
             TRACE("passing minor function 0x%x on\n", IrpSp->MinorFunction);
 
