@@ -44,6 +44,12 @@
 #undef INITGUID
 #endif
 
+#ifdef _MSC_VER
+#include <ntstrsafe.h>
+#else
+NTSTATUS RtlStringCbVPrintfA(char* pszDest, size_t cbDest, const char* pszFormat, va_list argList); // not in mingw
+#endif
+
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES | \
@@ -131,6 +137,8 @@ static NTSTATUS dbg_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+#define DEBUG_MESSAGE_LEN 1024
+
 #ifdef DEBUG_LONG_MESSAGES
 void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned int line, _In_ char* s, ...) {
 #else
@@ -145,7 +153,7 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
     read_context context;
     uint32_t length;
 
-    buf2 = ExAllocatePoolWithTag(NonPagedPool, 1024, ALLOC_TAG);
+    buf2 = ExAllocatePoolWithTag(NonPagedPool, DEBUG_MESSAGE_LEN, ALLOC_TAG);
 
     if (!buf2) {
         DbgPrint("Couldn't allocate buffer in debug_message\n");
@@ -160,7 +168,8 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
     buf = &buf2[strlen(buf2)];
 
     va_start(ap, s);
-    vsprintf(buf, s, ap);
+
+    RtlStringCbVPrintfA(buf, DEBUG_MESSAGE_LEN - strlen(buf2), s, ap);
 
     ExAcquireResourceSharedLite(&log_lock, TRUE);
 
