@@ -256,7 +256,7 @@ size:
 
 static void load_free_space_bitmap(device_extension* Vcb, chunk* c, uint64_t offset, void* data, uint64_t* total_space) {
     RTL_BITMAP bmph;
-    uint32_t i, *dwords = data;
+    uint32_t i, len, *dwords = data;
     ULONG runlength, index;
 
     // flip bits
@@ -264,13 +264,25 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, uint64_t off
         dwords[i] = ~dwords[i];
     }
 
-    RtlInitializeBitMap(&bmph, data, Vcb->superblock.sector_size * 8);
+    len = Vcb->superblock.sector_size * 8;
+
+    RtlInitializeBitMap(&bmph, data, len);
 
     index = 0;
     runlength = RtlFindFirstRunClear(&bmph, &index);
 
     while (runlength != 0) {
         uint64_t addr, length;
+
+        if (index >= len)
+            break;
+
+        if (index + runlength >= len) {
+            runlength = len - index;
+
+            if (runlength == 0)
+                break;
+        }
 
         addr = offset + (index * Vcb->superblock.sector_size);
         length = Vcb->superblock.sector_size * runlength;
