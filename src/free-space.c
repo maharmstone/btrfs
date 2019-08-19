@@ -775,6 +775,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             ULONG explen, index, runlength;
             RTL_BITMAP bmp;
             uint64_t lastoff;
+            ULONG bmpl;
 
             explen = (ULONG)(tp.item->key.offset / (Vcb->superblock.sector_size * 8));
 
@@ -801,15 +802,29 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             // We copy the bitmap because it supposedly has to be ULONG-aligned
             RtlCopyMemory(bmparr, tp.item->data, tp.item->size);
 
-            RtlInitializeBitMap(&bmp, bmparr, (ULONG)(tp.item->key.offset / Vcb->superblock.sector_size));
+            bmpl = (ULONG)tp.item->key.offset / Vcb->superblock.sector_size;
+
+            RtlInitializeBitMap(&bmp, bmparr, bmpl);
 
             lastoff = tp.item->key.obj_id;
 
             runlength = RtlFindFirstRunClear(&bmp, &index);
 
             while (runlength != 0) {
-                uint64_t runstart = tp.item->key.obj_id + (index * Vcb->superblock.sector_size);
-                uint64_t runend = runstart + (runlength * Vcb->superblock.sector_size);
+                uint64_t runstart, runend;
+
+                if (index >= bmpl)
+                    break;
+
+                if (index + runlength >= bmpl) {
+                    runlength = bmpl - index;
+
+                    if (runlength == 0)
+                        break;
+                }
+
+                runstart = tp.item->key.obj_id + (index * Vcb->superblock.sector_size);
+                runend = runstart + (runlength * Vcb->superblock.sector_size);
 
                 if (runstart > lastoff) {
                     Status = add_space_entry(&c->space, &c->space_size, lastoff, runstart - lastoff);
