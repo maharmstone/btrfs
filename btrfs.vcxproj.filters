@@ -283,5 +283,8 @@
     <ClCompile Include="src\fsrtl.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\boot.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

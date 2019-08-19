@@ -5977,5 +5977,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     IoRegisterFileSystem(DeviceObject);
 
+    IoRegisterBootDriverReinitialization(DriverObject, check_system_root, NULL);
+
     return STATUS_SUCCESS;
 }

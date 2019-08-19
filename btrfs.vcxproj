@@ -293,6 +293,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\balance.c" />
+    <ClCompile Include="src\boot.c" />
     <ClCompile Include="src\btrfs.c" />
     <ClCompile Include="src\cache.c" />
     <ClCompile Include="src\calcthread.c" />

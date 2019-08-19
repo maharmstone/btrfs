@@ -1597,6 +1597,9 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
 // in fsrtl.c
 NTSTATUS compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength, IN PREPARSE_DATA_BUFFER ReparseBuffer);
 
+// in boot.c
+void check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count);
+
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
 
