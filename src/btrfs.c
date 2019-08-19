@@ -278,7 +278,7 @@ _Function_class_(DRIVER_UNLOAD)
 static void __stdcall DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
     UNICODE_STRING dosdevice_nameW;
 
-    TRACE("(%p)\n");
+    TRACE("(%p)\n", DriverObject);
 
     free_cache();
 
