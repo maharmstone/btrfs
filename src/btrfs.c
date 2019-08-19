@@ -1016,8 +1016,8 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
 
             calculate_total_space(Vcb, (uint64_t*)&ffsi->TotalAllocationUnits.QuadPart, (uint64_t*)&ffsi->ActualAvailableAllocationUnits.QuadPart);
             ffsi->CallerAvailableAllocationUnits.QuadPart = ffsi->ActualAvailableAllocationUnits.QuadPart;
-            ffsi->SectorsPerAllocationUnit = 1;
-            ffsi->BytesPerSector = Vcb->superblock.sector_size;
+            ffsi->SectorsPerAllocationUnit = Vcb->superblock.sector_size / 512;
+            ffsi->BytesPerSector = 512;
 
             BytesCopied = sizeof(FILE_FS_FULL_SIZE_INFORMATION);
             Status = STATUS_SUCCESS;
@@ -1047,8 +1047,8 @@ static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _
             TRACE("FileFsSizeInformation\n");
 
             calculate_total_space(Vcb, (uint64_t*)&ffsi->TotalAllocationUnits.QuadPart, (uint64_t*)&ffsi->AvailableAllocationUnits.QuadPart);
-            ffsi->SectorsPerAllocationUnit = 1;
-            ffsi->BytesPerSector = Vcb->superblock.sector_size;
+            ffsi->SectorsPerAllocationUnit = Vcb->superblock.sector_size / 512;
+            ffsi->BytesPerSector = 512;
 
             BytesCopied = sizeof(FILE_FS_SIZE_INFORMATION);
             Status = STATUS_SUCCESS;
