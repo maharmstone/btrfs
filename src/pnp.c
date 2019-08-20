@@ -271,14 +271,14 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static void bus_query_capabilities(PIRP Irp) {
+static NTSTATUS bus_query_capabilities(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PDEVICE_CAPABILITIES dc = IrpSp->Parameters.DeviceCapabilities.Capabilities;
 
     dc->UniqueID = TRUE;
     dc->SilentInstall = TRUE;
 
-    Irp->IoStatus.Status = STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS bus_query_device_relations(PIRP Irp) {
@@ -329,9 +329,6 @@ static NTSTATUS bus_query_device_relations(PIRP Irp) {
 end:
     ExReleaseResourceLite(&pdo_list_lock);
 
-    Irp->IoStatus.Status = Status;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
     return Status;
 }
 
@@ -354,34 +351,41 @@ static NTSTATUS bus_query_hardware_ids(PIRP Irp) {
 }
 
 static NTSTATUS bus_pnp(bus_device_extension* bde, PIRP Irp) {
+    NTSTATUS Status = Irp->IoStatus.Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    BOOL handled = FALSE;
 
     switch (IrpSp->MinorFunction) {
         case IRP_MN_QUERY_CAPABILITIES:
-            bus_query_capabilities(Irp);
+            Status = bus_query_capabilities(Irp);
+            handled = TRUE;
             break;
 
         case IRP_MN_QUERY_DEVICE_RELATIONS:
             if (IrpSp->Parameters.QueryDeviceRelations.Type != BusRelations || no_pnp)
                 break;
 
-            return bus_query_device_relations(Irp);
+            Status = bus_query_device_relations(Irp);
+            handled = TRUE;
+            break;
 
         case IRP_MN_QUERY_ID:
-        {
-            NTSTATUS Status;
-
             if (IrpSp->Parameters.QueryId.IdType != BusQueryHardwareIDs)
                 break;
 
             Status = bus_query_hardware_ids(Irp);
-
-            Irp->IoStatus.Status = Status;
-            IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
-            return Status;
-        }
+            handled = TRUE;
+            break;
     }
+
+    if (!NT_SUCCESS(Status) && handled) {
+        Irp->IoStatus.Status = Status;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+        return Status;
+    }
+
+    Irp->IoStatus.Status = Status;
 
     IoSkipCurrentIrpStackLocation(Irp);
     return IoCallDriver(bde->attached_device, Irp);
