@@ -2415,6 +2415,8 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         IoRemoveShareAccess(FileObject, &fcb->share_access);
 
+        FsRtlFastUnlockAll(&fcb->lock, FileObject, IoGetRequestorProcess(Irp), NULL);
+
         if (ccb)
             FsRtlNotifyCleanup(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, ccb);
 
