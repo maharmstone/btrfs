@@ -1505,6 +1505,9 @@ WCHAR* file_desc(_In_ PFILE_OBJECT FileObject) {
     ccb* ccb = FileObject->FsContext2;
     file_ref* fileref = ccb ? ccb->fileref : NULL;
 
+    if (fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
+        return L"(paging file)";
+
     if (fileref)
         return file_desc_fileref(fileref);
     else
