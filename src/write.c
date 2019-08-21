@@ -4792,7 +4792,7 @@ end:
         IoMarkIrpPending(Irp);
 
         if (!add_thread_job(Vcb, Irp))
-            do_write_job(Vcb, Irp);
+            Status = do_write_job(Vcb, Irp);
     }
 
 exit:

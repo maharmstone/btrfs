@@ -65,7 +65,7 @@ NTSTATUS do_read_job(PIRP Irp) {
     return Status;
 }
 
-void do_write_job(device_extension* Vcb, PIRP Irp) {
+NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp) {
     BOOL top_level = is_top_level(Irp);
     NTSTATUS Status;
 
@@ -88,6 +88,8 @@ void do_write_job(device_extension* Vcb, PIRP Irp) {
         IoSetTopLevelIrp(NULL);
 
     TRACE("returning %08x\n", Status);
+
+    return Status;
 }
 
 _Function_class_(WORKER_THREAD_ROUTINE)

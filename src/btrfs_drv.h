@@ -1508,7 +1508,7 @@ uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offse
 
 // in worker-thread.c
 NTSTATUS do_read_job(PIRP Irp);
-void do_write_job(device_extension* Vcb, PIRP Irp);
+NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 
 // in registry.c
