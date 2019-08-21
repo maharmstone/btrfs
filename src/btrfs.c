@@ -5318,7 +5318,7 @@ static NTSTATUS drv_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP I
 
         IoSkipCurrentIrpStackLocation(Irp);
 
-        Status = IoCallDriver(vde->pdo, Irp);
+        Status = IoCallDriver(vde->attached_device, Irp);
 
         goto exit;
     } else if (Vcb && Vcb->type == VCB_TYPE_FS) {
