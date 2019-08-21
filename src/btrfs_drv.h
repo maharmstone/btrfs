@@ -1507,7 +1507,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset);
 
 // in worker-thread.c
-void do_read_job(PIRP Irp);
+NTSTATUS do_read_job(PIRP Irp);
 void do_write_job(device_extension* Vcb, PIRP Irp);
 BOOL add_thread_job(device_extension* Vcb, PIRP Irp);
 

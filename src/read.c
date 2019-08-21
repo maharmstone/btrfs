@@ -3402,7 +3402,7 @@ end:
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
     else {
         if (!add_thread_job(Vcb, Irp))
-            do_read_job(Irp);
+            Status = do_read_job(Irp);
     }
 
 exit2:

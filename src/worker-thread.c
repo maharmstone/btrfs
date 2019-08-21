@@ -23,7 +23,7 @@ typedef struct {
     WORK_QUEUE_ITEM item;
 } job_info;
 
-void do_read_job(PIRP Irp) {
+NTSTATUS do_read_job(PIRP Irp) {
     NTSTATUS Status;
     ULONG bytes_read;
     BOOL top_level = is_top_level(Irp);
@@ -61,6 +61,8 @@ void do_read_job(PIRP Irp) {
         IoSetTopLevelIrp(NULL);
 
     TRACE("returning %08x\n", Status);
+
+    return Status;
 }
 
 void do_write_job(device_extension* Vcb, PIRP Irp) {
