@@ -5327,6 +5327,14 @@ static NTSTATUS drv_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP I
         Status = IoCallDriver(Vcb->Vpb->RealDevice, Irp);
 
         goto exit;
+    } else if (Vcb && Vcb->type == VCB_TYPE_BUS) {
+        bus_device_extension* bde = DeviceObject->DeviceExtension;
+
+        IoSkipCurrentIrpStackLocation(Irp);
+
+        Status = IoCallDriver(bde->attached_device, Irp);
+
+        goto exit;
     }
 
     Status = Irp->IoStatus.Status;
