@@ -500,7 +500,7 @@ NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     } else if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         volume_device_extension* vde = DeviceObject->DeviceExtension;
         IoSkipCurrentIrpStackLocation(Irp);
-        Status = IoCallDriver(vde->pdo, Irp);
+        Status = IoCallDriver(vde->attached_device, Irp);
         goto exit;
     } else if (Vcb && Vcb->type == VCB_TYPE_PDO) {
         Status = pdo_pnp(DeviceObject, Irp);
