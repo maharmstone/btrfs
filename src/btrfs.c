@@ -542,18 +542,18 @@ static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Ir
         Status = vol_flush_buffers(DeviceObject, Irp);
         goto end;
     } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
-        Status = STATUS_INVALID_PARAMETER;
+        Status = STATUS_SUCCESS;
         goto end;
     }
 
     if (!fcb) {
         ERR("fcb was NULL\n");
-        Status = STATUS_INVALID_PARAMETER;
+        Status = STATUS_SUCCESS;
         goto end;
     }
 
     if (fcb == Vcb->volume_fcb) {
-        Status = STATUS_INVALID_PARAMETER;
+        Status = STATUS_SUCCESS;
         goto end;
     }
 

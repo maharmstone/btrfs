@@ -309,7 +309,7 @@ NTSTATUS vol_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 NTSTATUS vol_flush_buffers(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS vol_query_volume_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
