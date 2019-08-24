@@ -177,7 +177,6 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) {
         DbgPrint(buf2);
     } else if (log_device.Length > 0) {
         if (!comdo) {
-            DbgPrint("comdo is NULL :-(\n");
             DbgPrint(buf2);
             goto exit2;
         }
