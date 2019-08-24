@@ -263,6 +263,8 @@ _Function_class_(FAST_IO_ACQUIRE_FOR_MOD_WRITE)
 static NTSTATUS fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, PLARGE_INTEGER EndingOffset, struct _ERESOURCE **ResourceToRelease, PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
 
+    TRACE("(%p, %I64x, %p, %p)\n", FileObject, EndingOffset ? EndingOffset->QuadPart : 0, ResourceToRelease, DeviceObject);
+
     UNUSED(EndingOffset);
     UNUSED(DeviceObject);
 
@@ -276,15 +278,18 @@ static NTSTATUS fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, PLARGE_IN
     if (!ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, FALSE))
         return STATUS_CANT_WAIT;
 
+    if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, FALSE)) {
+        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+        TRACE("returning STATUS_CANT_WAIT\n");
+        return STATUS_CANT_WAIT;
+    }
+
     // Ideally this would be PagingIoResource, but that doesn't play well with copy-on-write,
     // as we can't guarantee that we won't need to do any reallocations.
 
     *ResourceToRelease = fcb->Header.Resource;
 
-    if (!ExAcquireResourceExclusiveLite(*ResourceToRelease, FALSE)) {
-        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-        return STATUS_CANT_WAIT;
-    }
+    TRACE("returning STATUS_SUCCESS\n");
 
     return STATUS_SUCCESS;
 }
@@ -292,6 +297,8 @@ static NTSTATUS fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject, PLARGE_IN
 _Function_class_(FAST_IO_RELEASE_FOR_MOD_WRITE)
 static NTSTATUS fast_io_release_for_mod_write(PFILE_OBJECT FileObject, struct _ERESOURCE *ResourceToRelease, PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
+
+    TRACE("(%p, %p, %p)\n", FileObject, ResourceToRelease, DeviceObject);
 
     UNUSED(DeviceObject);
 
