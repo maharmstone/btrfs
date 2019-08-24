@@ -1497,7 +1497,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                     offset = sc->key.offset;
                     cis = (CHUNK_ITEM_STRIPE*)&chunk_item[1];
 
-                    devices = ExAllocatePoolWithTag(PagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
+                    devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
                     if (!devices) {
                         ERR("out of memory\n");
                         return STATUS_INSUFFICIENT_RESOURCES;
