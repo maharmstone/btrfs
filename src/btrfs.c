@@ -2497,7 +2497,7 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                     ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
 
                     clear_rollback(&rollback);
-                } else if (FileObject->Flags & FO_CACHE_SUPPORTED && fcb->nonpaged->segment_object.DataSectionObject) {
+                } else if (FileObject->Flags & FO_CACHE_SUPPORTED && FileObject->SectionObjectPointer->DataSectionObject) {
                     IO_STATUS_BLOCK iosb;
                     CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
 
@@ -2510,7 +2510,7 @@ static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                         ExReleaseResourceLite(fcb->Header.PagingIoResource);
                     }
 
-                    CcPurgeCacheSection(&fcb->nonpaged->segment_object, NULL, 0, FALSE);
+                    CcPurgeCacheSection(FileObject->SectionObjectPointer, NULL, 0, FALSE);
 
                     TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x)\n",
                         FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
