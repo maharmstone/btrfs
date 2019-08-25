@@ -1954,7 +1954,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
 
-    CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
+    CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
 
     if (fcb->type != BTRFS_TYPE_FILE) {
         WARN("FileObject did not point to a file\n");
@@ -2038,7 +2038,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         }
     }
 
-    CcPurgeCacheSection(&fcb->nonpaged->segment_object, &fzdi->FileOffset, (ULONG)(fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart), FALSE);
+    CcPurgeCacheSection(FileObject->SectionObjectPointer, &fzdi->FileOffset, (ULONG)(fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart), FALSE);
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
