@@ -564,7 +564,7 @@ static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Ir
     Irp->IoStatus.Status = Status;
 
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
-        CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &Irp->IoStatus);
+        CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &Irp->IoStatus);
 
         if (fcb->Header.PagingIoResource) {
             ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, TRUE);
