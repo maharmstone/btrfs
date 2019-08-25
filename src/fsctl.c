@@ -3653,8 +3653,8 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
     mark_fcb_dirty(fcb);
 
-    if (fcb->nonpaged->segment_object.DataSectionObject)
-        CcPurgeCacheSection(&fcb->nonpaged->segment_object, &ded->TargetFileOffset, (ULONG)ded->ByteCount.QuadPart, FALSE);
+    if (FileObject->SectionObjectPointer->DataSectionObject)
+        CcPurgeCacheSection(FileObject->SectionObjectPointer, &ded->TargetFileOffset, (ULONG)ded->ByteCount.QuadPart, FALSE);
 
     Status = STATUS_SUCCESS;
 
