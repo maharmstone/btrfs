@@ -39,7 +39,7 @@
 
 #include "zstd/zstd.h"
 
-#define LINUX_PAGE_SIZE 4096
+#define LZO_PAGE_SIZE 4096
 
 typedef struct {
     uint8_t* in;
@@ -289,7 +289,7 @@ NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_
         stream.inlen = partlen;
         stream.inpos = 0;
         stream.out = &outbuf[outoff];
-        stream.outlen = min(outlen, LINUX_PAGE_SIZE);
+        stream.outlen = min(outlen, LZO_PAGE_SIZE);
         stream.outpos = 0;
 
         Status = do_lzo_decompress(&stream);
@@ -304,8 +304,8 @@ NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_
         inoff += partlen;
         outoff += stream.outlen;
 
-        if (LINUX_PAGE_SIZE - ((inpageoff + inoff) % LINUX_PAGE_SIZE) < sizeof(uint32_t))
-            inoff = ((((inpageoff + inoff) / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE) - inpageoff;
+        if (LZO_PAGE_SIZE - ((inpageoff + inoff) % LZO_PAGE_SIZE) < sizeof(uint32_t))
+            inoff = ((((inpageoff + inoff) / LZO_PAGE_SIZE) + 1) * LZO_PAGE_SIZE) - inpageoff;
 
         outlen -= stream.outlen;
     } while (inoff < inlen && outlen > 0);
@@ -771,13 +771,13 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
     LIST_ENTRY* le;
     chunk* c;
 
-    num_pages = (ULONG)((sector_align(end_data - start_data, LINUX_PAGE_SIZE)) / LINUX_PAGE_SIZE);
+    num_pages = (ULONG)((sector_align(end_data - start_data, LZO_PAGE_SIZE)) / LZO_PAGE_SIZE);
 
     // Four-byte overall header
     // Another four-byte header page
-    // Each page has a maximum size of lzo_max_outlen(LINUX_PAGE_SIZE)
+    // Each page has a maximum size of lzo_max_outlen(LZO_PAGE_SIZE)
     // Plus another four bytes for possible padding
-    comp_data_len = sizeof(uint32_t) + ((lzo_max_outlen(LINUX_PAGE_SIZE) + (2 * sizeof(uint32_t))) * num_pages);
+    comp_data_len = sizeof(uint32_t) + ((lzo_max_outlen(LZO_PAGE_SIZE) + (2 * sizeof(uint32_t))) * num_pages);
 
     comp_data = ExAllocatePoolWithTag(PagedPool, comp_data_len, ALLOC_TAG);
     if (!comp_data) {
@@ -809,7 +809,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
     for (i = 0; i < num_pages; i++) {
         uint32_t* pagelen = (uint32_t*)(stream.out - sizeof(uint32_t));
 
-        stream.inlen = (uint32_t)min(LINUX_PAGE_SIZE, end_data - start_data - (i * LINUX_PAGE_SIZE));
+        stream.inlen = (uint32_t)min(LZO_PAGE_SIZE, end_data - start_data - (i * LZO_PAGE_SIZE));
 
         Status = lzo1x_1_compress(&stream);
         if (!NT_SUCCESS(Status)) {
@@ -821,13 +821,13 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
         *pagelen = stream.outlen;
         *out_size += stream.outlen + sizeof(uint32_t);
 
-        stream.in += LINUX_PAGE_SIZE;
+        stream.in += LZO_PAGE_SIZE;
         stream.out += stream.outlen + sizeof(uint32_t);
 
-        if (LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE) < sizeof(uint32_t)) {
-            RtlZeroMemory(stream.out, LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE));
-            stream.out += LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE);
-            *out_size += LINUX_PAGE_SIZE - (*out_size % LINUX_PAGE_SIZE);
+        if (LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE) < sizeof(uint32_t)) {
+            RtlZeroMemory(stream.out, LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE));
+            stream.out += LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE);
+            *out_size += LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE);
         }
     }
 

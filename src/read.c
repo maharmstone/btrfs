@@ -60,7 +60,7 @@ extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
 extern tCcCopyReadEx fCcCopyReadEx;
 extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 
-#define LINUX_PAGE_SIZE 4096
+#define LZO_PAGE_SIZE 4096
 
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS __stdcall read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
@@ -2983,7 +2983,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                             inlen -= sizeof(uint32_t);
 
                             // If reading a few sectors in, skip to the interesting bit
-                            while (off2 > LINUX_PAGE_SIZE) {
+                            while (off2 > LZO_PAGE_SIZE) {
                                 uint32_t partlen;
 
                                 if (inlen < sizeof(uint32_t))
@@ -2992,18 +2992,18 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                                 partlen = *(uint32_t*)(buf2 + inoff);
 
                                 if (partlen < inlen) {
-                                    off2 -= LINUX_PAGE_SIZE;
+                                    off2 -= LZO_PAGE_SIZE;
                                     inoff += partlen + sizeof(uint32_t);
                                     inlen -= partlen + sizeof(uint32_t);
 
-                                    if (LINUX_PAGE_SIZE - (inoff % LINUX_PAGE_SIZE) < sizeof(uint32_t))
-                                        inoff = ((inoff / LINUX_PAGE_SIZE) + 1) * LINUX_PAGE_SIZE;
+                                    if (LZO_PAGE_SIZE - (inoff % LZO_PAGE_SIZE) < sizeof(uint32_t))
+                                        inoff = ((inoff / LZO_PAGE_SIZE) + 1) * LZO_PAGE_SIZE;
                                 } else
                                     break;
                             }
 
                             buf2 = &buf2[inoff];
-                            inpageoff = inoff % LINUX_PAGE_SIZE;
+                            inpageoff = inoff % LZO_PAGE_SIZE;
                         }
 
                         if (off2 != 0) {
