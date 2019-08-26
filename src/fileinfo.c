@@ -2779,7 +2779,7 @@ static NTSTATUS set_case_sensitive_information(PIRP Irp) {
 
 _Dispatch_type_(IRP_MJ_SET_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -4268,7 +4268,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_QUERY_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS __stdcall drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     fcb* fcb;
@@ -4316,7 +4316,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_QUERY_EA)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -4545,7 +4545,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_SET_EA)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
     BOOL top_level;

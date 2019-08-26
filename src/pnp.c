@@ -38,7 +38,7 @@ extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     pnp_stripe* stripe = conptr;
     pnp_context* context = (pnp_context*)stripe->context;
 
@@ -484,7 +484,7 @@ static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
 
 _Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+NTSTATUS __stdcall drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;

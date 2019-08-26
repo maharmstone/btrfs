@@ -63,7 +63,7 @@ extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 #define LINUX_PAGE_SIZE 4096
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     read_data_stripe* stripe = conptr;
     read_data_context* context = (read_data_context*)stripe->context;
 
@@ -3287,7 +3287,7 @@ NTSTATUS do_read(PIRP Irp, BOOLEAN wait, ULONG* bytes_read) {
 
 _Dispatch_type_(IRP_MJ_READ)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+NTSTATUS __stdcall drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;

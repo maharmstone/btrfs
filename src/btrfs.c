@@ -126,7 +126,7 @@ extern BOOLEAN WdmlibRtlIsNtDdiVersionAvailable(ULONG Version);
 
 #ifdef _DEBUG
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS dbg_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
+static NTSTATUS __stdcall dbg_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
     read_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -275,7 +275,7 @@ BOOL is_top_level(_In_ PIRP Irp) {
 }
 
 _Function_class_(DRIVER_UNLOAD)
-static void DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
+static void __stdcall DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
     UNICODE_STRING dosdevice_nameW;
 
     TRACE("(%p)\n");
@@ -474,7 +474,7 @@ BOOL get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 
 _Dispatch_type_(IRP_MJ_CLOSE)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_close(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_close(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -523,7 +523,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_FLUSH_BUFFERS)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation( Irp );
     PFILE_OBJECT FileObject = IrpSp->FileObject;
@@ -913,7 +913,7 @@ NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, 
 
 _Dispatch_type_(IRP_MJ_QUERY_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     ULONG BytesCopied = 0;
@@ -1164,7 +1164,7 @@ end:
 }
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS read_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
+static NTSTATUS __stdcall read_completion(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PVOID conptr) {
     read_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -1356,7 +1356,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_SET_VOLUME_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_set_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_set_volume_information(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
@@ -2358,7 +2358,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
 _Dispatch_type_(IRP_MJ_CLEANUP)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
@@ -5055,7 +5055,7 @@ static NTSTATUS verify_volume(_In_ PDEVICE_OBJECT devobj) {
 
 _Dispatch_type_(IRP_MJ_FILE_SYSTEM_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -5136,7 +5136,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_LOCK_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     fcb* fcb = IrpSp->FileObject->FsContext;
@@ -5175,7 +5175,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_SHUTDOWN)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -5250,7 +5250,7 @@ end:
 
 _Dispatch_type_(IRP_MJ_POWER)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
@@ -5306,7 +5306,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_SYSTEM_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-static NTSTATUS drv_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+static NTSTATUS __stdcall drv_system_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     BOOL top_level;
@@ -5453,7 +5453,7 @@ void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int 
 
 #ifdef _DEBUG
 _Function_class_(KSTART_ROUTINE)
-static void serial_thread(void* context) {
+static void __stdcall serial_thread(void* context) {
     LARGE_INTEGER due_time;
     KTIMER timer;
 
@@ -5611,7 +5611,7 @@ end:
 #endif
 
 _Function_class_(KSTART_ROUTINE)
-static void degraded_wait_thread(_In_ void* context) {
+static void __stdcall degraded_wait_thread(_In_ void* context) {
     KTIMER timer;
     LARGE_INTEGER delay;
 
@@ -5633,7 +5633,7 @@ static void degraded_wait_thread(_In_ void* context) {
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
-NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
+NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     UNICODE_STRING volname;
@@ -5739,7 +5739,7 @@ end:
 }
 
 _Function_class_(DRIVER_INITIALIZE)
-NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath) {
+NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath) {
     NTSTATUS Status;
     PDEVICE_OBJECT DeviceObject;
     UNICODE_STRING device_nameW;
@@ -5853,28 +5853,28 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
     DriverObject->DriverExtension->AddDevice = AddDevice;
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]                   = (PDRIVER_DISPATCH)drv_create;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = (PDRIVER_DISPATCH)drv_close;
-    DriverObject->MajorFunction[IRP_MJ_READ]                     = (PDRIVER_DISPATCH)drv_read;
-    DriverObject->MajorFunction[IRP_MJ_WRITE]                    = (PDRIVER_DISPATCH)drv_write;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_INFORMATION]        = (PDRIVER_DISPATCH)drv_query_information;
-    DriverObject->MajorFunction[IRP_MJ_SET_INFORMATION]          = (PDRIVER_DISPATCH)drv_set_information;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_EA]                 = (PDRIVER_DISPATCH)drv_query_ea;
-    DriverObject->MajorFunction[IRP_MJ_SET_EA]                   = (PDRIVER_DISPATCH)drv_set_ea;
-    DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = (PDRIVER_DISPATCH)drv_flush_buffers;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = (PDRIVER_DISPATCH)drv_query_volume_information;
-    DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = (PDRIVER_DISPATCH)drv_set_volume_information;
-    DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = (PDRIVER_DISPATCH)drv_directory_control;
-    DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = (PDRIVER_DISPATCH)drv_file_system_control;
-    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = (PDRIVER_DISPATCH)drv_device_control;
-    DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = (PDRIVER_DISPATCH)drv_shutdown;
-    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = (PDRIVER_DISPATCH)drv_lock_control;
-    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = (PDRIVER_DISPATCH)drv_cleanup;
-    DriverObject->MajorFunction[IRP_MJ_QUERY_SECURITY]           = (PDRIVER_DISPATCH)drv_query_security;
-    DriverObject->MajorFunction[IRP_MJ_SET_SECURITY]             = (PDRIVER_DISPATCH)drv_set_security;
-    DriverObject->MajorFunction[IRP_MJ_POWER]                    = (PDRIVER_DISPATCH)drv_power;
-    DriverObject->MajorFunction[IRP_MJ_SYSTEM_CONTROL]           = (PDRIVER_DISPATCH)drv_system_control;
-    DriverObject->MajorFunction[IRP_MJ_PNP]                      = (PDRIVER_DISPATCH)drv_pnp;
+    DriverObject->MajorFunction[IRP_MJ_CREATE]                   = drv_create;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE]                    = drv_close;
+    DriverObject->MajorFunction[IRP_MJ_READ]                     = drv_read;
+    DriverObject->MajorFunction[IRP_MJ_WRITE]                    = drv_write;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_INFORMATION]        = drv_query_information;
+    DriverObject->MajorFunction[IRP_MJ_SET_INFORMATION]          = drv_set_information;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_EA]                 = drv_query_ea;
+    DriverObject->MajorFunction[IRP_MJ_SET_EA]                   = drv_set_ea;
+    DriverObject->MajorFunction[IRP_MJ_FLUSH_BUFFERS]            = drv_flush_buffers;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION] = drv_query_volume_information;
+    DriverObject->MajorFunction[IRP_MJ_SET_VOLUME_INFORMATION]   = drv_set_volume_information;
+    DriverObject->MajorFunction[IRP_MJ_DIRECTORY_CONTROL]        = drv_directory_control;
+    DriverObject->MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL]      = drv_file_system_control;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = drv_device_control;
+    DriverObject->MajorFunction[IRP_MJ_SHUTDOWN]                 = drv_shutdown;
+    DriverObject->MajorFunction[IRP_MJ_LOCK_CONTROL]             = drv_lock_control;
+    DriverObject->MajorFunction[IRP_MJ_CLEANUP]                  = drv_cleanup;
+    DriverObject->MajorFunction[IRP_MJ_QUERY_SECURITY]           = drv_query_security;
+    DriverObject->MajorFunction[IRP_MJ_SET_SECURITY]             = drv_set_security;
+    DriverObject->MajorFunction[IRP_MJ_POWER]                    = drv_power;
+    DriverObject->MajorFunction[IRP_MJ_SYSTEM_CONTROL]           = drv_system_control;
+    DriverObject->MajorFunction[IRP_MJ_PNP]                      = drv_pnp;
 
     init_fast_io_dispatch(&DriverObject->FastIoDispatch);
 

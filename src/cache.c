@@ -19,7 +19,7 @@
 
 CACHE_MANAGER_CALLBACKS* cache_callbacks;
 
-static BOOLEAN acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
+static BOOLEAN __stdcall acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -40,7 +40,7 @@ static BOOLEAN acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
     return TRUE;
 }
 
-static void release_from_lazy_write(PVOID Context) {
+static void __stdcall release_from_lazy_write(PVOID Context) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -56,7 +56,7 @@ static void release_from_lazy_write(PVOID Context) {
         IoSetTopLevelIrp(NULL);
 }
 
-static BOOLEAN acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
+static BOOLEAN __stdcall acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 
@@ -70,7 +70,7 @@ static BOOLEAN acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
     return TRUE;
 }
 
-static void release_from_read_ahead(PVOID Context) {
+static void __stdcall release_from_read_ahead(PVOID Context) {
     PFILE_OBJECT FileObject = Context;
     fcb* fcb = FileObject->FsContext;
 

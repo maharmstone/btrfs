@@ -26,7 +26,7 @@ typedef struct {
 } write_stripe;
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
+static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
 
@@ -2247,7 +2247,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
 }
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_data_stripe* stripe = conptr;
     write_data_context* context = (write_data_context*)stripe->context;
     LIST_ENTRY* le;
@@ -4698,7 +4698,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_WRITE)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
+NTSTATUS __stdcall drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     BOOL top_level;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);

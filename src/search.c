@@ -637,7 +637,7 @@ typedef struct {
 } pnp_callback_context;
 
 _Function_class_(IO_WORKITEM_ROUTINE)
-static void do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
+static void __stdcall do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     pnp_callback_context* context = con;
 
     UNUSED(DeviceObject);
@@ -689,7 +689,7 @@ static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING na
 }
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
-NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context) {
+NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
     PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
 
@@ -702,7 +702,7 @@ NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context) {
 }
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
-NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context) {
+NTSTATUS __stdcall pnp_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
     PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
 
@@ -817,7 +817,7 @@ static void mountmgr_updated(PDEVICE_OBJECT mountmgr, MOUNTMGR_MOUNT_POINTS* mmp
 }
 
 _Function_class_(KSTART_ROUTINE)
-void mountmgr_thread(_In_ void* context) {
+void __stdcall mountmgr_thread(_In_ void* context) {
     UNICODE_STRING mmdevpath;
     NTSTATUS Status;
     PFILE_OBJECT FileObject;

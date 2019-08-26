@@ -190,7 +190,7 @@ static void change_symlink(uint32_t disk_num, uint32_t partition_num, BTRFS_UUID
  * symlink \Device\HarddiskX\PartitionY, which is what the ArcName symlink will shortly
  * point to.
  */
-void check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count) {
+void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count) {
     uint32_t disk_num, partition_num;
     LIST_ENTRY* le;
     BOOL done = FALSE;

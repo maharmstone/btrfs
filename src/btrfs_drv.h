@@ -1143,7 +1143,7 @@ NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ PFILE_OBJECT File
 NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_STRING pnp_name, _Out_ const GUID** guid);
 void log_device_error(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ int error);
 NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
-NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
+NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
 void reap_fcb(fcb* fcb);
 void reap_fcbs(device_extension* Vcb);
 void reap_fileref(device_extension* Vcb, file_ref* fr);
@@ -1289,17 +1289,17 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
 NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 
 _Function_class_(KSTART_ROUTINE)
-void mountmgr_thread(_In_ void* context);
+void __stdcall mountmgr_thread(_In_ void* context);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
-NTSTATUS pnp_notification(PVOID NotificationStructure, PVOID Context);
+NTSTATUS __stdcall pnp_notification(PVOID NotificationStructure, PVOID Context);
 
 void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
-NTSTATUS volume_notification(PVOID NotificationStructure, PVOID Context);
+NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Context);
 
 void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lock) _Releases_exclusive_lock_(_Curr_->child_lock) _In_ volume_device_extension* vde,
                          _In_ volume_child* vc, _In_ BOOL skip_dev);
@@ -1325,7 +1325,7 @@ void free_write_data_stripes(write_data_context* wtc);
 
 _Dispatch_type_(IRP_MJ_WRITE)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 _Requires_lock_held_(c->lock)
 _When_(return != 0, _Releases_lock_(c->lock))
@@ -1347,7 +1347,7 @@ void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem
 
 _Dispatch_type_(IRP_MJ_DIRECTORY_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type, ULONG atts, BOOL lxss, PIRP Irp);
 ULONG get_reparse_tag_fcb(fcb* fcb);
@@ -1356,11 +1356,11 @@ ULONG get_reparse_tag_fcb(fcb* fcb);
 
 _Dispatch_type_(IRP_MJ_QUERY_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 _Dispatch_type_(IRP_MJ_SET_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp);
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t uid);
@@ -1374,19 +1374,19 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
 
 _Dispatch_type_(IRP_MJ_SET_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 _Dispatch_type_(IRP_MJ_QUERY_INFORMATION)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 _Dispatch_type_(IRP_MJ_QUERY_EA)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 _Dispatch_type_(IRP_MJ_SET_EA)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 BOOL has_open_children(file_ref* fileref);
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end, fcb* fcb, file_ref* fileref, BOOL advance_only);
@@ -1404,7 +1404,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 _Dispatch_type_(IRP_MJ_CREATE)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr,
                       _In_ PUNICODE_STRING fnus, _In_opt_ file_ref* related, _In_ BOOL parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
@@ -1433,7 +1433,7 @@ BOOL fcb_is_inline(fcb* fcb);
 // in flushthread.c
 
 _Function_class_(KSTART_ROUTINE)
-void flush_thread(void* context);
+void __stdcall flush_thread(void* context);
 
 NTSTATUS do_write(device_extension* Vcb, PIRP Irp);
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
@@ -1454,7 +1454,7 @@ NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
 
 _Dispatch_type_(IRP_MJ_READ)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS __stdcall drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t length, _In_reads_bytes_opt_(length*sizeof(uint32_t)/Vcb->superblock.sector_size) uint32_t* csum,
                    _In_ BOOL is_tree, _Out_writes_bytes_(length) uint8_t* buf, _In_opt_ chunk* c, _Out_opt_ chunk** pc, _In_opt_ PIRP Irp, _In_ uint64_t generation, _In_ BOOL file_read,
@@ -1469,7 +1469,7 @@ void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, u
 
 _Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+NTSTATUS __stdcall drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp);
@@ -1535,12 +1535,12 @@ uint8_t gdiv(uint8_t a, uint8_t b);
 
 _Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
-NTSTATUS drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS __stdcall drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 // in calcthread.c
 
 _Function_class_(KSTART_ROUTINE)
-void calc_thread(void* context);
+void __stdcall calc_thread(void* context);
 
 NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job** pcj);
 void free_calc_job(calc_job* cj);
@@ -1555,7 +1555,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
 
 _Function_class_(KSTART_ROUTINE)
-void balance_thread(void* context);
+void __stdcall balance_thread(void* context);
 
 // in volume.c
 NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
@@ -1581,7 +1581,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
-NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context);
+NTSTATUS __stdcall pnp_removal(PVOID NotificationStructure, PVOID Context);
 
 // in scrub.c
 NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
@@ -1598,7 +1598,7 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
 NTSTATUS compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength, IN PREPARSE_DATA_BUFFER ReparseBuffer);
 
 // in boot.c
-void check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count);
+void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count);
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))

@@ -49,7 +49,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 #endif
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall write_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -287,7 +287,7 @@ typedef struct {
 } ioctl_context;
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     ioctl_context* context = (ioctl_context*)conptr;
     LONG left2 = InterlockedDecrement(&context->left);
 
@@ -2153,7 +2153,7 @@ typedef struct _write_superblocks_context {
 } write_superblocks_context;
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall write_superblock_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_superblocks_stripe* stripe = conptr;
     write_superblocks_context* context = stripe->context;
 
@@ -7683,7 +7683,7 @@ static void do_flush(device_extension* Vcb) {
 }
 
 _Function_class_(KSTART_ROUTINE)
-void flush_thread(void* context) {
+void __stdcall flush_thread(void* context) {
     DEVICE_OBJECT* devobj = context;
     device_extension* Vcb = devobj->DeviceExtension;
     LARGE_INTEGER due_time;

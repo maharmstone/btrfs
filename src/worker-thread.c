@@ -93,7 +93,7 @@ NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp) {
 }
 
 _Function_class_(WORKER_THREAD_ROUTINE)
-static void do_job(void* context) {
+static void __stdcall do_job(void* context) {
     job_info* ji = context;
     PIO_STACK_LOCATION IrpSp = ji->Irp ? IoGetCurrentIrpStackLocation(ji->Irp) : NULL;
 

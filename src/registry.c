@@ -1003,7 +1003,7 @@ void read_registry(PUNICODE_STRING regpath, BOOL refresh) {
 }
 
 _Function_class_(WORKER_THREAD_ROUTINE)
-static void registry_work_item(PVOID Parameter) {
+static void __stdcall registry_work_item(PVOID Parameter) {
     NTSTATUS Status;
     HANDLE regh = (HANDLE)Parameter;
     IO_STATUS_BLOCK iosb;

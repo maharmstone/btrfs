@@ -109,7 +109,7 @@ typedef struct {
 } vol_read_context;
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS vol_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall vol_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     vol_read_context* context = conptr;
 
     UNUSED(DeviceObject);
@@ -691,7 +691,7 @@ static NTSTATUS vol_get_device_number(volume_device_extension* vde, PIRP Irp) {
 }
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS vol_ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall vol_ioctl_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     KEVENT* event = conptr;
 
     UNUSED(DeviceObject);
@@ -909,7 +909,7 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
 }
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
-NTSTATUS pnp_removal(PVOID NotificationStructure, PVOID Context) {
+NTSTATUS __stdcall pnp_removal(PVOID NotificationStructure, PVOID Context) {
     TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = (TARGET_DEVICE_REMOVAL_NOTIFICATION*)NotificationStructure;
     pdo_device_extension* pdode = (pdo_device_extension*)Context;
 
@@ -1002,7 +1002,7 @@ typedef struct {
     pdo_device_extension* pdode;
 } drive_letter_callback_context;
 
-static void drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
+static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     drive_letter_callback_context* context = con;
     NTSTATUS Status;
     UNICODE_STRING mmdevpath;

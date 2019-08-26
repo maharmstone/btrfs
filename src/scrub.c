@@ -649,7 +649,7 @@ static void log_error(device_extension* Vcb, uint64_t addr, uint64_t devid, BOOL
 }
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_stripe* stripe = conptr;
     scrub_context* context = (scrub_context*)stripe->context;
     ULONG left = InterlockedDecrement(&context->stripes_left);
@@ -1687,7 +1687,7 @@ typedef struct {
 } scrub_context_raid56;
 
 _Function_class_(IO_COMPLETION_ROUTINE)
-static NTSTATUS scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+static NTSTATUS __stdcall scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     scrub_context_raid56_stripe* stripe = conptr;
     scrub_context_raid56* context = (scrub_context_raid56*)stripe->context;
     LONG left = InterlockedDecrement(&context->stripes_left);
@@ -3130,7 +3130,7 @@ end:
 }
 
 _Function_class_(KSTART_ROUTINE)
-static void scrub_thread(void* context) {
+static void __stdcall scrub_thread(void* context) {
     device_extension* Vcb = context;
     LIST_ENTRY chunks, *le;
     NTSTATUS Status;

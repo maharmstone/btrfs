@@ -92,7 +92,7 @@ static BOOL do_calc(device_extension* Vcb, calc_job* cj) {
 }
 
 _Function_class_(KSTART_ROUTINE)
-void calc_thread(void* context) {
+void __stdcall calc_thread(void* context) {
     drv_calc_thread* thread = context;
     device_extension* Vcb = thread->DeviceObject->DeviceExtension;
 

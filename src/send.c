@@ -2967,7 +2967,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 }
 
 _Function_class_(KSTART_ROUTINE)
-static void send_thread(void* ctx) {
+static void __stdcall send_thread(void* ctx) {
     send_context* context = (send_context*)ctx;
     NTSTATUS Status;
     KEY searchkey;
