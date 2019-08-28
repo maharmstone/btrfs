@@ -722,10 +722,9 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
 
     if (label->Length > 0) {
-        int i;
         ULONG utf8len;
 
-        for (i = 0; i < label->Length / sizeof(WCHAR); i++) {
+        for (unsigned int i = 0; i < label->Length / sizeof(WCHAR); i++) {
             if (label->Buffer[i] == '/' || label->Buffer[i] == '\\') {
                 free(sb);
                 return STATUS_INVALID_VOLUME_LABEL;
@@ -901,7 +900,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     BOOL ssd;
     uint64_t metadata_flags;
 
-    srand(time(0));
+    srand((unsigned int)time(0));
     get_uuid(&fsuuid);
     get_uuid(&chunkuuid);
 
@@ -1027,7 +1026,7 @@ static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
 
     free(sb);
 
-    us.Length = us.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+    us.Length = us.MaximumLength = (USHORT)(wcslen(btrfs) * sizeof(WCHAR));
     us.Buffer = btrfs;
 
     InitializeObjectAttributes(&atts, &us, 0, NULL, NULL);
@@ -1224,7 +1223,7 @@ end:
 
     if (NT_SUCCESS(Status)) {
         btrfsus.Buffer = btrfs;
-        btrfsus.Length = btrfsus.MaximumLength = wcslen(btrfs) * sizeof(WCHAR);
+        btrfsus.Length = btrfsus.MaximumLength = (USHORT)(wcslen(btrfs) * sizeof(WCHAR));
 
         InitializeObjectAttributes(&attr, &btrfsus, 0, NULL, NULL);
 
@@ -1266,11 +1265,11 @@ BOOL __stdcall FormatEx(DSTRING* root, STREAM_MESSAGE* message, options* opts, u
     if (!root || !root->string)
         return FALSE;
 
-    DriveRoot.Length = DriveRoot.MaximumLength = wcslen(root->string) * sizeof(WCHAR);
+    DriveRoot.Length = DriveRoot.MaximumLength = (USHORT)(wcslen(root->string) * sizeof(WCHAR));
     DriveRoot.Buffer = root->string;
 
     if (opts && opts->label && opts->label->string) {
-        Label.Length = Label.MaximumLength = wcslen(opts->label->string) * sizeof(WCHAR);
+        Label.Length = Label.MaximumLength = (USHORT)(wcslen(opts->label->string) * sizeof(WCHAR));
         Label.Buffer = opts->label->string;
     } else {
         Label.Length = Label.MaximumLength = 0;
