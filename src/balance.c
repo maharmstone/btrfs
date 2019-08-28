@@ -1751,7 +1751,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         uint32_t* csum;
         RTL_BITMAP bmp;
         ULONG* bmparr;
-        ULONG runlength, index, lastoff;
+        ULONG bmplen, runlength, index, lastoff;
 
         if (newchunk) {
             acquire_chunk_lock(newchunk, Vcb);
@@ -1825,7 +1825,9 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
 
         dr->newchunk = newchunk;
 
-        bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align((dr->size / Vcb->superblock.sector_size) + 1, sizeof(ULONG)), ALLOC_TAG);
+        bmplen = dr->size / Vcb->superblock.sector_size;
+
+        bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align(bmplen + 1, sizeof(ULONG)), ALLOC_TAG);
         if (!bmparr) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1840,7 +1842,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
             goto end;
         }
 
-        RtlInitializeBitMap(&bmp, bmparr, (ULONG)(dr->size / Vcb->superblock.sector_size));
+        RtlInitializeBitMap(&bmp, bmparr, bmplen);
         RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
         searchkey.obj_id = EXTENT_CSUM_ID;
@@ -1888,6 +1890,16 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
         runlength = RtlFindFirstRunClear(&bmp, &index);
 
         while (runlength != 0) {
+            if (index >= bmplen)
+                break;
+
+            if (index + runlength >= bmplen) {
+                runlength = bmplen - index;
+
+                if (runlength == 0)
+                    break;
+            }
+
             if (index > lastoff) {
                 ULONG off = lastoff;
                 ULONG size = index - lastoff;
