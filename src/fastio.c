@@ -347,25 +347,57 @@ static BOOLEAN __stdcall fast_io_write(PFILE_OBJECT FileObject, PLARGE_INTEGER F
     return FALSE;
 }
 
+static BOOLEAN __stdcall fast_io_lock(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, PLARGE_INTEGER Length, PEPROCESS ProcessId,
+                                      ULONG Key, BOOLEAN FailImmediately, BOOLEAN ExclusiveLock, PIO_STATUS_BLOCK IoStatus,
+                                      PDEVICE_OBJECT DeviceObject) {
+    BOOLEAN ret;
+    fcb* fcb = FileObject->FsContext;
+
+    TRACE("(%p, %I64x, %I64x, %p, %x, %u, %u, %p, %p)\n", FileObject, FileOffset ? FileOffset->QuadPart : 0, Length ? Length->QuadPart : 0,
+          ProcessId, Key, FailImmediately, ExclusiveLock, IoStatus, DeviceObject);
+
+    if (fcb->type != BTRFS_TYPE_FILE) {
+        WARN("can only lock files\n");
+        IoStatus->Status = STATUS_INVALID_PARAMETER;
+        IoStatus->Information = 0;
+        return TRUE;
+    }
+
+    FsRtlEnterFileSystem();
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+
+    ret = FsRtlFastLock(&fcb->lock, FileObject, FileOffset, Length, ProcessId, Key, FailImmediately,
+                        ExclusiveLock, IoStatus, NULL, FALSE);
+
+    if (ret)
+        fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+    FsRtlExitFileSystem();
+
+    return ret;
+}
+
 void init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     RtlZeroMemory(&FastIoDispatch, sizeof(FastIoDispatch));
 
     FastIoDispatch.SizeOfFastIoDispatch = sizeof(FAST_IO_DISPATCH);
 
     FastIoDispatch.FastIoCheckIfPossible = fast_io_check_if_possible;
+    FastIoDispatch.FastIoRead = FsRtlCopyRead;
+    FastIoDispatch.FastIoWrite = fast_io_write;
     FastIoDispatch.FastIoQueryBasicInfo = fast_query_basic_info;
     FastIoDispatch.FastIoQueryStandardInfo = fast_query_standard_info;
+    FastIoDispatch.FastIoLock = fast_io_lock;
     FastIoDispatch.FastIoQueryNetworkOpenInfo = fast_io_query_network_open_info;
     FastIoDispatch.AcquireForModWrite = fast_io_acquire_for_mod_write;
-    FastIoDispatch.ReleaseForModWrite = fast_io_release_for_mod_write;
-    FastIoDispatch.AcquireForCcFlush = fast_io_acquire_for_ccflush;
-    FastIoDispatch.ReleaseForCcFlush = fast_io_release_for_ccflush;
-    FastIoDispatch.FastIoWrite = fast_io_write;
-    FastIoDispatch.FastIoRead = FsRtlCopyRead;
     FastIoDispatch.MdlRead = FsRtlMdlReadDev;
     FastIoDispatch.MdlReadComplete = FsRtlMdlReadCompleteDev;
     FastIoDispatch.PrepareMdlWrite = FsRtlPrepareMdlWriteDev;
     FastIoDispatch.MdlWriteComplete = FsRtlMdlWriteCompleteDev;
+    FastIoDispatch.ReleaseForModWrite = fast_io_release_for_mod_write;
+    FastIoDispatch.AcquireForCcFlush = fast_io_acquire_for_ccflush;
+    FastIoDispatch.ReleaseForCcFlush = fast_io_release_for_ccflush;
 
     *fiod = &FastIoDispatch;
 }
