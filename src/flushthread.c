@@ -2866,6 +2866,13 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             RtlCopyMemory(bgi, tp.item->data, tp.item->size);
             bgi->used = c->used;
 
+#ifdef DEBUG_PARANOID
+            if (bgi->used & 0x8000000000000000) {
+                ERR("refusing to write BLOCK_GROUP_ITEM with negative usage value (%I64x)", bgi->used);
+                int3;
+            }
+#endif
+
             TRACE("adjusting usage of chunk %I64x to %I64x\n", c->offset, c->used);
 
             Status = delete_tree_item(Vcb, &tp);
