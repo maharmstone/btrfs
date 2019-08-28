@@ -601,8 +601,9 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         return;
     }
 
-    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
-        throw last_error(GetLastError());
+    Status = NtQueryInformationFile(source, &iosb, &fbi, sizeof(FILE_BASIC_INFO), FileBasicInformation);
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
         win_handle dirh;
@@ -760,8 +761,9 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 uint64_t offset, alloc_size;
                 ULONG maxdup;
 
-                if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO)))
-                    throw last_error(GetLastError());
+                Status = NtQueryInformationFile(source, &iosb, &fsi, sizeof(FILE_STANDARD_INFO), FileStandardInformation);
+                if (!NT_SUCCESS(Status))
+                    throw ntstatus_error(Status);
 
                 if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, nullptr, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, nullptr))
                     throw last_error(GetLastError());
@@ -1303,8 +1305,9 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         return;
     }
 
-    if (!GetFileInformationByHandleEx(source, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
-        throw last_error(GetLastError());
+    Status = NtQueryInformationFile(source, &iosb, &fbi, sizeof(FILE_BASIC_INFO), FileBasicInformation);
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
 
     if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
         win_handle dirh;
@@ -1421,8 +1424,9 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                 uint64_t offset, alloc_size;
                 ULONG maxdup;
 
-                if (!GetFileInformationByHandleEx(source, FileStandardInfo, &fsi, sizeof(FILE_STANDARD_INFO)))
-                    throw last_error(GetLastError());
+                Status = NtQueryInformationFile(source, &iosb, &fsi, sizeof(FILE_STANDARD_INFO), FileStandardInformation);
+                if (!NT_SUCCESS(Status))
+                    throw ntstatus_error(Status);
 
                 if (!DeviceIoControl(source, FSCTL_GET_INTEGRITY_INFORMATION, nullptr, 0, &fgiib, sizeof(FSCTL_GET_INTEGRITY_INFORMATION_BUFFER), &bytesret, nullptr))
                     throw last_error(GetLastError());
