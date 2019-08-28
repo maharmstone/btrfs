@@ -103,35 +103,35 @@ int main(int argc, char** argv) {
                 } else
                     strcpy(cmd, argv[i] + 1);
 
-                if (!stricmp(cmd, "sectorsize")) {
+                if (!_stricmp(cmd, "sectorsize")) {
                     if (!colon || colon[1] == 0) {
                         print_string(stdout, IDS_NO_SECTOR_SIZE);
                         invalid_args = TRUE;
                         break;
                     } else
                         sector_size = atoi(&colon[1]);
-                } else if (!stricmp(cmd, "nodesize")) {
+                } else if (!_stricmp(cmd, "nodesize")) {
                     if (!colon || colon[1] == 0) {
                         print_string(stdout, IDS_NO_NODE_SIZE);
                         invalid_args = TRUE;
                         break;
                     } else
                         node_size = atoi(&colon[1]);
-                } else if (!stricmp(cmd, "mixed"))
+                } else if (!_stricmp(cmd, "mixed"))
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS;
-                else if (!stricmp(cmd, "notmixed"))
+                else if (!_stricmp(cmd, "notmixed"))
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS;
-                else if (!stricmp(cmd, "extiref"))
+                else if (!_stricmp(cmd, "extiref"))
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF;
-                else if (!stricmp(cmd, "notextiref"))
+                else if (!_stricmp(cmd, "notextiref"))
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF;
-                else if (!stricmp(cmd, "skinnymetadata"))
+                else if (!_stricmp(cmd, "skinnymetadata"))
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
-                else if (!stricmp(cmd, "notskinnymetadata"))
+                else if (!_stricmp(cmd, "notskinnymetadata"))
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
-                else if (!stricmp(cmd, "noholes"))
+                else if (!_stricmp(cmd, "noholes"))
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_NO_HOLES;
-                else if (!stricmp(cmd, "notnoholes"))
+                else if (!_stricmp(cmd, "notnoholes"))
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_NO_HOLES;
                 else {
                     print_string(stdout, IDS_UNKNOWN_ARG);
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
                 dsw[6] = 0;
 
                 drive.Buffer = dsw;
-                drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
+                drive.Length = drive.MaximumLength = (USHORT)(wcslen(drive.Buffer) * sizeof(WCHAR));
             } else
                 baddrive = TRUE;
         } else
@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
         }
 
         drive.Buffer = dsw2;
-        drive.Length = drive.MaximumLength = wcslen(drive.Buffer) * sizeof(WCHAR);
+        drive.Length = drive.MaximumLength = (USHORT)(wcslen(drive.Buffer) * sizeof(WCHAR));
     }
 
     if (baddrive) {
@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
         }
 
         label.Buffer = labelw;
-        label.Length = label.MaximumLength = wcslen(labelw) * sizeof(WCHAR);
+        label.Length = label.MaximumLength = (USHORT)(wcslen(labelw) * sizeof(WCHAR));
     } else {
         label.Buffer = NULL;
         label.Length = label.MaximumLength = 0;
