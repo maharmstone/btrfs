@@ -5793,6 +5793,16 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     last1 = 0;
 
     while (runlength != 0) {
+        if (index >= ps->bmplen)
+            break;
+
+        if (index + runlength >= ps->bmplen) {
+            runlength = ps->bmplen - index;
+
+            if (runlength == 0)
+                break;
+        }
+
         if (index > last1) {
             Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, index - last1);
             if (!NT_SUCCESS(Status)) {

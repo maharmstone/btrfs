@@ -522,6 +522,7 @@ typedef struct {
 typedef struct {
     uint64_t address;
     ULONG* bmparr;
+    ULONG bmplen;
     RTL_BITMAP bmp;
     LIST_ENTRY list_entry;
     uint8_t data[1];

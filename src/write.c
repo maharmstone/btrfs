@@ -963,7 +963,6 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, uint64_t add
     partial_stripe* ps;
     uint64_t stripe_addr;
     uint16_t num_data_stripes;
-    ULONG bmplen;
 
     num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
     stripe_addr = address - ((address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length));
@@ -1013,10 +1012,10 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, uint64_t add
         goto end;
     }
 
-    bmplen = (ULONG)sector_align(((num_data_stripes * c->chunk_item->stripe_length) / (8 * Vcb->superblock.sector_size) + 1), sizeof(ULONG));
+    ps->bmplen = (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size;
 
     ps->address = stripe_addr;
-    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, bmplen, ALLOC_TAG);
+    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, sector_align(((ps->bmplen / 8) + 1), sizeof(ULONG)), ALLOC_TAG);
     if (!ps->bmparr) {
         ERR("out of memory\n");
         ExFreePool(ps);
@@ -1024,7 +1023,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, uint64_t add
         goto end;
     }
 
-    RtlInitializeBitMap(&ps->bmp, ps->bmparr, (ULONG)((num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size));
+    RtlInitializeBitMap(&ps->bmp, ps->bmparr, ps->bmplen);
     RtlSetAllBits(&ps->bmp);
 
     RtlCopyMemory(ps->data + address - stripe_addr, data, length);
