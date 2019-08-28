@@ -461,6 +461,84 @@ static NTSTATUS pdo_query_id(pdo_device_extension* pdode, PIRP Irp) {
     return Irp->IoStatus.Status;
 }
 
+typedef struct {
+    IO_STATUS_BLOCK iosb;
+    KEVENT Event;
+    NTSTATUS Status;
+} device_usage_context;
+
+_Function_class_(IO_COMPLETION_ROUTINE)
+static NTSTATUS __stdcall device_usage_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
+    device_usage_context* context = conptr;
+
+    UNUSED(DeviceObject);
+
+    context->Status = Irp->IoStatus.Status;
+
+    KeSetEvent(&context->Event, 0, FALSE);
+
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+static NTSTATUS pdo_device_usage_notification(pdo_device_extension* pdode, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    LIST_ENTRY* le;
+
+    TRACE("(%p, %p)\n", pdode, Irp);
+
+    ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
+
+    le = pdode->children.Flink;
+
+    while (le != &pdode->children) {
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+
+        if (vc->devobj) {
+            PIRP Irp2;
+            PIO_STACK_LOCATION IrpSp2;
+            device_usage_context context;
+
+            Irp2 = IoAllocateIrp(vc->devobj->StackSize, FALSE);
+            if (!Irp2) {
+                ERR("out of memory\n");
+                ExReleaseResourceLite(&pdode->child_lock);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            IrpSp2 = IoGetNextIrpStackLocation(Irp2);
+            IrpSp2->MajorFunction = IRP_MJ_PNP;
+            IrpSp2->MinorFunction = IRP_MN_DEVICE_USAGE_NOTIFICATION;
+            IrpSp2->Parameters.UsageNotification = IrpSp->Parameters.UsageNotification;
+            IrpSp2->FileObject = vc->fileobj;
+
+            context.iosb.Status = STATUS_SUCCESS;
+            Irp2->UserIosb = &context.iosb;
+
+            KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+            Irp2->UserEvent = &context.Event;
+
+            IoSetCompletionRoutine(Irp2, device_usage_completion, &context, TRUE, TRUE, TRUE);
+
+            context.Status = IoCallDriver(vc->devobj, Irp2);
+
+            if (context.Status == STATUS_PENDING)
+                KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+
+            if (!NT_SUCCESS(context.Status)) {
+                ERR("IoCallDriver returned %08x\n", context.Status);
+                ExReleaseResourceLite(&pdode->child_lock);
+                return context.Status;
+            }
+        }
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&pdode->child_lock);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     pdo_device_extension* pdode = pdo->DeviceExtension;
@@ -479,15 +557,8 @@ static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
             return STATUS_UNSUCCESSFUL;
 
         case IRP_MN_DEVICE_USAGE_NOTIFICATION:
-            switch (IrpSp->Parameters.UsageNotification.Type) {
-                case DeviceUsageTypePaging:
-                case DeviceUsageTypeHibernation:
-                case DeviceUsageTypeDumpFile:
-                    return STATUS_SUCCESS;
+            return pdo_device_usage_notification(pdode, Irp);
 
-                default:
-                    break;
-            }
     }
 
     return Irp->IoStatus.Status;
@@ -503,8 +574,6 @@ static NTSTATUS pnp_device_usage_notification(PDEVICE_OBJECT DeviceObject, PIRP 
             case DeviceUsageTypeHibernation:
             case DeviceUsageTypeDumpFile:
                 IoAdjustPagingPathCount(&Vcb->page_file_count, IrpSp->Parameters.UsageNotification.InPath);
-
-                // FIXME - we should be passing this call down to the child devices as well
                 break;
 
             default:
