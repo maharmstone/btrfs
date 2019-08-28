@@ -477,6 +477,17 @@ static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
 
         case IRP_MN_QUERY_REMOVE_DEVICE:
             return STATUS_UNSUCCESSFUL;
+
+        case IRP_MN_DEVICE_USAGE_NOTIFICATION:
+            switch (IrpSp->Parameters.UsageNotification.Type) {
+                case DeviceUsageTypePaging:
+                case DeviceUsageTypeHibernation:
+                case DeviceUsageTypeDumpFile:
+                    return STATUS_SUCCESS;
+
+                default:
+                    break;
+            }
     }
 
     return Irp->IoStatus.Status;
@@ -501,7 +512,8 @@ static NTSTATUS pnp_device_usage_notification(PDEVICE_OBJECT DeviceObject, PIRP 
         }
     }
 
-    return STATUS_SUCCESS;
+    IoSkipCurrentIrpStackLocation(Irp);
+    return IoCallDriver(Vcb->Vpb->RealDevice, Irp);
 }
 
 _Dispatch_type_(IRP_MJ_PNP)
@@ -553,7 +565,7 @@ NTSTATUS __stdcall drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         case IRP_MN_DEVICE_USAGE_NOTIFICATION:
             Status = pnp_device_usage_notification(DeviceObject, Irp);
-            break;
+            goto exit;
 
         default:
             TRACE("passing minor function 0x%x on\n", IrpSp->MinorFunction);
