@@ -593,24 +593,28 @@ void command_line_to_args(LPWSTR cmdline, vector<wstring>& args) {
 }
 
 static string utf16_to_utf8(const wstring_view& utf16) {
-    NTSTATUS Status;
-    ULONG utf8len;
     string utf8;
     char* buf;
 
-    Status = RtlUnicodeToUTF8N(nullptr, 0, &utf8len, utf16.data(), (ULONG)(utf16.length() * sizeof(WCHAR)));
-    if (!NT_SUCCESS(Status))
-        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
+    if (utf16.empty())
+        return "";
+
+    auto utf8len = WideCharToMultiByte(CP_UTF8, 0, utf16.data(), (int)(utf16.length() * sizeof(char16_t)), nullptr, 0,
+                                       nullptr, nullptr);
+
+    if (utf8len == 0)
+        throw last_error(GetLastError());
 
     buf = (char*)malloc(utf8len + sizeof(char));
 
     if (!buf)
         throw string_error(IDS_OUT_OF_MEMORY);
 
-    Status = RtlUnicodeToUTF8N(buf, utf8len, &utf8len, utf16.data(), (ULONG)(utf16.length() * sizeof(WCHAR)));
-    if (!NT_SUCCESS(Status)) {
+    if (WideCharToMultiByte(CP_UTF8, 0, utf16.data(), (int)(utf16.length() * sizeof(char16_t)), buf, utf8len,
+                            nullptr, nullptr) == 0) {
+        auto le = GetLastError();
         free(buf);
-        throw string_error(IDS_RECV_RTLUNICODETOUTF8N_FAILED, Status, format_ntstatus(Status).c_str());
+        throw last_error(le);
     }
 
     buf[utf8len] = 0;
@@ -655,27 +659,29 @@ string_error::string_error(int resno, ...) {
 #endif
 
 wstring utf8_to_utf16(const string_view& utf8) {
-    NTSTATUS Status;
-    ULONG utf16len;
     wstring ret;
     WCHAR* buf;
 
-    Status = RtlUTF8ToUnicodeN(nullptr, 0, &utf16len, utf8.data(), (ULONG)utf8.length());
-    if (!NT_SUCCESS(Status))
-        throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
+    if (utf8.empty())
+        return L"";
 
-    buf = (WCHAR*)malloc(utf16len + sizeof(WCHAR));
+    auto utf16len = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int)utf8.length(), nullptr, 0);
+
+    if (utf16len == 0)
+        throw last_error(GetLastError());
+
+    buf = (WCHAR*)malloc((utf16len + 1) * sizeof(WCHAR));
 
     if (!buf)
         throw string_error(IDS_OUT_OF_MEMORY);
 
-    Status = RtlUTF8ToUnicodeN(buf, utf16len, &utf16len, utf8.data(), (ULONG)utf8.length());
-    if (!NT_SUCCESS(Status)) {
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8.data(), (int)utf8.length(), buf, utf16len) == 0) {
+        auto le = GetLastError();
         free(buf);
-        throw string_error(IDS_RECV_RTLUTF8TOUNICODEN_FAILED, Status, format_ntstatus(Status).c_str());
+        throw last_error(le);
     }
 
-    buf[utf16len / sizeof(WCHAR)] = 0;
+    buf[utf16len] = 0;
 
     ret = buf;
 
