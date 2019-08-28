@@ -2746,6 +2746,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 #ifdef DEBUG_STATS
     LARGE_INTEGER time1, time2;
 #endif
+    POOL_TYPE pool_type;
 
     TRACE("(%p, %p, %I64x, %I64x, %p)\n", fcb, data, start, length, pbr);
 
@@ -2757,6 +2758,8 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
         Status = STATUS_END_OF_FILE;
         goto exit;
     }
+
+    pool_type = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? NonPagedPool : PagedPool;
 
 #ifdef DEBUG_STATS
     time1 = KeQueryPerformanceCounter(NULL);
@@ -2923,7 +2926,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                         buf = data + bytes_read;
                         buf_free = FALSE;
                     } else {
-                        buf = ExAllocatePoolWithTag(PagedPool, to_read, ALLOC_TAG);
+                        buf = ExAllocatePoolWithTag(pool_type, to_read, ALLOC_TAG);
                         buf_free = TRUE;
 
                         if (!buf) {
@@ -3009,7 +3012,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                         if (off2 != 0) {
                             outlen = off2 + min(read, (uint32_t)(ed2->num_bytes - off));
 
-                            decomp = ExAllocatePoolWithTag(PagedPool, outlen, ALLOC_TAG);
+                            decomp = ExAllocatePoolWithTag(pool_type, outlen, ALLOC_TAG);
                             if (!decomp) {
                                 ERR("out of memory\n");
                                 ExFreePool(buf);
