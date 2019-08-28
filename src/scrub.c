@@ -1632,13 +1632,23 @@ end:
     return Status;
 }
 
-static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, uint64_t offset, ULONG type, uint32_t* csum, RTL_BITMAP* bmp) {
+static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, uint64_t offset, ULONG type, uint32_t* csum, RTL_BITMAP* bmp, ULONG bmplen) {
     NTSTATUS Status;
     ULONG runlength, index;
 
     runlength = RtlFindFirstRunClear(bmp, &index);
 
     while (runlength != 0) {
+        if (index >= bmplen)
+            break;
+
+        if (index + runlength >= bmplen) {
+            runlength = bmplen - index;
+
+            if (runlength == 0)
+                break;
+        }
+
         do {
             ULONG rl;
 
@@ -2970,7 +2980,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
             BOOL is_tree;
             uint32_t* csum = NULL;
             RTL_BITMAP bmp;
-            ULONG* bmparr = NULL;
+            ULONG* bmparr = NULL, bmplen;
 
             TRACE("%I64x\n", tp.item->key.obj_id);
 
@@ -3008,7 +3018,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
                     goto end;
                 }
 
-                bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)(sector_align(((size / Vcb->superblock.sector_size) >> 3) + 1, sizeof(ULONG))), ALLOC_TAG);
+                bmplen = size / Vcb->superblock.sector_size;
+
+                bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)(sector_align((bmplen >> 3) + 1, sizeof(ULONG))), ALLOC_TAG);
                 if (!bmparr) {
                     ERR("out of memory\n");
                     ExFreePool(csum);
@@ -3016,7 +3028,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
                     goto end;
                 }
 
-                RtlInitializeBitMap(&bmp, bmparr, (ULONG)(size / Vcb->superblock.sector_size));
+                RtlInitializeBitMap(&bmp, bmparr, bmplen);
                 RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
                 searchkey.obj_id = EXTENT_CSUM_ID;
@@ -3084,7 +3096,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
             }
 
             if (!is_tree) {
-                Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, type, csum, &bmp);
+                Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, type, csum, &bmp, bmplen);
                 if (!NT_SUCCESS(Status)) {
                     ERR("scrub_data_extent returned %08x\n", Status);
                     ExFreePool(csum);
