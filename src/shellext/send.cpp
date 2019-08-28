@@ -159,10 +159,13 @@ DWORD BtrfsSend::Thread() {
 
                     fdi.DeleteFile = true;
 
-                    SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+                    Status = NtSetInformationFile(stream, &iosb, &fdi, sizeof(FILE_DISPOSITION_INFO), FileDispositionInformation);
 
                     CloseHandle(stream);
                     stream = INVALID_HANDLE_VALUE;
+
+                    if (!NT_SUCCESS(Status))
+                        throw ntstatus_error(Status);
 
                     throw;
                 }
@@ -433,12 +436,18 @@ INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                                     TerminateThread(thread, 0);
 
                                     if (stream != INVALID_HANDLE_VALUE) {
+                                        NTSTATUS Status;
                                         FILE_DISPOSITION_INFO fdi;
+                                        IO_STATUS_BLOCK iosb;
 
                                         fdi.DeleteFile = true;
 
-                                        SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+                                        Status = NtSetInformationFile(stream, &iosb, &fdi, sizeof(FILE_DISPOSITION_INFO), FileDispositionInformation);
+
                                         CloseHandle(stream);
+
+                                        if (!NT_SUCCESS(Status))
+                                            throw ntstatus_error(Status);
                                     }
 
                                     if (dirh != INVALID_HANDLE_VALUE)
@@ -647,7 +656,9 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
 
             fdi.DeleteFile = true;
 
-            SetFileInformationByHandle(stream, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+            Status = NtSetInformationFile(stream, &iosb, &fdi, sizeof(FILE_DISPOSITION_INFO), FileDispositionInformation);
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
 
             throw;
         }

@@ -820,6 +820,8 @@ void BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     HANDLE h;
     LARGE_INTEGER offli;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
 
     {
         char* path;
@@ -871,8 +873,9 @@ void BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
 
         fbi.LastWriteTime.QuadPart = -1;
 
-        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
-            throw string_error(IDS_RECV_SETFILEINFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+        Status = NtSetInformationFile(h, &iosb, &fbi, sizeof(FILE_BASIC_INFO), FileBasicInformation);
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     } else
         h = lastwritefile;
 
@@ -1174,6 +1177,8 @@ void BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     FILE_BASIC_INFO fbi;
     BTRFS_TIME* time;
     ULONG timelen;
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
 
     {
         char* path;
@@ -1204,8 +1209,9 @@ void BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_CTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
         fbi.ChangeTime.QuadPart = unix_time_to_win(time);
 
-    if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(FILE_BASIC_INFO)))
-        throw string_error(IDS_RECV_SETFILEINFO_FAILED, GetLastError(), format_message(GetLastError()).c_str());
+    Status = NtSetInformationFile(h, &iosb, &fbi, sizeof(FILE_BASIC_INFO), FileBasicInformation);
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
 }
 
 static void delete_directory(const wstring& dir) {

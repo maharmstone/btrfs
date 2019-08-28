@@ -625,8 +625,9 @@ void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
         else
             fbi.FileAttributes &= ~FILE_ATTRIBUTE_READONLY;
 
-        if (!SetFileInformationByHandle(h, FileBasicInfo, &fbi, sizeof(fbi)))
-            throw last_error(GetLastError());
+        Status = NtSetInformationFile(h, &iosb, &fbi, sizeof(FILE_BASIC_INFO), FileBasicInformation);
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
     }
 
     if (flags_changed || perms_changed || uid_changed || gid_changed || compress_type_changed) {

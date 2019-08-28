@@ -780,8 +780,9 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                     throw last_error(GetLastError());
 
                 feofi.EndOfFile = fsi.EndOfFile;
-                if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO)))
-                    throw last_error(GetLastError());
+                Status = NtSetInformationFile(dest, &iosb, &feofi, sizeof(FILE_END_OF_FILE_INFO), FileEndOfFileInformation);
+                if (!NT_SUCCESS(Status))
+                    throw ntstatus_error(Status);
 
                 ded.FileHandle = source;
                 maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
@@ -896,8 +897,9 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         FILE_DISPOSITION_INFO fdi;
 
         fdi.DeleteFile = true;
-        if (!SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO)))
-            throw last_error(GetLastError());
+        Status = NtSetInformationFile(dest, &iosb, &fdi, sizeof(FILE_DISPOSITION_INFO), FileDispositionInformation);
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
         throw;
     }
@@ -1443,8 +1445,9 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                     throw last_error(GetLastError());
 
                 feofi.EndOfFile = fsi.EndOfFile;
-                if (!SetFileInformationByHandle(dest, FileEndOfFileInfo, &feofi, sizeof(FILE_END_OF_FILE_INFO)))
-                    throw last_error(GetLastError());
+                Status = NtSetInformationFile(dest, &iosb, &feofi, sizeof(FILE_END_OF_FILE_INFO), FileEndOfFileInformation);
+                if (!NT_SUCCESS(Status))
+                    throw ntstatus_error(Status);
 
                 ded.FileHandle = source;
                 maxdup = 0xffffffff - fgiib.ClusterSizeInBytes + 1;
@@ -1559,7 +1562,9 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         FILE_DISPOSITION_INFO fdi;
 
         fdi.DeleteFile = true;
-        SetFileInformationByHandle(dest, FileDispositionInfo, &fdi, sizeof(FILE_DISPOSITION_INFO));
+        Status = NtSetInformationFile(dest, &iosb, &fdi, sizeof(FILE_DISPOSITION_INFO), FileDispositionInformation);
+        if (!NT_SUCCESS(Status))
+            throw ntstatus_error(Status);
 
         throw;
     }

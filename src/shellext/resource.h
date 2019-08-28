@@ -145,7 +145,6 @@
 #define IDS_RECV_CREATEHARDLINK_FAILED  227
 #define IDS_RECV_SETENDOFFILE_FAILED    228
 #define IDS_RECV_CANT_CREATE_FILE       229
-#define IDS_RECV_SETFILEINFO_FAILED     230
 #define IDS_RECV_SETINODEINFO_FAILED    231
 #define IDS_RECV_SUCCESS                232
 #define IDS_RECV_BUTTON_OK              233
@@ -335,7 +334,7 @@
 #define IDC_DRIVE_LETTER_COMBO          1074
 
 // Next default values for new objects
-// 
+//
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        178
