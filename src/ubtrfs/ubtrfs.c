@@ -29,6 +29,7 @@
 #include <ntddstor.h>
 #include <ata.h>
 #include <mountmgr.h>
+#include <stringapiset.h>
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 
@@ -50,9 +51,6 @@ NTSTATUS NTAPI NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcR
 
 NTSTATUS NTAPI NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                           ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
-
-NTSYSAPI NTSTATUS NTAPI RtlUnicodeToUTF8N(PCHAR UTF8StringDestination, ULONG UTF8StringMaxByteCount, PULONG UTF8StringActualByteCount,
-                                          PCWCH UnicodeStringSource, ULONG  UnicodeStringByteCount);
 #ifdef __cplusplus
 }
 #endif
@@ -734,21 +732,16 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
             }
         }
 
-        Status = RtlUnicodeToUTF8N(NULL, 0, &utf8len, label->Buffer, label->Length);
-        if (!NT_SUCCESS(Status)) {
-            free(sb);
-            return Status;
-        }
+        utf8len = WideCharToMultiByte(CP_UTF8, 0, label->Buffer, label->Length, NULL, 0, NULL, NULL);
 
-        if (utf8len > MAX_LABEL_SIZE) {
+        if (utf8len == 0 || utf8len > MAX_LABEL_SIZE) {
             free(sb);
             return STATUS_INVALID_VOLUME_LABEL;
         }
 
-        Status = RtlUnicodeToUTF8N((PCHAR)&sb->label, MAX_LABEL_SIZE, &utf8len, label->Buffer, label->Length);
-        if (!NT_SUCCESS(Status)) {
+        if (WideCharToMultiByte(CP_UTF8, 0, label->Buffer, label->Length, sb->label, utf8len, NULL, NULL) == 0) {
             free(sb);
-            return Status;
+            return STATUS_INVALID_VOLUME_LABEL;
         }
     }
     sb->cache_generation = 0xffffffffffffffff;
