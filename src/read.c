@@ -2532,6 +2532,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 
             IrpSp = IoGetNextIrpStackLocation(context.stripes[i].Irp);
             IrpSp->MajorFunction = IRP_MJ_READ;
+            IrpSp->MinorFunction = IRP_MN_NORMAL;
             IrpSp->FileObject = devices[i]->fileobj;
 
             if (devices[i]->devobj->Flags & DO_BUFFERED_IO) {
