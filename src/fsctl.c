@@ -2573,7 +2573,7 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
         return STATUS_SUCCESS;
 
-    if (Vcb->disallow_dismount) {
+    if (Vcb->disallow_dismount || Vcb->page_file_count != 0) {
         WARN("attempting to dismount boot volume or one containing a pagefile\n");
         return STATUS_ACCESS_DENIED;
     }

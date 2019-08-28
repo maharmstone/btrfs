@@ -2182,10 +2182,8 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     fcb->Vcb = Vcb;
 
-    if (IrpSp->Flags & SL_OPEN_PAGING_FILE) {
+    if (IrpSp->Flags & SL_OPEN_PAGING_FILE)
         fcb->Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE;
-        Vcb->disallow_dismount = TRUE;
-    }
 
     fcb->inode_item.generation = Vcb->superblock.generation;
     fcb->inode_item.transid = Vcb->superblock.generation;
@@ -3924,7 +3922,6 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
         }
 
         fileref->fcb->Header.Flags2 |= FSRTL_FLAG2_IS_PAGING_FILE;
-        Vcb->disallow_dismount = TRUE;
     }
 
 #ifdef DEBUG_FCB_REFCOUNTS

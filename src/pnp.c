@@ -482,6 +482,28 @@ static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
     return Irp->IoStatus.Status;
 }
 
+static NTSTATUS pnp_device_usage_notification(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+
+    if (IrpSp->Parameters.UsageNotification.InPath) {
+        switch (IrpSp->Parameters.UsageNotification.Type) {
+            case DeviceUsageTypePaging:
+            case DeviceUsageTypeHibernation:
+            case DeviceUsageTypeDumpFile:
+                IoAdjustPagingPathCount(&Vcb->page_file_count, IrpSp->Parameters.UsageNotification.InPath);
+
+                // FIXME - we should be passing this call down to the child devices as well
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
 _Dispatch_type_(IRP_MJ_PNP)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
@@ -530,21 +552,7 @@ NTSTATUS __stdcall drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             break;
 
         case IRP_MN_DEVICE_USAGE_NOTIFICATION:
-            if (IrpSp->Parameters.UsageNotification.InPath) {
-                switch (IrpSp->Parameters.UsageNotification.Type) {
-                    case DeviceUsageTypePaging:
-                    case DeviceUsageTypeHibernation:
-                    case DeviceUsageTypeDumpFile:
-                        // FIXME - we should be passing this call down to the child devices as well
-                        Vcb->disallow_dismount = TRUE;
-                    break;
-
-                    default:
-                        break;
-                }
-            }
-
-            Status = STATUS_SUCCESS;
+            Status = pnp_device_usage_notification(DeviceObject, Irp);
             break;
 
         default:
