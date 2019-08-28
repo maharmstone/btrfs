@@ -993,6 +993,16 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                 runlength = RtlFindFirstRunClear(&ps->bmp, &index);
 
                 while (runlength != 0) {
+                    if (index >= ps->bmplen)
+                        break;
+
+                    if (index + runlength >= ps->bmplen) {
+                        runlength = ps->bmplen - index;
+
+                        if (runlength == 0)
+                            break;
+                    }
+
                     uint64_t runstart = ps->address + (index * Vcb->superblock.sector_size);
                     uint64_t runend = runstart + (runlength * Vcb->superblock.sector_size);
                     uint64_t start = max(runstart, addr);
