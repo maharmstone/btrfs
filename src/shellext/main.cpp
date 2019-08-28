@@ -326,20 +326,66 @@ static void register_clsid(const GUID clsid, const WCHAR* description) {
     CoTaskMemFree(clsidstring);
 }
 
+// implementation of RegDeleteTreeW, only available from Vista on
+static void reg_delete_tree(HKEY hkey, const wstring& keyname) {
+    HKEY k;
+    LSTATUS ret;
+
+    ret = RegOpenKeyExW(hkey, keyname.c_str(), 0, KEY_READ, &k);
+
+    if (ret != ERROR_SUCCESS)
+        throw last_error(ret);
+
+    try {
+        WCHAR* buf;
+        ULONG bufsize;
+
+        ret = RegQueryInfoKeyW(k, nullptr, nullptr, nullptr, nullptr, &bufsize, nullptr,
+                               nullptr, nullptr, nullptr, nullptr, nullptr);
+        if (ret != ERROR_SUCCESS)
+            throw last_error(ret);
+
+        bufsize++;
+        buf = new WCHAR[bufsize];
+
+        try {
+            do {
+                ULONG size = bufsize;
+
+                ret = RegEnumKeyExW(k, 0, buf, &size, nullptr, nullptr, nullptr, nullptr);
+
+                if (ret == ERROR_NO_MORE_ITEMS)
+                    break;
+                else if (ret != ERROR_SUCCESS)
+                    throw last_error(ret);
+
+                reg_delete_tree(k, buf);
+            } while (true);
+
+            ret = RegDeleteKeyW(hkey, keyname.c_str());
+            if (ret != ERROR_SUCCESS)
+                throw last_error(ret);
+        } catch (...) {
+            delete[] buf;
+            throw;
+        }
+
+        delete[] buf;
+    } catch (...) {
+        RegCloseKey(k);
+        throw;
+    }
+
+    RegCloseKey(k);
+}
+
 static void unregister_clsid(const GUID clsid) {
     WCHAR* clsidstring;
 
     StringFromCLSID(clsid, &clsidstring);
 
     try {
-        WCHAR clsidkeyname[MAX_PATH];
-
-        wsprintfW(clsidkeyname, L"CLSID\\%s", clsidstring);
-
-        LONG l = RegDeleteTreeW(HKEY_CLASSES_ROOT, clsidkeyname);
-
-        if (l != ERROR_SUCCESS)
-            throw string_error(IDS_REGDELETETREE_FAILED, l);
+        reg_delete_tree(HKEY_CLASSES_ROOT, L"CLSID\\"s + clsidstring);
     } catch (...) {
         CoTaskMemFree(clsidstring);
         throw;
@@ -366,12 +412,7 @@ static void reg_icon_overlay(const GUID clsid, const wstring& name) {
 }
 
 static void unreg_icon_overlay(const wstring& name) {
-    wstring path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name;
-
-    LONG l = RegDeleteTreeW(HKEY_LOCAL_MACHINE, path.c_str());
-
-    if (l != ERROR_SUCCESS)
-        throw string_error(IDS_REGDELETETREE_FAILED, l);
+    reg_delete_tree(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellIconOverlayIdentifiers\\"s + name);
 }
 
 static void reg_context_menu_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
@@ -390,12 +431,7 @@ static void reg_context_menu_handler(const GUID clsid, const wstring& filetype, 
 }
 
 static void unreg_context_menu_handler(const wstring& filetype, const wstring& name) {
-    wstring path = filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name;
-
-    LONG l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
-
-    if (l != ERROR_SUCCESS)
-        throw string_error(IDS_REGDELETETREE_FAILED, l);
+    reg_delete_tree(HKEY_CLASSES_ROOT, filetype + L"\\ShellEx\\ContextMenuHandlers\\"s + name);
 }
 
 static void reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
@@ -414,12 +450,7 @@ static void reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, co
 }
 
 static void unreg_prop_sheet_handler(const wstring& filetype, const wstring& name) {
-    wstring path = filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name;
-
-    LONG l = RegDeleteTreeW(HKEY_CLASSES_ROOT, path.c_str());
-
-    if (l != ERROR_SUCCESS)
-        throw string_error(IDS_REGDELETETREE_FAILED, l);
+    reg_delete_tree(HKEY_CLASSES_ROOT, filetype + L"\\ShellEx\\PropertySheetHandlers\\"s + name);
 }
 
 extern "C" STDAPI DllRegisterServer(void) {
