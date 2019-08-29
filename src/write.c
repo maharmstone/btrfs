@@ -1012,10 +1012,10 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, uint64_t add
         goto end;
     }
 
-    ps->bmplen = (num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size;
+    ps->bmplen = (ULONG)(num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size;
 
     ps->address = stripe_addr;
-    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, sector_align(((ps->bmplen / 8) + 1), sizeof(ULONG)), ALLOC_TAG);
+    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, (size_t)sector_align(((ps->bmplen / 8) + 1), sizeof(ULONG)), ALLOC_TAG);
     if (!ps->bmparr) {
         ERR("out of memory\n");
         ExFreePool(ps);
