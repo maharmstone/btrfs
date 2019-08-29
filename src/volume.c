@@ -1072,8 +1072,6 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
             return;
         }
 
-        ExReleaseResourceLite(&pdode->child_lock);
-
         le = le->Flink;
     }
 
