@@ -432,6 +432,35 @@ static BOOLEAN __stdcall fast_io_unlock_all(PFILE_OBJECT FileObject, PEPROCESS P
     return TRUE;
 }
 
+static BOOLEAN __stdcall fast_io_unlock_all_by_key(PFILE_OBJECT FileObject, PVOID ProcessId, ULONG Key,
+                                                   PIO_STATUS_BLOCK IoStatus, PDEVICE_OBJECT DeviceObject) {
+    fcb* fcb = FileObject->FsContext;
+
+    TRACE("(%p, %p, %x, %p, %p)\n", FileObject, ProcessId, Key, IoStatus, DeviceObject);
+
+    IoStatus->Information = 0;
+
+    if (fcb->type != BTRFS_TYPE_FILE) {
+        WARN("can only lock files\n");
+        IoStatus->Status = STATUS_INVALID_PARAMETER;
+        return TRUE;
+    }
+
+    FsRtlEnterFileSystem();
+
+    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+
+    IoStatus->Status = FsRtlFastUnlockAllByKey(&fcb->lock, FileObject, ProcessId, Key, NULL);
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    FsRtlExitFileSystem();
+
+    return TRUE;
+}
+
 void init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     RtlZeroMemory(&FastIoDispatch, sizeof(FastIoDispatch));
 
@@ -445,6 +474,7 @@ void init_fast_io_dispatch(FAST_IO_DISPATCH** fiod) {
     FastIoDispatch.FastIoLock = fast_io_lock;
     FastIoDispatch.FastIoUnlockSingle = fast_io_unlock_single;
     FastIoDispatch.FastIoUnlockAll = fast_io_unlock_all;
+    FastIoDispatch.FastIoUnlockAllByKey = fast_io_unlock_all_by_key;
     FastIoDispatch.FastIoQueryNetworkOpenInfo = fast_io_query_network_open_info;
     FastIoDispatch.AcquireForModWrite = fast_io_acquire_for_mod_write;
     FastIoDispatch.MdlRead = FsRtlMdlReadDev;
