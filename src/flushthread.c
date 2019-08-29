@@ -7646,45 +7646,10 @@ NTSTATUS do_write(device_extension* Vcb, PIRP Irp) {
     return Status;
 }
 
-#ifdef DEBUG_STATS
-static void print_stats(device_extension* Vcb) {
-    LARGE_INTEGER freq;
-
-    ERR("READ STATS:\n");
-    ERR("number of reads: %I64u\n", Vcb->stats.num_reads);
-    ERR("data read: %I64u bytes\n", Vcb->stats.data_read);
-    ERR("total time taken: %I64u\n", Vcb->stats.read_total_time);
-    ERR("csum time taken: %I64u\n", Vcb->stats.read_csum_time);
-    ERR("disk time taken: %I64u\n", Vcb->stats.read_disk_time);
-    ERR("other time taken: %I64u\n", Vcb->stats.read_total_time - Vcb->stats.read_csum_time - Vcb->stats.read_disk_time);
-
-    KeQueryPerformanceCounter(&freq);
-
-    ERR("OPEN STATS (freq = %I64u):\n", freq.QuadPart);
-    ERR("number of opens: %I64u\n", Vcb->stats.num_opens);
-    ERR("total time taken: %I64u\n", Vcb->stats.open_total_time);
-    ERR("number of overwrites: %I64u\n", Vcb->stats.num_overwrites);
-    ERR("total time taken: %I64u\n", Vcb->stats.overwrite_total_time);
-    ERR("number of creates: %I64u\n", Vcb->stats.num_creates);
-    ERR("calls to open_fcb: %I64u\n", Vcb->stats.open_fcb_calls);
-    ERR("time spent in open_fcb: %I64u\n", Vcb->stats.open_fcb_time);
-    ERR("calls to open_fileref_child: %I64u\n", Vcb->stats.open_fileref_child_calls);
-    ERR("time spent in open_fileref_child: %I64u\n", Vcb->stats.open_fileref_child_time);
-    ERR("time spent waiting for fcb_lock: %I64u\n", Vcb->stats.fcb_lock_time);
-    ERR("total time taken: %I64u\n", Vcb->stats.create_total_time);
-
-    RtlZeroMemory(&Vcb->stats, sizeof(debug_stats));
-}
-#endif
-
 static void do_flush(device_extension* Vcb) {
     NTSTATUS Status;
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
-
-#ifdef DEBUG_STATS
-    print_stats(Vcb);
-#endif
 
     if (Vcb->need_write && !Vcb->readonly)
         Status = do_write(Vcb, NULL);

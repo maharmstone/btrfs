@@ -167,11 +167,6 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
             log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
-
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
         Status = check_csum(Vcb, buf, (ULONG)context->stripes[stripe].Irp->IoStatus.Information / context->sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
@@ -181,11 +176,6 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
             ERR("check_csum returned %08x\n", Status);
             return Status;
         }
-#ifdef DEBUG_STATS
-        time2 = KeQueryPerformanceCounter(NULL);
-
-        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
     }
 
     if (!checksum_error)
@@ -347,11 +337,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
         }
     } else if (context->csum) {
         NTSTATUS Status;
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
 
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
@@ -377,11 +363,6 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
             ERR("check_csum returned %08x\n", Status);
             return Status;
         }
-#ifdef DEBUG_STATS
-        time2 = KeQueryPerformanceCounter(NULL);
-
-        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
     }
 
     return STATUS_SUCCESS;
@@ -422,11 +403,6 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
             log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
-
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR)
@@ -435,11 +411,6 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
             ERR("check_csum returned %08x\n", Status);
             return Status;
         }
-#ifdef DEBUG_STATS
-        time2 = KeQueryPerformanceCounter(NULL);
-
-        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
     }
 
     if (!checksum_error)
@@ -664,11 +635,6 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
-
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
@@ -679,12 +645,6 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
             ERR("check_csum returned %08x\n", Status);
             return Status;
         }
-
-#ifdef DEBUG_STATS
-        time2 = KeQueryPerformanceCounter(NULL);
-
-        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
     } else if (degraded)
         checksum_error = true;
 
@@ -1036,11 +996,6 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
-
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
         Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
@@ -1051,11 +1006,6 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
             ERR("check_csum returned %08x\n", Status);
             return Status;
         }
-#ifdef DEBUG_STATS
-        time2 = KeQueryPerformanceCounter(NULL);
-
-        Vcb->stats.read_csum_time += time2.QuadPart - time1.QuadPart;
-#endif
     } else if (degraded)
         checksum_error = true;
 
@@ -1480,9 +1430,6 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
     PMDL dummy_mdl = NULL;
     bool need_to_wait;
     uint64_t lockaddr, locklen;
-#ifdef DEBUG_STATS
-    LARGE_INTEGER time1, time2;
-#endif
 
     if (Vcb->log_to_phys_loaded) {
         if (!c) {
@@ -2584,11 +2531,6 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         }
     }
 
-#ifdef DEBUG_STATS
-    if (!is_tree)
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
-
     need_to_wait = false;
     for (i = 0; i < ci->num_stripes; i++) {
         if (context.stripes[i].status != ReadDataStatus_MissingDevice && context.stripes[i].status != ReadDataStatus_Skip) {
@@ -2599,14 +2541,6 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 
     if (need_to_wait)
         KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
-
-#ifdef DEBUG_STATS
-    if (!is_tree) {
-        time2 = KeQueryPerformanceCounter(NULL);
-
-        Vcb->stats.read_disk_time += time2.QuadPart - time1.QuadPart;
-    }
-#endif
 
     if (diskacc)
         fFsRtlUpdateDiskCounters(total_reading, 0);
@@ -2764,9 +2698,6 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     uint32_t bytes_read = 0;
     uint64_t last_end;
     LIST_ENTRY* le;
-#ifdef DEBUG_STATS
-    LARGE_INTEGER time1, time2;
-#endif
     POOL_TYPE pool_type;
 
     TRACE("(%p, %p, %I64x, %I64x, %p)\n", fcb, data, start, length, pbr);
@@ -2781,10 +2712,6 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     }
 
     pool_type = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? NonPagedPool : PagedPool;
-
-#ifdef DEBUG_STATS
-    time1 = KeQueryPerformanceCounter(NULL);
-#endif
 
     le = fcb->extents.Flink;
 
@@ -3149,14 +3076,6 @@ nextitem:
     Status = STATUS_SUCCESS;
     if (pbr)
         *pbr = bytes_read;
-
-#ifdef DEBUG_STATS
-    time2 = KeQueryPerformanceCounter(NULL);
-
-    fcb->Vcb->stats.num_reads++;
-    fcb->Vcb->stats.data_read += bytes_read;
-    fcb->Vcb->stats.read_total_time += time2.QuadPart - time1.QuadPart;
-#endif
 
 exit:
     return Status;

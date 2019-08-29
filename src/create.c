@@ -1498,9 +1498,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         } else {
             fcb* fcb;
             file_ref* duff_fr = NULL;
-#ifdef DEBUG_STATS
-            LARGE_INTEGER time1, time2;
-#endif
 
             if (dc->fileref) {
                 if (!lastpart && dc->type != BTRFS_TYPE_DIRECTORY) {
@@ -1517,15 +1514,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 fcb = Vcb->dummy_fcb;
                 InterlockedIncrement(&fcb->refcount);
             } else {
-#ifdef DEBUG_STATS
-                time1 = KeQueryPerformanceCounter(NULL);
-#endif
                 Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, false, sf->fcb, &fcb, pooltype, Irp);
-#ifdef DEBUG_STATS
-                time2 = KeQueryPerformanceCounter(NULL);
-                Vcb->stats.open_fcb_calls++;
-                Vcb->stats.open_fcb_time += time2.QuadPart - time1.QuadPart;
-#endif
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("open_fcb returned %08x\n", Status);
@@ -1691,13 +1680,6 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         name_bit* nb = CONTAINING_RECORD(le, name_bit, list_entry);
         bool lastpart = le->Flink == &parts || (has_stream && le->Flink->Flink == &parts);
         bool streampart = has_stream && le->Flink == &parts;
-#ifdef DEBUG_STATS
-        LARGE_INTEGER time1, time2;
-#endif
-
-#ifdef DEBUG_STATS
-        time1 = KeQueryPerformanceCounter(NULL);
-#endif
         bool cs = case_sensitive;
 
         if (!cs) {
@@ -1708,11 +1690,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         }
 
         Status = open_fileref_child(Vcb, sf, &nb->us, cs, lastpart, streampart, pooltype, &sf2, Irp);
-#ifdef DEBUG_STATS
-        time2 = KeQueryPerformanceCounter(NULL);
-        Vcb->stats.open_fileref_child_calls++;
-        Vcb->stats.open_fileref_child_time += time2.QuadPart - time1.QuadPart;
-#endif
+
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
                 TRACE("open_fileref_child returned %08x\n", Status);
@@ -3453,9 +3431,6 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
     if (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) {
         LARGE_INTEGER zero;
 
-#ifdef DEBUG_STATS
-        open_type = 1;
-#endif
         if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || is_subvol_readonly(fileref->fcb->subvol, Irp)) {
             free_fileref(fileref);
 
@@ -4266,12 +4241,6 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     ACCESS_MASK granted_access;
     bool loaded_related = false;
     UNICODE_STRING fn;
-#ifdef DEBUG_STATS
-    LARGE_INTEGER time1, time2;
-    uint8_t open_type = 0;
-
-    time1 = KeQueryPerformanceCounter(NULL);
-#endif
 
     Irp->IoStatus.Information = 0;
 
@@ -4500,9 +4469,6 @@ loaded:
     } else {
         file_ref* existing_file;
 
-#ifdef DEBUG_STATS
-        open_type = 2;
-#endif
         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, &existing_file, rollback);
 
         if (Status == STATUS_OBJECT_NAME_COLLISION) { // already exists
@@ -4546,21 +4512,6 @@ exit:
         ExReleaseResourceLite(fcb2->Header.Resource);
     } else if (Status != STATUS_REPARSE && Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
         TRACE("returning %08x\n", Status);
-
-#ifdef DEBUG_STATS
-    time2 = KeQueryPerformanceCounter(NULL);
-
-    if (open_type == 0) {
-        Vcb->stats.open_total_time += time2.QuadPart - time1.QuadPart;
-        Vcb->stats.num_opens++;
-    } else if (open_type == 1) {
-        Vcb->stats.overwrite_total_time += time2.QuadPart - time1.QuadPart;
-        Vcb->stats.num_overwrites++;
-    } else if (open_type == 2) {
-        Vcb->stats.create_total_time += time2.QuadPart - time1.QuadPart;
-        Vcb->stats.num_creates++;
-    }
-#endif
 
     return Status;
 }
