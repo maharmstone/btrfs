@@ -26,18 +26,18 @@ static BOOLEAN __stdcall acquire_for_lazy_write(PVOID Context, BOOLEAN Wait) {
     TRACE("(%p, %u)\n", Context, Wait);
 
     if (!ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, Wait))
-        return FALSE;
+        return false;
 
     if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, Wait)) {
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-        return FALSE;
+        return false;
     }
 
     fcb->lazy_writer_thread = KeGetCurrentThread();
 
     IoSetTopLevelIrp((PIRP)FSRTL_CACHE_TOP_LEVEL_IRP);
 
-    return TRUE;
+    return true;
 }
 
 static void __stdcall release_from_lazy_write(PVOID Context) {
@@ -63,11 +63,11 @@ static BOOLEAN __stdcall acquire_for_read_ahead(PVOID Context, BOOLEAN Wait) {
     TRACE("(%p, %u)\n", Context, Wait);
 
     if (!ExAcquireResourceSharedLite(fcb->Header.Resource, Wait))
-        return FALSE;
+        return false;
 
     IoSetTopLevelIrp((PIRP)FSRTL_CACHE_TOP_LEVEL_IRP);
 
-    return TRUE;
+    return true;
 }
 
 static void __stdcall release_from_read_ahead(PVOID Context) {

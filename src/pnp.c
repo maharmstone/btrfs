@@ -49,7 +49,7 @@ static NTSTATUS __stdcall pnp_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, 
     InterlockedDecrement(&context->left);
 
     if (context->left == 0)
-        KeSetEvent(&context->Event, 0, FALSE);
+        KeSetEvent(&context->Event, 0, false);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
@@ -61,7 +61,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
     LIST_ENTRY* le;
 
     RtlZeroMemory(&context, sizeof(pnp_context));
-    KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+    KeInitializeEvent(&context.Event, NotificationEvent, false);
 
     num_devices = (ULONG)min(0xffffffff, Vcb->superblock.num_devices);
 
@@ -83,7 +83,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
         if (dev->devobj) {
             context.stripes[i].context = (struct pnp_context*)&context;
 
-            context.stripes[i].Irp = IoAllocateIrp(dev->devobj->StackSize, FALSE);
+            context.stripes[i].Irp = IoAllocateIrp(dev->devobj->StackSize, false);
 
             if (!context.stripes[i].Irp) {
                 uint64_t j;
@@ -107,7 +107,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
 
             context.stripes[i].Irp->UserIosb = &context.stripes[i].iosb;
 
-            IoSetCompletionRoutine(context.stripes[i].Irp, pnp_completion, &context.stripes[i], TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(context.stripes[i].Irp, pnp_completion, &context.stripes[i], true, true, true);
 
             context.stripes[i].Irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
             context.stripes[i].dev = dev;
@@ -129,7 +129,7 @@ static NTSTATUS send_disks_pnp_message(device_extension* Vcb, UCHAR minor) {
         }
     }
 
-    KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+    KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -156,9 +156,9 @@ static NTSTATUS pnp_cancel_remove_device(PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
 
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
-    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
@@ -182,7 +182,7 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
 
-    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
         Status = STATUS_ACCESS_DENIED;
@@ -195,7 +195,7 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         goto end;
     }
 
-    Vcb->removing = TRUE;
+    Vcb->removing = true;
 
     if (Vcb->need_write && !Vcb->readonly) {
         Status = do_write(Vcb, Irp);
@@ -220,7 +220,7 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
 
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
     Status = send_disks_pnp_message(Vcb, IRP_MN_REMOVE_DEVICE);
 
@@ -238,8 +238,8 @@ static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {
         if (Vcb->vde)
             Vcb->vde->mounted_device = NULL;
 
-        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
-        Vcb->removing = TRUE;
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
+        Vcb->removing = true;
         ExReleaseResourceLite(&Vcb->tree_lock);
 
         if (Vcb->open_files == 0)
@@ -255,12 +255,12 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
     if (DeviceObject->Vpb->Flags & VPB_MOUNTED) {
-        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, TRUE);
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
         if (Vcb->vde)
             Vcb->vde->mounted_device = NULL;
 
-        Vcb->removing = TRUE;
+        Vcb->removing = true;
 
         ExReleaseResourceLite(&Vcb->tree_lock);
 
@@ -275,8 +275,8 @@ static NTSTATUS bus_query_capabilities(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PDEVICE_CAPABILITIES dc = IrpSp->Parameters.DeviceCapabilities.Capabilities;
 
-    dc->UniqueID = TRUE;
-    dc->SilentInstall = TRUE;
+    dc->UniqueID = true;
+    dc->SilentInstall = true;
 
     return STATUS_SUCCESS;
 }
@@ -288,7 +288,7 @@ static NTSTATUS bus_query_device_relations(PIRP Irp) {
     ULONG drsize, i;
     DEVICE_RELATIONS* dr;
 
-    ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
+    ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
     num_children = 0;
 
@@ -353,12 +353,12 @@ static NTSTATUS bus_query_hardware_ids(PIRP Irp) {
 static NTSTATUS bus_pnp(bus_device_extension* bde, PIRP Irp) {
     NTSTATUS Status = Irp->IoStatus.Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    BOOL handled = FALSE;
+    bool handled = false;
 
     switch (IrpSp->MinorFunction) {
         case IRP_MN_QUERY_CAPABILITIES:
             Status = bus_query_capabilities(Irp);
-            handled = TRUE;
+            handled = true;
             break;
 
         case IRP_MN_QUERY_DEVICE_RELATIONS:
@@ -366,7 +366,7 @@ static NTSTATUS bus_pnp(bus_device_extension* bde, PIRP Irp) {
                 break;
 
             Status = bus_query_device_relations(Irp);
-            handled = TRUE;
+            handled = true;
             break;
 
         case IRP_MN_QUERY_ID:
@@ -374,7 +374,7 @@ static NTSTATUS bus_pnp(bus_device_extension* bde, PIRP Irp) {
                 break;
 
             Status = bus_query_hardware_ids(Irp);
-            handled = TRUE;
+            handled = true;
             break;
     }
 
@@ -475,7 +475,7 @@ static NTSTATUS __stdcall device_usage_completion(PDEVICE_OBJECT DeviceObject, P
 
     context->Status = Irp->IoStatus.Status;
 
-    KeSetEvent(&context->Event, 0, FALSE);
+    KeSetEvent(&context->Event, 0, false);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
@@ -486,7 +486,7 @@ static NTSTATUS pdo_device_usage_notification(pdo_device_extension* pdode, PIRP 
 
     TRACE("(%p, %p)\n", pdode, Irp);
 
-    ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
+    ExAcquireResourceSharedLite(&pdode->child_lock, true);
 
     le = pdode->children.Flink;
 
@@ -498,7 +498,7 @@ static NTSTATUS pdo_device_usage_notification(pdo_device_extension* pdode, PIRP 
             PIO_STACK_LOCATION IrpSp2;
             device_usage_context context;
 
-            Irp2 = IoAllocateIrp(vc->devobj->StackSize, FALSE);
+            Irp2 = IoAllocateIrp(vc->devobj->StackSize, false);
             if (!Irp2) {
                 ERR("out of memory\n");
                 ExReleaseResourceLite(&pdode->child_lock);
@@ -514,15 +514,15 @@ static NTSTATUS pdo_device_usage_notification(pdo_device_extension* pdode, PIRP 
             context.iosb.Status = STATUS_SUCCESS;
             Irp2->UserIosb = &context.iosb;
 
-            KeInitializeEvent(&context.Event, NotificationEvent, FALSE);
+            KeInitializeEvent(&context.Event, NotificationEvent, false);
             Irp2->UserEvent = &context.Event;
 
-            IoSetCompletionRoutine(Irp2, device_usage_completion, &context, TRUE, TRUE, TRUE);
+            IoSetCompletionRoutine(Irp2, device_usage_completion, &context, true, true, true);
 
             context.Status = IoCallDriver(vc->devobj, Irp2);
 
             if (context.Status == STATUS_PENDING)
-                KeWaitForSingleObject(&context.Event, Executive, KernelMode, FALSE, NULL);
+                KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
 
             if (!NT_SUCCESS(context.Status)) {
                 ERR("IoCallDriver returned %08x\n", context.Status);
@@ -591,7 +591,7 @@ NTSTATUS __stdcall drv_pnp(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     NTSTATUS Status;
-    BOOL top_level;
+    bool top_level;
 
     FsRtlEnterFileSystem();
 

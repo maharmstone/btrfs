@@ -33,8 +33,8 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     if (!ccb)
         return STATUS_INVALID_PARAMETER;
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
+    ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
         if (ccb->lxss) {
@@ -171,7 +171,7 @@ end:
     return Status;
 }
 
-static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, BOOL write, LIST_ENTRY* rollback) {
+static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, bool write, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     ULONG minlen;
     ULONG tlength;
@@ -240,8 +240,8 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
 
         offset.QuadPart = 0;
         tlength = target.Length;
-        Status = write_file2(fcb->Vcb, Irp, offset, target.Buffer, &tlength, FALSE, TRUE,
-                             TRUE, FALSE, FALSE, rollback);
+        Status = write_file2(fcb->Vcb, Irp, offset, target.Buffer, &tlength, false, true,
+                             true, false, false, rollback);
         ExFreePool(target.Buffer);
     } else
         Status = STATUS_SUCCESS;
@@ -261,7 +261,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
-    fcb->inode_item_changed = TRUE;
+    fcb->inode_item_changed = true;
     mark_fcb_dirty(fcb);
 
     if (fileref)
@@ -320,7 +320,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
             fcb->reparse_xattr = buf;
             RtlCopyMemory(buf.Buffer, rdb, buflen);
 
-            fcb->reparse_xattr_changed = TRUE;
+            fcb->reparse_xattr_changed = true;
 
             Status = STATUS_SUCCESS;
         } else { // otherwise, store as file data
@@ -332,7 +332,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
 
             offset.QuadPart = 0;
 
-            Status = write_file2(fcb->Vcb, Irp, offset, rdb, &buflen, FALSE, TRUE, TRUE, FALSE, FALSE, rollback);
+            Status = write_file2(fcb->Vcb, Irp, offset, rdb, &buflen, false, true, true, false, false, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_file2 returned %08x\n", Status);
                 return Status;
@@ -352,12 +352,12 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
             fcb->inode_item.st_mtime = now;
 
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
-        fcb->atts_changed = TRUE;
+        fcb->atts_changed = true;
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
 
-        fcb->inode_item_changed = TRUE;
+        fcb->inode_item_changed = true;
         mark_fcb_dirty(fcb);
     }
 
@@ -416,8 +416,8 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     TRACE("%S\n", file_desc(FileObject));
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
     Status = set_reparse_point2(fcb, rdb, buflen, ccb, fileref, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
@@ -485,8 +485,8 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
     TRACE("%S\n", file_desc(FileObject));
 
@@ -541,7 +541,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         mark_fileref_dirty(fileref);
 
-        fileref->fcb->inode_item_changed = TRUE;
+        fileref->fcb->inode_item_changed = true;
         mark_fcb_dirty(fileref->fcb);
 
         fileref->fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
@@ -559,7 +559,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         }
 
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
-        fcb->atts_changed = TRUE;
+        fcb->atts_changed = true;
 
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
@@ -573,7 +573,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         if (!ccb->user_set_write_time)
             fcb->inode_item.st_mtime = now;
 
-        fcb->inode_item_changed = TRUE;
+        fcb->inode_item_changed = true;
         mark_fcb_dirty(fcb);
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
@@ -585,14 +585,14 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         // FIXME - do we need to check that the reparse tags match?
 
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
-        fcb->atts_changed = TRUE;
+        fcb->atts_changed = true;
 
         if (fcb->reparse_xattr.Buffer) {
             ExFreePool(fcb->reparse_xattr.Buffer);
             fcb->reparse_xattr.Buffer = NULL;
         }
 
-        fcb->reparse_xattr_changed = TRUE;
+        fcb->reparse_xattr_changed = true;
 
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
@@ -606,7 +606,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         if (!ccb->user_set_write_time)
             fcb->inode_item.st_mtime = now;
 
-        fcb->inode_item_changed = TRUE;
+        fcb->inode_item_changed = true;
         mark_fcb_dirty(fcb);
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;

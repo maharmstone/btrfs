@@ -28,7 +28,7 @@ extern LIST_ENTRY pdo_list;
 NTSTATUS RtlUnicodeStringPrintf(PUNICODE_STRING DestinationString, const WCHAR* pszFormat, ...); // not in mingw
 #endif
 
-static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_num) {
+static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_num) {
     NTSTATUS Status;
     HANDLE h;
     UNICODE_STRING us, target;
@@ -48,7 +48,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
     Status = ZwOpenSymbolicLinkObject(&h, GENERIC_READ, &objatt);
     if (!NT_SUCCESS(Status)) {
         ERR("ZwOpenSymbolicLinkObject returned %08x\n", Status);
-        return FALSE;
+        return false;
     }
 
     target.Length = target.MaximumLength = 0;
@@ -57,19 +57,19 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
     if (Status != STATUS_BUFFER_TOO_SMALL) {
         ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
         NtClose(h);
-        return FALSE;
+        return false;
     }
 
     if (retlen == 0) {
         NtClose(h);
-        return FALSE;
+        return false;
     }
 
     target.Buffer = ExAllocatePoolWithTag(NonPagedPool, retlen, ALLOC_TAG);
     if (!target.Buffer) {
         ERR("out of memory\n");
         NtClose(h);
-        return FALSE;
+        return false;
     }
 
     target.Length = target.MaximumLength = (USHORT)retlen;
@@ -79,7 +79,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
         ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
         NtClose(h);
         ExFreePool(target.Buffer);
-        return FALSE;
+        return false;
     }
 
     NtClose(h);
@@ -89,7 +89,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
     if (target.Length <= sizeof(arc_prefix) - sizeof(WCHAR) ||
         RtlCompareMemory(target.Buffer, arc_prefix, sizeof(arc_prefix) - sizeof(WCHAR)) != sizeof(arc_prefix) - sizeof(WCHAR)) {
         ExFreePool(target.Buffer);
-        return FALSE;
+        return false;
     }
 
     s = &target.Buffer[(sizeof(arc_prefix) / sizeof(WCHAR)) - 1];
@@ -97,7 +97,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
 
     if (left == 0 || s[0] < '0' || s[0] > '9') {
         ExFreePool(target.Buffer);
-        return FALSE;
+        return false;
     }
 
     *disk_num = 0;
@@ -112,7 +112,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
     if (left <= (sizeof(arc_middle) / sizeof(WCHAR)) - 1 ||
         RtlCompareMemory(s, arc_middle, sizeof(arc_middle) - sizeof(WCHAR)) != sizeof(arc_middle) - sizeof(WCHAR)) {
         ExFreePool(target.Buffer);
-        return FALSE;
+        return false;
     }
 
     s = &s[(sizeof(arc_middle) / sizeof(WCHAR)) - 1];
@@ -120,7 +120,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
 
     if (left == 0 || s[0] < '0' || s[0] > '9') {
         ExFreePool(target.Buffer);
-        return FALSE;
+        return false;
     }
 
     *partition_num = 0;
@@ -134,7 +134,7 @@ static BOOL get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
 
     ExFreePool(target.Buffer);
 
-    return TRUE;
+    return true;
 }
 
 static void change_symlink(uint32_t disk_num, uint32_t partition_num, BTRFS_UUID* uuid) {
@@ -193,7 +193,7 @@ static void change_symlink(uint32_t disk_num, uint32_t partition_num, BTRFS_UUID
 void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count) {
     uint32_t disk_num, partition_num;
     LIST_ENTRY* le;
-    BOOL done = FALSE;
+    bool done = false;
 
     TRACE("(%p, %p, %u)\n", DriverObject, Context, Count);
 
@@ -202,14 +202,14 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
 
     TRACE("system boot partition is disk %u, partition %u\n", disk_num, partition_num);
 
-    ExAcquireResourceSharedLite(&pdo_list_lock, TRUE);
+    ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
     le = pdo_list.Flink;
     while (le != &pdo_list) {
         LIST_ENTRY* le2;
         pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-        ExAcquireResourceSharedLite(&pdode->child_lock, TRUE);
+        ExAcquireResourceSharedLite(&pdode->child_lock, true);
 
         le2 = pdode->children.Flink;
 
@@ -218,7 +218,7 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
 
             if (vc->disk_num == disk_num && vc->part_num == partition_num) {
                 change_symlink(disk_num, partition_num, &pdode->uuid);
-                done = TRUE;
+                done = true;
                 break;
             }
 

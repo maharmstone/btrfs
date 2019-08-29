@@ -98,7 +98,7 @@ ULONG get_reparse_tag_fcb(fcb* fcb) {
     return tag;
 }
 
-ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type, ULONG atts, BOOL lxss, PIRP Irp) {
+ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type, ULONG atts, bool lxss, PIRP Irp) {
     fcb* fcb;
     ULONG tag = 0;
     NTSTATUS Status;
@@ -122,13 +122,13 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8
     if (!(atts & FILE_ATTRIBUTE_REPARSE_POINT))
         return 0;
 
-    Status = open_fcb(Vcb, subvol, inode, type, NULL, FALSE, NULL, &fcb, PagedPool, Irp);
+    Status = open_fcb(Vcb, subvol, inode, type, NULL, false, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08x\n", Status);
         return 0;
     }
 
-    ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
     tag = get_reparse_tag_fcb(fcb);
 
@@ -166,7 +166,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, uint64_t inode, PIR
                     break;
 
                 eainfo = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)eainfo) + eainfo->NextEntryOffset);
-            } while (TRUE);
+            } while (true);
 
             ExFreePool(eadata);
 
@@ -227,13 +227,13 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                     win_time_to_unix(time, &ii.otime);
                     ii.st_atime = ii.st_mtime = ii.st_ctime = ii.otime;
                 } else {
-                    BOOL found = FALSE;
+                    bool found = false;
 
                     if (de->dc && de->dc->fileref && de->dc->fileref->fcb) {
                         ii = de->dc->fileref->fcb->inode_item;
                         atts = de->dc->fileref->fcb->atts;
                         ealen = de->dc->fileref->fcb->ealen;
-                        found = TRUE;
+                        found = true;
                     }
 
                     if (!found) {
@@ -244,7 +244,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                         searchkey.obj_type = TYPE_INODE_ITEM;
                         searchkey.offset = 0xffffffffffffffff;
 
-                        Status = find_item(fcb->Vcb, r, &tp, &searchkey, FALSE, Irp);
+                        Status = find_item(fcb->Vcb, r, &tp, &searchkey, false, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("error - find_item returned %08x\n", Status);
                             return Status;
@@ -268,9 +268,9 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                             IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdExtdDirectoryInformation ||
                             IrpSp->Parameters.QueryDirectory.FileInformationClass == FileIdExtdBothDirectoryInformation) {
 
-                            BOOL dotfile = de->name.Length > sizeof(WCHAR) && de->name.Buffer[0] == '.';
+                            bool dotfile = de->name.Length > sizeof(WCHAR) && de->name.Buffer[0] == '.';
 
-                            atts = get_file_attributes(fcb->Vcb, r, inode, de->type, dotfile, FALSE, Irp);
+                            atts = get_file_attributes(fcb->Vcb, r, inode, de->type, dotfile, false, Irp);
                         }
 
                         if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
@@ -742,7 +742,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     uint8_t *curitem, *lastitem;
     LONG length;
     ULONG count;
-    BOOL has_wildcard = FALSE, specific_file = FALSE, initial;
+    bool has_wildcard = false, specific_file = false, initial;
     dir_entry de;
     uint64_t newoffset;
     dir_child* dc = NULL;
@@ -816,8 +816,8 @@ static NTSTATUS query_directory(PIRP Irp) {
             ccb->query_string.Buffer = NULL;
         }
 
-        ccb->has_wildcard = FALSE;
-        ccb->specific_file = FALSE;
+        ccb->has_wildcard = false;
+        ccb->specific_file = false;
     }
 
     initial = !ccb->query_string.Buffer;
@@ -826,11 +826,11 @@ static NTSTATUS query_directory(PIRP Irp) {
         TRACE("QD filename: %.*S\n", IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
 
         if (IrpSp->Parameters.QueryDirectory.FileName->Length > sizeof(WCHAR) || IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != L'*') {
-            specific_file = TRUE;
+            specific_file = true;
 
             if (FsRtlDoesNameContainWildCards(IrpSp->Parameters.QueryDirectory.FileName)) {
-                has_wildcard = TRUE;
-                specific_file = FALSE;
+                has_wildcard = true;
+                specific_file = false;
             }
         }
 
@@ -838,7 +838,7 @@ static NTSTATUS query_directory(PIRP Irp) {
             RtlFreeUnicodeString(&ccb->query_string);
 
         if (has_wildcard)
-            RtlUpcaseUnicodeString(&ccb->query_string, IrpSp->Parameters.QueryDirectory.FileName, TRUE);
+            RtlUpcaseUnicodeString(&ccb->query_string, IrpSp->Parameters.QueryDirectory.FileName, true);
         else {
             ccb->query_string.Buffer = ExAllocatePoolWithTag(PagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length, ALLOC_TAG);
             if (!ccb->query_string.Buffer) {
@@ -857,7 +857,7 @@ static NTSTATUS query_directory(PIRP Irp) {
         specific_file = ccb->specific_file;
 
         if (!(IrpSp->Flags & SL_RESTART_SCAN)) {
-            initial = FALSE;
+            initial = false;
 
             if (specific_file)
                 return STATUS_NO_MORE_FILES;
@@ -870,9 +870,9 @@ static NTSTATUS query_directory(PIRP Irp) {
 
     newoffset = ccb->query_dir_offset;
 
-    ExAcquireResourceSharedLite(&Vcb->tree_lock, TRUE);
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
-    ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, TRUE);
+    ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, true);
 
     Status = next_dir_entry(fileref, &newoffset, &de, &dc);
 
@@ -895,7 +895,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     length = IrpSp->Parameters.QueryDirectory.Length;
 
     if (specific_file) {
-        BOOL found = FALSE;
+        bool found = false;
         UNICODE_STRING us;
         LIST_ENTRY* le;
         uint32_t hash;
@@ -904,7 +904,7 @@ static NTSTATUS query_directory(PIRP Irp) {
         us.Buffer = NULL;
 
         if (!ccb->case_sensitive) {
-            Status = RtlUpcaseUnicodeString(&us, &ccb->query_string, TRUE);
+            Status = RtlUpcaseUnicodeString(&us, &ccb->query_string, true);
             if (!NT_SUCCESS(Status)) {
                 ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
                 goto end;
@@ -924,7 +924,7 @@ static NTSTATUS query_directory(PIRP Irp) {
 
                     if (dc2->hash == hash) {
                         if (dc2->name.Length == ccb->query_string.Length && RtlCompareMemory(dc2->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
-                            found = TRUE;
+                            found = true;
 
                             de.key = dc2->key;
                             de.name = dc2->name;
@@ -948,7 +948,7 @@ static NTSTATUS query_directory(PIRP Irp) {
 
                     if (dc2->hash_uc == hash) {
                         if (dc2->name_uc.Length == us.Length && RtlCompareMemory(dc2->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
-                            found = TRUE;
+                            found = true;
 
                             de.key = dc2->key;
                             de.name = dc2->name;
@@ -1098,8 +1098,8 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
         return STATUS_ACCESS_DENIED;
     }
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, TRUE);
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
     if (fcb->type != BTRFS_TYPE_DIRECTORY) {
         Status = STATUS_INVALID_PARAMETER;
@@ -1138,7 +1138,7 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
     }
 
     FsRtlNotifyFilterChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext2, (PSTRING)&ccb->filename,
-                                     IrpSp->Flags & SL_WATCH_TREE, FALSE, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp,
+                                     IrpSp->Flags & SL_WATCH_TREE, false, IrpSp->Parameters.NotifyDirectory.CompletionFilter, Irp,
                                      NULL, NULL, NULL);
 
     Status = STATUS_PENDING;
@@ -1156,7 +1156,7 @@ NTSTATUS __stdcall drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     ULONG func;
-    BOOL top_level;
+    bool top_level;
     device_extension* Vcb = DeviceObject->DeviceExtension;
 
     FsRtlEnterFileSystem();

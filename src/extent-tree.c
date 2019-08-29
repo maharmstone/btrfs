@@ -181,7 +181,7 @@ static void sort_extent_refs(LIST_ENTRY* extent_refs) {
     while (!IsListEmpty(extent_refs)) {
         extent_ref* er = CONTAINING_RECORD(RemoveHeadList(extent_refs), extent_ref, list_entry);
         LIST_ENTRY* le;
-        BOOL inserted = FALSE;
+        bool inserted = false;
 
         le = newlist.Flink;
         while (le != &newlist) {
@@ -189,7 +189,7 @@ static void sort_extent_refs(LIST_ENTRY* extent_refs) {
 
             if (er->type < er2->type || (er->type == er2->type && er->hash > er2->hash)) {
                 InsertHeadList(le->Blink, &er->list_entry);
-                inserted = TRUE;
+                inserted = true;
                 break;
             }
 
@@ -212,7 +212,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, u
     LIST_ENTRY *le, *next_le;
     uint64_t refcount;
     uint16_t inline_len;
-    BOOL all_inline = TRUE;
+    bool all_inline = true;
     extent_ref* first_noninline = NULL;
     EXTENT_ITEM* ei;
     uint8_t* siptr;
@@ -252,7 +252,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, u
 
             if (all_inline) {
                 if ((uint16_t)(inline_len + 1 + extlen) > Vcb->superblock.node_size >> 2) {
-                    all_inline = FALSE;
+                    all_inline = false;
                     first_noninline = er;
                 } else
                     inline_len += extlen + 1;
@@ -368,7 +368,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, u
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, BOOL tree, KEY* firstitem, uint8_t level, PIRP Irp) {
+static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, bool tree, KEY* firstitem, uint8_t level, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -381,7 +381,7 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, BOOL
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08x\n", Status);
         return Status;
@@ -400,7 +400,7 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, BOOL
         return Status;
     }
 
-    while (find_next_item(Vcb, &tp, &next_tp, FALSE, Irp)) {
+    while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
         tp = next_tp;
 
         if (tp.item->key.obj_id == address && tp.item->key.obj_type == TYPE_EXTENT_REF_V0 && tp.item->size >= sizeof(EXTENT_REF_V0)) {
@@ -461,8 +461,8 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     uint64_t inline_rc, offset;
     uint8_t* data2;
     EXTENT_ITEM* newei;
-    BOOL skinny;
-    BOOL is_tree = type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF;
+    bool skinny;
+    bool is_tree = type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF;
 
     if (datalen == 0) {
         ERR("unrecognized extent type %x\n", type);
@@ -473,7 +473,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -751,7 +751,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
         searchkey.obj_type = type;
         searchkey.offset = offset;
 
-        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
+        Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -900,7 +900,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 }
 
 NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem,
-                                  uint8_t level, uint64_t parent, BOOL superseded, PIRP Irp) {
+                                  uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, tp2;
@@ -910,21 +910,21 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     uint8_t* ptr;
     uint32_t rc = data ? get_extent_data_refcount(type, data) : 1;
     ULONG datalen = get_extent_data_len(type);
-    BOOL is_tree = (type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF), skinny = FALSE;
+    bool is_tree = (type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF), skinny = false;
 
     if (is_tree && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
         searchkey.obj_id = address;
         searchkey.obj_type = TYPE_METADATA_ITEM;
         searchkey.offset = 0xffffffffffffffff;
 
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
         }
 
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
-            skinny = TRUE;
+            skinny = true;
     }
 
     if (!skinny) {
@@ -932,7 +932,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
         searchkey.obj_type = TYPE_EXTENT_ITEM;
         searchkey.offset = 0xffffffffffffffff;
 
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             return Status;
@@ -1258,7 +1258,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     searchkey.obj_type = type;
     searchkey.offset = (type == TYPE_SHARED_DATA_REF || type == TYPE_EXTENT_REF_V0) ? parent : get_extent_hash(type, data);
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return Status;
@@ -1545,7 +1545,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 }
 
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode,
-                                       uint64_t offset, uint32_t refcount, BOOL superseded, PIRP Irp) {
+                                       uint64_t offset, uint32_t refcount, bool superseded, PIRP Irp) {
     EXTENT_DATA_REF edr;
 
     edr.root = root;
@@ -1562,7 +1562,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, 
 
     tbr.offset = root;
 
-    return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, FALSE, Irp);
+    return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, false, Irp);
 }
 
 static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, PIRP Irp) {
@@ -1574,7 +1574,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -1628,7 +1628,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     searchkey.obj_type = TYPE_EXTENT_DATA_REF;
     searchkey.offset = get_extent_data_ref_hash2(root, objid, offset);
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -1657,7 +1657,7 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -1693,7 +1693,7 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
     return ei->refcount;
 }
 
-BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp) {
+bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -1701,37 +1701,37 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     uint32_t len;
     EXTENT_ITEM* ei;
     uint8_t* ptr;
-    BOOL b;
+    bool b;
 
     rc = get_extent_refcount(Vcb, address, size, Irp);
 
     if (rc == 1)
-        return TRUE;
+        return true;
 
     if (rc == 0)
-        return FALSE;
+        return false;
 
     searchkey.obj_id = address;
     searchkey.obj_type = TYPE_EXTENT_ITEM;
     searchkey.offset = size;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         WARN("error - find_item returned %08x\n", Status);
-        return FALSE;
+        return false;
     }
 
     if (keycmp(tp.item->key, searchkey)) {
         WARN("could not find (%I64x,%x,%I64x)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
-        return FALSE;
+        return false;
     }
 
     if (tp.item->size == sizeof(EXTENT_ITEM_V0))
-        return FALSE;
+        return false;
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
         WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
-        return FALSE;
+        return false;
     }
 
     ei = (EXTENT_ITEM*)tp.item->data;
@@ -1742,7 +1742,7 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
             WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
-            return FALSE;
+            return false;
         }
 
         len -= sizeof(EXTENT_ITEM2);
@@ -1762,12 +1762,12 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
 
         if (sectlen > len) {
             WARN("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
-            return FALSE;
+            return false;
         }
 
         if (sectlen == 0) {
             WARN("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
-            return FALSE;
+            return false;
         }
 
         if (secttype == TYPE_EXTENT_DATA_REF) {
@@ -1778,9 +1778,9 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
                 inode = sectedr->objid;
                 offset = sectedr->offset;
             } else if (root != sectedr->root || inode != sectedr->objid || offset != sectedr->offset)
-                return FALSE;
+                return false;
         } else
-            return FALSE;
+            return false;
 
         len -= sectlen;
         ptr += sizeof(uint8_t) + sectlen;
@@ -1788,12 +1788,12 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     }
 
     if (rcrun == rc)
-        return TRUE;
+        return true;
 
     // Loop through non-inlines if some refs still unaccounted for
 
     do {
-        b = find_next_item(Vcb, &tp, &next_tp, FALSE, Irp);
+        b = find_next_item(Vcb, &tp, &next_tp, false, Irp);
 
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == TYPE_EXTENT_DATA_REF) {
             EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
@@ -1801,7 +1801,7 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
             if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
                 WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                      tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
-                return FALSE;
+                return false;
             }
 
             if (root == 0 && inode == 0) {
@@ -1809,13 +1809,13 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
                 inode = edr->objid;
                 offset = edr->offset;
             } else if (root != edr->root || inode != edr->objid || offset != edr->offset)
-                return FALSE;
+                return false;
 
             rcrun += edr->count;
         }
 
         if (rcrun == rc)
-            return TRUE;
+            return true;
 
         if (b) {
             tp = next_tp;
@@ -1826,9 +1826,9 @@ BOOL is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     } while (b);
 
     // If we reach this point, there's still some refs unaccounted for somewhere.
-    // Return FALSE in case we mess things up elsewhere.
+    // Return false in case we mess things up elsewhere.
 
-    return FALSE;
+    return false;
 }
 
 uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
@@ -1841,7 +1841,7 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -1882,7 +1882,7 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return;
@@ -1912,7 +1912,7 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     ei->flags = flags;
 }
 
-static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint64_t size, BOOL no_csum) {
+static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint64_t size, bool no_csum) {
     LIST_ENTRY* le;
     changed_extent* ce;
 
@@ -1938,7 +1938,7 @@ static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint6
     ce->count = 0;
     ce->old_count = 0;
     ce->no_csum = no_csum;
-    ce->superseded = FALSE;
+    ce->superseded = false;
     InitializeListHead(&ce->refs);
     InitializeListHead(&ce->old_refs);
 
@@ -1948,7 +1948,7 @@ static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint6
 }
 
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, int32_t count,
-                                   BOOL no_csum, BOOL superseded, PIRP Irp) {
+                                   bool no_csum, bool superseded, PIRP Irp) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -1957,7 +1957,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
     traverse_ptr tp;
     uint32_t old_count;
 
-    ExAcquireResourceExclusiveLite(&c->changed_extents_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&c->changed_extents_lock, true);
 
     ce = get_changed_extent_item(c, address, size, no_csum);
 
@@ -1972,7 +1972,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
         searchkey.obj_type = TYPE_EXTENT_ITEM;
         searchkey.offset = 0xffffffffffffffff;
 
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08x\n", Status);
             goto end;
@@ -2015,7 +2015,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
             Status = STATUS_SUCCESS;
 
             if (superseded)
-                ce->superseded = TRUE;
+                ce->superseded = true;
 
             goto end;
         }
@@ -2062,7 +2062,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
     ce->count += count;
 
     if (superseded)
-        ce->superseded = TRUE;
+        ce->superseded = true;
 
     Status = STATUS_SUCCESS;
 
@@ -2072,7 +2072,7 @@ end:
     return Status;
 }
 
-void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, BOOL no_csum) {
+void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum) {
     changed_extent* ce;
     changed_extent_ref* cer;
     LIST_ENTRY* le;
@@ -2128,7 +2128,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -2204,7 +2204,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     searchkey.obj_type = TYPE_SHARED_BLOCK_REF;
     searchkey.offset = parent;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -2229,7 +2229,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     searchkey.obj_type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;
@@ -2289,7 +2289,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     searchkey.obj_type = TYPE_SHARED_DATA_REF;
     searchkey.offset = parent;
 
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, FALSE, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08x\n", Status);
         return 0;

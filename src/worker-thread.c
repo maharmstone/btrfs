@@ -26,21 +26,21 @@ typedef struct {
 NTSTATUS do_read_job(PIRP Irp) {
     NTSTATUS Status;
     ULONG bytes_read;
-    BOOL top_level = is_top_level(Irp);
+    bool top_level = is_top_level(Irp);
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
-    BOOL fcb_lock = FALSE;
+    bool fcb_lock = false;
 
     Irp->IoStatus.Information = 0;
 
     if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
-        ExAcquireResourceSharedLite(fcb->Header.Resource, TRUE);
-        fcb_lock = TRUE;
+        ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+        fcb_lock = true;
     }
 
     try {
-        Status = do_read(Irp, TRUE, &bytes_read);
+        Status = do_read(Irp, true, &bytes_read);
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
     }
@@ -66,11 +66,11 @@ NTSTATUS do_read_job(PIRP Irp) {
 }
 
 NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp) {
-    BOOL top_level = is_top_level(Irp);
+    bool top_level = is_top_level(Irp);
     NTSTATUS Status;
 
     try {
-        Status = write_file(Vcb, Irp, TRUE, TRUE);
+        Status = write_file(Vcb, Irp, true, true);
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
     }
@@ -106,13 +106,13 @@ static void __stdcall do_job(void* context) {
     ExFreePool(ji);
 }
 
-BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
+bool add_thread_job(device_extension* Vcb, PIRP Irp) {
     job_info* ji;
 
     ji = ExAllocatePoolWithTag(NonPagedPool, sizeof(job_info), ALLOC_TAG);
     if (!ji) {
         ERR("out of memory\n");
-        return FALSE;
+        return false;
     }
 
     ji->Vcb = Vcb;
@@ -133,15 +133,15 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
         } else {
             ERR("unexpected major function %u\n", IrpSp->MajorFunction);
             ExFreePool(ji);
-            return FALSE;
+            return false;
         }
 
-        Mdl = IoAllocateMdl(Irp->UserBuffer, len, FALSE, FALSE, Irp);
+        Mdl = IoAllocateMdl(Irp->UserBuffer, len, false, false, Irp);
 
         if (!Mdl) {
             ERR("out of memory\n");
             ExFreePool(ji);
-            return FALSE;
+            return false;
         }
 
         try {
@@ -153,12 +153,12 @@ BOOL add_thread_job(device_extension* Vcb, PIRP Irp) {
             Irp->MdlAddress = NULL;
             ExFreePool(ji);
 
-            return FALSE;
+            return false;
         }
     }
 
     ExInitializeWorkItem(&ji->item, do_job, ji);
     ExQueueWorkItem(&ji->item, DelayedWorkQueue);
 
-    return TRUE;
+    return true;
 }

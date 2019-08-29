@@ -48,7 +48,7 @@ typedef struct {
     uint8_t* out;
     uint32_t outlen;
     uint32_t outpos;
-    BOOL error;
+    bool error;
     void* wrkmem;
 } lzo_stream;
 
@@ -96,7 +96,7 @@ static uint8_t lzo_nextbyte(lzo_stream* stream) {
     uint8_t c;
 
     if (stream->inpos >= stream->inlen) {
-        stream->error = TRUE;
+        stream->error = true;
         return 0;
     }
 
@@ -124,12 +124,12 @@ static int lzo_len(lzo_stream* stream, int byte, int mask) {
 
 static void lzo_copy(lzo_stream* stream, int len) {
     if (stream->inpos + len > stream->inlen) {
-        stream->error = TRUE;
+        stream->error = true;
         return;
     }
 
     if (stream->outpos + len > stream->outlen) {
-        stream->error = TRUE;
+        stream->error = true;
         return;
     }
 
@@ -143,12 +143,12 @@ static void lzo_copy(lzo_stream* stream, int len) {
 
 static void lzo_copyback(lzo_stream* stream, uint32_t back, int len) {
     if (stream->outpos < back) {
-        stream->error = TRUE;
+        stream->error = true;
         return;
     }
 
     if (stream->outpos + len > stream->outlen) {
-        stream->error = TRUE;
+        stream->error = true;
         return;
     }
 
@@ -162,9 +162,9 @@ static void lzo_copyback(lzo_stream* stream, uint32_t back, int len) {
 static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
     uint8_t byte;
     uint32_t len, back;
-    BOOL backcopy = FALSE;
+    bool backcopy = false;
 
-    stream->error = FALSE;
+    stream->error = false;
 
     byte = lzo_nextbyte(stream);
     if (stream->error) return STATUS_INTERNAL_ERROR;
@@ -184,7 +184,7 @@ static NTSTATUS do_lzo_decompress(lzo_stream* stream) {
 
     while (1) {
         if (byte >> 4) {
-            backcopy = TRUE;
+            backcopy = true;
             if (byte >> 6) {
                 len = (byte >> 5) - 1;
                 back = (lzo_nextbyte(stream) << 3) + ((byte >> 2) & 7) + 1;
@@ -371,7 +371,7 @@ NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     uint8_t compression;
     uint32_t comp_length;
@@ -439,7 +439,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
         comp_data = data;
         compression = BTRFS_COMPRESSION_NONE;
 
-        *compressed = FALSE;
+        *compressed = false;
     } else {
         uint32_t cl;
 
@@ -449,10 +449,10 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
 
         RtlZeroMemory(comp_data + cl, comp_length - cl);
 
-        *compressed = TRUE;
+        *compressed = true;
     }
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, true);
 
     le = fcb->Vcb->chunks.Flink;
     while (le != &fcb->Vcb->chunks) {
@@ -462,7 +462,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
             acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, false, comp_data, Irp, rollback, compression, end_data - start_data, false, 0)) {
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -480,9 +480,9 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, true);
 
-    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, FALSE);
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, false);
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
@@ -499,7 +499,7 @@ static NTSTATUS zlib_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
         acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, false, comp_data, Irp, rollback, compression, end_data - start_data, false, 0)) {
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
 
@@ -759,13 +759,13 @@ static __inline uint32_t lzo_max_outlen(uint32_t inlen) {
     return inlen + (inlen / 16) + 64 + 3; // formula comes from LZO.FAQ
 }
 
-static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     uint8_t compression;
     uint64_t comp_length;
     ULONG comp_data_len, num_pages, i;
     uint8_t* comp_data;
-    BOOL skip_compression = FALSE;
+    bool skip_compression = false;
     lzo_stream stream;
     uint32_t* out_size;
     LIST_ENTRY* le;
@@ -814,7 +814,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
         Status = lzo1x_1_compress(&stream);
         if (!NT_SUCCESS(Status)) {
             ERR("lzo1x_1_compress returned %08x\n", Status);
-            skip_compression = TRUE;
+            skip_compression = true;
             break;
         }
 
@@ -840,17 +840,17 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
         comp_data = data;
         compression = BTRFS_COMPRESSION_NONE;
 
-        *compressed = FALSE;
+        *compressed = false;
     } else {
         compression = BTRFS_COMPRESSION_LZO;
         comp_length = sector_align(*out_size, fcb->Vcb->superblock.sector_size);
 
         RtlZeroMemory(comp_data + *out_size, (ULONG)(comp_length - *out_size));
 
-        *compressed = TRUE;
+        *compressed = true;
     }
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, true);
 
     le = fcb->Vcb->chunks.Flink;
     while (le != &fcb->Vcb->chunks) {
@@ -860,7 +860,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
             acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, false, comp_data, Irp, rollback, compression, end_data - start_data, false, 0)) {
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -878,9 +878,9 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, true);
 
-    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, FALSE);
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, false);
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
@@ -897,7 +897,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
         acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, false, comp_data, Irp, rollback, compression, end_data - start_data, false, 0)) {
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
 
@@ -916,7 +916,7 @@ static NTSTATUS lzo_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     uint8_t compression;
     uint32_t comp_length;
@@ -1003,7 +1003,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
         comp_data = data;
         compression = BTRFS_COMPRESSION_NONE;
 
-        *compressed = FALSE;
+        *compressed = false;
     } else {
         uint32_t cl;
 
@@ -1013,10 +1013,10 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
 
         RtlZeroMemory(comp_data + cl, comp_length - cl);
 
-        *compressed = TRUE;
+        *compressed = true;
     }
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, true);
 
     le = fcb->Vcb->chunks.Flink;
     while (le != &fcb->Vcb->chunks) {
@@ -1026,7 +1026,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
             acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+                if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, false, comp_data, Irp, rollback, compression, end_data - start_data, false, 0)) {
                     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
                     if (compression != BTRFS_COMPRESSION_NONE)
@@ -1044,9 +1044,9 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
-    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, TRUE);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, true);
 
-    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, FALSE);
+    Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c, false);
 
     ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
@@ -1063,7 +1063,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
         acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == fcb->Vcb->data_flags && (c->chunk_item->size - c->used) >= comp_length) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, FALSE, comp_data, Irp, rollback, compression, end_data - start_data, FALSE, 0)) {
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start_data, comp_length, false, comp_data, Irp, rollback, compression, end_data - start_data, false, 0)) {
                 if (compression != BTRFS_COMPRESSION_NONE)
                     ExFreePool(comp_data);
 
@@ -1082,7 +1082,7 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
     return STATUS_DISK_FULL;
 }
 
-NTSTATUS write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, BOOL* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback) {
     uint8_t type;
 
     if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)

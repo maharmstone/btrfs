@@ -231,7 +231,7 @@ NTSTATUS uid_to_sid(uint32_t uid, PSID* sid) {
     sid_header* sh;
     UCHAR els;
 
-    ExAcquireResourceSharedLite(&mapping_lock, TRUE);
+    ExAcquireResourceSharedLite(&mapping_lock, true);
 
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
@@ -311,7 +311,7 @@ uint32_t sid_to_uid(PSID sid) {
     LIST_ENTRY* le;
     sid_header* sh = sid;
 
-    ExAcquireResourceSharedLite(&mapping_lock, TRUE);
+    ExAcquireResourceSharedLite(&mapping_lock, true);
 
     le = uid_map_list.Flink;
     while (le != &uid_map_list) {
@@ -432,7 +432,7 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-    RtlSetOwnerSecurityDescriptor(&sd, usersid, FALSE);
+    RtlSetOwnerSecurityDescriptor(&sd, usersid, false);
 
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
@@ -446,7 +446,7 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-    RtlSetGroupSecurityDescriptor(&sd, groupsid, FALSE);
+    RtlSetGroupSecurityDescriptor(&sd, groupsid, false);
 
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetGroupSecurityDescriptor returned %08x\n", Status);
@@ -460,7 +460,7 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-    Status = RtlSetDaclSecurityDescriptor(&sd, TRUE, acl, FALSE);
+    Status = RtlSetDaclSecurityDescriptor(&sd, true, acl, false);
 
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetDaclSecurityDescriptor returned %08x\n", Status);
@@ -508,7 +508,7 @@ end:
         ExFreePool(groupsid);
 }
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp) {
+void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     NTSTATUS Status;
     PSID usersid = NULL, groupsid = NULL;
     SECURITY_SUBJECT_CONTEXT subjcont;
@@ -536,7 +536,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp) {
         return;
     }
 
-    RtlSetOwnerSecurityDescriptor(&fcb->sd, usersid, FALSE);
+    RtlSetOwnerSecurityDescriptor(&fcb->sd, usersid, false);
 
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
@@ -544,7 +544,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, BOOL look_for_xattr, PIRP Irp) {
         return;
     }
 
-    RtlSetGroupSecurityDescriptor(&fcb->sd, groupsid, FALSE);
+    RtlSetGroupSecurityDescriptor(&fcb->sd, groupsid, false);
 
     ExFreePool(usersid);
     ExFreePool(groupsid);
@@ -584,7 +584,7 @@ NTSTATUS __stdcall drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG buflen;
-    BOOL top_level;
+    bool top_level;
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
 
@@ -696,7 +696,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
     if (!fcb || !ccb)
         return STATUS_INVALID_PARAMETER;
 
-    ExAcquireResourceExclusiveLite(fcb->Header.Resource, TRUE);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
     if (is_subvol_readonly(fcb->subvol, Irp)) {
         Status = STATUS_ACCESS_DENIED;
@@ -724,9 +724,9 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
 
     fcb->inode_item.sequence++;
 
-    fcb->sd_dirty = TRUE;
-    fcb->sd_deleted = FALSE;
-    fcb->inode_item_changed = TRUE;
+    fcb->sd_dirty = true;
+    fcb->sd_deleted = false;
+    fcb->inode_item_changed = true;
 
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
@@ -750,7 +750,7 @@ NTSTATUS __stdcall drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
     ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     ULONG access_req = 0;
-    BOOL top_level;
+    bool top_level;
 
     FsRtlEnterFileSystem();
 
@@ -820,7 +820,7 @@ end:
     return Status;
 }
 
-static BOOL search_for_gid(fcb* fcb, PSID sid) {
+static bool search_for_gid(fcb* fcb, PSID sid) {
     LIST_ENTRY* le;
 
     le = gid_map_list.Flink;
@@ -829,13 +829,13 @@ static BOOL search_for_gid(fcb* fcb, PSID sid) {
 
         if (RtlEqualSid(sid, gm->sid)) {
             fcb->inode_item.st_gid = gm->gid;
-            return TRUE;
+            return true;
         }
 
         le = le->Flink;
     }
 
-    return FALSE;
+    return false;
 }
 
 void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT subjcont) {
@@ -849,7 +849,7 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
         return;
     }
 
-    ExAcquireResourceSharedLite(&mapping_lock, TRUE);
+    ExAcquireResourceSharedLite(&mapping_lock, true);
 
     if (!subjcont || !subjcont->PrimaryToken || IsListEmpty(&gid_map_list)) {
         ExReleaseResourceLite(&mapping_lock);
