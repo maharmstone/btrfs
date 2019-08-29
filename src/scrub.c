@@ -3018,7 +3018,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, B
                     goto end;
                 }
 
-                bmplen = size / Vcb->superblock.sector_size;
+                bmplen = (ULONG)(size / Vcb->superblock.sector_size);
 
                 bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)(sector_align((bmplen >> 3) + 1, sizeof(ULONG))), ALLOC_TAG);
                 if (!bmparr) {
