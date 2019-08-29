@@ -3945,6 +3945,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 #ifdef DEBUG_PARANOID
     uint64_t last_off;
 #endif
+    BOOL extents_changed = FALSE;
 
     last_cow_start = 0;
 
@@ -3970,6 +3971,8 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
             if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == EXTENT_TYPE_PREALLOC) && ext->unique && ed->compression == BTRFS_COMPRESSION_NONE) {
                 if (max(last_cow_start, start + written) < ext->offset) {
                     uint64_t start_write = max(last_cow_start, start + written);
+
+                    extents_changed = TRUE;
 
                     Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -4013,6 +4016,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                                   &ext->csum[(start + written - ext->offset) / fcb->Vcb->superblock.sector_size]);
 
                         ext->inserted = TRUE;
+                        extents_changed = TRUE;
                     }
 
                     written += write_len;
@@ -4029,6 +4033,8 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                         ERR("do_write_file_prealloc returned %08x\n", Status);
                         return Status;
                     }
+
+                    extents_changed = TRUE;
 
                     written += write_len;
                     length -= write_len;
@@ -4047,6 +4053,8 @@ nextitem:
 
     if (length > 0) {
         uint64_t start_write = max(last_cow_start, start + written);
+
+        extents_changed = TRUE;
 
         Status = excise_extents(fcb->Vcb, fcb, start_write, end_data, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
@@ -4084,8 +4092,10 @@ nextitem:
     }
 #endif
 
-    fcb->extents_changed = TRUE;
-    mark_fcb_dirty(fcb);
+    if (extents_changed) {
+        fcb->extents_changed = TRUE;
+        mark_fcb_dirty(fcb);
+    }
 
     return STATUS_SUCCESS;
 }
