@@ -1825,7 +1825,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, BOOL* change
 
         dr->newchunk = newchunk;
 
-        bmplen = dr->size / Vcb->superblock.sector_size;
+        bmplen = (ULONG)(dr->size / Vcb->superblock.sector_size);
 
         bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align(bmplen + 1, sizeof(ULONG)), ALLOC_TAG);
         if (!bmparr) {
