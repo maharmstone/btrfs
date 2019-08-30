@@ -40,21 +40,21 @@
 typedef struct {
     uint64_t subvol;
     uint64_t inode;
-    bool top;
+    BOOL top;
 } btrfs_get_file_ids;
 
 typedef struct {
     HANDLE subvol;
-    bool readonly;
-    bool posix;
+    BOOL readonly;
+    BOOL posix;
     uint16_t namelen;
     WCHAR name[1];
 } btrfs_create_snapshot;
 
 typedef struct {
     void* POINTER_32 subvol;
-    bool readonly;
-    bool posix;
+    BOOL readonly;
+    BOOL posix;
     uint16_t namelen;
     WCHAR name[1];
 } btrfs_create_snapshot32;
@@ -67,7 +67,7 @@ typedef struct {
 typedef struct {
     uint64_t subvol;
     uint64_t inode;
-    bool top;
+    BOOL top;
     uint8_t type;
     uint32_t st_uid;
     uint32_t st_gid;
@@ -86,15 +86,15 @@ typedef struct {
 
 typedef struct {
     uint64_t flags;
-    bool flags_changed;
+    BOOL flags_changed;
     uint32_t st_uid;
-    bool uid_changed;
+    BOOL uid_changed;
     uint32_t st_gid;
-    bool gid_changed;
+    BOOL gid_changed;
     uint32_t st_mode;
-    bool mode_changed;
+    BOOL mode_changed;
     uint8_t compression_type;
-    bool compression_type_changed;
+    BOOL compression_type_changed;
 } btrfs_set_inode_info;
 
 typedef struct {
@@ -102,8 +102,8 @@ typedef struct {
     uint64_t dev_id;
     uint64_t size;
     uint64_t max_size;
-    bool readonly;
-    bool missing;
+    BOOL readonly;
+    BOOL missing;
     ULONG device_number;
     ULONG partition_number;
     uint64_t stats[5];
@@ -178,7 +178,7 @@ typedef struct {
 
 typedef struct {
     uint8_t uuid[16];
-    bool missing;
+    BOOL missing;
     USHORT name_length;
     WCHAR name[1];
 } btrfs_filesystem_device;
@@ -198,9 +198,9 @@ typedef struct {
     uint32_t next_entry;
     uint64_t address;
     uint64_t device;
-    bool recovered;
-    bool is_metadata;
-    bool parity;
+    BOOL recovered;
+    BOOL is_metadata;
+    BOOL parity;
 
     union {
         struct {
@@ -251,8 +251,8 @@ typedef struct {
 } btrfs_set_xattr;
 
 typedef struct {
-    bool readonly;
-    bool posix;
+    BOOL readonly;
+    BOOL posix;
     USHORT namelen;
     WCHAR name[1];
 } btrfs_create_subvol;
