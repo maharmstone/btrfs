@@ -4158,7 +4158,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;
-    bool paging_lock = false, fcb_lock = false, tree_lock = false, pagefile;
+    bool paging_lock = false, acquired_fcb_lock = false, acquired_tree_lock = false, pagefile;
     ULONG filter = 0;
 
     TRACE("(%p, %p, %I64x, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
@@ -4228,7 +4228,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             Status = STATUS_PENDING;
             goto end;
         } else
-            tree_lock = true;
+            acquired_tree_lock = true;
     }
 
     if (no_cache) {
@@ -4237,13 +4237,13 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 Status = STATUS_PENDING;
                 goto end;
             } else
-                fcb_lock = true;
+                acquired_fcb_lock = true;
         } else if (!ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
             if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait)) {
                 Status = STATUS_PENDING;
                 goto end;
             } else
-                fcb_lock = true;
+                acquired_fcb_lock = true;
         }
     }
 
@@ -4283,7 +4283,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
     if (changed_length) {
         if (newlength > (uint64_t)fcb->Header.AllocationSize.QuadPart) {
-            if (!tree_lock) {
+            if (!acquired_tree_lock) {
                 // We need to acquire the tree lock if we don't have it already -
                 // we can't give an inline file proper extents at the same time as we're
                 // doing a flush.
@@ -4291,7 +4291,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     Status = STATUS_PENDING;
                     goto end;
                 } else
-                    tree_lock = true;
+                    acquired_tree_lock = true;
             }
 
             Status = extend_file(fcb, fileref, newlength, false, Irp, rollback);
@@ -4619,10 +4619,10 @@ end:
         TRACE("CurrentByteOffset now: %I64x\n", FileObject->CurrentByteOffset.QuadPart);
     }
 
-    if (fcb_lock)
+    if (acquired_fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
 
-    if (tree_lock)
+    if (acquired_tree_lock)
         ExReleaseResourceLite(&Vcb->tree_lock);
 
     if (paging_lock)

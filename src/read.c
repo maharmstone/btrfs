@@ -3239,7 +3239,7 @@ NTSTATUS __stdcall drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     bool top_level;
     fcb* fcb;
     ccb* ccb;
-    bool fcb_lock = false, wait;
+    bool acquired_fcb_lock = false, wait;
 
     FsRtlEnterFileSystem();
 
@@ -3322,12 +3322,12 @@ NTSTATUS __stdcall drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             goto exit;
         }
 
-        fcb_lock = true;
+        acquired_fcb_lock = true;
     }
 
     Status = do_read(Irp, wait, &bytes_read);
 
-    if (fcb_lock)
+    if (acquired_fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
 
 exit:

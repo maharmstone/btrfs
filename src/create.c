@@ -1430,7 +1430,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         acquire_fcb_lock_exclusive(Vcb);
 
         if (sf->fcb->subvol->fcbs_ptrs[fcb->hash >> 24]) {
-            LIST_ENTRY* le = sf->fcb->subvol->fcbs_ptrs[fcb->hash >> 24];
+            le = sf->fcb->subvol->fcbs_ptrs[fcb->hash >> 24];
 
             while (le != &sf->fcb->subvol->fcbs) {
                 struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
@@ -2406,7 +2406,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         if (parfileref->fcb->hash_ptrs[dc_hash >> 24]) {
             LIST_ENTRY* le = parfileref->fcb->hash_ptrs[dc_hash >> 24];
             while (le != &parfileref->fcb->dir_children_hash) {
-                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
+                dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
 
                 if (dc->hash == dc_hash && dc->name.Length == fpus->Length && RtlCompareMemory(dc->name.Buffer, fpus->Buffer, fpus->Length) == fpus->Length) {
                     existing_fileref = dc->fileref;
@@ -2440,7 +2440,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         if (parfileref->fcb->hash_ptrs_uc[dc_hash >> 24]) {
             LIST_ENTRY* le = parfileref->fcb->hash_ptrs_uc[dc_hash >> 24];
             while (le != &parfileref->fcb->dir_children_hash_uc) {
-                dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
+                dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
 
                 if (dc->hash_uc == dc_hash && dc->name.Length == fpusuc.Length && RtlCompareMemory(dc->name.Buffer, fpusuc.Buffer, fpusuc.Length) == fpusuc.Length) {
                     existing_fileref = dc->fileref;
@@ -3954,7 +3954,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         if (!IsListEmpty(&Vcb->dirty_filerefs)) {
             LIST_ENTRY* le = Vcb->dirty_filerefs.Flink;
             while (le != &Vcb->dirty_filerefs) {
-                file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry_dirty);
+                fr = CONTAINING_RECORD(le, file_ref, list_entry_dirty);
 
                 if (fr->fcb == fcb) {
                     ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);

@@ -30,13 +30,13 @@ NTSTATUS do_read_job(PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
     fcb* fcb = FileObject->FsContext;
-    bool fcb_lock = false;
+    bool acquired_fcb_lock = false;
 
     Irp->IoStatus.Information = 0;
 
     if (!ExIsResourceAcquiredSharedLite(fcb->Header.Resource)) {
         ExAcquireResourceSharedLite(fcb->Header.Resource, true);
-        fcb_lock = true;
+        acquired_fcb_lock = true;
     }
 
     try {
@@ -45,7 +45,7 @@ NTSTATUS do_read_job(PIRP Irp) {
         Status = GetExceptionCode();
     }
 
-    if (fcb_lock)
+    if (acquired_fcb_lock)
         ExReleaseResourceLite(fcb->Header.Resource);
 
     if (!NT_SUCCESS(Status))

@@ -4126,7 +4126,7 @@ NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_ST
 }
 
 _Success_(return>=0)
-static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool* no_pnp) {
+static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool* pno_pnp) {
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
@@ -4172,9 +4172,9 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool*
     }
 
     if (pnp_name.Length == 0)
-        *no_pnp = true;
+        *pno_pnp = true;
     else {
-        *no_pnp = false;
+        *pno_pnp = false;
         volume_arrival(drvobj, &pnp_name);
     }
 
@@ -4255,7 +4255,6 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     volume_device_extension* vde = NULL;
     pdo_device_extension* pdode = NULL;
     volume_child* vc;
-    bool no_pnp = false;
     uint64_t readobjsize;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
@@ -4269,11 +4268,13 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
 
     if (!is_btrfs_volume(DeviceToMount)) {
-        Status = check_mount_device(DeviceToMount, &no_pnp);
+        bool not_pnp = false;
+
+        Status = check_mount_device(DeviceToMount, &not_pnp);
         if (!NT_SUCCESS(Status))
             WARN("check_mount_device returned %08x\n", Status);
 
-        if (!no_pnp) {
+        if (!not_pnp) {
             Status = STATUS_UNRECOGNIZED_VOLUME;
             goto exit2;
         }
@@ -4290,10 +4291,10 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         le = pdo_list.Flink;
         while (le != &pdo_list) {
-            pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+            pdo_device_extension* pdode2 = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-            if (pdode->pdo == pdo) {
-                vde = pdode->vde;
+            if (pdode2->pdo == pdo) {
+                vde = pdode2->vde;
                 break;
             }
 
@@ -5487,8 +5488,6 @@ static void init_serial(bool first_time) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
 
         if (first_time) {
-            NTSTATUS Status;
-
             Status = PsCreateSystemThread(&serial_thread_handle, 0, NULL, NULL, NULL, serial_thread, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("PsCreateSystemThread returned %08x\n", Status);
