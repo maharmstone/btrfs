@@ -3855,22 +3855,20 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
     FileObject->FsContext2 = ccb;
     FileObject->SectionObjectPointer = &fileref->fcb->nonpaged->segment_object;
 
-    if (NT_SUCCESS(Status)) {
-        switch (RequestedDisposition) {
-            case FILE_SUPERSEDE:
-                Irp->IoStatus.Information = FILE_SUPERSEDED;
-                break;
+    switch (RequestedDisposition) {
+        case FILE_SUPERSEDE:
+            Irp->IoStatus.Information = FILE_SUPERSEDED;
+            break;
 
-            case FILE_OPEN:
-            case FILE_OPEN_IF:
-                Irp->IoStatus.Information = FILE_OPENED;
-                break;
+        case FILE_OPEN:
+        case FILE_OPEN_IF:
+            Irp->IoStatus.Information = FILE_OPENED;
+            break;
 
-            case FILE_OVERWRITE:
-            case FILE_OVERWRITE_IF:
-                Irp->IoStatus.Information = FILE_OVERWRITTEN;
-                break;
-        }
+        case FILE_OVERWRITE:
+        case FILE_OVERWRITE_IF:
+            Irp->IoStatus.Information = FILE_OVERWRITTEN;
+            break;
     }
 
     // Make sure paging files don't have any extents marked as being prealloc,
