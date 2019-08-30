@@ -1148,9 +1148,12 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     acquire_fcb_lock_exclusive(Vcb);
 
-    if (lastle && subvol->fcbs_version == fcbs_version)
+    if (lastle && subvol->fcbs_version == fcbs_version) {
         InsertHeadList(lastle, &fcb->list_entry);
-    else {
+
+        if (!subvol->fcbs_ptrs[hash >> 24] || CONTAINING_RECORD(subvol->fcbs_ptrs[hash >> 24], struct _fcb, list_entry)->hash > hash)
+            subvol->fcbs_ptrs[hash >> 24] = &fcb->list_entry;
+    } else {
         lastle = NULL;
 
         if (subvol->fcbs_ptrs[hash >> 24]) {
