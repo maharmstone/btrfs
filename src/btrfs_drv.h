@@ -643,28 +643,6 @@ typedef struct {
 #define VCB_TYPE_PDO        4
 #define VCB_TYPE_BUS        5
 
-#ifdef DEBUG_STATS
-typedef struct {
-    uint64_t num_reads;
-    uint64_t data_read;
-    uint64_t read_total_time;
-    uint64_t read_csum_time;
-    uint64_t read_disk_time;
-
-    uint64_t num_opens;
-    uint64_t open_total_time;
-    uint64_t num_overwrites;
-    uint64_t overwrite_total_time;
-    uint64_t num_creates;
-    uint64_t create_total_time;
-    uint64_t open_fcb_calls;
-    uint64_t open_fcb_time;
-    uint64_t open_fileref_child_calls;
-    uint64_t open_fileref_child_time;
-    uint64_t fcb_lock_time;
-} debug_stats;
-#endif
-
 #define BALANCE_OPTS_DATA       0
 #define BALANCE_OPTS_METADATA   1
 #define BALANCE_OPTS_SYSTEM     2
@@ -736,9 +714,6 @@ typedef struct _device_extension {
     PVPB Vpb;
     struct _volume_device_extension* vde;
     LIST_ENTRY devices;
-#ifdef DEBUG_STATS
-    debug_stats stats;
-#endif
 #ifdef DEBUG_CHUNK_LOCKS
     LONG chunk_locks_held;
 #endif
@@ -931,41 +906,13 @@ typedef struct {
 _Requires_lock_not_held_(Vcb->fcb_lock)
 _Acquires_shared_lock_(Vcb->fcb_lock)
 static __inline void acquire_fcb_lock_shared(device_extension* Vcb) {
-#ifdef DEBUG_STATS
-    LARGE_INTEGER time1, time2;
-
-    if (ExAcquireResourceSharedLite(&Vcb->fcb_lock, false))
-        return;
-
-    time1 = KeQueryPerformanceCounter(NULL);
-#endif
-
     ExAcquireResourceSharedLite(&Vcb->fcb_lock, true);
-
-#ifdef DEBUG_STATS
-    time2 = KeQueryPerformanceCounter(NULL);
-    Vcb->stats.fcb_lock_time += time2.QuadPart - time1.QuadPart;
-#endif
 }
 
 _Requires_lock_not_held_(Vcb->fcb_lock)
 _Acquires_exclusive_lock_(Vcb->fcb_lock)
 static __inline void acquire_fcb_lock_exclusive(device_extension* Vcb) {
-#ifdef DEBUG_STATS
-    LARGE_INTEGER time1, time2;
-
-    if (ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, false))
-        return;
-
-    time1 = KeQueryPerformanceCounter(NULL);
-#endif
-
     ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, true);
-
-#ifdef DEBUG_STATS
-    time2 = KeQueryPerformanceCounter(NULL);
-    Vcb->stats.fcb_lock_time += time2.QuadPart - time1.QuadPart;
-#endif
 }
 
 _Requires_lock_held_(Vcb->fcb_lock)
