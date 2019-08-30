@@ -1151,6 +1151,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     if (lastle && subvol->fcbs_version == fcbs_version)
         InsertHeadList(lastle, &fcb->list_entry);
     else {
+        lastle = NULL;
+
         if (subvol->fcbs_ptrs[hash >> 24]) {
             LIST_ENTRY* le = subvol->fcbs_ptrs[hash >> 24];
 
