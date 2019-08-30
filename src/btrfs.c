@@ -5629,6 +5629,7 @@ static void __stdcall degraded_wait_thread(_In_ void* context) {
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
+_Function_class_(DRIVER_ADD_DEVICE)
 NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject) {
     LIST_ENTRY* le;
     NTSTATUS Status;

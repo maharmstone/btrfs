@@ -1002,6 +1002,7 @@ typedef struct {
     pdo_device_extension* pdode;
 } drive_letter_callback_context;
 
+_Function_class_(IO_WORKITEM_ROUTINE)
 static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     drive_letter_callback_context* context = con;
     NTSTATUS Status;
