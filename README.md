@@ -1,10 +1,14 @@
-WinBtrfs v1.3
+WinBtrfs v1.4
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
-and should work on any version from Windows 7 onwards. It is also included
+and should work on any version from Windows Vista onwards. It is also included
 as part of the free operating system [ReactOS](https://www.reactos.org/).
+
+If your Btrfs filesystem is on a MD software RAID device created by Linux, you
+will also need [WinMD](https://github.com/maharmstone/winmd) to get this to appear
+under Windows.
 
 First, a disclaimer:
 
@@ -72,6 +76,8 @@ Todo
 ----
 
 * Oplocks
+* Defragmentation
+* Support for Btrfs quotas
 * Windows 10 reserved storage
 
 Installation
@@ -89,7 +95,15 @@ try disabling Secure Boot in your BIOS settings.
 Uninstalling
 ------------
 
-If you want to uninstall, go to Device Manager, find "Btrfs controller" under
+If you want to uninstall, from a command prompt run:
+
+```
+RUNDLL32.EXE SETUPAPI.DLL,InstallHinfSection DefaultUninstall 132 btrfs.inf
+```
+
+You may need to give the full path to btrfs.inf.
+
+You can also go to Device Manager, find "Btrfs controller" under
 "Storage volumes", right click and choose "Uninstall". Tick the checkbox to
 uninstall the driver as well, and let Windows reboot itself.
 
@@ -210,8 +224,22 @@ flag, e.g. `format /fs:ntfs D:`.
 Synology seems to use LVM for its block devices. Until somebody writes an LVM driver
 for Windows, you're out of luck.
 
+* I can't mount a Thecus NAS
+
+Thecus uses Linux's MD raid for its block devices. You will need to install [WinMD](https://github.com/maharmstone/winmd)
+as well.
+
 Changelog
 ---------
+
+v1.4 (2019-08-31):
+* Added fragmentation percentage to property sheet
+* Added support for Windows Server 2003 and Windows Vista
+* Added pagefile support
+* Improved support for file locking
+* Added support for booting from Btrfs on Windows Server 2003 (see https://www.youtube.com/watch?v=-5E2CHmHEUs)
+* Fixed issue where driver could open same inode twice
+* Other miscellaneous bug fixes
 
 v1.3 (2019-06-10):
 * Added support for new rename and delete functions introduced to Windows 10
