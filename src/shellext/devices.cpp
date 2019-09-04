@@ -44,12 +44,12 @@ static wstring get_mountdev_name(const nt_handle& h ) {
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
         return L"";
 
-    size_t mdnsize = offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
+    ULONG mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
 
     mdn2 = (MOUNTDEV_NAME*)malloc(mdnsize);
 
     Status = NtDeviceIoControlFile(h, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME,
-                                   nullptr, 0, mdn2, (ULONG)mdnsize);
+                                   nullptr, 0, mdn2, mdnsize);
     if (!NT_SUCCESS(Status)) {
         free(mdn2);
         return L"";
