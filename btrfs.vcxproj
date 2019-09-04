@@ -176,7 +176,6 @@
       <SubSystem>Native</SubSystem>
       <Driver>Driver</Driver>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
-      <BaseAddress>0x10000</BaseAddress>
       <RandomizedBaseAddress />
       <DataExecutionPrevention />
       <TargetMachine>MachineX64</TargetMachine>
@@ -245,7 +244,6 @@
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
-      <BaseAddress>0x10000</BaseAddress>
       <RandomizedBaseAddress />
       <DataExecutionPrevention />
       <TargetMachine>MachineX64</TargetMachine>
