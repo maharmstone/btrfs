@@ -609,7 +609,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
                 dp -= item->size;
                 memcpy(dp, item->data, item->size);
 
-                ln->offset = dp - tree - sizeof(tree_header);
+                ln->offset = (uint32_t)(dp - tree - sizeof(tree_header));
             } else
                 ln->offset = 0;
 
