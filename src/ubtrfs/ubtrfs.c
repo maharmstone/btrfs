@@ -1241,9 +1241,8 @@ end:
 
         if (NT_SUCCESS(Status)) {
             MOUNTDEV_NAME* mdn;
-            ULONG mdnsize;
+            ULONG mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + DriveRoot->Length;
 
-            mdnsize = (ULONG)(offsetof(MOUNTDEV_NAME, Name[0]) + DriveRoot->Length);
             mdn = malloc(mdnsize);
 
             mdn->NameLength = DriveRoot->Length;
