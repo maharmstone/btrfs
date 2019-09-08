@@ -1,9 +1,17 @@
 #pragma once
 
+// Workaround for compilers without C++17 Standard support.
+// #define NO_CPP17
+
 #include <vector>
 #include <string>
 #include <sstream>
+#ifndef NO_CPP17
 #include <string_view>
+#else
+#define string_view string
+#define wstring_view wstring
+#endif
 #include <iostream>
 #include <iomanip>
 

@@ -23,9 +23,16 @@
 #define WINVER 0x0A00 // Windows 10
 #define _WIN32_WINNT 0x0A00
 
+// Workaround for compilers without C++17 Standard support.
+// #define NO_CPP17
+
 #include <windows.h>
 #include <winternl.h>
 #include <string>
+#ifdef NO_CPP17
+#define string_view string
+#define wstring_view wstring
+#endif
 #include <vector>
 #include <stdint.h>
 #include "../btrfs.h"
