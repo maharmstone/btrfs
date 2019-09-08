@@ -23,6 +23,7 @@
 
 extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
+extern ERESOURCE boot_lock;
 
 #ifndef _MSC_VER
 NTSTATUS RtlUnicodeStringPrintf(PUNICODE_STRING DestinationString, const WCHAR* pszFormat, ...); // not in mingw
@@ -196,6 +197,10 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     bool done = false;
 
     TRACE("(%p, %p, %u)\n", DriverObject, Context, Count);
+
+    // wait for any PNP notifications in progress to finish
+    ExAcquireResourceExclusiveLite(&boot_lock, TRUE);
+    ExReleaseResourceLite(&boot_lock);
 
     if (!get_system_root_partition(&disk_num, &partition_num))
         return;

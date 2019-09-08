@@ -103,6 +103,7 @@ HANDLE degraded_wait_handle = NULL, mountmgr_thread_handle = NULL;
 bool degraded_wait = true;
 KEVENT mountmgr_thread_event;
 bool shutting_down = false;
+ERESOURCE boot_lock;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -5959,6 +5960,8 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
     Status = PsCreateSystemThread(&degraded_wait_handle, 0, NULL, NULL, NULL, degraded_wait_thread, NULL);
     if (!NT_SUCCESS(Status))
         WARN("PsCreateSystemThread returned %08x\n", Status);
+
+    ExInitializeResourceLite(&boot_lock);
 
     Status = IoRegisterPlugPlayNotification(EventCategoryDeviceInterfaceChange, PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
                                             (PVOID)&GUID_DEVINTERFACE_VOLUME, DriverObject, volume_notification, DriverObject, &notification_entry2);
