@@ -3885,7 +3885,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     SeCaptureSubjectContext(&subjcont);
 
-    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
+    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, &fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
                                 SEF_SACL_AUTO_INHERIT, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
 
     if (!NT_SUCCESS(Status)) {
