@@ -415,25 +415,23 @@ static ACL* load_default_acl() {
 static void get_top_level_sd(fcb* fcb) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
-    ULONG buflen;
+    PSID usersid, groupsid = NULL;
     ACL* acl = NULL;
-    PSID usersid = NULL, groupsid = NULL;
+    ULONG buflen;
 
     Status = RtlCreateSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
-
     if (!NT_SUCCESS(Status)) {
         ERR("RtlCreateSecurityDescriptor returned %08x\n", Status);
-        goto end;
+        return;
     }
 
     Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
     if (!NT_SUCCESS(Status)) {
         ERR("uid_to_sid returned %08x\n", Status);
-        goto end;
+        return;
     }
 
-    RtlSetOwnerSecurityDescriptor(&sd, usersid, false);
-
+    Status = RtlSetOwnerSecurityDescriptor(&sd, usersid, false);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
         goto end;
@@ -442,26 +440,22 @@ static void get_top_level_sd(fcb* fcb) {
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
-    RtlSetGroupSecurityDescriptor(&sd, groupsid, false);
-
+    Status = RtlSetGroupSecurityDescriptor(&sd, groupsid, false);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetGroupSecurityDescriptor returned %08x\n", Status);
         goto end;
     }
 
     acl = load_default_acl();
-
     if (!acl) {
         ERR("out of memory\n");
         goto end;
     }
 
     Status = RtlSetDaclSecurityDescriptor(&sd, true, acl, false);
-
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetDaclSecurityDescriptor returned %08x\n", Status);
         goto end;
@@ -486,14 +480,14 @@ static void get_top_level_sd(fcb* fcb) {
     fcb->sd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
     if (!fcb->sd) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
     Status = RtlAbsoluteToSelfRelativeSD(&sd, fcb->sd, &buflen);
-
     if (!NT_SUCCESS(Status)) {
         ERR("RtlAbsoluteToSelfRelativeSD 2 returned %08x\n", Status);
+        ExFreePool(fcb->sd);
+        fcb->sd = NULL;
         goto end;
     }
 
@@ -501,11 +495,11 @@ end:
     if (acl)
         ExFreePool(acl);
 
-    if (usersid)
-        ExFreePool(usersid);
-
     if (groupsid)
         ExFreePool(groupsid);
+
+    if (usersid)
+        ExFreePool(usersid);
 }
 
 void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
