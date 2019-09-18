@@ -503,10 +503,11 @@ end:
 }
 
 void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
-    NTSTATUS Status;
-    PSID usersid = NULL, groupsid = NULL;
-    SECURITY_SUBJECT_CONTEXT subjcont;
     ULONG buflen;
+    SECURITY_SUBJECT_CONTEXT subjcont;
+    NTSTATUS Status;
+    PSECURITY_DESCRIPTOR sd;
+    PSID usersid = NULL, groupsid = NULL;
 
     if (look_for_xattr && get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (uint8_t**)&fcb->sd, (uint16_t*)&buflen, Irp))
         return;
@@ -518,30 +519,49 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
 
     SeCaptureSubjectContext(&subjcont);
 
-    Status = SeAssignSecurityEx(parent->sd, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY, SEF_DACL_AUTO_INHERIT,
+    Status = SeAssignSecurityEx(parent->sd, NULL, (void**)&sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY, SEF_DACL_AUTO_INHERIT,
                                 &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08x\n", Status);
+        return;
     }
 
     Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
     if (!NT_SUCCESS(Status)) {
         ERR("uid_to_sid returned %08x\n", Status);
-        return;
+        goto end;
     }
 
-    RtlSetOwnerSecurityDescriptor(&fcb->sd, usersid, false);
+    Status = RtlSetOwnerSecurityDescriptor(&sd, usersid, false);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
+        goto end;
+    }
 
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
-        return;
+        goto end;
     }
 
-    RtlSetGroupSecurityDescriptor(&fcb->sd, groupsid, false);
+    Status = RtlSetGroupSecurityDescriptor(&sd, groupsid, false);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlSetGroupSecurityDescriptor returned %08x\n", Status);
+        goto end;
+    }
 
-    ExFreePool(usersid);
-    ExFreePool(groupsid);
+    fcb->sd = sd;
+    sd = NULL;
+
+end:
+    if (groupsid)
+        ExFreePool(groupsid);
+
+    if (usersid)
+        ExFreePool(usersid);
+
+    if (sd)
+        ExFreePool(sd);
 }
 
 static NTSTATUS get_file_security(PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {
