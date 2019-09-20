@@ -1127,6 +1127,7 @@ extern uint32_t mount_clear_cache;
 extern uint32_t mount_allow_degraded;
 extern uint32_t mount_readonly;
 extern uint32_t no_pnp;
+extern OBJECT_ATTRIBUTES system_thread_attributes;
 
 #ifdef _DEBUG
 

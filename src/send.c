@@ -3810,7 +3810,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
     InterlockedIncrement(&Vcb->running_sends);
 
-    Status = PsCreateSystemThread(&send->thread, 0, NULL, NULL, NULL, send_thread, context);
+    Status = PsCreateSystemThread(&send->thread, 0, &system_thread_attributes, NULL, NULL, send_thread, context);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
         ccb->send = NULL;
