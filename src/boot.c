@@ -24,10 +24,24 @@
 extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
 extern ERESOURCE boot_lock;
+extern PDRIVER_OBJECT drvobj;
 
 #ifndef _MSC_VER
 NTSTATUS RtlUnicodeStringPrintf(PUNICODE_STRING DestinationString, const WCHAR* pszFormat, ...); // not in mingw
 #endif
+
+// Not in any headers? Windbg knows about it though.
+#define DOE_START_PENDING 0x10
+
+// Just as much as we need - the version in mingw is truncated still further
+typedef struct {
+    CSHORT Type;
+    USHORT Size;
+    PDEVICE_OBJECT DeviceObject;
+    ULONG PowerFlags;
+    void* Dope;
+    ULONG ExtensionFlags;
+} DEVOBJ_EXTENSION2;
 
 static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_num) {
     NTSTATUS Status;
@@ -195,6 +209,7 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     uint32_t disk_num, partition_num;
     LIST_ENTRY* le;
     bool done = false;
+    PDEVICE_OBJECT pdo_to_add = NULL;
 
     TRACE("(%p, %p, %u)\n", DriverObject, Context, Count);
 
@@ -224,6 +239,10 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
             if (vc->disk_num == disk_num && vc->part_num == partition_num) {
                 change_symlink(disk_num, partition_num, &pdode->uuid);
                 done = true;
+
+                if (!pdode->vde)
+                    pdo_to_add = pdode->pdo;
+
                 break;
             }
 
@@ -239,4 +258,24 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     }
 
     ExReleaseResourceLite(&pdo_list_lock);
+
+    // If our FS depends on volumes that aren't there when we do our IoRegisterPlugPlayNotification calls
+    // in DriverEntry, bus_query_device_relations won't get called until it's too late. We need to do our
+    // own call to AddDevice here as a result. We need to clear the DOE_START_PENDING bits, or NtOpenFile
+    // will return STATUS_NO_SUCH_DEVICE.
+    if (pdo_to_add) {
+        pdo_device_extension* pdode = pdo_to_add->DeviceExtension;
+
+        AddDevice(drvobj, pdo_to_add);
+
+        // To stop Windows sneakily setting DOE_START_PENDING
+        pdode->dont_report = true;
+
+        if (pdo_to_add->DeviceObjectExtension) {
+            ((DEVOBJ_EXTENSION2*)pdo_to_add->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
+
+            if (pdode && pdode->vde && pdode->vde->device)
+                ((DEVOBJ_EXTENSION2*)pdode->vde->device->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
+        }
+    }
 }

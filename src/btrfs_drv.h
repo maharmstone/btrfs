@@ -838,6 +838,7 @@ typedef struct pdo_device_extension {
     volume_device_extension* vde;
     PDEVICE_OBJECT pdo;
     bool removable;
+    bool dont_report;
 
     uint64_t num_children;
     uint64_t children_loaded;

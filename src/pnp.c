@@ -294,7 +294,10 @@ static NTSTATUS bus_query_device_relations(PIRP Irp) {
 
     le = pdo_list.Flink;
     while (le != &pdo_list) {
-        num_children++;
+        pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+
+        if (!pdode->dont_report)
+            num_children++;
 
         le = le->Flink;
     }
@@ -315,9 +318,11 @@ static NTSTATUS bus_query_device_relations(PIRP Irp) {
     while (le != &pdo_list) {
         pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-        ObReferenceObject(pdode->pdo);
-        dr->Objects[i] = pdode->pdo;
-        i++;
+        if (!pdode->dont_report) {
+            ObReferenceObject(pdode->pdo);
+            dr->Objects[i] = pdode->pdo;
+            i++;
+        }
 
         le = le->Flink;
     }

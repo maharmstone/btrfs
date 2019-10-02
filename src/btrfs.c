@@ -5661,7 +5661,12 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
         goto end;
     }
 
-    ExAcquireResourceSharedLite(&pdode->child_lock, true);
+    ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
+
+    if (pdode->vde) { // if already done, return success
+        Status = STATUS_SUCCESS;
+        goto end2;
+    }
 
     volname.Length = volname.MaximumLength = (sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR)) + ((36 + 1) * sizeof(WCHAR));
     volname.Buffer = ExAllocatePoolWithTag(PagedPool, volname.MaximumLength, ALLOC_TAG); // FIXME - when do we free this?
