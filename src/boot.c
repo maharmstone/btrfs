@@ -195,6 +195,58 @@ static void change_symlink(uint32_t disk_num, uint32_t partition_num, BTRFS_UUID
         ERR("IoCreateSymbolicLink returned %08x\n", Status);
 }
 
+static void mountmgr_notification(BTRFS_UUID* uuid) {
+    UNICODE_STRING mmdevpath;
+    NTSTATUS Status;
+    PFILE_OBJECT FileObject;
+    PDEVICE_OBJECT mountmgr;
+    ULONG mmtnlen;
+    MOUNTMGR_TARGET_NAME* mmtn;
+    WCHAR* w;
+
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        return;
+    }
+
+    mmtnlen = offsetof(MOUNTMGR_TARGET_NAME, DeviceName[0]) + sizeof(BTRFS_VOLUME_PREFIX) + (36 * sizeof(WCHAR));
+
+    mmtn = ExAllocatePoolWithTag(NonPagedPool, mmtnlen, ALLOC_TAG);
+    if (!mmtn) {
+        ERR("out of memory\n");
+        return;
+    }
+
+    mmtn->DeviceNameLength = sizeof(BTRFS_VOLUME_PREFIX) + (36 * sizeof(WCHAR));
+
+    RtlCopyMemory(mmtn->DeviceName, BTRFS_VOLUME_PREFIX, sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR));
+
+    w = &mmtn->DeviceName[(sizeof(BTRFS_VOLUME_PREFIX) / sizeof(WCHAR)) - 1];
+
+    for (unsigned int i = 0; i < 16; i++) {
+        *w = hex_digit(uuid->uuid[i] >> 4); w++;
+        *w = hex_digit(uuid->uuid[i] & 0xf); w++;
+
+        if (i == 3 || i == 5 || i == 7 || i == 9) {
+            *w = L'-';
+            w++;
+        }
+    }
+
+    *w = L'}';
+
+    Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION, mmtn, mmtnlen, NULL, 0, false, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION returned %08x\n", Status);
+        ExFreePool(mmtn);
+        return;
+    }
+
+    ExFreePool(mmtn);
+}
+
 /* If booting from Btrfs, Windows will pass the device object for the raw partition to
  * mount_vol - which is no good to us, as we only use the \Device\Btrfs{} devices we
  * create so that RAID works correctly.
@@ -277,5 +329,7 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
             if (pdode && pdode->vde && pdode->vde->device)
                 ((DEVOBJ_EXTENSION2*)pdode->vde->device->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
         }
+
+        mountmgr_notification(&pdode->uuid);
     }
 }
