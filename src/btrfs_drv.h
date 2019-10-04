@@ -119,6 +119,10 @@
 #define finally if (1)
 #endif
 
+#ifdef __GNUC__
+#define InterlockedIncrement64(a) __sync_add_and_fetch(a, 1)
+#endif
+
 #ifndef FILE_SUPPORTS_BLOCK_REFCOUNTING
 #define FILE_SUPPORTS_BLOCK_REFCOUNTING 0x08000000
 #endif
