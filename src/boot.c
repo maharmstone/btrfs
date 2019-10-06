@@ -301,10 +301,41 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
             le2 = le2->Flink;
         }
 
-        ExReleaseResourceLite(&pdode->child_lock);
+        if (done) {
+            le2 = pdode->children.Flink;
 
-        if (done)
+            while (le2 != &pdode->children) {
+                volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+
+                /* On Windows 7 we need to clear the DO_SYSTEM_BOOT_PARTITION flag of
+                 * all of our underlying partition objects - otherwise IopMountVolume
+                 * will bugcheck with UNMOUNTABLE_BOOT_VOLUME when it tries and fails
+                 * to mount one. */
+                if (vc->devobj) {
+                    PDEVICE_OBJECT dev = vc->devobj;
+
+                    ObReferenceObject(dev);
+
+                    while (dev) {
+                        PDEVICE_OBJECT dev2 = IoGetLowerDeviceObject(dev);
+
+                        dev->Flags &= ~DO_SYSTEM_BOOT_PARTITION;
+
+                        ObDereferenceObject(dev);
+
+                        dev = dev2;
+                    }
+                }
+
+                le2 = le2->Flink;
+            }
+
+            ExReleaseResourceLite(&pdode->child_lock);
+
             break;
+        }
+
+        ExReleaseResourceLite(&pdode->child_lock);
 
         le = le->Flink;
     }
