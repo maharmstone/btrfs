@@ -23,6 +23,7 @@
 #include <windef.h>
 #include <ntddstor.h>
 #include <ntdddisk.h>
+#include <ntddvol.h>
 
 #include <initguid.h>
 #include <wdmguid.h>
@@ -515,6 +516,10 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
 
     if (devobj->DriverObject == DriverObject)
         goto end;
+
+    Status = dev_ioctl(devobj, IOCTL_VOLUME_ONLINE, NULL, 0, NULL, 0, true, NULL);
+    if (!NT_SUCCESS(Status))
+        TRACE("IOCTL_VOLUME_ONLINE returned %08x\n", Status);
 
     Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), true, NULL);
     if (!NT_SUCCESS(Status)) {
