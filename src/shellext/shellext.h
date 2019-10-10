@@ -93,6 +93,7 @@ NTSTATUS NTAPI NtSetInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr
 #define FileStandardInformation (FILE_INFORMATION_CLASS)5
 #define FileDispositionInformation (FILE_INFORMATION_CLASS)13
 #define FileEndOfFileInformation (FILE_INFORMATION_CLASS)20
+#define FileStreamInformation (FILE_INFORMATION_CLASS)22
 
 typedef enum _FSINFOCLASS {
     FileFsVolumeInformation = 1,
@@ -111,6 +112,14 @@ typedef enum _FSINFOCLASS {
     FileFsFullSizeInformationEx,
     FileFsMaximumInformation
 } FS_INFORMATION_CLASS, *PFS_INFORMATION_CLASS;
+
+typedef struct _FILE_STREAM_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG StreamNameLength;
+    LARGE_INTEGER StreamSize;
+    LARGE_INTEGER StreamAllocationSize;
+    WCHAR StreamName[1];
+} FILE_STREAM_INFORMATION, *PFILE_STREAM_INFORMATION;
 #endif
 
 NTSTATUS NTAPI NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation, ULONG Length,

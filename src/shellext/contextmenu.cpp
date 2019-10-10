@@ -731,8 +731,6 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
             // CreateDirectoryExW also copies streams, no need to do it here
         } else {
-            WIN32_FIND_STREAM_DATA fsd;
-
             if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
                 reparse_header rh;
                 uint8_t* rp;
@@ -800,19 +798,34 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                 }
             }
 
-            fff_handle h = FindFirstStreamW(fn, FindStreamInfoStandard, &fsd, 0);
-            if (h != INVALID_HANDLE_VALUE) {
-                do {
-                    wstring sn;
+            ULONG streambufsize = 0;
+            vector<char> streambuf;
 
-                    sn = fsd.cStreamName;
+            do {
+                streambufsize += 0x1000;
+                streambuf.resize(streambufsize);
+
+                memset(streambuf.data(), 0, streambufsize);
+
+                Status = NtQueryInformationFile(source, &iosb, streambuf.data(), streambufsize, FileStreamInformation);
+            } while (Status == STATUS_BUFFER_OVERFLOW);
+
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
+
+            auto fsi = reinterpret_cast<FILE_STREAM_INFORMATION*>(streambuf.data());
+
+            while (true) {
+                if (fsi->StreamNameLength > 0) {
+                    wstring sn = wstring(fsi->StreamName, fsi->StreamNameLength / sizeof(WCHAR));
 
                     if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                         win_handle stream;
                         uint8_t* data = nullptr;
-                        uint16_t stream_size = (uint16_t)fsd.StreamSize.QuadPart;
+                        auto stream_size = (uint16_t)fsi->StreamSize.QuadPart;
 
-                        if (fsd.StreamSize.QuadPart > 0) {
+
+                        if (stream_size > 0) {
                             wstring fn2;
 
                             fn2 = fn;
@@ -849,7 +862,12 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
                             free(data);
                         }
                     }
-                } while (FindNextStreamW(h, &fsd));
+                }
+
+                if (fsi->NextEntryOffset == 0)
+                    break;
+
+                fsi = reinterpret_cast<FILE_STREAM_INFORMATION*>(reinterpret_cast<char*>(fsi) + fsi->NextEntryOffset);
             }
         }
 
@@ -1391,8 +1409,6 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
             // CreateDirectoryExW also copies streams, no need to do it here
         } else {
-            WIN32_FIND_STREAM_DATA fsd;
-
             if (fbi.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
                 reparse_header rh;
                 uint8_t* rp;
@@ -1465,20 +1481,34 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                 }
             }
 
-            fff_handle h = FindFirstStreamW(srcfn.c_str(), FindStreamInfoStandard, &fsd, 0);
-            if (h != INVALID_HANDLE_VALUE) {
-                do {
-                    wstring sn;
+            ULONG streambufsize = 0;
+            vector<char> streambuf;
 
-                    sn = fsd.cStreamName;
+            do {
+                streambufsize += 0x1000;
+                streambuf.resize(streambufsize);
+
+                memset(streambuf.data(), 0, streambufsize);
+
+                Status = NtQueryInformationFile(source, &iosb, streambuf.data(), streambufsize, FileStreamInformation);
+            } while (Status == STATUS_BUFFER_OVERFLOW);
+
+            if (!NT_SUCCESS(Status))
+                throw ntstatus_error(Status);
+
+            auto fsi = reinterpret_cast<FILE_STREAM_INFORMATION*>(streambuf.data());
+
+            while (true) {
+                if (fsi->StreamNameLength > 0) {
+                    wstring sn = wstring(fsi->StreamName, fsi->StreamNameLength / sizeof(WCHAR));
 
                     if (sn != L"::$DATA" && sn.length() > 6 && sn.substr(sn.length() - 6, 6) == L":$DATA") {
                         win_handle stream;
                         uint8_t* data = nullptr;
+                        auto stream_size = (uint16_t)fsi->StreamSize.QuadPart;
 
-                        if (fsd.StreamSize.QuadPart > 0) {
+                        if (stream_size > 0) {
                             wstring fn2;
-                            uint16_t stream_size = (uint16_t)fsd.StreamSize.QuadPart;
 
                             fn2 = srcfn;
                             fn2 += sn;
@@ -1506,7 +1536,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                         }
 
                         if (data) {
-                            if (!WriteFile(stream, data, (uint32_t)fsd.StreamSize.QuadPart, &bytesret, nullptr)) {
+                            if (!WriteFile(stream, data, stream_size, &bytesret, nullptr)) {
                                 free(data);
                                 throw last_error(GetLastError());
                             }
@@ -1514,7 +1544,13 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
                             free(data);
                         }
                     }
-                } while (FindNextStreamW(h, &fsd));
+
+                }
+
+                if (fsi->NextEntryOffset == 0)
+                    break;
+
+                fsi = reinterpret_cast<FILE_STREAM_INFORMATION*>(reinterpret_cast<char*>(fsi) + fsi->NextEntryOffset);
             }
         }
 
