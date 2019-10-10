@@ -630,7 +630,7 @@ static string utf16_to_utf8(const wstring_view& utf16) {
     if (utf16.empty())
         return "";
 
-    auto utf8len = WideCharToMultiByte(CP_UTF8, 0, utf16.data(), utf16.length(), nullptr, 0, nullptr, nullptr);
+    auto utf8len = WideCharToMultiByte(CP_UTF8, 0, utf16.data(), static_cast<int>(utf16.length()), nullptr, 0, nullptr, nullptr);
 
     if (utf8len == 0)
         throw last_error(GetLastError());
@@ -640,7 +640,7 @@ static string utf16_to_utf8(const wstring_view& utf16) {
     if (!buf)
         throw string_error(IDS_OUT_OF_MEMORY);
 
-    if (WideCharToMultiByte(CP_UTF8, 0, utf16.data(), utf16.length(), buf, utf8len, nullptr, nullptr) == 0) {
+    if (WideCharToMultiByte(CP_UTF8, 0, utf16.data(), static_cast<int>(utf16.length()), buf, utf8len, nullptr, nullptr) == 0) {
         auto le = GetLastError();
         free(buf);
         throw last_error(le);
