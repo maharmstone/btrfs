@@ -671,6 +671,10 @@ static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING na
     pnp_callback_context* context;
 
     work_item = IoAllocateWorkItem(master_devobj);
+    if (!work_item) {
+        ERR("out of memory\n");
+        return;
+    }
 
     context = ExAllocatePoolWithTag(PagedPool, sizeof(pnp_callback_context), ALLOC_TAG);
 
