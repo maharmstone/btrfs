@@ -632,6 +632,7 @@ static bool lie_about_fs_type() {
     INIT_UNICODE_STRING(mpr, L"MPR.DLL");
     INIT_UNICODE_STRING(cmd, L"CMD.EXE");
     INIT_UNICODE_STRING(fsutil, L"FSUTIL.EXE");
+    INIT_UNICODE_STRING(storsvc, L"STORSVC.DLL");
 
     if (!PsGetCurrentProcess())
         return false;
@@ -688,6 +689,15 @@ static bool lie_about_fs_type() {
             name.Length = name.MaximumLength = usfsutil.Length;
 
             blacklist = FsRtlAreNamesEqual(&name, &usfsutil, true, NULL);
+        }
+
+        if (!blacklist && entry->FullDllName.Length >= usstorsvc.Length) {
+            UNICODE_STRING name;
+
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usstorsvc.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = usstorsvc.Length;
+
+            blacklist = FsRtlAreNamesEqual(&name, &usstorsvc, true, NULL);
         }
 
         if (blacklist) {
