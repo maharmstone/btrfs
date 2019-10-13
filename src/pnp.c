@@ -544,6 +544,29 @@ static NTSTATUS pdo_device_usage_notification(pdo_device_extension* pdode, PIRP 
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS pdo_query_device_relations(PDEVICE_OBJECT pdo, PIRP Irp) {
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PDEVICE_RELATIONS device_relations;
+
+    if (IrpSp->Parameters.QueryDeviceRelations.Type != TargetDeviceRelation)
+        return Irp->IoStatus.Status;
+
+    device_relations = ExAllocatePoolWithTag(PagedPool, sizeof(DEVICE_RELATIONS), ALLOC_TAG);
+    if (!device_relations) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    device_relations->Count = 1;
+    device_relations->Objects[0] = pdo;
+
+    ObReferenceObject(pdo);
+
+    Irp->IoStatus.Information = (ULONG_PTR)device_relations;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     pdo_device_extension* pdode = pdo->DeviceExtension;
@@ -564,6 +587,8 @@ static NTSTATUS pdo_pnp(PDEVICE_OBJECT pdo, PIRP Irp) {
         case IRP_MN_DEVICE_USAGE_NOTIFICATION:
             return pdo_device_usage_notification(pdode, Irp);
 
+        case IRP_MN_QUERY_DEVICE_RELATIONS:
+            return pdo_query_device_relations(pdo, Irp);
     }
 
     return Irp->IoStatus.Status;
