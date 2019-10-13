@@ -611,6 +611,8 @@ static void calculate_total_space(_In_ device_extension* Vcb, _Out_ uint64_t* to
     *freespace = sectors_used > *totalsize ? 0 : (*totalsize - sectors_used);
 }
 
+#define INIT_UNICODE_STRING(var, val) UNICODE_STRING us##var; us##var.Buffer = (WCHAR*)val; us##var.Length = us##var.MaximumLength = sizeof(val) - sizeof(WCHAR);
+
 // This function exists because we have to lie about our FS type in certain situations.
 // MPR!MprGetConnection queries the FS type, and compares it to a whitelist. If it doesn't match,
 // it will return ERROR_NO_NET_OR_BAD_PATH, which prevents UAC from working.
@@ -627,17 +629,9 @@ static bool lie_about_fs_type() {
     ULONG_PTR wow64info;
 #endif
 
-    static const WCHAR mpr[] = L"MPR.DLL";
-    static const WCHAR cmd[] = L"CMD.EXE";
-    static const WCHAR fsutil[] = L"FSUTIL.EXE";
-    UNICODE_STRING mprus, cmdus, fsutilus;
-
-    mprus.Buffer = (WCHAR*)mpr;
-    mprus.Length = mprus.MaximumLength = sizeof(mpr) - sizeof(WCHAR);
-    cmdus.Buffer = (WCHAR*)cmd;
-    cmdus.Length = cmdus.MaximumLength = sizeof(cmd) - sizeof(WCHAR);
-    fsutilus.Buffer = (WCHAR*)fsutil;
-    fsutilus.Length = fsutilus.MaximumLength = sizeof(fsutil) - sizeof(WCHAR);
+    INIT_UNICODE_STRING(mpr, L"MPR.DLL");
+    INIT_UNICODE_STRING(cmd, L"CMD.EXE");
+    INIT_UNICODE_STRING(fsutil, L"FSUTIL.EXE");
 
     if (!PsGetCurrentProcess())
         return false;
@@ -669,31 +663,31 @@ static bool lie_about_fs_type() {
         LDR_DATA_TABLE_ENTRY* entry = CONTAINING_RECORD(le, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
         bool blacklist = false;
 
-        if (entry->FullDllName.Length >= mprus.Length) {
+        if (entry->FullDllName.Length >= usmpr.Length) {
             UNICODE_STRING name;
 
-            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - mprus.Length) / sizeof(WCHAR)];
-            name.Length = name.MaximumLength = mprus.Length;
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usmpr.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = usmpr.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &mprus, true, NULL);
+            blacklist = FsRtlAreNamesEqual(&name, &usmpr, true, NULL);
         }
 
-        if (!blacklist && entry->FullDllName.Length >= cmdus.Length) {
+        if (!blacklist && entry->FullDllName.Length >= uscmd.Length) {
             UNICODE_STRING name;
 
-            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - cmdus.Length) / sizeof(WCHAR)];
-            name.Length = name.MaximumLength = cmdus.Length;
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - uscmd.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = uscmd.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &cmdus, true, NULL);
+            blacklist = FsRtlAreNamesEqual(&name, &uscmd, true, NULL);
         }
 
-        if (!blacklist && entry->FullDllName.Length >= fsutilus.Length) {
+        if (!blacklist && entry->FullDllName.Length >= usfsutil.Length) {
             UNICODE_STRING name;
 
-            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - fsutilus.Length) / sizeof(WCHAR)];
-            name.Length = name.MaximumLength = fsutilus.Length;
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usfsutil.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = usfsutil.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &fsutilus, true, NULL);
+            blacklist = FsRtlAreNamesEqual(&name, &usfsutil, true, NULL);
         }
 
         if (blacklist) {
