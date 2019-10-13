@@ -153,6 +153,9 @@ vector<mountmgr_point> mountmgr::query_points(const wstring_view& symlink, const
     Status = NtDeviceIoControlFile(h, nullptr, nullptr, nullptr, &iosb, IOCTL_MOUNTMGR_QUERY_POINTS,
                                    buf.data(), (ULONG)buf.size(), buf2.data(), (ULONG)buf2.size());
 
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
+
     for (ULONG i = 0; i < mmps->NumberOfMountPoints; i++) {
         wstring_view mpsl, mpdn;
         string_view mpuid;
