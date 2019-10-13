@@ -1297,6 +1297,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         }
     }
 
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_ROOT_FSTREE)
+        fcb->atts |= FILE_ATTRIBUTE_HIDDEN;
+
     subvol->fcbs_version++;
 
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);

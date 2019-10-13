@@ -204,7 +204,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             le = le->Flink;
         }
 
-        if (r && r->parent != fcb->subvol->id)
+        if (r && r->parent != fcb->subvol->id && (!de->dc || !de->dc->root_dir))
             r = NULL;
 
         inode = SUBVOL_ROOT_INODE;

@@ -2678,9 +2678,8 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             break;
     }
 
-    if (dotfile) {
+    if (dotfile || (r->id == BTRFS_ROOT_FSTREE && inode == SUBVOL_ROOT_INODE))
         att |= FILE_ATTRIBUTE_HIDDEN;
-    }
 
     att |= FILE_ATTRIBUTE_ARCHIVE;
 
