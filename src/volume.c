@@ -1087,6 +1087,10 @@ static void add_drive_letter_work_item(pdo_device_extension* pdode) {
     drive_letter_callback_context* context;
 
     work_item = IoAllocateWorkItem(master_devobj);
+    if (!work_item) {
+        ERR("out of memory\n");
+        return;
+    }
 
     context = ExAllocatePoolWithTag(PagedPool, sizeof(drive_letter_callback_context), ALLOC_TAG);
 
