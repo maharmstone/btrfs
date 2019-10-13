@@ -235,6 +235,7 @@ typedef struct {
     UNICODE_STRING name_uc;
     ULONG size;
     struct _file_ref* fileref;
+    bool root_dir;
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
     LIST_ENTRY list_entry_hash_uc;
@@ -639,6 +640,7 @@ typedef struct {
     bool no_trim;
     bool clear_cache;
     bool allow_degraded;
+    bool no_root_dir;
 } mount_options;
 
 #define VCB_TYPE_FS         1
@@ -1131,6 +1133,7 @@ extern uint32_t mount_no_trim;
 extern uint32_t mount_clear_cache;
 extern uint32_t mount_allow_degraded;
 extern uint32_t mount_readonly;
+extern uint32_t mount_no_root_dir;
 extern uint32_t no_pnp;
 
 #ifdef _DEBUG

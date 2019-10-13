@@ -26,6 +26,9 @@ extern tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 
 static const WCHAR datastring[] = L"::$DATA";
 
+static const char root_dir[] = "$Root";
+static const WCHAR root_dir_utf16[] = L"$Root";
+
 // Windows 10
 #define ATOMIC_CREATE_ECP_IN_FLAG_REPARSE_POINT_SPECIFIED   0x0002
 #define ATOMIC_CREATE_ECP_IN_FLAG_BEST_EFFORT               0x0100
@@ -468,6 +471,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     ULONG num_children = 0;
+    uint64_t max_index = 2;
 
     fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!fcb->hash_ptrs) {
@@ -536,6 +540,9 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         dc->index = tp.item->key.offset;
         dc->type = di->type;
         dc->fileref = NULL;
+        dc->root_dir = false;
+
+        max_index = dc->index;
 
         dc->utf8.MaximumLength = dc->utf8.Length = di->n;
         dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, di->n, ALLOC_TAG);
@@ -588,6 +595,59 @@ cont:
             tp = next_tp;
         else
             break;
+    }
+
+    if (!Vcb->options.no_root_dir && (!Vcb->root_fileref || fcb == Vcb->root_fileref->fcb)) {
+        dir_child* dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
+        if (!dc) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        dc->key.obj_id = BTRFS_ROOT_FSTREE;
+        dc->key.obj_type = TYPE_ROOT_ITEM;
+        dc->key.offset = 0;
+        dc->index = max_index + 1;
+        dc->type = BTRFS_TYPE_DIRECTORY;
+        dc->fileref = NULL;
+        dc->root_dir = true;
+
+        dc->utf8.MaximumLength = dc->utf8.Length = sizeof(root_dir) - sizeof(char);
+        dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir) - sizeof(char), ALLOC_TAG);
+        if (!dc->utf8.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(dc);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(dc->utf8.Buffer, root_dir, sizeof(root_dir) - sizeof(char));
+
+        dc->name.MaximumLength = dc->name.Length = sizeof(root_dir_utf16) - sizeof(WCHAR);
+        dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir_utf16) - sizeof(WCHAR), ALLOC_TAG);
+        if (!dc->name.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(dc->utf8.Buffer);
+            ExFreePool(dc);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(dc->name.Buffer, root_dir_utf16, sizeof(root_dir_utf16) - sizeof(WCHAR));
+
+        Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
+        if (!NT_SUCCESS(Status)) {
+            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ExFreePool(dc->utf8.Buffer);
+            ExFreePool(dc->name.Buffer);
+            ExFreePool(dc);
+            goto cont;
+        }
+
+        dc->hash = calc_crc32c(0xffffffff, (uint8_t*)dc->name.Buffer, dc->name.Length);
+        dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)dc->name_uc.Buffer, dc->name_uc.Length);
+
+        InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+
+        insert_dir_child_into_hash_lists(fcb, dc);
     }
 
     return STATUS_SUCCESS;
@@ -1515,7 +1575,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 return STATUS_SUCCESS;
             }
 
-            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && inode == SUBVOL_ROOT_INODE && subvol->parent != sf->fcb->subvol->id)) {
+            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && inode == SUBVOL_ROOT_INODE && subvol->parent != sf->fcb->subvol->id && !dc->root_dir)) {
                 fcb = Vcb->dummy_fcb;
                 InterlockedIncrement(&fcb->refcount);
             } else {
