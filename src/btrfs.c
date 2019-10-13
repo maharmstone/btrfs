@@ -1558,7 +1558,7 @@ void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, 
     ExFreePool(fn.Buffer);
 }
 
-void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream) {
+static void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream) {
     fcb* fcb = fileref->fcb;
     LIST_ENTRY* le;
     NTSTATUS Status;
@@ -1637,6 +1637,61 @@ void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_
     }
 
     ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
+}
+
+typedef struct {
+    file_ref* fileref;
+    ULONG filter_match;
+    ULONG action;
+    PUNICODE_STRING stream;
+    PIO_WORKITEM work_item;
+} notification_fcb;
+
+_Function_class_(IO_WORKITEM_ROUTINE)
+static void __stdcall notification_work_item(PDEVICE_OBJECT DeviceObject, PVOID con) {
+    notification_fcb* nf = con;
+
+    UNUSED(DeviceObject);
+
+    ExAcquireResourceSharedLite(&nf->fileref->fcb->Vcb->tree_lock, TRUE); // protect us from fileref being reaped
+
+    send_notification_fcb(nf->fileref, nf->filter_match, nf->action, nf->stream);
+
+    free_fileref(nf->fileref);
+
+    ExReleaseResourceLite(&nf->fileref->fcb->Vcb->tree_lock);
+
+    IoFreeWorkItem(nf->work_item);
+
+    ExFreePool(nf);
+}
+
+void queue_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream) {
+    notification_fcb* nf;
+    PIO_WORKITEM work_item;
+
+    nf = ExAllocatePoolWithTag(PagedPool, sizeof(notification_fcb), ALLOC_TAG);
+    if (!nf) {
+        ERR("out of memory\n");
+        return;
+    }
+
+    work_item = IoAllocateWorkItem(master_devobj);
+    if (!work_item) {
+        ERR("out of memory\n");
+        ExFreePool(nf);
+        return;
+    }
+
+    InterlockedIncrement(&fileref->refcount);
+
+    nf->fileref = fileref;
+    nf->filter_match = filter_match;
+    nf->action = action;
+    nf->stream = stream;
+    nf->work_item = work_item;
+
+    IoQueueWorkItem(work_item, notification_work_item, DelayedWorkQueue, nf);
 }
 
 void mark_fcb_dirty(_In_ fcb* fcb) {

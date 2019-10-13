@@ -2578,7 +2578,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
             return Status;
         } else if (Status != STATUS_OBJECT_NAME_COLLISION) {
             send_notification_fileref(newpar, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
-            send_notification_fcb(newpar->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+            queue_notification_fcb(newpar->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
         }
 
         ExFreePool(fpus2.Buffer);
@@ -3040,7 +3040,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         IoSetShareAccess(IrpSp->Parameters.Create.SecurityContext->DesiredAccess, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access);
 
         send_notification_fileref(fileref, options & FILE_DIRECTORY_FILE ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
-        send_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+        queue_notification_fcb(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
     }
 
     FileObject->FsContext = fileref->fcb;
@@ -3743,7 +3743,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
                     }
 
                     if (dc->fileref) {
-                        send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_STREAM_NAME, FILE_ACTION_REMOVED_STREAM, &dc->name);
+                        queue_notification_fcb(fileref, FILE_NOTIFY_CHANGE_STREAM_NAME, FILE_ACTION_REMOVED_STREAM, &dc->name);
 
                         Status = delete_fileref(dc->fileref, NULL, false, NULL, rollback);
                         if (!NT_SUCCESS(Status)) {
@@ -3771,7 +3771,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
             fileref->parent->fcb->inode_item_changed = true;
             mark_fcb_dirty(fileref->parent->fcb);
 
-            send_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED, &fileref->dc->name);
+            queue_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED, &fileref->dc->name);
         } else {
             mark_fcb_dirty(fileref->fcb);
 
@@ -3797,7 +3797,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
             fileref->fcb->inode_item.st_mtime = now;
             fileref->fcb->inode_item_changed = true;
 
-            send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+            queue_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
         }
     } else {
         if (options & FILE_NO_EA_KNOWLEDGE && fileref->fcb->ea_xattr.Length > 0) {

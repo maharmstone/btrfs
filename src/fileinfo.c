@@ -304,7 +304,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     }
 
     if (filter != 0)
-        send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+        queue_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -2197,7 +2197,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             mark_fcb_dirty(fileref->parent->fcb);
         }
 
-        send_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED_STREAM, &fileref->dc->name);
+        queue_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED_STREAM, &fileref->dc->name);
 
         goto end;
     }
@@ -2261,7 +2261,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
     fcb->inode_item_changed = true;
     mark_fcb_dirty(fcb);
-    send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+    queue_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -2715,7 +2715,7 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
     fcb->inode_item_changed = true;
     mark_fcb_dirty(fcb);
 
-    send_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+    queue_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 

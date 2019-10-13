@@ -1072,7 +1072,7 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
                    _Out_writes_bytes_opt_(OutputBufferSize) PVOID OutputBuffer, _In_ ULONG OutputBufferSize, _In_ bool Override, _Out_opt_ IO_STATUS_BLOCK* iosb);
 bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix);
 void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
-void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
+void queue_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
 
 #ifdef DEBUG_CHUNK_LOCKS
 #define acquire_chunk_lock(c, Vcb) { ExAcquireResourceExclusiveLite(&c->lock, true); InterlockedIncrement(&Vcb->chunk_locks_held); }

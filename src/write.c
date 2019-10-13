@@ -4354,8 +4354,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
 
         if (changed_length) {
-            send_notification_fcb(fcb->ads ? fileref->parent : fileref, fcb->ads ? FILE_NOTIFY_CHANGE_STREAM_SIZE : FILE_NOTIFY_CHANGE_SIZE,
-                                  fcb->ads ? FILE_ACTION_MODIFIED_STREAM : FILE_ACTION_MODIFIED, fcb->ads && fileref->dc ? &fileref->dc->name : NULL);
+            queue_notification_fcb(fcb->ads ? fileref->parent : fileref, fcb->ads ? FILE_NOTIFY_CHANGE_STREAM_SIZE : FILE_NOTIFY_CHANGE_SIZE,
+                                   fcb->ads ? FILE_ACTION_MODIFIED_STREAM : FILE_ACTION_MODIFIED, fcb->ads && fileref->dc ? &fileref->dc->name : NULL);
         }
 
         goto end;
@@ -4609,8 +4609,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     Status = STATUS_SUCCESS;
 
     if (filter != 0)
-        send_notification_fcb(fcb->ads ? fileref->parent : fileref, filter, fcb->ads ? FILE_ACTION_MODIFIED_STREAM : FILE_ACTION_MODIFIED,
-                              fcb->ads && fileref->dc ? &fileref->dc->name : NULL);
+        queue_notification_fcb(fcb->ads ? fileref->parent : fileref, filter, fcb->ads ? FILE_ACTION_MODIFIED_STREAM : FILE_ACTION_MODIFIED,
+                               fcb->ads && fileref->dc ? &fileref->dc->name : NULL);
 
 end:
     if (NT_SUCCESS(Status) && FileObject->Flags & FO_SYNCHRONOUS_IO && !paging_io) {

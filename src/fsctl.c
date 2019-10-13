@@ -1787,7 +1787,7 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     }
 
     mark_fcb_dirty(fcb);
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED, NULL);
+    queue_notification_fcb(fileref, FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
@@ -2057,7 +2057,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     fcb->inode_item_changed = true;
     mark_fcb_dirty(fcb);
 
-    send_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+    queue_notification_fcb(fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
@@ -3645,7 +3645,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
         if (!ccb->user_set_write_time) {
             fcb->inode_item.st_mtime = now;
-            send_notification_fcb(ccb->fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+            queue_notification_fcb(ccb->fileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
         }
 
         fcb->inode_item_changed = true;
@@ -4038,7 +4038,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     send_notification_fileref(fileref, bmn->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
 
     if (!parccb->user_set_write_time)
-        send_notification_fcb(parfileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
+        queue_notification_fcb(parfileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
     Status = STATUS_SUCCESS;
 
