@@ -1460,7 +1460,7 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
 
 static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, bool ex) {
     FILE_RENAME_INFORMATION_EX* fri = Irp->AssociatedIrp.SystemBuffer;
-    fcb *fcb = FileObject->FsContext;
+    fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
     file_ref *fileref = ccb ? ccb->fileref : NULL, *oldfileref = NULL, *related = NULL, *fr2 = NULL;
     WCHAR* fn;
@@ -1517,6 +1517,12 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
+
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_ROOT_FSTREE) {
+        WARN("not allowing \\$Root to be renamed\n");
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
 
     if (fcb->ads) {
         // MSDN says that NTFS data streams can be renamed (https://msdn.microsoft.com/en-us/library/windows/hardware/ff540344.aspx),
