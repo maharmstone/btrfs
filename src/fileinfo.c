@@ -357,6 +357,12 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
         goto end;
     }
 
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_ROOT_FSTREE) {
+        WARN("not allowing \\$Root to be deleted\n");
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
     // FIXME - can we skip this bit for subvols?
     if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
         TRACE("directory not empty\n");
