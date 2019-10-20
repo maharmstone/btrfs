@@ -92,6 +92,9 @@ requirements for signing, which are only available to corporations and not indiv
 If this affects you (i.e. you get a signing error when trying to install the driver),
 try disabling Secure Boot in your BIOS settings.
 
+There's also a [Chocolatey package](https://chocolatey.org/packages/winbtrfs) available -
+if you have Chocolatey installed, try running `choco install winbtrfs`.
+
 Uninstalling
 ------------
 
