@@ -3913,7 +3913,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
 }
 
 _Ret_maybenull_
-static root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
+root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
 
     static const char fn[] = "default";

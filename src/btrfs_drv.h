@@ -1112,6 +1112,9 @@ NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, 
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len);
 uint32_t get_num_of_processors();
 
+_Ret_maybenull_
+root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
+
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
 #else

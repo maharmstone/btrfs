@@ -597,57 +597,66 @@ cont:
             break;
     }
 
-    if (!Vcb->options.no_root_dir && (!Vcb->root_fileref || fcb == Vcb->root_fileref->fcb)) {
-        dir_child* dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
-        if (!dc) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+    if (!Vcb->options.no_root_dir && fcb->inode == SUBVOL_ROOT_INODE) {
+        root* top_subvol;
+
+        if (Vcb->root_fileref && Vcb->root_fileref->fcb)
+            top_subvol = Vcb->root_fileref->fcb->subvol;
+        else
+            top_subvol = find_default_subvol(Vcb, NULL);
+
+        if (fcb->subvol == top_subvol && top_subvol->id != BTRFS_ROOT_FSTREE) {
+            dir_child* dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
+            if (!dc) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            dc->key.obj_id = BTRFS_ROOT_FSTREE;
+            dc->key.obj_type = TYPE_ROOT_ITEM;
+            dc->key.offset = 0;
+            dc->index = max_index + 1;
+            dc->type = BTRFS_TYPE_DIRECTORY;
+            dc->fileref = NULL;
+            dc->root_dir = true;
+
+            dc->utf8.MaximumLength = dc->utf8.Length = sizeof(root_dir) - sizeof(char);
+            dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir) - sizeof(char), ALLOC_TAG);
+            if (!dc->utf8.Buffer) {
+                ERR("out of memory\n");
+                ExFreePool(dc);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(dc->utf8.Buffer, root_dir, sizeof(root_dir) - sizeof(char));
+
+            dc->name.MaximumLength = dc->name.Length = sizeof(root_dir_utf16) - sizeof(WCHAR);
+            dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir_utf16) - sizeof(WCHAR), ALLOC_TAG);
+            if (!dc->name.Buffer) {
+                ERR("out of memory\n");
+                ExFreePool(dc->utf8.Buffer);
+                ExFreePool(dc);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(dc->name.Buffer, root_dir_utf16, sizeof(root_dir_utf16) - sizeof(WCHAR));
+
+            Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
+            if (!NT_SUCCESS(Status)) {
+                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                ExFreePool(dc->utf8.Buffer);
+                ExFreePool(dc->name.Buffer);
+                ExFreePool(dc);
+                goto cont;
+            }
+
+            dc->hash = calc_crc32c(0xffffffff, (uint8_t*)dc->name.Buffer, dc->name.Length);
+            dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)dc->name_uc.Buffer, dc->name_uc.Length);
+
+            InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+
+            insert_dir_child_into_hash_lists(fcb, dc);
         }
-
-        dc->key.obj_id = BTRFS_ROOT_FSTREE;
-        dc->key.obj_type = TYPE_ROOT_ITEM;
-        dc->key.offset = 0;
-        dc->index = max_index + 1;
-        dc->type = BTRFS_TYPE_DIRECTORY;
-        dc->fileref = NULL;
-        dc->root_dir = true;
-
-        dc->utf8.MaximumLength = dc->utf8.Length = sizeof(root_dir) - sizeof(char);
-        dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir) - sizeof(char), ALLOC_TAG);
-        if (!dc->utf8.Buffer) {
-            ERR("out of memory\n");
-            ExFreePool(dc);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlCopyMemory(dc->utf8.Buffer, root_dir, sizeof(root_dir) - sizeof(char));
-
-        dc->name.MaximumLength = dc->name.Length = sizeof(root_dir_utf16) - sizeof(WCHAR);
-        dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir_utf16) - sizeof(WCHAR), ALLOC_TAG);
-        if (!dc->name.Buffer) {
-            ERR("out of memory\n");
-            ExFreePool(dc->utf8.Buffer);
-            ExFreePool(dc);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlCopyMemory(dc->name.Buffer, root_dir_utf16, sizeof(root_dir_utf16) - sizeof(WCHAR));
-
-        Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
-            ExFreePool(dc->utf8.Buffer);
-            ExFreePool(dc->name.Buffer);
-            ExFreePool(dc);
-            goto cont;
-        }
-
-        dc->hash = calc_crc32c(0xffffffff, (uint8_t*)dc->name.Buffer, dc->name.Length);
-        dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)dc->name_uc.Buffer, dc->name_uc.Length);
-
-        InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
-
-        insert_dir_child_into_hash_lists(fcb, dc);
     }
 
     return STATUS_SUCCESS;
