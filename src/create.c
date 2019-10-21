@@ -4259,9 +4259,21 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                 hl_alloc = true;
             }
         } else {
-            ERR("couldn't find parent for subvol %I64x\n", subvol->id);
-            free_fcb(fcb);
-            return STATUS_INTERNAL_ERROR;
+            if (!Vcb->options.no_root_dir && subvol->id == BTRFS_ROOT_FSTREE && Vcb->root_fileref->fcb->subvol != subvol) {
+                Status = open_fileref_by_inode(Vcb, Vcb->root_fileref->fcb->subvol, SUBVOL_ROOT_INODE, &parfr, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("open_fileref_by_inode returned %08x\n", Status);
+                    free_fcb(fcb);
+                    return Status;
+                }
+
+                name.Length = name.MaximumLength = sizeof(root_dir_utf16) - sizeof(WCHAR);
+                name.Buffer = (WCHAR*)root_dir_utf16;
+            } else {
+                ERR("couldn't find parent for subvol %I64x\n", subvol->id);
+                free_fcb(fcb);
+                return STATUS_INTERNAL_ERROR;
+            }
         }
     } else {
         Status = open_fileref_by_inode(Vcb, subvol, parent, &parfr, Irp);
