@@ -4164,7 +4164,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     TRACE("(%p, %p, %I64x, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
 
     if (*length == 0) {
-        WARN("returning success for zero-length write\n");
+        TRACE("returning success for zero-length write\n");
         return STATUS_SUCCESS;
     }
 
