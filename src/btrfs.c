@@ -284,8 +284,6 @@ static void __stdcall DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
 
     free_cache();
 
-    IoUnregisterFileSystem(DriverObject->DeviceObject);
-
     if (notification_entry2) {
         if (fIoUnregisterPlugPlayNotificationEx)
             fIoUnregisterPlugPlayNotificationEx(notification_entry2);
@@ -5290,6 +5288,8 @@ static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PI
         comfo = NULL;
     }
 #endif
+
+    IoUnregisterFileSystem(master_devobj);
 
 end:
     Irp->IoStatus.Status = Status;
