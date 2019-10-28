@@ -284,27 +284,6 @@ static void __stdcall DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
 
     free_cache();
 
-    if (notification_entry2) {
-        if (fIoUnregisterPlugPlayNotificationEx)
-            fIoUnregisterPlugPlayNotificationEx(notification_entry2);
-        else
-            IoUnregisterPlugPlayNotification(notification_entry2);
-    }
-
-    if (notification_entry3) {
-        if (fIoUnregisterPlugPlayNotificationEx)
-            fIoUnregisterPlugPlayNotificationEx(notification_entry3);
-        else
-            IoUnregisterPlugPlayNotification(notification_entry3);
-    }
-
-    if (notification_entry) {
-        if (fIoUnregisterPlugPlayNotificationEx)
-            fIoUnregisterPlugPlayNotificationEx(notification_entry);
-        else
-            IoUnregisterPlugPlayNotification(notification_entry);
-    }
-
     dosdevice_nameW.Buffer = (WCHAR*)dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
 
@@ -5290,6 +5269,33 @@ static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PI
 #endif
 
     IoUnregisterFileSystem(master_devobj);
+
+    if (notification_entry2) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(notification_entry2);
+        else
+            IoUnregisterPlugPlayNotification(notification_entry2);
+
+        notification_entry2 = NULL;
+    }
+
+    if (notification_entry3) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(notification_entry3);
+        else
+            IoUnregisterPlugPlayNotification(notification_entry3);
+
+        notification_entry3 = NULL;
+    }
+
+    if (notification_entry) {
+        if (fIoUnregisterPlugPlayNotificationEx)
+            fIoUnregisterPlugPlayNotificationEx(notification_entry);
+        else
+            IoUnregisterPlugPlayNotification(notification_entry);
+
+        notification_entry = NULL;
+    }
 
 end:
     Irp->IoStatus.Status = Status;
