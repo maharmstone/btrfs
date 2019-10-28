@@ -1394,6 +1394,7 @@ void do_unlock_volume(device_extension* Vcb);
 void trim_whole_device(device* dev);
 void flush_subvol_fcbs(root* subvol);
 bool fcb_is_inline(fcb* fcb);
+NTSTATUS dismount_volume(device_extension* Vcb, bool shutdown, PIRP Irp);
 
 // in flushthread.c
 

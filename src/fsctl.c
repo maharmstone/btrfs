@@ -2566,22 +2566,25 @@ static void update_volumes(device_extension* Vcb) {
     ExReleaseResourceLite(&Vcb->tree_lock);
 }
 
-static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
+NTSTATUS dismount_volume(device_extension* Vcb, bool shutdown, PIRP Irp) {
     NTSTATUS Status;
+    bool open_files;
 
     TRACE("FSCTL_DISMOUNT_VOLUME\n");
 
     if (!(Vcb->Vpb->Flags & VPB_MOUNTED))
         return STATUS_SUCCESS;
 
-    if (Vcb->disallow_dismount || Vcb->page_file_count != 0) {
-        WARN("attempting to dismount boot volume or one containing a pagefile\n");
-        return STATUS_ACCESS_DENIED;
-    }
+    if (!shutdown) {
+        if (Vcb->disallow_dismount || Vcb->page_file_count != 0) {
+            WARN("attempting to dismount boot volume or one containing a pagefile\n");
+            return STATUS_ACCESS_DENIED;
+        }
 
-    Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
-    if (!NT_SUCCESS(Status)) {
-        WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
+        Status = FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_DISMOUNT);
+        if (!NT_SUCCESS(Status)) {
+            WARN("FsRtlNotifyVolumeEvent returned %08x\n", Status);
+        }
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
@@ -2601,12 +2604,17 @@ static NTSTATUS dismount_volume(device_extension* Vcb, PIRP Irp) {
 
     Vcb->removing = true;
 
+    open_files = Vcb->open_files > 0;
+
     if (Vcb->vde) {
         update_volumes(Vcb);
         Vcb->vde->mounted_device = NULL;
     }
 
     ExReleaseResourceLite(&Vcb->tree_lock);
+
+    if (!open_files)
+        uninit(Vcb);
 
     return STATUS_SUCCESS;
 }
@@ -4893,7 +4901,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         case FSCTL_DISMOUNT_VOLUME:
-            Status = dismount_volume(DeviceObject->DeviceExtension, Irp);
+            Status = dismount_volume(DeviceObject->DeviceExtension, false, Irp);
             break;
 
         case FSCTL_IS_VOLUME_MOUNTED:

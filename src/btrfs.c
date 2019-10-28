@@ -479,7 +479,6 @@ static NTSTATUS __stdcall drv_close(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    // FIXME - unmount if called for volume
     // FIXME - call FsRtlNotifyUninitializeSync(&Vcb->NotifySync) if unmounting
 
     Status = close_file(IrpSp->FileObject, Irp);
@@ -5208,7 +5207,6 @@ exit:
 }
 
 void do_shutdown(PIRP Irp) {
-    NTSTATUS Status;
     LIST_ENTRY* le;
 
     shutting_down = true;
@@ -5216,29 +5214,13 @@ void do_shutdown(PIRP Irp) {
 
     le = VcbList.Flink;
     while (le != &VcbList) {
-        bool open_files;
         LIST_ENTRY* le2 = le->Flink;
 
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
 
         TRACE("shutting down Vcb %p\n", Vcb);
 
-        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
-        Vcb->removing = true;
-        open_files = Vcb->open_files > 0;
-
-        if (Vcb->need_write && !Vcb->readonly) {
-            Status = do_write(Vcb, Irp);
-            if (!NT_SUCCESS(Status))
-                ERR("do_write returned %08x\n", Status);
-        }
-
-        free_trees(Vcb);
-
-        ExReleaseResourceLite(&Vcb->tree_lock);
-
-        if (!open_files)
-            uninit(Vcb);
+        dismount_volume(Vcb, true, Irp);
 
         le = le2;
     }
