@@ -5207,26 +5207,9 @@ exit:
     return Status;
 }
 
-_Dispatch_type_(IRP_MJ_SHUTDOWN)
-_Function_class_(DRIVER_DISPATCH)
-static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+void do_shutdown(PIRP Irp) {
     NTSTATUS Status;
-    bool top_level;
-    device_extension* Vcb = DeviceObject->DeviceExtension;
     LIST_ENTRY* le;
-
-    FsRtlEnterFileSystem();
-
-    TRACE("shutdown\n");
-
-    top_level = is_top_level(Irp);
-
-    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_shutdown(DeviceObject, Irp);
-        goto end;
-    }
-
-    Status = STATUS_SUCCESS;
 
     shutting_down = true;
     KeSetEvent(&mountmgr_thread_event, 0, false);
@@ -5236,7 +5219,7 @@ static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PI
         bool open_files;
         LIST_ENTRY* le2 = le->Flink;
 
-        Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
 
         TRACE("shutting down Vcb %p\n", Vcb);
 
@@ -5296,6 +5279,29 @@ static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PI
 
         notification_entry = NULL;
     }
+}
+
+_Dispatch_type_(IRP_MJ_SHUTDOWN)
+_Function_class_(DRIVER_DISPATCH)
+static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+    NTSTATUS Status;
+    bool top_level;
+    device_extension* Vcb = DeviceObject->DeviceExtension;
+
+    FsRtlEnterFileSystem();
+
+    TRACE("shutdown\n");
+
+    top_level = is_top_level(Irp);
+
+    if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
+        Status = vol_shutdown(DeviceObject, Irp);
+        goto end;
+    }
+
+    Status = STATUS_SUCCESS;
+
+    do_shutdown(Irp);
 
 end:
     Irp->IoStatus.Status = Status;
