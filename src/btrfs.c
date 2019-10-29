@@ -5217,10 +5217,21 @@ void do_shutdown(PIRP Irp) {
         LIST_ENTRY* le2 = le->Flink;
 
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
+        volume_device_extension* vde = Vcb->vde;
 
         TRACE("shutting down Vcb %p\n", Vcb);
 
+        if (vde)
+            InterlockedIncrement(&vde->open_count);
+
         dismount_volume(Vcb, true, Irp);
+
+        if (vde) {
+            vde->removing = true;
+
+            if (InterlockedDecrement(&vde->open_count) == 0)
+                free_vol(vde);
+        }
 
         le = le2;
     }

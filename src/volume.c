@@ -46,6 +46,44 @@ NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+void free_vol(volume_device_extension* vde) {
+    NTSTATUS Status;
+    UNICODE_STRING mmdevpath;
+    PDEVICE_OBJECT mountmgr;
+    PFILE_OBJECT mountmgrfo;
+    PDEVICE_OBJECT pdo;
+
+    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+    if (!NT_SUCCESS(Status))
+        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+    else {
+        remove_drive_letter(mountmgr, &vde->name);
+
+        ObDereferenceObject(mountmgrfo);
+    }
+
+    if (vde->mounted_device) {
+        device_extension* Vcb = vde->mounted_device->DeviceExtension;
+
+        Vcb->vde = NULL;
+    }
+
+    if (vde->name.Buffer)
+        ExFreePool(vde->name.Buffer);
+
+    ExDeleteResourceLite(&vde->pdode->child_lock);
+
+    if (vde->pdo->AttachedDevice)
+        IoDetachDevice(vde->pdo);
+
+    pdo = vde->pdo;
+    IoDeleteDevice(vde->device);
+
+    if (!no_pnp)
+        IoDeleteDevice(pdo);
+}
+
 NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
     pdo_device_extension* pdode = vde->pdode;
@@ -59,42 +97,9 @@ NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     ExAcquireResourceSharedLite(&pdode->child_lock, true);
 
     if (InterlockedDecrement(&vde->open_count) == 0 && vde->removing) {
-        NTSTATUS Status;
-        UNICODE_STRING mmdevpath;
-        PDEVICE_OBJECT mountmgr;
-        PFILE_OBJECT mountmgrfo;
-        PDEVICE_OBJECT pdo;
-
-        RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-        Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
-        if (!NT_SUCCESS(Status))
-            ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-        else {
-            remove_drive_letter(mountmgr, &vde->name);
-
-            ObDereferenceObject(mountmgrfo);
-        }
-
-        if (vde->mounted_device) {
-            device_extension* Vcb = vde->mounted_device->DeviceExtension;
-
-            Vcb->vde = NULL;
-        }
-
-        if (vde->name.Buffer)
-            ExFreePool(vde->name.Buffer);
-
         ExReleaseResourceLite(&pdode->child_lock);
-        ExDeleteResourceLite(&pdode->child_lock);
 
-        if (vde->pdo->AttachedDevice)
-            IoDetachDevice(vde->pdo);
-
-        pdo = vde->pdo;
-        IoDeleteDevice(vde->device);
-
-        if (!no_pnp)
-            IoDeleteDevice(pdo);
+        free_vol(vde);
     } else
         ExReleaseResourceLite(&pdode->child_lock);
 

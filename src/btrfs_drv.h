@@ -1549,6 +1549,8 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS __stdcall pnp_removal(PVOID NotificationStructure, PVOID Context);
 
+void free_vol(volume_device_extension* vde);
+
 // in scrub.c
 NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode);
 NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void* data, ULONG length);
