@@ -1061,6 +1061,7 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
                     ExReleaseResourceLite(&pdo_list_lock);
                     ObDereferenceObject(mountmgrfo);
                     IoFreeWorkItem(context->work_item);
+                    ExFreePool(context);
                     return;
                 }
 
@@ -1083,6 +1084,7 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
             ExReleaseResourceLite(&pdo_list_lock);
             ObDereferenceObject(mountmgrfo);
             IoFreeWorkItem(context->work_item);
+            ExFreePool(context);
             return;
         }
 
@@ -1093,6 +1095,7 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
 
     ObDereferenceObject(mountmgrfo);
     IoFreeWorkItem(context->work_item);
+    ExFreePool(context);
 }
 
 static void add_drive_letter_work_item(pdo_device_extension* pdode) {
