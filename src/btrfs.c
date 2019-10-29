@@ -282,8 +282,6 @@ static void __stdcall DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
 
     TRACE("(%p)\n", DriverObject);
 
-    free_cache();
-
     dosdevice_nameW.Buffer = (WCHAR*)dosdevice_name;
     dosdevice_nameW.Length = dosdevice_nameW.MaximumLength = sizeof(dosdevice_name) - sizeof(WCHAR);
 
@@ -3985,7 +3983,7 @@ end:
 void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs) {
     TRACE("(%p, %p)\n", FileObject, ccfs);
 
-    CcInitializeCacheMap(FileObject, ccfs, false, cache_callbacks, FileObject);
+    CcInitializeCacheMap(FileObject, ccfs, false, &cache_callbacks, FileObject);
 
     if (diskacc)
         fCcSetAdditionalCacheAttributesEx(FileObject, CC_ENABLE_DISK_IO_ACCOUNTING);
@@ -4822,7 +4820,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->root_file->FsContext2 = root_ccb;
 
     try {
-        CcInitializeCacheMap(Vcb->root_file, (PCC_FILE_SIZES)(&root_fcb->Header.AllocationSize), false, cache_callbacks, Vcb->root_file);
+        CcInitializeCacheMap(Vcb->root_file, (PCC_FILE_SIZES)(&root_fcb->Header.AllocationSize), false, &cache_callbacks, Vcb->root_file);
     } except (EXCEPTION_EXECUTE_HANDLER) {
         Status = GetExceptionCode();
         goto exit;
@@ -6021,11 +6019,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
         return Status;
     }
 
-    Status = init_cache();
-    if (!NT_SUCCESS(Status)) {
-        ERR("init_cache returned %08x\n", Status);
-        return Status;
-    }
+    init_cache();
 
     InitializeListHead(&VcbList);
     ExInitializeResourceLite(&global_loading_lock);

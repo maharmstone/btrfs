@@ -1271,9 +1271,8 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
                          _In_ volume_child* vc, _In_ bool skip_dev);
 
 // in cache.c
-NTSTATUS init_cache();
-void free_cache();
-extern CACHE_MANAGER_CALLBACKS* cache_callbacks;
+void init_cache();
+extern CACHE_MANAGER_CALLBACKS cache_callbacks;
 
 // in write.c
 NTSTATUS write_file(device_extension* Vcb, PIRP Irp, bool wait, bool deferred_write);
