@@ -2167,13 +2167,7 @@ void uninit(_In_ device_extension* Vcb) {
     if (Vcb->devobj->AttachedDevice)
         IoDetachDevice(Vcb->devobj);
 
-    IoAcquireVpbSpinLock(&irql);
-
-    if (InterlockedDecrement((LONG*)&Vcb->Vpb->ReferenceCount) == 0) {
-        IoReleaseVpbSpinLock(irql);
-        IoDeleteDevice(Vcb->devobj);
-    } else
-        IoReleaseVpbSpinLock(irql);
+    IoDeleteDevice(Vcb->devobj);
 }
 
 static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
