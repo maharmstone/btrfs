@@ -31,6 +31,7 @@ extern PDEVICE_OBJECT busobj;
 extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
 extern UNICODE_STRING registry_path;
+extern tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 
 NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     volume_device_extension* vde = DeviceObject->DeviceExtension;
@@ -76,6 +77,25 @@ void free_vol(volume_device_extension* vde) {
 
     if (vde->pdo->AttachedDevice)
         IoDetachDevice(vde->pdo);
+
+    while (!IsListEmpty(&vde->pdode->children)) {
+        volume_child* vc = CONTAINING_RECORD(RemoveHeadList(&vde->pdode->children), volume_child, list_entry);
+
+        if (vc->notification_entry) {
+            if (fIoUnregisterPlugPlayNotificationEx)
+                fIoUnregisterPlugPlayNotificationEx(vc->notification_entry);
+            else
+                IoUnregisterPlugPlayNotification(vc->notification_entry);
+        }
+
+        if (vc->pnp_name.Buffer)
+            ExFreePool(vc->pnp_name.Buffer);
+
+        ExFreePool(vc);
+    }
+
+    if (no_pnp)
+        ExFreePool(vde->pdode);
 
     pdo = vde->pdo;
     IoDeleteDevice(vde->device);
