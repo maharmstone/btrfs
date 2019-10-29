@@ -48,21 +48,7 @@ NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 }
 
 void free_vol(volume_device_extension* vde) {
-    NTSTATUS Status;
-    UNICODE_STRING mmdevpath;
-    PDEVICE_OBJECT mountmgr;
-    PFILE_OBJECT mountmgrfo;
     PDEVICE_OBJECT pdo;
-
-    RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
-    Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
-    if (!NT_SUCCESS(Status))
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
-    else {
-        remove_drive_letter(mountmgr, &vde->name);
-
-        ObDereferenceObject(mountmgrfo);
-    }
 
     if (vde->mounted_device) {
         device_extension* Vcb = vde->mounted_device->DeviceExtension;

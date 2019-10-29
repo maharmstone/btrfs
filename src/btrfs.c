@@ -5249,7 +5249,27 @@ void do_shutdown(PIRP Irp) {
         dismount_volume(Vcb, true, Irp);
 
         if (vde) {
+            NTSTATUS Status;
+            UNICODE_STRING mmdevpath;
+            PDEVICE_OBJECT mountmgr;
+            PFILE_OBJECT mountmgrfo;
+            KIRQL irql;
+
+            RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
+            Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
+            if (!NT_SUCCESS(Status))
+                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+            else {
+                remove_drive_letter(mountmgr, &vde->name);
+
+                ObDereferenceObject(mountmgrfo);
+            }
+
             vde->removing = true;
+
+            IoAcquireVpbSpinLock(&irql);
+            vde->device->Vpb->DeviceObject = vde->device;
+            IoReleaseVpbSpinLock(irql);
 
             if (InterlockedDecrement(&vde->open_count) == 0)
                 free_vol(vde);
