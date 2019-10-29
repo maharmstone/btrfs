@@ -2163,6 +2163,17 @@ void uninit(_In_ device_extension* Vcb) {
     ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
 
     ZwClose(Vcb->flush_thread_handle);
+
+    if (Vcb->devobj->AttachedDevice)
+        IoDetachDevice(Vcb->devobj);
+
+    IoAcquireVpbSpinLock(&irql);
+
+    if (InterlockedDecrement((LONG*)&Vcb->Vpb->ReferenceCount) == 0) {
+        IoReleaseVpbSpinLock(irql);
+        IoDeleteDevice(Vcb->devobj);
+    } else
+        IoReleaseVpbSpinLock(irql);
 }
 
 static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
@@ -4828,7 +4839,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabelLength = 4; // FIXME
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
-    NewDeviceObject->Vpb->ReferenceCount++; // FIXME - should we deref this at any point?
+    NewDeviceObject->Vpb->ReferenceCount++;
 
     KeInitializeEvent(&Vcb->flush_thread_finished, NotificationEvent, false);
 
@@ -4856,6 +4867,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     if (vde)
         vde->mounted_device = NewDeviceObject;
+
+    Vcb->devobj = NewDeviceObject;
 
     ExInitializeResourceLite(&Vcb->send_load_lock);
 

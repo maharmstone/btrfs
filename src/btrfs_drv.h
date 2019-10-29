@@ -718,6 +718,7 @@ typedef struct _device_extension {
     uint32_t type;
     mount_options options;
     PVPB Vpb;
+    PDEVICE_OBJECT devobj;
     struct _volume_device_extension* vde;
     LIST_ENTRY devices;
 #ifdef DEBUG_CHUNK_LOCKS
