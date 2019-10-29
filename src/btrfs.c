@@ -4240,7 +4240,6 @@ static bool still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT f
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
-    PDEVICE_OBJECT device2;
 
     if (!device)
         return false;
@@ -4274,14 +4273,20 @@ static bool still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT f
         }
     }
 
-    device2 = device;
+    ObReferenceObject(device);
 
-    do {
-        device2->Flags &= ~DO_VERIFY_VOLUME;
-        device2 = IoGetLowerDeviceObject(device2);
-    } while (device2);
+    while (device) {
+        PDEVICE_OBJECT device2 = IoGetLowerDeviceObject(device);
+
+        device->Flags &= ~DO_VERIFY_VOLUME;
+
+        ObDereferenceObject(device);
+
+        device = device2;
+    }
 
     ExFreePool(sb);
+
     return true;
 }
 
