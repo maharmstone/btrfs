@@ -664,6 +664,8 @@ static void __stdcall do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
         ExFreePool(context->name.Buffer);
 
     IoFreeWorkItem(context->work_item);
+
+    ExFreePool(context);
 }
 
 static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING name, pnp_callback func) {
