@@ -4335,8 +4335,17 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         pdo = DeviceToMount;
 
-        while (IoGetLowerDeviceObject(pdo)) {
-            pdo = IoGetLowerDeviceObject(pdo);
+        ObReferenceObject(pdo);
+
+        while (true) {
+            PDEVICE_OBJECT pdo2 = IoGetLowerDeviceObject(pdo);
+
+            ObDereferenceObject(pdo);
+
+            if (!pdo2)
+                break;
+            else
+                pdo = pdo2;
         }
 
         ExAcquireResourceSharedLite(&pdo_list_lock, true);
