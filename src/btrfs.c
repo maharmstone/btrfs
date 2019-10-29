@@ -5208,6 +5208,7 @@ exit:
 
 void do_shutdown(PIRP Irp) {
     LIST_ENTRY* le;
+    bus_device_extension* bde;
 
     shutting_down = true;
     KeSetEvent(&mountmgr_thread_event, 0, false);
@@ -5272,6 +5273,14 @@ void do_shutdown(PIRP Irp) {
 
         notification_entry = NULL;
     }
+
+    bde = busobj->DeviceExtension;
+
+    if (bde->attached_device)
+        IoDetachDevice(bde->attached_device);
+
+    IoDeleteDevice(busobj);
+    IoDeleteDevice(master_devobj);
 }
 
 _Dispatch_type_(IRP_MJ_SHUTDOWN)
