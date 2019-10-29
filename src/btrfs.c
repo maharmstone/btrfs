@@ -2082,6 +2082,15 @@ void uninit(_In_ device_extension* Vcb) {
         le = le->Flink;
     }
 
+    while (!IsListEmpty(&Vcb->sys_chunks)) {
+        sys_chunk* sc = CONTAINING_RECORD(RemoveHeadList(&Vcb->sys_chunks), sys_chunk, list_entry);
+
+        if (sc->data)
+            ExFreePool(sc->data);
+
+        ExFreePool(sc);
+    }
+
     while (!IsListEmpty(&Vcb->roots)) {
         root* r = CONTAINING_RECORD(RemoveHeadList(&Vcb->roots), root, list_entry);
 
