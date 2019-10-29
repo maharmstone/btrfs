@@ -778,6 +778,8 @@ static NTSTATUS vol_ioctl_passthrough(volume_device_extension* vde, PIRP Irp) {
 
     ExReleaseResourceLite(&pdode->child_lock);
 
+    IoFreeIrp(Irp2);
+
     return Status;
 }
 
