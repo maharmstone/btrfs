@@ -6805,6 +6805,11 @@ nextdev:
 
     KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
 
+    for (unsigned int i = 0; i < num; i++) {
+        if (context.stripes[i].Irp)
+            IoFreeIrp(context.stripes[i].Irp);
+    }
+
     ExFreePool(context.stripes);
 }
 
