@@ -3196,13 +3196,10 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
 
     fileref->dc->type = fileref->fcb->type;
 
-    goto end2;
-
 end:
     if (fpus.Buffer)
         ExFreePool(fpus.Buffer);
 
-end2:
     if (parfileref && !loaded_related)
         free_fileref(parfileref);
 
