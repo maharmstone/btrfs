@@ -1037,6 +1037,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 tw->address = mr->new_address;
                 tw->length = Vcb->superblock.node_size;
                 tw->data = (uint8_t*)mr->data;
+                tw->allocated = false;
 
                 if (IsListEmpty(&tree_writes))
                     InsertTailList(&tree_writes, &tw->list_entry);
@@ -1089,6 +1090,10 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
 end:
     while (!IsListEmpty(&tree_writes)) {
         tree_write* tw = CONTAINING_RECORD(RemoveHeadList(&tree_writes), tree_write, list_entry);
+
+        if (tw->allocated)
+            ExFreePool(tw->data);
+
         ExFreePool(tw);
     }
 

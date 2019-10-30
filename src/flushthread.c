@@ -1626,13 +1626,14 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
                 RtlCopyMemory(data, tw2->data, tw2->length);
                 RtlCopyMemory(&data[tw2->length], tw->data, tw->length);
 
-                if (!no_free)
+                if (!no_free || tw2->allocated)
                     ExFreePool(tw2->data);
 
                 tw2->data = data;
                 tw2->length += tw->length;
+                tw2->allocated = true;
 
-                if (!no_free) // FIXME - what if we allocated this just now?
+                if (!no_free || tw->allocated)
                     ExFreePool(tw->data);
 
                 RemoveEntryList(&tw->list_entry);
@@ -2018,6 +2019,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             tw->address = t->new_address;
             tw->length = Vcb->superblock.node_size;
             tw->data = data;
+            tw->allocated = false;
 
             if (IsListEmpty(&tree_writes))
                 InsertTailList(&tree_writes, &tw->list_entry);

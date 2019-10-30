@@ -904,6 +904,7 @@ typedef struct {
     uint32_t length;
     uint8_t* data;
     chunk* c;
+    bool allocated;
     LIST_ENTRY list_entry;
 } tree_write;
 
