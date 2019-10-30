@@ -2190,6 +2190,9 @@ end:
             ExFreePool(ref);
         }
 
+        if (mr->data)
+            ExFreePool(mr->data);
+
         ExFreePool(mr);
     }
 
