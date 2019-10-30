@@ -5835,6 +5835,7 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     vde->pdo = PhysicalDeviceObject;
     vde->pdode = pdode;
     vde->removing = false;
+    vde->dead = false;
     vde->open_count = 0;
 
     Status = IoRegisterDeviceInterface(PhysicalDeviceObject, &GUID_DEVINTERFACE_VOLUME, NULL, &vde->bus_name);

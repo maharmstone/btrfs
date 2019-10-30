@@ -50,6 +50,8 @@ NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 void free_vol(volume_device_extension* vde) {
     PDEVICE_OBJECT pdo;
 
+    vde->dead = true;
+
     if (vde->mounted_device) {
         device_extension* Vcb = vde->mounted_device->DeviceExtension;
 
@@ -98,7 +100,15 @@ NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     Irp->IoStatus.Information = 0;
 
+    if (vde->dead)
+        return STATUS_SUCCESS;
+
     ExAcquireResourceExclusiveLite(&pdo_list_lock, true);
+
+    if (vde->dead) {
+        ExReleaseResourceLite(&pdo_list_lock);
+        return STATUS_SUCCESS;
+    }
 
     ExAcquireResourceSharedLite(&pdode->child_lock, true);
 

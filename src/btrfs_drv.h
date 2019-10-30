@@ -836,6 +836,7 @@ typedef struct _volume_device_extension {
     UNICODE_STRING bus_name;
     PDEVICE_OBJECT attached_device;
     bool removing;
+    bool dead;
     LONG open_count;
 } volume_device_extension;
 
