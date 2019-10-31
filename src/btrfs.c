@@ -2498,7 +2498,8 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
 
         if (fileref && (oc == 0 || (fileref->delete_on_close && fileref->posix_delete))) {
             if (!fcb->Vcb->removing) {
-                if (oc == 0 && fileref->fcb->inode_item.st_nlink == 0 && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) { // last handle closed on POSIX-deleted file
+                if (oc == 0 && fileref->fcb->inode_item.st_nlink == 0 && fileref != fcb->Vcb->root_fileref &&
+                    fcb != fcb->Vcb->volume_fcb && !fcb->ads) { // last handle closed on POSIX-deleted file
                     LIST_ENTRY rollback;
 
                     InitializeListHead(&rollback);
