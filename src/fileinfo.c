@@ -1464,6 +1464,247 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     }
 }
 
+static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb, FILE_RENAME_INFORMATION_EX* fri,
+                              ULONG flags, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    UNICODE_STRING fn;
+    UNICODE_STRING dsus;
+    file_ref* sf = NULL;
+    uint16_t newmaxlen;
+    ULONG utf8len;
+    ANSI_STRING utf8;
+    UNICODE_STRING utf16, utf16uc;
+    ANSI_STRING adsxattr;
+    uint32_t crc32;
+    fcb* dummyfcb;
+
+    static const WCHAR datasuf[] = L":$DATA";
+    static const char xapref[] = "user.";
+
+    if (!fileref) {
+        ERR("fileref not set\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!fileref->parent) {
+        ERR("fileref->parent not set\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (fri->FileNameLength < sizeof(WCHAR)) {
+        WARN("filename too short\n");
+        return STATUS_OBJECT_NAME_INVALID;
+    }
+
+    if (fri->FileName[0] != ':') {
+        WARN("destination filename must begin with a colon\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (Irp->RequestorMode == UserMode && ccb && !(ccb->access & DELETE)) {
+        WARN("insufficient permissions\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    fn.Buffer = &fri->FileName[1];
+    fn.Length = fn.MaximumLength = (USHORT)(fri->FileNameLength - sizeof(WCHAR));
+
+    dsus.Buffer = (WCHAR*)datasuf;
+    dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
+
+    // remove :$DATA suffix
+    if (fn.Length >= dsus.Length && RtlCompareMemory(&fn.Buffer[(fn.Length - dsus.Length)/sizeof(WCHAR)], dsus.Buffer, dsus.Length) == dsus.Length)
+        fn.Length -= dsus.Length;
+
+    if (fn.Length == 0) {
+        FIXME("FIXME - allow renaming stream to :$DATA\n"); // FIXME
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!is_file_name_valid(&fn, false)) {
+        WARN("invalid stream name %.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+        return STATUS_OBJECT_NAME_INVALID;
+    }
+
+    if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+        WARN("trying to rename stream on readonly file\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    Status = open_fileref_child(Vcb, fileref->parent, &fn, fileref->parent->fcb->case_sensitive, true, true, PagedPool, &sf, Irp);
+    if (Status != STATUS_OBJECT_NAME_NOT_FOUND) {
+        if (Status == STATUS_SUCCESS) {
+            if (fileref == sf || sf->deleted) {
+                free_fileref(sf);
+                sf = NULL;
+            } else {
+                if (!(flags & FILE_RENAME_REPLACE_IF_EXISTS)) {
+                    Status = STATUS_OBJECT_NAME_COLLISION;
+                    goto end;
+                }
+
+                // FIXME - POSIX overwrites of stream?
+
+                if (sf->open_count > 0) {
+                    WARN("trying to overwrite open file\n");
+                    Status = STATUS_ACCESS_DENIED;
+                    goto end;
+                }
+
+                if (sf->fcb->adsdata.Length > 0) {
+                    WARN("can only overwrite existing stream if it is zero-length\n");
+                    Status = STATUS_INVALID_PARAMETER;
+                    goto end;
+                }
+
+                Status = delete_fileref(sf, NULL, false, Irp, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_fileref returned %08x\n", Status);
+                    goto end;
+                }
+            }
+        } else {
+            ERR("open_fileref_child returned %08x\n", Status);
+            goto end;
+        }
+    }
+
+    Status = utf16_to_utf8(NULL, 0, &utf8len, fn.Buffer, fn.Length);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    utf8.MaximumLength = utf8.Length = (uint16_t)utf8len;
+    utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8.MaximumLength, ALLOC_TAG);
+    if (!utf8.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    Status = utf16_to_utf8(utf8.Buffer, utf8len, &utf8len, fn.Buffer, fn.Length);
+    if (!NT_SUCCESS(Status)) {
+        ExFreePool(utf8.Buffer);
+        goto end;
+    }
+
+    adsxattr.Length = adsxattr.MaximumLength = sizeof(xapref) - 1 + utf8.Length;
+    adsxattr.Buffer = ExAllocatePoolWithTag(PagedPool, adsxattr.MaximumLength, ALLOC_TAG);
+    if (!adsxattr.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePool(utf8.Buffer);
+        goto end;
+    }
+
+    RtlCopyMemory(adsxattr.Buffer, xapref, sizeof(xapref) - 1);
+    RtlCopyMemory(&adsxattr.Buffer[sizeof(xapref) - 1], utf8.Buffer, utf8.Length);
+
+    // don't allow if it's one of our reserved names
+
+    if ((adsxattr.Length == sizeof(EA_DOSATTRIB) - sizeof(WCHAR) && RtlCompareMemory(adsxattr.Buffer, EA_DOSATTRIB, adsxattr.Length) == adsxattr.Length) ||
+        (adsxattr.Length == sizeof(EA_EA) - sizeof(WCHAR) && RtlCompareMemory(adsxattr.Buffer, EA_EA, adsxattr.Length) == adsxattr.Length) ||
+        (adsxattr.Length == sizeof(EA_REPARSE) - sizeof(WCHAR) && RtlCompareMemory(adsxattr.Buffer, EA_REPARSE, adsxattr.Length) == adsxattr.Length) ||
+        (adsxattr.Length == sizeof(EA_CASE_SENSITIVE) - sizeof(WCHAR) && RtlCompareMemory(adsxattr.Buffer, EA_CASE_SENSITIVE, adsxattr.Length) == adsxattr.Length)) {
+        Status = STATUS_OBJECT_NAME_INVALID;
+        ExFreePool(utf8.Buffer);
+        ExFreePool(adsxattr.Buffer);
+        goto end;
+    }
+
+    utf16.Length = utf16.MaximumLength = fn.Length;
+    utf16.Buffer = ExAllocatePoolWithTag(PagedPool, utf16.MaximumLength, ALLOC_TAG);
+    if (!utf16.Buffer) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePool(utf8.Buffer);
+        ExFreePool(adsxattr.Buffer);
+        goto end;
+    }
+
+    RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
+
+    newmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) -
+                offsetof(DIR_ITEM, name[0]);
+
+    if (newmaxlen < adsxattr.Length) {
+        WARN("cannot rename as data too long\n");
+        Status = STATUS_INVALID_PARAMETER;
+        ExFreePool(utf8.Buffer);
+        ExFreePool(utf16.Buffer);
+        ExFreePool(adsxattr.Buffer);
+        goto end;
+    }
+
+    newmaxlen -= adsxattr.Length;
+
+    if (newmaxlen < fileref->fcb->adsdata.Length) {
+        WARN("cannot rename as data too long\n");
+        Status = STATUS_INVALID_PARAMETER;
+        ExFreePool(utf8.Buffer);
+        ExFreePool(utf16.Buffer);
+        ExFreePool(adsxattr.Buffer);
+        goto end;
+    }
+
+    Status = RtlUpcaseUnicodeString(&utf16uc, &fn, true);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08x\n");
+        ExFreePool(utf8.Buffer);
+        ExFreePool(utf16.Buffer);
+        ExFreePool(adsxattr.Buffer);
+        goto end;
+    }
+
+    // add dummy deleted xattr with old name
+
+    dummyfcb = create_fcb(Vcb, PagedPool);
+    if (!dummyfcb) {
+        ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        ExFreePool(utf8.Buffer);
+        ExFreePool(utf16.Buffer);
+        ExFreePool(utf16uc.Buffer);
+        ExFreePool(adsxattr.Buffer);
+        goto end;
+    }
+
+    dummyfcb->Vcb = Vcb;
+    dummyfcb->subvol = fileref->fcb->subvol;
+    dummyfcb->inode = fileref->fcb->inode;
+    dummyfcb->adsxattr = fileref->fcb->adsxattr;
+    dummyfcb->adshash = fileref->fcb->adshash;
+    dummyfcb->ads = true;
+    dummyfcb->deleted = true;
+
+    mark_fcb_dirty(dummyfcb);
+
+    free_fcb(dummyfcb);
+
+    // change fcb values
+
+    fileref->dc->utf8 = utf8;
+    fileref->dc->name = utf16;
+    fileref->dc->name_uc = utf16uc;
+
+    crc32 = calc_crc32c(0xfffffffe, (uint8_t*)adsxattr.Buffer, adsxattr.Length);
+
+    fileref->fcb->adsxattr = adsxattr;
+    fileref->fcb->adshash = crc32;
+    fileref->fcb->adsmaxlen = newmaxlen;
+
+    fileref->fcb->created = true;
+
+    mark_fcb_dirty(fileref->fcb);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    if (sf)
+        free_fileref(sf);
+
+    return Status;
+}
+
 static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, PFILE_OBJECT tfo, bool ex) {
     FILE_RENAME_INFORMATION_EX* fri = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
@@ -1531,10 +1772,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     if (fcb->ads) {
-        // MSDN says that NTFS data streams can be renamed (https://msdn.microsoft.com/en-us/library/windows/hardware/ff540344.aspx),
-        // but if you try it always seems to return STATUS_INVALID_PARAMETER. There is a function in ntfs.sys called NtfsStreamRename,
-        // but it never seems to get invoked... If you know what's going on here, I'd appreciate it if you let me know.
-        Status = STATUS_INVALID_PARAMETER;
+        Status = rename_stream(Vcb, fileref, ccb, fri, flags, Irp, &rollback);
         goto end;
     }
 
