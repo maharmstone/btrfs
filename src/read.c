@@ -2669,7 +2669,7 @@ NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULON
 
     if (pbr) *pbr = 0;
 
-    if (start >= fcb->adsdata.Length) {
+    if (start > fcb->adsdata.Length) {
         TRACE("tried to read beyond end of stream\n");
         return STATUS_END_OF_FILE;
     }
@@ -2705,7 +2705,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     if (pbr)
         *pbr = 0;
 
-    if (start >= fcb->inode_item.st_size) {
+    if (start > fcb->inode_item.st_size) {
         WARN("Tried to read beyond end of file\n");
         Status = STATUS_END_OF_FILE;
         goto exit;
@@ -3111,7 +3111,7 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
         return STATUS_SUCCESS;
     }
 
-    if (start >= (uint64_t)fcb->Header.FileSize.QuadPart) {
+    if (start > (uint64_t)fcb->Header.FileSize.QuadPart) {
         TRACE("tried to read with offset after file end (%I64x >= %I64x)\n", start, fcb->Header.FileSize.QuadPart);
         return STATUS_END_OF_FILE;
     }
