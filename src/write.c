@@ -4231,20 +4231,18 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             acquired_tree_lock = true;
     }
 
-    if (no_cache) {
-        if (pagefile) {
-            if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
-                Status = STATUS_PENDING;
-                goto end;
-            } else
-                acquired_fcb_lock = true;
-        } else if (!ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
-            if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait)) {
-                Status = STATUS_PENDING;
-                goto end;
-            } else
-                acquired_fcb_lock = true;
-        }
+    if (pagefile) {
+        if (!ExAcquireResourceSharedLite(fcb->Header.Resource, wait)) {
+            Status = STATUS_PENDING;
+            goto end;
+        } else
+            acquired_fcb_lock = true;
+    } else if (!ExIsResourceAcquiredExclusiveLite(fcb->Header.Resource)) {
+        if (!ExAcquireResourceExclusiveLite(fcb->Header.Resource, wait)) {
+            Status = STATUS_PENDING;
+            goto end;
+        } else
+            acquired_fcb_lock = true;
     }
 
     newlength = fcb->ads ? fcb->adsdata.Length : fcb->inode_item.st_size;
