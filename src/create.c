@@ -1760,7 +1760,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         bool cs = case_sensitive;
 
         if (!cs) {
-            if (streampart)
+            if (streampart && sf->parent)
                 cs = sf->parent->fcb->case_sensitive;
             else
                 cs = sf->fcb->case_sensitive;
