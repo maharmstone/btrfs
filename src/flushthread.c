@@ -545,6 +545,9 @@ nextdev:
         for (num = 0; num < total_num; num++) {
             if (context.stripes[num].dmdsa)
                 ExFreePool(context.stripes[num].dmdsa);
+
+            if (context.stripes[num].Irp)
+                IoFreeIrp(context.stripes[num].Irp);
         }
 
         ExFreePool(context.stripes);
