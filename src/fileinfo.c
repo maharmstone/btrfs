@@ -1468,7 +1468,6 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
                               ULONG flags, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UNICODE_STRING fn;
-    UNICODE_STRING dsus;
     file_ref* sf = NULL;
     uint16_t newmaxlen;
     ULONG utf8len;
@@ -1509,12 +1508,10 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
     fn.Buffer = &fri->FileName[1];
     fn.Length = fn.MaximumLength = (USHORT)(fri->FileNameLength - sizeof(WCHAR));
 
-    dsus.Buffer = (WCHAR*)datasuf;
-    dsus.Length = dsus.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
-
     // remove :$DATA suffix
-    if (fn.Length >= dsus.Length && RtlCompareMemory(&fn.Buffer[(fn.Length - dsus.Length)/sizeof(WCHAR)], dsus.Buffer, dsus.Length) == dsus.Length)
-        fn.Length -= dsus.Length;
+    if (fn.Length >= sizeof(datasuf) - sizeof(WCHAR) &&
+        RtlCompareMemory(&fn.Buffer[(fn.Length - sizeof(datasuf) + sizeof(WCHAR))/sizeof(WCHAR)], datasuf, sizeof(datasuf) - sizeof(WCHAR)) == sizeof(datasuf) - sizeof(WCHAR))
+        fn.Length -= sizeof(datasuf) - sizeof(WCHAR);
 
     if (fn.Length == 0) {
         FIXME("FIXME - allow renaming stream to :$DATA\n"); // FIXME
