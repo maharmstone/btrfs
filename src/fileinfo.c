@@ -2184,12 +2184,18 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         goto end;
     }
 
-    // FIXME - make sure filename does not contain any colons
-
     fnus.Buffer = fn;
     fnus.Length = fnus.MaximumLength = (uint16_t)(fnlen * sizeof(WCHAR));
 
     TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
+
+    for (unsigned int i = 0 ; i < fnus.Length / sizeof(WCHAR); i++) {
+        if (fnus.Buffer[i] == ':') {
+            TRACE("colon in filename\n");
+            Status = STATUS_OBJECT_NAME_INVALID;
+            goto end;
+        }
+    }
 
     origutf8len = fileref->dc->utf8.Length;
 
