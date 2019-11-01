@@ -1464,6 +1464,249 @@ void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
     }
 }
 
+static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, ccb* ccb, ULONG flags,
+                                      PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    file_ref* ofr;
+    ANSI_STRING adsdata;
+    dir_child* dc;
+    fcb* dummyfcb;
+
+    if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) {
+        WARN("trying to rename stream on readonly file\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    if (Irp->RequestorMode == UserMode && ccb && !(ccb->access & DELETE)) {
+        WARN("insufficient permissions\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    if (!(flags & FILE_RENAME_REPLACE_IF_EXISTS)) // file will always exist
+        return STATUS_OBJECT_NAME_COLLISION;
+
+    // FIXME - POSIX overwrites of stream?
+
+    ofr = fileref->parent;
+
+    if (ofr->open_count > 0) {
+        WARN("trying to overwrite open file\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    if (ofr->fcb->inode_item.st_size > 0) {
+        WARN("can only overwrite existing stream if it is zero-length\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    dummyfcb = create_fcb(Vcb, PagedPool);
+    if (!dummyfcb) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    // copy parent fcb onto this one
+
+    fileref->fcb->subvol = ofr->fcb->subvol;
+    fileref->fcb->inode = ofr->fcb->inode;
+    fileref->fcb->hash = ofr->fcb->hash;
+    fileref->fcb->type = ofr->fcb->type;
+    fileref->fcb->inode_item = ofr->fcb->inode_item;
+
+    fileref->fcb->sd = ofr->fcb->sd;
+    ofr->fcb->sd = NULL;
+
+    fileref->fcb->deleted = ofr->fcb->deleted;
+    fileref->fcb->atts = ofr->fcb->atts;
+
+    fileref->fcb->reparse_xattr = ofr->fcb->reparse_xattr;
+    ofr->fcb->reparse_xattr.Buffer = NULL;
+    ofr->fcb->reparse_xattr.Length = ofr->fcb->reparse_xattr.MaximumLength = 0;
+
+    fileref->fcb->ea_xattr = ofr->fcb->ea_xattr;
+    ofr->fcb->ea_xattr.Buffer = NULL;
+    ofr->fcb->ea_xattr.Length = ofr->fcb->ea_xattr.MaximumLength = 0;
+
+    fileref->fcb->ealen = ofr->fcb->ealen;
+
+    while (!IsListEmpty(&ofr->fcb->hardlinks)) {
+        InsertTailList(&fileref->fcb->hardlinks, RemoveHeadList(&ofr->fcb->hardlinks));
+    }
+
+    fileref->fcb->inode_item_changed = true;
+    fileref->fcb->prop_compression = ofr->fcb->prop_compression;
+
+    while (!IsListEmpty(&ofr->fcb->xattrs)) {
+        InsertTailList(&fileref->fcb->xattrs, RemoveHeadList(&ofr->fcb->xattrs));
+    }
+
+    fileref->fcb->marked_as_orphan = ofr->fcb->marked_as_orphan;
+    fileref->fcb->case_sensitive = ofr->fcb->case_sensitive;
+    fileref->fcb->case_sensitive_set = ofr->fcb->case_sensitive_set;
+
+    while (!IsListEmpty(&ofr->fcb->dir_children_index)) {
+        InsertTailList(&fileref->fcb->dir_children_index, RemoveHeadList(&ofr->fcb->dir_children_index));
+    }
+
+    while (!IsListEmpty(&ofr->fcb->dir_children_hash)) {
+        InsertTailList(&fileref->fcb->dir_children_hash, RemoveHeadList(&ofr->fcb->dir_children_hash));
+    }
+
+    while (!IsListEmpty(&ofr->fcb->dir_children_hash_uc)) {
+        InsertTailList(&fileref->fcb->dir_children_hash_uc, RemoveHeadList(&ofr->fcb->dir_children_hash_uc));
+    }
+
+    fileref->fcb->hash_ptrs = ofr->fcb->hash_ptrs;
+    fileref->fcb->hash_ptrs_uc = ofr->fcb->hash_ptrs_uc;
+
+    ofr->fcb->hash_ptrs = NULL;
+    ofr->fcb->hash_ptrs_uc = NULL;
+
+    fileref->fcb->sd_dirty = ofr->fcb->sd_dirty;
+    fileref->fcb->sd_deleted = ofr->fcb->sd_deleted;
+    fileref->fcb->atts_changed = ofr->fcb->atts_changed;
+    fileref->fcb->atts_deleted = ofr->fcb->atts_deleted;
+    fileref->fcb->extents_changed = true;
+    fileref->fcb->reparse_xattr_changed = ofr->fcb->reparse_xattr_changed;
+    fileref->fcb->ea_changed = ofr->fcb->ea_changed;
+    fileref->fcb->prop_compression_changed = ofr->fcb->prop_compression_changed;
+    fileref->fcb->xattrs_changed = ofr->fcb->xattrs_changed;
+    fileref->fcb->created = ofr->fcb->created;
+    fileref->fcb->ads = false;
+
+    if (fileref->fcb->adsxattr.Buffer) {
+        ExFreePool(fileref->fcb->adsxattr.Buffer);
+        fileref->fcb->adsxattr.Length = fileref->fcb->adsxattr.MaximumLength = 0;
+    }
+
+    adsdata = fileref->fcb->adsdata;
+
+    fileref->fcb->adsdata.Buffer = NULL;
+    fileref->fcb->adsdata.Length = fileref->fcb->adsdata.MaximumLength = 0;
+
+    InsertHeadList(ofr->fcb->list_entry.Blink, &fileref->fcb->list_entry);
+    RemoveEntryList(&ofr->fcb->list_entry);
+    ofr->fcb->list_entry.Flink = ofr->fcb->list_entry.Blink = NULL;
+
+    mark_fcb_dirty(fileref->fcb);
+
+    // mark old parent fcb so it gets ignored by flush_fcb
+    ofr->fcb->created = true;
+    ofr->fcb->deleted = true;
+
+    mark_fcb_dirty(ofr->fcb);
+
+    // copy parent fileref onto this one
+
+    fileref->oldutf8 = ofr->oldutf8;
+    ofr->oldutf8.Buffer = NULL;
+    ofr->oldutf8.Length = ofr->oldutf8.MaximumLength = 0;
+
+    fileref->oldindex = ofr->oldindex;
+    fileref->delete_on_close = ofr->delete_on_close;
+    fileref->posix_delete = ofr->posix_delete;
+    fileref->deleted = ofr->deleted;
+    fileref->created = ofr->created;
+
+    fileref->parent = ofr->parent;
+
+    RemoveEntryList(&fileref->list_entry);
+    InsertHeadList(ofr->list_entry.Blink, &fileref->list_entry);
+    RemoveEntryList(&ofr->list_entry);
+    ofr->list_entry.Flink = ofr->list_entry.Blink = NULL;
+
+    while (!IsListEmpty(&ofr->children)) {
+        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&ofr->children), file_ref, list_entry);
+
+        fr->parent = fileref;
+
+        InsertTailList(&fileref->children, &fr->list_entry);
+    }
+
+    dc = fileref->dc;
+
+    fileref->dc = ofr->dc;
+    fileref->dc->fileref = fileref;
+
+    mark_fileref_dirty(fileref);
+
+    // mark old parent fileref so it gets ignored by flush_fileref
+    ofr->created = true;
+    ofr->deleted = true;
+
+    // write file data
+
+    // FIXME - write inline if appropriate
+
+    fileref->fcb->inode_item.st_size = adsdata.Length;
+
+    if (adsdata.Length % Vcb->superblock.sector_size) {
+        char* newbuf = ExAllocatePoolWithTag(PagedPool, (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size), ALLOC_TAG);
+        if (!newbuf) {
+            ERR("out of memory\n");
+            ExFreePool(adsdata.Buffer);
+            reap_fcb(dummyfcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(newbuf, adsdata.Buffer, adsdata.Length);
+        RtlZeroMemory(newbuf + adsdata.Length, (uint16_t)(sector_align(adsdata.Length, Vcb->superblock.sector_size) - adsdata.Length));
+
+        ExFreePool(adsdata.Buffer);
+
+        adsdata.Buffer = newbuf;
+        adsdata.Length = adsdata.MaximumLength = (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size);
+    }
+
+    if (adsdata.Length > 0) {
+        Status = do_write_file(fileref->fcb, 0, adsdata.Length, adsdata.Buffer, Irp, false, 0, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("do_write_file returned %08x\n", Status);
+            ExFreePool(adsdata.Buffer);
+            reap_fcb(dummyfcb);
+            return Status;
+        }
+
+        ExFreePool(adsdata.Buffer);
+
+        fileref->fcb->inode_item.st_blocks = adsdata.Length;
+        fileref->fcb->inode_item_changed = true;
+    }
+
+    RemoveEntryList(&dc->list_entry_index);
+
+    if (dc->utf8.Buffer)
+        ExFreePool(dc->utf8.Buffer);
+
+    if (dc->name.Buffer)
+        ExFreePool(dc->name.Buffer);
+
+    if (dc->name_uc.Buffer)
+        ExFreePool(dc->name_uc.Buffer);
+
+    ExFreePool(dc);
+
+    // FIXME - csums?
+
+    // add dummy deleted xattr with old name
+
+    dummyfcb->Vcb = Vcb;
+    dummyfcb->subvol = fileref->fcb->subvol;
+    dummyfcb->inode = fileref->fcb->inode;
+    dummyfcb->adsxattr = fileref->fcb->adsxattr;
+    dummyfcb->adshash = fileref->fcb->adshash;
+    dummyfcb->ads = true;
+    dummyfcb->deleted = true;
+
+    // FIXME - dummyfileref as well?
+
+    mark_fcb_dirty(dummyfcb);
+
+    free_fcb(dummyfcb);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb, FILE_RENAME_INFORMATION_EX* fri,
                               ULONG flags, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -1513,10 +1756,8 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
         RtlCompareMemory(&fn.Buffer[(fn.Length - sizeof(datasuf) + sizeof(WCHAR))/sizeof(WCHAR)], datasuf, sizeof(datasuf) - sizeof(WCHAR)) == sizeof(datasuf) - sizeof(WCHAR))
         fn.Length -= sizeof(datasuf) - sizeof(WCHAR);
 
-    if (fn.Length == 0) {
-        FIXME("FIXME - allow renaming stream to :$DATA\n"); // FIXME
-        return STATUS_INVALID_PARAMETER;
-    }
+    if (fn.Length == 0)
+        return rename_stream_to_file(Vcb, fileref, ccb, flags, Irp, rollback);
 
     if (!is_file_name_valid(&fn, false)) {
         WARN("invalid stream name %.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
@@ -2030,6 +2271,13 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     InsertTailList(&Vcb->all_fcbs, &dummyfcb->list_entry_all);
 
+    InsertHeadList(fileref->fcb->list_entry.Blink, &dummyfcb->list_entry);
+
+    if (fileref->fcb->subvol->fcbs_ptrs[dummyfcb->hash >> 24] == &fileref->fcb->list_entry)
+        fileref->fcb->subvol->fcbs_ptrs[dummyfcb->hash >> 24] = &dummyfcb->list_entry;
+
+    RemoveEntryList(&fileref->fcb->list_entry);
+
     mark_fcb_dirty(dummyfcb);
 
     // create dummy fileref
@@ -2049,6 +2297,11 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
         InsertTailList(&dummyfileref->children, &fr->list_entry);
     }
+
+    InsertTailList(fileref->list_entry.Blink, &dummyfileref->list_entry);
+
+    RemoveEntryList(&fileref->list_entry);
+    InsertTailList(&dummyfileref->children, &fileref->list_entry);
 
     dummyfileref->dc = fileref->dc;
     dummyfileref->dc->fileref = dummyfileref;
@@ -2078,6 +2331,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     InsertTailList(&dummyfcb->dir_children_index, &dc->list_entry_index);
 
     fileref->dc = dc;
+    fileref->parent = dummyfileref;
 
     crc32 = calc_crc32c(0xfffffffe, (uint8_t*)adsxattr.Buffer, adsxattr.Length);
 
@@ -3571,7 +3825,6 @@ NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 
         case FileRenameInformation:
             TRACE("FileRenameInformation\n");
-            // FIXME - make this work with streams
             Status = set_rename_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.FileObject, false);
             break;
 
