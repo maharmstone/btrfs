@@ -2427,6 +2427,17 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     if (fcb->ads) {
+        if (FileObject->SectionObjectPointer && FileObject->SectionObjectPointer->DataSectionObject) {
+            IO_STATUS_BLOCK iosb;
+
+            CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
+            if (!NT_SUCCESS(iosb.Status)) {
+                ERR("CcFlushCache returned %08x\n", iosb.Status);
+                Status = iosb.Status;
+                goto end;
+            }
+        }
+
         Status = rename_stream(Vcb, fileref, ccb, fri, flags, Irp, &rollback);
         goto end;
     } else if (fnlen >= 1 && fn[0] == ':') {
