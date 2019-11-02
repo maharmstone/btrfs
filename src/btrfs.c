@@ -95,6 +95,8 @@ tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
 tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
+tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
+tFsRtlAreThereCurrentOrInProgressFileLocks fFsRtlAreThereCurrentOrInProgressFileLocks;
 bool diskacc = false;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -1803,6 +1805,7 @@ void reap_fcb(fcb* fcb) {
         ExFreePool(fcb->hash_ptrs_uc);
 
     FsRtlUninitializeFileLock(&fcb->lock);
+    FsRtlUninitializeOplock(fcb_oplock(fcb));
 
     if (fcb->pool_type == NonPagedPool)
         ExFreePool(fcb);
@@ -5944,12 +5947,16 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"CcSetAdditionalCacheAttributesEx");
         fCcSetAdditionalCacheAttributesEx = (tCcSetAdditionalCacheAttributesEx)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"FsRtlCheckLockForOplockRequest");
+        fFsRtlCheckLockForOplockRequest = (tFsRtlCheckLockForOplockRequest)MmGetSystemRoutineAddress(&name);
     } else {
         fPsUpdateDiskCounters = NULL;
         fCcCopyReadEx = NULL;
         fCcCopyWriteEx = NULL;
         fCcSetAdditionalCacheAttributesEx = NULL;
         fFsRtlUpdateDiskCounters = NULL;
+        fFsRtlCheckLockForOplockRequest = NULL;
     }
 
     if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN7)) {
@@ -5957,8 +5964,13 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"IoUnregisterPlugPlayNotificationEx");
         fIoUnregisterPlugPlayNotificationEx = (tIoUnregisterPlugPlayNotificationEx)MmGetSystemRoutineAddress(&name);
-    } else
+
+        RtlInitUnicodeString(&name, L"FsRtlAreThereCurrentOrInProgressFileLocks");
+        fFsRtlAreThereCurrentOrInProgressFileLocks = (tFsRtlAreThereCurrentOrInProgressFileLocks)MmGetSystemRoutineAddress(&name);
+    } else {
         fIoUnregisterPlugPlayNotificationEx = NULL;
+        fFsRtlAreThereCurrentOrInProgressFileLocks = NULL;
+    }
 
     if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_VISTA)) {
         UNICODE_STRING name;

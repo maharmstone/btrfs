@@ -102,6 +102,7 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     ExInitializeResourceLite(&fcb->nonpaged->dir_children_lock);
 
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
+    FsRtlInitializeOplock(fcb_oplock(fcb));
 
     InitializeListHead(&fcb->extents);
     InitializeListHead(&fcb->hardlinks);

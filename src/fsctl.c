@@ -42,6 +42,8 @@
 extern LIST_ENTRY VcbList;
 extern ERESOURCE global_loading_lock;
 extern PDRIVER_OBJECT drvobj;
+extern tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
+extern tFsRtlAreThereCurrentOrInProgressFileLocks fFsRtlAreThereCurrentOrInProgressFileLocks;
 
 static void mark_subvol_dirty(device_extension* Vcb, root* r);
 
@@ -4841,55 +4843,113 @@ end:
     return Status;
 }
 
+static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
+    NTSTATUS Status;
+    PIRP Irp = *Pirp;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    uint32_t fsctl = IrpSp->Parameters.FileSystemControl.FsControlCode;
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
+    fcb* fcb = FileObject ? FileObject->FsContext : NULL;
+    ccb* ccb = FileObject ? FileObject->FsContext2 : NULL;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
+    PREQUEST_OPLOCK_INPUT_BUFFER buf = NULL;
+    bool oplock_request = false, oplock_ack = false;
+    ULONG oplock_count = 0;
+
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!fileref) {
+        ERR("fileref was NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_DIRECTORY)
+        return STATUS_INVALID_PARAMETER;
+
+    if (fsctl == FSCTL_REQUEST_OPLOCK) {
+        if (IrpSp->Parameters.FileSystemControl.InputBufferLength < sizeof(REQUEST_OPLOCK_INPUT_BUFFER))
+            return STATUS_BUFFER_TOO_SMALL;
+
+        if (IrpSp->Parameters.FileSystemControl.OutputBufferLength < sizeof(REQUEST_OPLOCK_OUTPUT_BUFFER))
+            return STATUS_BUFFER_TOO_SMALL;
+
+        buf = Irp->AssociatedIrp.SystemBuffer;
+
+        // flags are mutually exclusive
+        if (buf->Flags & REQUEST_OPLOCK_INPUT_FLAG_REQUEST && buf->Flags & REQUEST_OPLOCK_INPUT_FLAG_ACK)
+            return STATUS_INVALID_PARAMETER;
+
+        oplock_request = buf->Flags & REQUEST_OPLOCK_INPUT_FLAG_REQUEST;
+        oplock_ack = buf->Flags & REQUEST_OPLOCK_INPUT_FLAG_ACK;
+
+        if (!oplock_request && !oplock_ack)
+            return STATUS_INVALID_PARAMETER;
+    }
+
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && (fsctl != FSCTL_REQUEST_OPLOCK || !FsRtlOplockIsSharedRequest(Irp))) {
+        WARN("oplock requests on directories can only be for read or read-handle oplocks\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
+
+    if (fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_1 || fsctl == FSCTL_REQUEST_BATCH_OPLOCK || fsctl == FSCTL_REQUEST_FILTER_OPLOCK ||
+        fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_2 || oplock_request) {
+        ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
+
+        if (FsRtlOplockIsSharedRequest(Irp)) {
+            if (fcb->type == BTRFS_TYPE_FILE) {
+                if (fFsRtlCheckLockForOplockRequest)
+                    oplock_count = fFsRtlCheckLockForOplockRequest(&fcb->lock, &fcb->Header.AllocationSize);
+                else if (fFsRtlAreThereCurrentOrInProgressFileLocks)
+                    oplock_count = fFsRtlAreThereCurrentOrInProgressFileLocks(&fcb->lock);
+                else
+                    oplock_count = FsRtlAreThereCurrentFileLocks(&fcb->lock);
+            }
+        } else
+            oplock_count = fileref->open_count;
+    } else
+        ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+
+    if ((fsctl == FSCTL_REQUEST_FILTER_OPLOCK || fsctl == FSCTL_REQUEST_BATCH_OPLOCK ||
+        (fsctl == FSCTL_REQUEST_OPLOCK && buf->RequestedOplockLevel & OPLOCK_LEVEL_CACHE_HANDLE)) &&
+        fileref->delete_on_close) {
+        ExReleaseResourceLite(fcb->Header.Resource);
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        return STATUS_DELETE_PENDING;
+    }
+
+    Status = FsRtlOplockFsctrl(fcb_oplock(fcb), Irp, oplock_count);
+
+    *Pirp = NULL;
+
+    fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
     PIRP Irp = *Pirp;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
 
     switch (type) {
-        case FSCTL_REQUEST_OPLOCK:
-            WARN("STUB: FSCTL_REQUEST_OPLOCK\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_REQUEST_OPLOCK_LEVEL_1:
-            WARN("STUB: FSCTL_REQUEST_OPLOCK_LEVEL_1\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_REQUEST_OPLOCK_LEVEL_2:
-            WARN("STUB: FSCTL_REQUEST_OPLOCK_LEVEL_2\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_REQUEST_BATCH_OPLOCK:
-            WARN("STUB: FSCTL_REQUEST_BATCH_OPLOCK\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_OPLOCK_BREAK_ACKNOWLEDGE:
-            WARN("STUB: FSCTL_OPLOCK_BREAK_ACKNOWLEDGE\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
-        case FSCTL_OPLOCK_BREAK_ACK_NO_2:
-            WARN("STUB: FSCTL_OPLOCK_BREAK_ACK_NO_2\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_OPBATCH_ACK_CLOSE_PENDING:
-            WARN("STUB: FSCTL_OPBATCH_ACK_CLOSE_PENDING\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
         case FSCTL_OPLOCK_BREAK_NOTIFY:
-            WARN("STUB: FSCTL_OPLOCK_BREAK_NOTIFY\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
-            break;
-
+        case FSCTL_OPLOCK_BREAK_ACK_NO_2:
         case FSCTL_REQUEST_FILTER_OPLOCK:
-            WARN("STUB: FSCTL_REQUEST_FILTER_OPLOCK\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+        case FSCTL_REQUEST_OPLOCK:
+            Status = fsctl_oplock(DeviceObject->DeviceExtension, Pirp);
             break;
 
         case FSCTL_LOCK_VOLUME:

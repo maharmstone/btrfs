@@ -287,6 +287,7 @@ typedef struct _fcb {
     bool marked_as_orphan;
     bool case_sensitive;
     bool case_sensitive_set;
+    OPLOCK oplock;
 
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
@@ -1565,7 +1566,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, ULONG_PTR* retlen, KPROCESSOR_MODE processor_mode);
 
 // in fsrtl.c
-NTSTATUS compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength, IN PREPARSE_DATA_BUFFER ReparseBuffer);
+NTSTATUS __stdcall compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength, IN PREPARSE_DATA_BUFFER ReparseBuffer);
 
 // in boot.c
 void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count);
@@ -1626,6 +1627,34 @@ static __inline void do_xor(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
         buf1++;
         buf2++;
     }
+}
+
+// not in mingw yet
+#ifndef _MSC_VER
+typedef struct {
+    FSRTL_COMMON_FCB_HEADER DUMMYSTRUCTNAME;
+    PFAST_MUTEX FastMutex;
+    LIST_ENTRY FilterContexts;
+    EX_PUSH_LOCK PushLock;
+    PVOID* FileContextSupportPointer;
+    union {
+        OPLOCK Oplock;
+        PVOID ReservedForRemote;
+    };
+    PVOID ReservedContext;
+} FSRTL_ADVANCED_FCB_HEADER_NEW;
+
+#define FSRTL_FCB_HEADER_V2 2
+
+#else
+#define FSRTL_ADVANCED_FCB_HEADER_NEW FSRTL_ADVANCED_FCB_HEADER
+#endif
+
+static __inline POPLOCK fcb_oplock(fcb* fcb) {
+    if (fcb->Header.Version >= FSRTL_FCB_HEADER_V2)
+        return &((FSRTL_ADVANCED_FCB_HEADER_NEW*)&fcb->Header)->Oplock;
+    else
+        return &fcb->oplock;
 }
 
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -1730,36 +1759,40 @@ static __inline uint64_t fcb_alloc_size(fcb* fcb) {
         return sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
 }
 
-typedef BOOLEAN (*tPsIsDiskCountersEnabled)();
+typedef BOOLEAN (__stdcall *tPsIsDiskCountersEnabled)();
 
-typedef VOID (*tPsUpdateDiskCounters)(PEPROCESS Process, ULONG64 BytesRead, ULONG64 BytesWritten,
-                                      ULONG ReadOperationCount, ULONG WriteOperationCount, ULONG FlushOperationCount);
+typedef VOID (__stdcall *tPsUpdateDiskCounters)(PEPROCESS Process, ULONG64 BytesRead, ULONG64 BytesWritten,
+                                                ULONG ReadOperationCount, ULONG WriteOperationCount, ULONG FlushOperationCount);
 
-typedef BOOLEAN (*tCcCopyWriteEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
-                                  PVOID Buffer, PETHREAD IoIssuerThread);
+typedef BOOLEAN (__stdcall *tCcCopyWriteEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
+                                            PVOID Buffer, PETHREAD IoIssuerThread);
 
-typedef BOOLEAN (*tCcCopyReadEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
-                                 PVOID Buffer, PIO_STATUS_BLOCK IoStatus, PETHREAD IoIssuerThread);
+typedef BOOLEAN (__stdcall *tCcCopyReadEx)(PFILE_OBJECT FileObject, PLARGE_INTEGER FileOffset, ULONG Length, BOOLEAN Wait,
+                                           PVOID Buffer, PIO_STATUS_BLOCK IoStatus, PETHREAD IoIssuerThread);
 
 #ifndef CC_ENABLE_DISK_IO_ACCOUNTING
 #define CC_ENABLE_DISK_IO_ACCOUNTING 0x00000010
 #endif
 
-typedef VOID (*tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG Flags);
+typedef VOID (__stdcall *tCcSetAdditionalCacheAttributesEx)(PFILE_OBJECT FileObject, ULONG Flags);
 
-typedef VOID (*tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten);
+typedef VOID (__stdcall *tFsRtlUpdateDiskCounters)(ULONG64 BytesRead, ULONG64 BytesWritten);
 
-typedef NTSTATUS (*tIoUnregisterPlugPlayNotificationEx)(PVOID NotificationEntry);
+typedef NTSTATUS (__stdcall *tIoUnregisterPlugPlayNotificationEx)(PVOID NotificationEntry);
 
-typedef NTSTATUS (*tFsRtlGetEcpListFromIrp)(PIRP Irp, PECP_LIST* EcpList);
+typedef NTSTATUS (__stdcall *tFsRtlGetEcpListFromIrp)(PIRP Irp, PECP_LIST* EcpList);
 
-typedef NTSTATUS (*tFsRtlGetNextExtraCreateParameter)(PECP_LIST EcpList, PVOID CurrentEcpContext, LPGUID NextEcpType,
-                                                      PVOID* NextEcpContext, ULONG* NextEcpContextSize);
+typedef NTSTATUS (__stdcall *tFsRtlGetNextExtraCreateParameter)(PECP_LIST EcpList, PVOID CurrentEcpContext, LPGUID NextEcpType,
+                                                                PVOID* NextEcpContext, ULONG* NextEcpContextSize);
 
-typedef NTSTATUS (*tFsRtlValidateReparsePointBuffer)(ULONG BufferLength, PREPARSE_DATA_BUFFER ReparseBuffer);
+typedef NTSTATUS (__stdcall *tFsRtlValidateReparsePointBuffer)(ULONG BufferLength, PREPARSE_DATA_BUFFER ReparseBuffer);
+
+typedef BOOLEAN (__stdcall *tFsRtlCheckLockForOplockRequest)(PFILE_LOCK FileLock, PLARGE_INTEGER AllocationSize);
+
+typedef BOOLEAN (__stdcall *tFsRtlAreThereCurrentOrInProgressFileLocks)(PFILE_LOCK FileLock);
 
 #ifndef _MSC_VER
-PEPROCESS PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
+PEPROCESS __stdcall PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
 #endif
 
 // not in DDK headers - taken from winternl.h
