@@ -2976,9 +2976,17 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
                 Status = fFsRtlGetNextExtraCreateParameter(ecp_list, ctx, &type, &ctx, &ctxsize);
 
                 if (NT_SUCCESS(Status)) {
-                    if (RtlCompareMemory(&type, &GUID_ECP_ATOMIC_CREATE, sizeof(GUID)) == sizeof(GUID) && ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT)) {
-                        acec = ctx;
-                        break;
+                    if (RtlCompareMemory(&type, &GUID_ECP_ATOMIC_CREATE, sizeof(GUID)) == sizeof(GUID)) {
+                        if (ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT))
+                            acec = ctx;
+                        else {
+                            ERR("GUID_ECP_ATOMIC_CREATE context was too short: %u bytes, expected %u\n", ctxsize,
+                                sizeof(ATOMIC_CREATE_ECP_CONTEXT));
+                        }
+                    } else {
+                        WARN("unhandled ECP {%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\n", type.Data1, type.Data2,
+                             type.Data3, type.Data4[0], type.Data4[1], type.Data4[2], type.Data4[3], type.Data4[4], type.Data4[5],
+                             type.Data4[6], type.Data4[7]);
                     }
                 }
             } while (NT_SUCCESS(Status));
