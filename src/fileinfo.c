@@ -1796,7 +1796,7 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
     if (fn.Length == 0)
         return rename_stream_to_file(Vcb, fileref, ccb, flags, Irp, rollback);
 
-    if (!is_file_name_valid(&fn, false)) {
+    if (!is_file_name_valid(&fn, false, true)) {
         WARN("invalid stream name %.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
         return STATUS_OBJECT_NAME_INVALID;
     }
@@ -2019,6 +2019,9 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         return STATUS_ACCESS_DENIED;
     }
 
+    if (fileref->fcb->type != BTRFS_TYPE_FILE)
+        return STATUS_INVALID_PARAMETER;
+
     fn.Buffer = &fri->FileName[1];
     fn.Length = fn.MaximumLength = (USHORT)(fri->FileNameLength - sizeof(WCHAR));
 
@@ -2032,7 +2035,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (!is_file_name_valid(&fn, false)) {
+    if (!is_file_name_valid(&fn, false, true)) {
         WARN("invalid stream name %.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
         return STATUS_OBJECT_NAME_INVALID;
     }

@@ -2617,7 +2617,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         UNICODE_STRING fpus2;
 
-        if (!is_file_name_valid(fpus, false))
+        if (!is_file_name_valid(fpus, false, true))
             return STATUS_OBJECT_NAME_INVALID;
 
         fpus2.Length = fpus2.MaximumLength = fpus->Length;
@@ -3071,7 +3071,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     } else {
         ACCESS_MASK granted_access;
 
-        if (!is_file_name_valid(&fpus, false)) {
+        if (!is_file_name_valid(&fpus, false, false)) {
             Status = STATUS_OBJECT_NAME_INVALID;
             goto end;
         }

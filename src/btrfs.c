@@ -5477,7 +5477,7 @@ exit:
     return Status;
 }
 
-bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix) {
+bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bool stream) {
     ULONG i;
 
     if (us->Length < sizeof(WCHAR))
@@ -5488,7 +5488,8 @@ bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix) {
 
     for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
         if (us->Buffer[i] == '/' || us->Buffer[i] == 0 ||
-            (!posix && (us->Buffer[i] == '<' || us->Buffer[i] == '>' || us->Buffer[i] == ':' || us->Buffer[i] == '"' ||
+            (!posix && (us->Buffer[i] == '/' || us->Buffer[i] == ':')) ||
+            (!posix && !stream && (us->Buffer[i] == '<' || us->Buffer[i] == '>' || us->Buffer[i] == '"' ||
             us->Buffer[i] == '|' || us->Buffer[i] == '?' || us->Buffer[i] == '*' || (us->Buffer[i] >= 1 && us->Buffer[i] <= 31))))
             return false;
     }

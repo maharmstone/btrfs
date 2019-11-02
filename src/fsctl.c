@@ -596,7 +596,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (is_subvol_readonly(fcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
 
-    if (!is_file_name_valid(&nameus, posix))
+    if (!is_file_name_valid(&nameus, posix, false))
         return STATUS_OBJECT_NAME_INVALID;
 
     utf8.Buffer = NULL;
@@ -818,7 +818,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     nameus.Length = nameus.MaximumLength = bcs->namelen;
     nameus.Buffer = bcs->name;
 
-    if (!is_file_name_valid(&nameus, bcs->posix))
+    if (!is_file_name_valid(&nameus, bcs->posix, false))
         return STATUS_OBJECT_NAME_INVALID;
 
     utf8.Buffer = NULL;
