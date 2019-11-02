@@ -1574,7 +1574,43 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
 
-#define fast_io_possible(fcb) (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly ? FastIoIsPossible : FastIoIsQuestionable)
+// not in mingw yet
+#ifndef _MSC_VER
+typedef struct {
+    FSRTL_COMMON_FCB_HEADER DUMMYSTRUCTNAME;
+    PFAST_MUTEX FastMutex;
+    LIST_ENTRY FilterContexts;
+    EX_PUSH_LOCK PushLock;
+    PVOID* FileContextSupportPointer;
+    union {
+        OPLOCK Oplock;
+        PVOID ReservedForRemote;
+    };
+    PVOID ReservedContext;
+} FSRTL_ADVANCED_FCB_HEADER_NEW;
+
+#define FSRTL_FCB_HEADER_V2 2
+
+#else
+#define FSRTL_ADVANCED_FCB_HEADER_NEW FSRTL_ADVANCED_FCB_HEADER
+#endif
+
+static __inline POPLOCK fcb_oplock(fcb* fcb) {
+    if (fcb->Header.Version >= FSRTL_FCB_HEADER_V2)
+        return &((FSRTL_ADVANCED_FCB_HEADER_NEW*)&fcb->Header)->Oplock;
+    else
+        return &fcb->oplock;
+}
+
+static __inline FAST_IO_POSSIBLE fast_io_possible(fcb* fcb) {
+    if (!FsRtlOplockIsFastIoPossible(fcb_oplock(fcb)))
+        return FastIoIsNotPossible;
+
+    if (!FsRtlAreThereCurrentFileLocks(&fcb->lock) && !fcb->Vcb->readonly)
+        return FastIoIsPossible;
+
+    return FastIoIsQuestionable;
+}
 
 static __inline void print_open_trees(device_extension* Vcb) {
     LIST_ENTRY* le = Vcb->trees.Flink;
@@ -1627,34 +1663,6 @@ static __inline void do_xor(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
         buf1++;
         buf2++;
     }
-}
-
-// not in mingw yet
-#ifndef _MSC_VER
-typedef struct {
-    FSRTL_COMMON_FCB_HEADER DUMMYSTRUCTNAME;
-    PFAST_MUTEX FastMutex;
-    LIST_ENTRY FilterContexts;
-    EX_PUSH_LOCK PushLock;
-    PVOID* FileContextSupportPointer;
-    union {
-        OPLOCK Oplock;
-        PVOID ReservedForRemote;
-    };
-    PVOID ReservedContext;
-} FSRTL_ADVANCED_FCB_HEADER_NEW;
-
-#define FSRTL_FCB_HEADER_V2 2
-
-#else
-#define FSRTL_ADVANCED_FCB_HEADER_NEW FSRTL_ADVANCED_FCB_HEADER
-#endif
-
-static __inline POPLOCK fcb_oplock(fcb* fcb) {
-    if (fcb->Header.Version >= FSRTL_FCB_HEADER_V2)
-        return &((FSRTL_ADVANCED_FCB_HEADER_NEW*)&fcb->Header)->Oplock;
-    else
-        return &fcb->oplock;
 }
 
 #ifdef DEBUG_FCB_REFCOUNTS
