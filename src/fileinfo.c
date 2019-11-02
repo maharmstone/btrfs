@@ -2293,7 +2293,10 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     while (!IsListEmpty(&fileref->children)) {
         file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&fileref->children), file_ref, list_entry);
 
+        free_fileref(fr->parent);
+
         fr->parent = dummyfileref;
+        InterlockedIncrement(&dummyfileref->refcount);
 
         InsertTailList(&dummyfileref->children, &fr->list_entry);
     }
