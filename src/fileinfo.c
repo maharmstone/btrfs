@@ -1472,6 +1472,9 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     dir_child* dc;
     fcb* dummyfcb;
 
+    if (fileref->fcb->type != BTRFS_TYPE_FILE)
+        return STATUS_INVALID_PARAMETER;
+
     if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) {
         WARN("trying to rename stream on readonly file\n");
         return STATUS_ACCESS_DENIED;
