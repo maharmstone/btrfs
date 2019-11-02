@@ -1639,38 +1639,69 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
 
     // write file data
 
-    // FIXME - write inline if appropriate
-
     fileref->fcb->inode_item.st_size = adsdata.Length;
 
-    if (adsdata.Length % Vcb->superblock.sector_size) {
-        char* newbuf = ExAllocatePoolWithTag(PagedPool, (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size), ALLOC_TAG);
-        if (!newbuf) {
-            ERR("out of memory\n");
-            ExFreePool(adsdata.Buffer);
-            reap_fcb(dummyfcb);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlCopyMemory(newbuf, adsdata.Buffer, adsdata.Length);
-        RtlZeroMemory(newbuf + adsdata.Length, (uint16_t)(sector_align(adsdata.Length, Vcb->superblock.sector_size) - adsdata.Length));
-
-        ExFreePool(adsdata.Buffer);
-
-        adsdata.Buffer = newbuf;
-        adsdata.Length = adsdata.MaximumLength = (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size);
-    }
-
     if (adsdata.Length > 0) {
-        Status = do_write_file(fileref->fcb, 0, adsdata.Length, adsdata.Buffer, Irp, false, 0, rollback);
-        if (!NT_SUCCESS(Status)) {
-            ERR("do_write_file returned %08x\n", Status);
+        bool make_inline = adsdata.Length <= Vcb->options.max_inline;
+
+        if (make_inline) {
+            EXTENT_DATA* ed = ExAllocatePoolWithTag(PagedPool, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + adsdata.Length), ALLOC_TAG);
+            if (!ed) {
+                ERR("out of memory\n");
+                ExFreePool(adsdata.Buffer);
+                reap_fcb(dummyfcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            ed->generation = Vcb->superblock.generation;
+            ed->decoded_size = adsdata.Length;
+            ed->compression = BTRFS_COMPRESSION_NONE;
+            ed->encryption = BTRFS_ENCRYPTION_NONE;
+            ed->encoding = BTRFS_ENCODING_NONE;
+            ed->type = EXTENT_TYPE_INLINE;
+
+            RtlCopyMemory(ed->data, adsdata.Buffer, adsdata.Length);
+
             ExFreePool(adsdata.Buffer);
-            reap_fcb(dummyfcb);
-            return Status;
+
+            Status = add_extent_to_fcb(fileref->fcb, 0, ed, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + adsdata.Length), false, NULL, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("add_extent_to_fcb returned %08x\n", Status);
+                ExFreePool(ed);
+                reap_fcb(dummyfcb);
+                return Status;
+            }
+
+            ExFreePool(ed);
+        } else if (adsdata.Length % Vcb->superblock.sector_size) {
+            char* newbuf = ExAllocatePoolWithTag(PagedPool, (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size), ALLOC_TAG);
+            if (!newbuf) {
+                ERR("out of memory\n");
+                ExFreePool(adsdata.Buffer);
+                reap_fcb(dummyfcb);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(newbuf, adsdata.Buffer, adsdata.Length);
+            RtlZeroMemory(newbuf + adsdata.Length, (uint16_t)(sector_align(adsdata.Length, Vcb->superblock.sector_size) - adsdata.Length));
+
+            ExFreePool(adsdata.Buffer);
+
+            adsdata.Buffer = newbuf;
+            adsdata.Length = adsdata.MaximumLength = (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size);
         }
 
-        ExFreePool(adsdata.Buffer);
+        if (!make_inline) {
+            Status = do_write_file(fileref->fcb, 0, adsdata.Length, adsdata.Buffer, Irp, false, 0, rollback);
+            if (!NT_SUCCESS(Status)) {
+                ERR("do_write_file returned %08x\n", Status);
+                ExFreePool(adsdata.Buffer);
+                reap_fcb(dummyfcb);
+                return Status;
+            }
+
+            ExFreePool(adsdata.Buffer);
+        }
 
         fileref->fcb->inode_item.st_blocks = adsdata.Length;
         fileref->fcb->inode_item_changed = true;
