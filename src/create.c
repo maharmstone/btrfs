@@ -3467,7 +3467,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-        if (ext->extent_data.type == EXTENT_TYPE_REGULAR) {
+        if (!ext->ignore && ext->extent_data.type == EXTENT_TYPE_REGULAR) {
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
             uint64_t len;
 
