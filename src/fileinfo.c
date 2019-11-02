@@ -1960,6 +1960,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     fcb* dummyfcb;
     file_ref* dummyfileref;
     dir_child* dc;
+    LIST_ENTRY* le;
 
     static const WCHAR datasuf[] = L":$DATA";
     static const char xapref[] = "user.";
@@ -2260,6 +2261,15 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     dummyfcb->hash_ptrs = fileref->fcb->hash_ptrs;
     dummyfcb->hash_ptrs_uc = fileref->fcb->hash_ptrs_uc;
     dummyfcb->created = fileref->fcb->created;
+
+    le = fileref->fcb->extents.Flink;
+    while (le != &fileref->fcb->extents) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+        ext->ignore = true;
+
+        le = le->Flink;
+    }
 
     while (!IsListEmpty(&fileref->fcb->dir_children_index)) {
         InsertTailList(&dummyfcb->dir_children_index, RemoveHeadList(&fileref->fcb->dir_children_index));
