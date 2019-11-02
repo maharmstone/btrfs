@@ -2231,6 +2231,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     dummyfcb->Vcb = Vcb;
     dummyfcb->subvol = fileref->fcb->subvol;
     dummyfcb->inode = fileref->fcb->inode;
+    dummyfcb->hash = fileref->fcb->hash;
 
     if (fileref->fcb->inode_item.st_size > 0) {
         Status = excise_extents(Vcb, dummyfcb, 0, sector_align(fileref->fcb->inode_item.st_size, Vcb->superblock.sector_size),
