@@ -4777,6 +4777,9 @@ NTSTATUS __stdcall drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             Irp->MdlAddress = NULL;
             Status = STATUS_SUCCESS;
         } else {
+            if (!(Irp->Flags & IRP_PAGING_IO))
+                FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+
             // Don't offload jobs when doing paging IO - otherwise this can lead to
             // deadlocks in CcCopyWrite.
             if (Irp->Flags & IRP_PAGING_IO)

@@ -534,6 +534,8 @@ static NTSTATUS __stdcall drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _I
         goto end;
     }
 
+    FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
+
     Irp->IoStatus.Information = 0;
 
     fcb->Header.IsFastIoPossible = fast_io_possible(fcb);
@@ -2447,6 +2449,8 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         Status = STATUS_INVALID_PARAMETER;
         goto exit;
     }
+
+    FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
 
     // We have to use the pointer to Vcb stored in the fcb, as we can receive cleanup
     // messages belonging to other devices.
@@ -5208,7 +5212,7 @@ _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS __stdcall drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    fcb* fcb = IrpSp->FileObject->FsContext;
+    fcb* fcb = IrpSp->FileObject ? IrpSp->FileObject->FsContext : NULL;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     bool top_level;
 
@@ -5226,6 +5230,14 @@ static NTSTATUS __stdcall drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In
     }
 
     TRACE("lock control\n");
+
+    if (!fcb) {
+        ERR("fcb was NULL\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+
+    FsRtlCheckOplock(fcb_oplock(fcb), Irp, NULL, NULL, NULL);
 
     Status = FsRtlProcessFileLock(&fcb->lock, Irp, NULL);
 

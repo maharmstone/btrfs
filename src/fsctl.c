@@ -4941,6 +4941,13 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     NTSTATUS Status;
 
+    if (IrpSp->FileObject && IrpSp->FileObject->FsContext) {
+        device_extension* Vcb = DeviceObject->DeviceExtension;
+
+        if (Vcb->type == VCB_TYPE_FS)
+            FsRtlCheckOplock(fcb_oplock(IrpSp->FileObject->FsContext), Irp, NULL, NULL, NULL);
+    }
+
     switch (type) {
         case FSCTL_REQUEST_OPLOCK_LEVEL_1:
         case FSCTL_REQUEST_OPLOCK_LEVEL_2:
