@@ -3680,7 +3680,13 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
     }
 
     // FIXME - this can block waiting for network IO, while we're holding fileref_lock and tree_lock
-    FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, NULL, NULL, NULL);
+    Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, NULL, NULL, NULL);
+    if (!NT_SUCCESS(Status)) {
+        WARN("FsRtlCheckOplock returned %08x\n", Status);
+        free_fileref(fileref);
+
+        return Status;
+    }
 
     if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
         ULONG defda, oldatts, filter;
