@@ -528,6 +528,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
                                 &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08x\n", Status);
+        return;
     }
 
     Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
@@ -541,6 +542,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
+        ExFreePool(usersid);
         return;
     }
 
