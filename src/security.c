@@ -432,7 +432,7 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-    RtlSetOwnerSecurityDescriptor(&sd, usersid, false);
+    Status = RtlSetOwnerSecurityDescriptor(&sd, usersid, false);
 
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetOwnerSecurityDescriptor returned %08x\n", Status);
@@ -442,11 +442,10 @@ static void get_top_level_sd(fcb* fcb) {
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
-    RtlSetGroupSecurityDescriptor(&sd, groupsid, false);
+    Status = RtlSetGroupSecurityDescriptor(&sd, groupsid, false);
 
     if (!NT_SUCCESS(Status)) {
         ERR("RtlSetGroupSecurityDescriptor returned %08x\n", Status);
@@ -486,7 +485,6 @@ static void get_top_level_sd(fcb* fcb) {
     fcb->sd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
     if (!fcb->sd) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -494,6 +492,8 @@ static void get_top_level_sd(fcb* fcb) {
 
     if (!NT_SUCCESS(Status)) {
         ERR("RtlAbsoluteToSelfRelativeSD 2 returned %08x\n", Status);
+        ExFreePool(fcb->sd);
+        fcb->sd = NULL;
         goto end;
     }
 
