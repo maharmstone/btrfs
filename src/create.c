@@ -3679,6 +3679,9 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
         }
     }
 
+    // FIXME - this can block waiting for network IO, while we're holding fileref_lock and tree_lock
+    FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, NULL, NULL, NULL);
+
     if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
         ULONG defda, oldatts, filter;
         LARGE_INTEGER time;
