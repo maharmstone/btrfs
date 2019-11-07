@@ -1052,6 +1052,8 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
         if (pdode == context->pdode) {
             LIST_ENTRY* le2;
 
+            ExReleaseResourceLite(&pdo_list_lock);
+
             ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
 
             le2 = pdode->children.Flink;
@@ -1068,7 +1070,6 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
                     ERR("out of memory\n");
 
                     ExReleaseResourceLite(&pdode->child_lock);
-                    ExReleaseResourceLite(&pdo_list_lock);
                     ObDereferenceObject(mountmgrfo);
                     IoFreeWorkItem(context->work_item);
                     ExFreePool(context);
@@ -1091,7 +1092,6 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
             }
 
             ExReleaseResourceLite(&pdode->child_lock);
-            ExReleaseResourceLite(&pdo_list_lock);
             ObDereferenceObject(mountmgrfo);
             IoFreeWorkItem(context->work_item);
             ExFreePool(context);
