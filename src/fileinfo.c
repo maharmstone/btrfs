@@ -1589,6 +1589,10 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     fileref->fcb->adsdata.Length = fileref->fcb->adsdata.MaximumLength = 0;
 
     InsertHeadList(ofr->fcb->list_entry.Blink, &fileref->fcb->list_entry);
+
+    if (fileref->fcb->subvol->fcbs_ptrs[fileref->fcb->hash >> 24] == &ofr->fcb->list_entry)
+        fileref->fcb->subvol->fcbs_ptrs[fileref->fcb->hash >> 24] = &fileref->fcb->list_entry;
+
     RemoveEntryList(&ofr->fcb->list_entry);
     ofr->fcb->list_entry.Flink = ofr->fcb->list_entry.Blink = NULL;
 
