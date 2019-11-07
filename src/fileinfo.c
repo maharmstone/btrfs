@@ -1580,6 +1580,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     if (fileref->fcb->adsxattr.Buffer) {
         ExFreePool(fileref->fcb->adsxattr.Buffer);
         fileref->fcb->adsxattr.Length = fileref->fcb->adsxattr.MaximumLength = 0;
+        fileref->fcb->adsxattr.Buffer = NULL;
     }
 
     adsdata = fileref->fcb->adsdata;
