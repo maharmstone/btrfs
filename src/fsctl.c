@@ -4735,6 +4735,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
         delta = dev->devitem.num_bytes - br->size;
 
         if (need_balance) {
+            OBJECT_ATTRIBUTES oa;
             int i;
 
             if (Vcb->balance.thread) {
@@ -4759,7 +4760,9 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
 
             space_list_subtract2(&dev->space, NULL, br->size, delta, NULL, NULL);
 
-            Status = PsCreateSystemThread(&Vcb->balance.thread, 0, NULL, NULL, NULL, balance_thread, Vcb);
+            InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+            Status = PsCreateSystemThread(&Vcb->balance.thread, 0, &oa, NULL, NULL, balance_thread, Vcb);
             if (!NT_SUCCESS(Status)) {
                 ERR("PsCreateSystemThread returned %08x\n", Status);
                 goto end;

@@ -4028,6 +4028,7 @@ uint32_t get_num_of_processors() {
 
 static NTSTATUS create_calc_threads(_In_ PDEVICE_OBJECT DeviceObject) {
     device_extension* Vcb = DeviceObject->DeviceExtension;
+    OBJECT_ATTRIBUTES oa;
     ULONG i;
 
     Vcb->calcthreads.num_threads = get_num_of_processors();
@@ -4044,13 +4045,15 @@ static NTSTATUS create_calc_threads(_In_ PDEVICE_OBJECT DeviceObject) {
 
     RtlZeroMemory(Vcb->calcthreads.threads, sizeof(drv_calc_thread) * Vcb->calcthreads.num_threads);
 
+    InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
     for (i = 0; i < Vcb->calcthreads.num_threads; i++) {
         NTSTATUS Status;
 
         Vcb->calcthreads.threads[i].DeviceObject = DeviceObject;
         KeInitializeEvent(&Vcb->calcthreads.threads[i].finished, NotificationEvent, false);
 
-        Status = PsCreateSystemThread(&Vcb->calcthreads.threads[i].handle, 0, NULL, NULL, NULL, calc_thread, &Vcb->calcthreads.threads[i]);
+        Status = PsCreateSystemThread(&Vcb->calcthreads.threads[i].handle, 0, &oa, NULL, NULL, calc_thread, &Vcb->calcthreads.threads[i]);
         if (!NT_SUCCESS(Status)) {
             ULONG j;
 
@@ -4321,6 +4324,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     pdo_device_extension* pdode = NULL;
     volume_child* vc;
     uint64_t readobjsize;
+    OBJECT_ATTRIBUTES oa;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
@@ -4870,7 +4874,9 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     KeInitializeEvent(&Vcb->flush_thread_finished, NotificationEvent, false);
 
-    Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, NULL, NULL, NULL, flush_thread, NewDeviceObject);
+    InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    Status = PsCreateSystemThread(&Vcb->flush_thread_handle, 0, &oa, NULL, NULL, flush_thread, NewDeviceObject);
     if (!NT_SUCCESS(Status)) {
         ERR("PsCreateSystemThread returned %08x\n", Status);
         goto exit;
@@ -5631,7 +5637,11 @@ static void init_serial(bool first_time) {
         ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
 
         if (first_time) {
-            Status = PsCreateSystemThread(&serial_thread_handle, 0, NULL, NULL, NULL, serial_thread, NULL);
+            OBJECT_ATTRIBUTES oa;
+
+            InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+            Status = PsCreateSystemThread(&serial_thread_handle, 0, &oa, NULL, NULL, serial_thread, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("PsCreateSystemThread returned %08x\n", Status);
                 return;
@@ -5892,7 +5902,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
     control_device_extension* cde;
     bus_device_extension* bde;
     HANDLE regh;
-    OBJECT_ATTRIBUTES oa;
+    OBJECT_ATTRIBUTES oa, system_thread_attributes;
     ULONG dispos;
 
     InitializeListHead(&uid_map_list);
@@ -6110,7 +6120,9 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
     IoInvalidateDeviceRelations(bde->buspdo, BusRelations);
 
-    Status = PsCreateSystemThread(&degraded_wait_handle, 0, NULL, NULL, NULL, degraded_wait_thread, NULL);
+    InitializeObjectAttributes(&system_thread_attributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    Status = PsCreateSystemThread(&degraded_wait_handle, 0, &system_thread_attributes, NULL, NULL, degraded_wait_thread, NULL);
     if (!NT_SUCCESS(Status))
         WARN("PsCreateSystemThread returned %08x\n", Status);
 
@@ -6135,7 +6147,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
     KeInitializeEvent(&mountmgr_thread_event, NotificationEvent, false);
 
-    Status = PsCreateSystemThread(&mountmgr_thread_handle, 0, NULL, NULL, NULL, mountmgr_thread, NULL);
+    Status = PsCreateSystemThread(&mountmgr_thread_handle, 0, &system_thread_attributes, NULL, NULL, mountmgr_thread, NULL);
     if (!NT_SUCCESS(Status))
         WARN("PsCreateSystemThread returned %08x\n", Status);
 
