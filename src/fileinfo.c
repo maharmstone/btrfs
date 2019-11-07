@@ -2329,6 +2329,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         fileref->fcb->subvol->fcbs_ptrs[dummyfcb->hash >> 24] = &dummyfcb->list_entry;
 
     RemoveEntryList(&fileref->fcb->list_entry);
+    fileref->fcb->list_entry.Flink = fileref->fcb->list_entry.Blink = NULL;
 
     mark_fcb_dirty(dummyfcb);
 
