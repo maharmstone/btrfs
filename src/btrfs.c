@@ -2069,12 +2069,6 @@ void uninit(_In_ device_extension* Vcb) {
     if (Vcb->root_file)
         ObDereferenceObject(Vcb->root_file);
 
-    while (!IsListEmpty(&Vcb->all_fcbs)) {
-        fcb* fcb = CONTAINING_RECORD(Vcb->all_fcbs.Flink, struct _fcb, list_entry_all);
-
-        reap_fcb(fcb);
-    }
-
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
@@ -2085,6 +2079,12 @@ void uninit(_In_ device_extension* Vcb) {
         }
 
         le = le->Flink;
+    }
+
+    while (!IsListEmpty(&Vcb->all_fcbs)) {
+        fcb* fcb = CONTAINING_RECORD(Vcb->all_fcbs.Flink, struct _fcb, list_entry_all);
+
+        reap_fcb(fcb);
     }
 
     while (!IsListEmpty(&Vcb->sys_chunks)) {
