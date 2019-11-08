@@ -4326,6 +4326,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     uint64_t readobjsize;
     OBJECT_ATTRIBUTES oa;
     device_extension* real_devext;
+    KIRQL irql;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
@@ -4871,6 +4872,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         le = le->Flink;
     }
 
+    IoAcquireVpbSpinLock(&irql);
+
     NewDeviceObject->Vpb = IrpSp->Parameters.MountVolume.Vpb;
     IrpSp->Parameters.MountVolume.Vpb->DeviceObject = NewDeviceObject;
     IrpSp->Parameters.MountVolume.Vpb->Flags |= VPB_MOUNTED;
@@ -4878,6 +4881,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NewDeviceObject->Vpb->VolumeLabel[0] = '?';
     NewDeviceObject->Vpb->VolumeLabel[1] = 0;
     NewDeviceObject->Vpb->ReferenceCount++;
+
+    IoReleaseVpbSpinLock(irql);
 
     KeInitializeEvent(&Vcb->flush_thread_finished, NotificationEvent, false);
 
