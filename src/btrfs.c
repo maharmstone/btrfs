@@ -4325,6 +4325,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     volume_child* vc;
     uint64_t readobjsize;
     OBJECT_ATTRIBUTES oa;
+    device_extension* real_devext;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
@@ -4335,6 +4336,12 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     DeviceToMount = IrpSp->Parameters.MountVolume.DeviceObject;
+
+    real_devext = IrpSp->Parameters.MountVolume.Vpb->RealDevice->DeviceExtension;
+
+    // Make sure we're not trying to mount the PDO
+    if (IrpSp->Parameters.MountVolume.Vpb->RealDevice->DriverObject == drvobj && real_devext->type == VCB_TYPE_PDO)
+        return STATUS_UNRECOGNIZED_VOLUME;
 
     if (!is_btrfs_volume(DeviceToMount)) {
         bool not_pnp = false;
