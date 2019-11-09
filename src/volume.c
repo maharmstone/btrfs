@@ -1021,11 +1021,6 @@ end:
 }
 
 typedef struct {
-    PIO_WORKITEM work_item;
-    pdo_device_extension* pdode;
-} drive_letter_callback_context;
-
-typedef struct {
     LIST_ENTRY list_entry;
     UNICODE_STRING name;
     NTSTATUS Status;
@@ -1133,15 +1128,11 @@ static void drive_letter_callback2(pdo_device_extension* pdode, PDEVICE_OBJECT m
 }
 
 _Function_class_(IO_WORKITEM_ROUTINE)
-static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
-    drive_letter_callback_context* context = con;
+static void __stdcall drive_letter_callback(pdo_device_extension* pdode) {
     NTSTATUS Status;
     UNICODE_STRING mmdevpath;
     PDEVICE_OBJECT mountmgr;
     PFILE_OBJECT mountmgrfo;
-    LIST_ENTRY* le;
-
-    UNUSED(DeviceObject);
 
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
@@ -1150,55 +1141,9 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
         return;
     }
 
-    ExAcquireResourceSharedLite(&pdo_list_lock, true);
-
-    le = pdo_list.Flink;
-    while (le != &pdo_list) {
-        pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
-
-        if (pdode == context->pdode) {
-            ExReleaseResourceLite(&pdo_list_lock);
-
-            drive_letter_callback2(pdode, mountmgr);
-
-            ObDereferenceObject(mountmgrfo);
-            IoFreeWorkItem(context->work_item);
-            ExFreePool(context);
-            return;
-        }
-
-        le = le->Flink;
-    }
-
-    ExReleaseResourceLite(&pdo_list_lock);
+    drive_letter_callback2(pdode, mountmgr);
 
     ObDereferenceObject(mountmgrfo);
-    IoFreeWorkItem(context->work_item);
-    ExFreePool(context);
-}
-
-static void add_drive_letter_work_item(pdo_device_extension* pdode) {
-    PIO_WORKITEM work_item;
-    drive_letter_callback_context* context;
-
-    work_item = IoAllocateWorkItem(master_devobj);
-    if (!work_item) {
-        ERR("out of memory\n");
-        return;
-    }
-
-    context = ExAllocatePoolWithTag(PagedPool, sizeof(drive_letter_callback_context), ALLOC_TAG);
-
-    if (!context) {
-        ERR("out of memory\n");
-        IoFreeWorkItem(work_item);
-        return;
-    }
-
-    context->work_item = work_item;
-    context->pdode = pdode;
-
-    IoQueueWorkItem(work_item, drive_letter_callback, DelayedWorkQueue, context);
 }
 
 void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num) {
@@ -1211,6 +1156,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
     bool inserted = false, new_pdo = false;
     pdo_device_extension* pdode = NULL;
     PDEVICE_OBJECT pdo = NULL;
+    bool process_drive_letters = false;
 
     if (devpath->Length == 0)
         return;
@@ -1411,7 +1357,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
                 WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
         }
 
-        add_drive_letter_work_item(pdode);
+        process_drive_letters = true;
     }
 
     ExReleaseResourceLite(&pdode->child_lock);
@@ -1420,6 +1366,9 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         InsertTailList(&pdo_list, &pdode->list_entry);
 
     ExReleaseResourceLite(&pdo_list_lock);
+
+    if (process_drive_letters)
+        drive_letter_callback(pdode);
 
     if (new_pdo) {
         if (no_pnp)
