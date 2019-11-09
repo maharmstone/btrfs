@@ -1025,6 +1025,113 @@ typedef struct {
     pdo_device_extension* pdode;
 } drive_letter_callback_context;
 
+typedef struct {
+    LIST_ENTRY list_entry;
+    UNICODE_STRING name;
+    NTSTATUS Status;
+    BTRFS_UUID uuid;
+} drive_letter_removal;
+
+static void drive_letter_callback2(pdo_device_extension* pdode, PDEVICE_OBJECT mountmgr) {
+    LIST_ENTRY* le;
+    LIST_ENTRY dlrlist;
+
+    InitializeListHead(&dlrlist);
+
+    ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
+
+    le = pdode->children.Flink;
+
+    while (le != &pdode->children) {
+        drive_letter_removal* dlr;
+
+        volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+
+        dlr = ExAllocatePoolWithTag(PagedPool, sizeof(drive_letter_removal), ALLOC_TAG);
+        if (!dlr) {
+            ERR("out of memory\n");
+
+            while (!IsListEmpty(&dlrlist)) {
+                dlr = CONTAINING_RECORD(RemoveHeadList(&dlrlist), drive_letter_removal, list_entry);
+
+                ExFreePool(dlr->name.Buffer);
+                ExFreePool(dlr);
+            }
+
+            ExReleaseResourceLite(&pdode->child_lock);
+            return;
+        }
+
+        dlr->name.Length = dlr->name.MaximumLength = vc->pnp_name.Length + (3 * sizeof(WCHAR));
+        dlr->name.Buffer = ExAllocatePoolWithTag(PagedPool, dlr->name.Length, ALLOC_TAG);
+
+        if (!dlr->name.Buffer) {
+            ERR("out of memory\n");
+
+            ExFreePool(dlr);
+
+            while (!IsListEmpty(&dlrlist)) {
+                dlr = CONTAINING_RECORD(RemoveHeadList(&dlrlist), drive_letter_removal, list_entry);
+
+                ExFreePool(dlr->name.Buffer);
+                ExFreePool(dlr);
+            }
+
+            ExReleaseResourceLite(&pdode->child_lock);
+            return;
+        }
+
+        RtlCopyMemory(dlr->name.Buffer, L"\\??", 3 * sizeof(WCHAR));
+        RtlCopyMemory(&dlr->name.Buffer[3], vc->pnp_name.Buffer, vc->pnp_name.Length);
+
+        dlr->uuid = vc->uuid;
+
+        InsertTailList(&dlrlist, &dlr->list_entry);
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&pdode->child_lock);
+
+    le = dlrlist.Flink;
+    while (le != &dlrlist) {
+        drive_letter_removal* dlr = CONTAINING_RECORD(le, drive_letter_removal, list_entry);
+
+        dlr->Status = remove_drive_letter(mountmgr, &dlr->name);
+
+        if (!NT_SUCCESS(dlr->Status) && dlr->Status != STATUS_NOT_FOUND)
+            WARN("remove_drive_letter returned %08x\n", dlr->Status);
+
+        le = le->Flink;
+    }
+
+    // set vc->had_drive_letter
+
+    ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
+
+    while (!IsListEmpty(&dlrlist)) {
+        drive_letter_removal* dlr = CONTAINING_RECORD(RemoveHeadList(&dlrlist), drive_letter_removal, list_entry);
+
+        le = pdode->children.Flink;
+
+        while (le != &pdode->children) {
+            volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
+
+            if (RtlCompareMemory(&vc->uuid, &dlr->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                vc->had_drive_letter = NT_SUCCESS(dlr->Status);
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        ExFreePool(dlr->name.Buffer);
+        ExFreePool(dlr);
+    }
+
+    ExReleaseResourceLite(&pdode->child_lock);
+}
+
 _Function_class_(IO_WORKITEM_ROUTINE)
 static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     drive_letter_callback_context* context = con;
@@ -1050,48 +1157,10 @@ static void __stdcall drive_letter_callback(PDEVICE_OBJECT DeviceObject, PVOID c
         pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
         if (pdode == context->pdode) {
-            LIST_ENTRY* le2;
-
             ExReleaseResourceLite(&pdo_list_lock);
 
-            ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
+            drive_letter_callback2(pdode, mountmgr);
 
-            le2 = pdode->children.Flink;
-
-            while (le2 != &pdode->children) {
-                UNICODE_STRING name;
-
-                volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
-
-                name.Length = name.MaximumLength = vc->pnp_name.Length + (3 * sizeof(WCHAR));
-                name.Buffer = ExAllocatePoolWithTag(PagedPool, name.Length, ALLOC_TAG);
-
-                if (!name.Buffer) {
-                    ERR("out of memory\n");
-
-                    ExReleaseResourceLite(&pdode->child_lock);
-                    ObDereferenceObject(mountmgrfo);
-                    IoFreeWorkItem(context->work_item);
-                    ExFreePool(context);
-                    return;
-                }
-
-                RtlCopyMemory(name.Buffer, L"\\??", 3 * sizeof(WCHAR));
-                RtlCopyMemory(&name.Buffer[3], vc->pnp_name.Buffer, vc->pnp_name.Length);
-
-                Status = remove_drive_letter(mountmgr, &name);
-
-                if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
-                    WARN("remove_drive_letter returned %08x\n", Status);
-
-                ExFreePool(name.Buffer);
-
-                vc->had_drive_letter = NT_SUCCESS(Status);
-
-                le2 = le2->Flink;
-            }
-
-            ExReleaseResourceLite(&pdode->child_lock);
             ObDereferenceObject(mountmgrfo);
             IoFreeWorkItem(context->work_item);
             ExFreePool(context);
