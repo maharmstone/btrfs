@@ -185,14 +185,15 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
     if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
-        Status = STATUS_ACCESS_DENIED;
-        goto end;
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        return STATUS_ACCESS_DENIED;
     }
 
     Status = send_disks_pnp_message(Vcb, IRP_MN_QUERY_REMOVE_DEVICE);
     if (!NT_SUCCESS(Status)) {
         WARN("send_disks_pnp_message returned %08x\n", Status);
-        goto end;
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        return Status;
     }
 
     Vcb->removing = true;
@@ -204,16 +205,17 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         if (!NT_SUCCESS(Status)) {
             ERR("do_write returned %08x\n", Status);
-            goto end;
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            return Status;
         }
     }
 
-
-    Status = STATUS_SUCCESS;
-end:
     ExReleaseResourceLite(&Vcb->tree_lock);
 
-    return Status;
+    if (Vcb->open_files == 0)
+        uninit(Vcb);
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS pnp_remove_device(PDEVICE_OBJECT DeviceObject) {

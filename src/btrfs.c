@@ -1898,6 +1898,7 @@ void uninit(_In_ device_extension* Vcb) {
     IoAcquireVpbSpinLock(&irql);
     Vcb->Vpb->Flags &= ~VPB_MOUNTED;
     Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
+    Vcb->Vpb->DeviceObject = NULL;
     IoReleaseVpbSpinLock(irql);
 
     RemoveEntryList(&Vcb->list_entry);
