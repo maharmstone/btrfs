@@ -4892,7 +4892,7 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
             return STATUS_INVALID_PARAMETER;
     }
 
-    bool shared_request = (fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_2) || (fsctl == FSCTL_REQUEST_OPLOCK && buf->RequestedOplockLevel & OPLOCK_LEVEL_CACHE_WRITE);
+    bool shared_request = (fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_2) || (fsctl == FSCTL_REQUEST_OPLOCK && !(buf->RequestedOplockLevel & OPLOCK_LEVEL_CACHE_WRITE));
 
     if (fcb->type == BTRFS_TYPE_DIRECTORY && (fsctl != FSCTL_REQUEST_OPLOCK || !shared_request)) {
         WARN("oplock requests on directories can only be for read or read-handle oplocks\n");
@@ -4908,7 +4908,7 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
         if (shared_request) {
             if (fcb->type == BTRFS_TYPE_FILE) {
                 if (fFsRtlCheckLockForOplockRequest)
-                    oplock_count = fFsRtlCheckLockForOplockRequest(&fcb->lock, &fcb->Header.AllocationSize);
+                    oplock_count = !fFsRtlCheckLockForOplockRequest(&fcb->lock, &fcb->Header.AllocationSize);
                 else if (fFsRtlAreThereCurrentOrInProgressFileLocks)
                     oplock_count = fFsRtlAreThereCurrentOrInProgressFileLocks(&fcb->lock);
                 else
