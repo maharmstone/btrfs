@@ -6465,8 +6465,6 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         crc32 = calc_crc32c(0xfffffffe, (uint8_t*)name->Buffer, name->Length);
 
-        TRACE("deleting %.*S\n", file_desc_fileref(fileref));
-
         di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + name->Length, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");

@@ -1108,7 +1108,7 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
 
     // FIXME - raise exception if FCB marked for deletion?
 
-    TRACE("%S\n", file_desc(FileObject));
+    TRACE("FileObject %p\n", FileObject);
 
     if (ccb->filename.Length == 0) {
         ULONG reqlen;

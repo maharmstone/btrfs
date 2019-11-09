@@ -414,8 +414,6 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb = fileref->fcb;
     }
 
-    TRACE("%S\n", file_desc(FileObject));
-
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
@@ -487,8 +485,6 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
-
-    TRACE("%S\n", file_desc(FileObject));
 
     if (buflen < offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer)) {
         ERR("buffer was too short\n");

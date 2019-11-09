@@ -3094,7 +3094,7 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
     if (!fcb || !fcb->Vcb || !fcb->subvol)
         return STATUS_INTERNAL_ERROR;
 
-    TRACE("file = %S (fcb = %p)\n", file_desc(FileObject), fcb);
+    TRACE("fcb = %p\n", fcb);
     TRACE("offset = %I64x, length = %x\n", start, length);
     TRACE("paging_io = %s, no cache = %s\n", Irp->Flags & IRP_PAGING_IO ? "true" : "false", Irp->Flags & IRP_NOCACHE ? "true" : "false");
 

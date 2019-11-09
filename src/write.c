@@ -4256,7 +4256,6 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (paging_io) {
             if (off64 >= newlength) {
                 TRACE("paging IO tried to write beyond end of file (file size = %I64x, offset = %I64x, length = %x)\n", newlength, off64, *length);
-                TRACE("filename %S\n", file_desc(FileObject));
                 TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 Status = STATUS_SUCCESS;

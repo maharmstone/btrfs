@@ -1408,95 +1408,6 @@ end:
     return Status;
 }
 
-static WCHAR* file_desc_fcb(_In_ fcb* fcb) {
-    char s[60];
-    NTSTATUS Status;
-    UNICODE_STRING us;
-    ANSI_STRING as;
-
-    if (fcb->debug_desc)
-        return fcb->debug_desc;
-
-    if (fcb == fcb->Vcb->volume_fcb)
-        return L"volume FCB";
-
-    fcb->debug_desc = ExAllocatePoolWithTag(PagedPool, 60 * sizeof(WCHAR), ALLOC_TAG);
-    if (!fcb->debug_desc)
-        return L"(memory error)";
-
-    // I know this is pretty hackish...
-    // GCC doesn't like %llx in sprintf, and MSVC won't let us use swprintf
-    // without the CRT, which breaks drivers.
-
-    sprintf(s, "subvol %x, inode %x", (uint32_t)fcb->subvol->id, (uint32_t)fcb->inode);
-
-    as.Buffer = s;
-    as.Length = as.MaximumLength = (USHORT)strlen(s);
-
-    us.Buffer = fcb->debug_desc;
-    us.MaximumLength = 60 * sizeof(WCHAR);
-    us.Length = 0;
-
-    Status = RtlAnsiStringToUnicodeString(&us, &as, false);
-    if (!NT_SUCCESS(Status))
-        return L"(RtlAnsiStringToUnicodeString error)";
-
-    us.Buffer[us.Length / sizeof(WCHAR)] = 0;
-
-    return fcb->debug_desc;
-}
-
-WCHAR* file_desc_fileref(_In_ file_ref* fileref) {
-    NTSTATUS Status;
-    UNICODE_STRING fn;
-    ULONG reqlen;
-
-    if (fileref->debug_desc)
-        return fileref->debug_desc;
-
-    fn.Length = fn.MaximumLength = 0;
-    Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
-    if (Status != STATUS_BUFFER_OVERFLOW)
-        return L"ERROR";
-
-    if (reqlen > 0xffff - sizeof(WCHAR))
-        return L"(too long)";
-
-    fileref->debug_desc = ExAllocatePoolWithTag(PagedPool, reqlen + sizeof(WCHAR), ALLOC_TAG);
-    if (!fileref->debug_desc)
-        return L"(memory error)";
-
-    fn.Buffer = fileref->debug_desc;
-    fn.Length = 0;
-    fn.MaximumLength = (USHORT)(reqlen + sizeof(WCHAR));
-
-    Status = fileref_get_filename(fileref, &fn, NULL, &reqlen);
-    if (!NT_SUCCESS(Status)) {
-        ExFreePool(fileref->debug_desc);
-        fileref->debug_desc = NULL;
-        return L"ERROR";
-    }
-
-    fileref->debug_desc[fn.Length / sizeof(WCHAR)] = 0;
-
-    return fileref->debug_desc;
-}
-
-_Ret_z_
-WCHAR* file_desc(_In_ PFILE_OBJECT FileObject) {
-    fcb* fcb = FileObject->FsContext;
-    ccb* ccb = FileObject->FsContext2;
-    file_ref* fileref = ccb ? ccb->fileref : NULL;
-
-    if (fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
-        return L"(paging file)";
-
-    if (fileref)
-        return file_desc_fileref(fileref);
-    else
-        return file_desc_fcb(fcb);
-}
-
 void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream) {
     UNICODE_STRING fn;
     NTSTATUS Status;
@@ -1758,9 +1669,6 @@ void reap_fcb(fcb* fcb) {
     if (fcb->adsdata.Buffer)
         ExFreePool(fcb->adsdata.Buffer);
 
-    if (fcb->debug_desc)
-        ExFreePool(fcb->debug_desc);
-
     while (!IsListEmpty(&fcb->extents)) {
         LIST_ENTRY* le = RemoveHeadList(&fcb->extents);
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
@@ -1852,9 +1760,6 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
 
     // FIXME - do delete if needed
 
-    if (fr->debug_desc)
-        ExFreePool(fr->debug_desc);
-
     ExDeleteResourceLite(&fr->nonpaged->fileref_lock);
 
     ExFreeToNPagedLookasideList(&Vcb->fileref_np_lookaside, fr->nonpaged);
@@ -1921,7 +1826,7 @@ static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
 
     ccb = FileObject->FsContext2;
 
-    TRACE("close called for %S (fcb == %p)\n", file_desc(FileObject), fcb);
+    TRACE("close called for fcb %p)\n", fcb);
 
     // FIXME - make sure notification gets sent if file is being deleted
 
@@ -2465,7 +2370,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         fileref = ccb ? ccb->fileref : NULL;
 
         TRACE("cleanup called for FileObject %p\n", FileObject);
-        TRACE("fileref %p (%S), refcount = %u, open_count = %u\n", fileref, file_desc(FileObject), fileref ? fileref->refcount : 0, fileref ? fileref->open_count : 0);
+        TRACE("fileref %p, refcount = %u, open_count = %u\n", fileref, fileref ? fileref->refcount : 0, fileref ? fileref->open_count : 0);
 
         ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
 

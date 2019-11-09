@@ -1710,8 +1710,8 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
     }
 
     if (dir->fcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
-        WARN("passed related fileref which isn't a directory (%S) (fnus = %.*S)\n",
-             file_desc_fileref(related), fnus->Length / sizeof(WCHAR), fnus->Buffer);
+        WARN("passed related fileref which isn't a directory (fnus = %.*S)\n",
+             fnus->Length / sizeof(WCHAR), fnus->Buffer);
         return STATUS_OBJECT_PATH_NOT_FOUND;
     }
 
@@ -2294,7 +2294,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
 #ifdef DEBUG_FCB_REFCOUNTS
     rc = InterlockedIncrement(&parfileref->fcb->refcount);
-    WARN("fcb %p: refcount now %i (%S)\n", parfileref->fcb, rc, file_desc_fileref(parfileref));
+    WARN("fcb %p: refcount now %i\n", parfileref->fcb, rc);
 #else
     InterlockedIncrement(&parfileref->fcb->refcount);
 #endif
@@ -2576,7 +2576,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     *pfr = fileref;
 
-    TRACE("created new file %S in subvol %I64x, inode %I64x\n", file_desc_fileref(fileref), fcb->subvol->id, fcb->inode);
+    TRACE("created new file in subvol %I64x, inode %I64x\n", fcb->subvol->id, fcb->inode);
 
     return STATUS_SUCCESS;
 }
@@ -2716,7 +2716,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
 #ifdef DEBUG_FCB_REFCOUNTS
     rc = InterlockedIncrement(&parfileref->fcb->refcount);
-    WARN("fcb %p: refcount now %i (%S)\n", parfileref->fcb, rc, file_desc_fileref(parfileref));
+    WARN("fcb %p: refcount now %i\n", parfileref->fcb, rc);
 #else
     InterlockedIncrement(&parfileref->fcb->refcount);
 #endif
@@ -3643,7 +3643,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
             return STATUS_FILE_IS_A_DIRECTORY;
         }
     } else if (options & FILE_DIRECTORY_FILE) {
-        TRACE("returning STATUS_NOT_A_DIRECTORY (type = %u, %S)\n", fileref->fcb->type, file_desc_fileref(fileref));
+        TRACE("returning STATUS_NOT_A_DIRECTORY (type = %u)\n", fileref->fcb->type);
 
         free_fileref(fileref);
 
@@ -4544,7 +4544,7 @@ loaded:
 
     if (NT_SUCCESS(Status)) {
         if (RequestedDisposition == FILE_CREATE) {
-            TRACE("file %S already exists, returning STATUS_OBJECT_NAME_COLLISION\n", file_desc_fileref(fileref));
+            TRACE("file already exists, returning STATUS_OBJECT_NAME_COLLISION\n");
             Status = STATUS_OBJECT_NAME_COLLISION;
 
             free_fileref(fileref);
@@ -4861,7 +4861,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         TRACE("file name: %.*S\n", IrpSp->FileObject->FileName.Length / sizeof(WCHAR), IrpSp->FileObject->FileName.Buffer);
 
         if (IrpSp->FileObject->RelatedFileObject)
-            TRACE("related file = %S\n", file_desc(IrpSp->FileObject->RelatedFileObject));
+            TRACE("related file = %p\n", IrpSp->FileObject->RelatedFileObject);
 
         // Don't lock again if we're being called from within CcCopyRead etc.
         skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);

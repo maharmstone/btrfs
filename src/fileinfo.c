@@ -170,7 +170,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         return STATUS_INVALID_PARAMETER;
     }
 
-    TRACE("file = %S, attributes = %x\n", file_desc(FileObject), fbi->FileAttributes);
+    TRACE("file = %p, attributes = %x\n", FileObject, fbi->FileAttributes);
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
@@ -336,7 +336,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    TRACE("changing delete_on_close to %s for %S (fcb %p)\n", flags & FILE_DISPOSITION_DELETE ? "true" : "false", file_desc(FileObject), fcb);
+    TRACE("changing delete_on_close to %s for fcb %p\n", flags & FILE_DISPOSITION_DELETE ? "true" : "false", fcb);
 
     if (fcb->ads) {
         if (fileref->parent)
@@ -1144,8 +1144,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         ExAcquireResourceExclusiveLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock, true);
         InsertTailList(&me->dummyfileref->parent->children, &me->dummyfileref->list_entry);
         ExReleaseResourceLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock);
-
-        me->dummyfileref->debug_desc = me->fileref->debug_desc;
 
         if (me->dummyfileref->fcb->type == BTRFS_TYPE_DIRECTORY)
             me->dummyfileref->fcb->fileref = me->dummyfileref;
@@ -2553,7 +2551,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive,  Irp);
 
     if (NT_SUCCESS(Status)) {
-        TRACE("destination file %S already exists\n", file_desc_fileref(oldfileref));
+        TRACE("destination file already exists\n");
 
         if (fileref != oldfileref && !oldfileref->deleted) {
             if (!(flags & FILE_RENAME_REPLACE_IF_EXISTS)) {
@@ -3193,7 +3191,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
         goto end;
     }
 
-    TRACE("file: %S\n", file_desc(FileObject));
+    TRACE("file: %p\n", FileObject);
     TRACE("paging IO: %s\n", Irp->Flags & IRP_PAGING_IO ? "true" : "false");
     TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
@@ -3283,7 +3281,7 @@ end:
 static NTSTATUS set_position_information(PFILE_OBJECT FileObject, PIRP Irp) {
     FILE_POSITION_INFORMATION* fpi = (FILE_POSITION_INFORMATION*)Irp->AssociatedIrp.SystemBuffer;
 
-    TRACE("setting the position on %S to %I64x\n", file_desc(FileObject), fpi->CurrentByteOffset.QuadPart);
+    TRACE("setting the position on %p to %I64x\n", FileObject, fpi->CurrentByteOffset.QuadPart);
 
     // FIXME - make sure aligned for FO_NO_INTERMEDIATE_BUFFERING
 
@@ -3411,7 +3409,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     if (NT_SUCCESS(Status)) {
         if (!oldfileref->deleted) {
-            WARN("destination file %S already exists\n", file_desc_fileref(oldfileref));
+            WARN("destination file already exists\n");
 
             if (!(flags & FILE_LINK_REPLACE_IF_EXISTS)) {
                 Status = STATUS_OBJECT_NAME_COLLISION;
