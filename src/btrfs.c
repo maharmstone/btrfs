@@ -1895,6 +1895,9 @@ void uninit(_In_ device_extension* Vcb) {
         ExReleaseResourceLite(&Vcb->tree_lock);
     }
 
+    if (Vcb->vde && Vcb->vde->mounted_device == Vcb->devobj)
+        Vcb->vde->mounted_device = NULL;
+
     IoAcquireVpbSpinLock(&irql);
     Vcb->Vpb->Flags &= ~VPB_MOUNTED;
     Vcb->Vpb->Flags |= VPB_DIRECT_WRITES_ALLOWED;
