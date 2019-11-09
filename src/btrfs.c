@@ -1784,6 +1784,9 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
 
     free_fcb(fr->fcb);
 
+    if (fr->oldutf8.Buffer)
+        ExFreePool(fr->oldutf8.Buffer);
+
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
 
