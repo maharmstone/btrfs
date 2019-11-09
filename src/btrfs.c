@@ -4139,12 +4139,7 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool*
         pnp_name.Length = 0;
     }
 
-    if (pnp_name.Length == 0)
-        *pno_pnp = true;
-    else {
-        *pno_pnp = false;
-        volume_arrival(drvobj, &pnp_name);
-    }
+    *pno_pnp = pnp_name.Length == 0;
 
     if (pnp_name.Buffer)
         ExFreePool(pnp_name.Buffer);
