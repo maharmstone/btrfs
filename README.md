@@ -1,9 +1,9 @@
-WinBtrfs v1.4
+WinBtrfs v1.5
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
-and should work on any version from Windows Vista onwards. It is also included
+and should work on any version from Windows XP onwards. It is also included
 as part of the free operating system [ReactOS](https://www.reactos.org/).
 
 If your Btrfs filesystem is on a MD software RAID device created by Linux, you
@@ -71,11 +71,11 @@ Features
 * Passthrough of permissions etc. for LXSS
 * Zstd compression
 * Windows 10 case-sensitive directory flag
+* Oplocks
 
 Todo
 ----
 
-* Oplocks
 * Defragmentation
 * Support for Btrfs quotas
 * Windows 10 reserved storage
@@ -232,8 +232,25 @@ for Windows, you're out of luck.
 Thecus uses Linux's MD raid for its block devices. You will need to install [WinMD](https://github.com/maharmstone/winmd)
 as well.
 
+* The drive doesn't show up
+
+On very old versions of Windows (XP, Server 2003?), Windows ignores Linux partitions
+entirely. If this is the case for you, try running `fdisk` on Linux and changing your
+partition type from 83 to 7.
+
 Changelog
 ---------
+
+v1.5 (2019-11-10):
+* More fixes for booting from Btrfs
+* Added virtual $Root directory (see "NoRootDir" below)
+* Added support for Windows XP
+* Added support for renaming alternative data streams
+* Added oplock support
+* Fixed potential deadlock on boot
+* Fixed possible crash on shutdown
+* Fixed a bunch of memory leaks
+* Many other miscellaneous bug fixes
 
 v1.4 (2019-08-31):
 * Added fragmentation percentage to property sheet
@@ -470,6 +487,10 @@ via the usual Plug and Play method.
 * `ZstdLevel` (DWORD): Zstd compression level, default 3.
 
 * `NoTrim` (DWORD): set this to 1 to disable TRIM support.
+
+* `NoRootDir` (DWORD): if you have chaned your default subvolume, either natively or by a registry option,
+there will be a hidden directory called $Root which points to where the root would normally be. Set this
+value to 1 to prevent this appearing.
 
 Contact
 -------
