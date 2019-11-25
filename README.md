@@ -79,6 +79,10 @@ Todo
 * Defragmentation
 * Support for Btrfs quotas
 * Windows 10 reserved storage
+* Transaction log
+* Three- and four-disk RAID1 (Linux 5.6)
+* New checksum types (xxhash, sha256, blake2)
+* Metadata UUID incompat flag
 
 Installation
 ------------
@@ -118,7 +122,7 @@ C:\Windows\System32\drivers\btrfs.sys.
 Compilation
 -----------
 
-You will need Microsoft Visual C++ 2015 if you want to compile the driver; you might
+You will need Microsoft Visual C++ 2019 if you want to compile the driver; you might
 be able to get earlier versions to work with a bit of work.
 
 You'll also need a copy of the Windows DDK; I placed mine in C:\WinDDK. If yours
