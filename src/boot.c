@@ -50,8 +50,10 @@ static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
     OBJECT_ATTRIBUTES objatt;
     WCHAR* s;
     ULONG retlen = 0, left;
+    bool second_time = false;
 
     static const WCHAR system_root[] = L"\\SystemRoot";
+    static const WCHAR boot_device[] = L"\\Device\\BootDevice";
     static const WCHAR arc_prefix[] = L"\\ArcName\\multi(0)disk(0)rdisk(";
     static const WCHAR arc_middle[] = L")partition(";
 
@@ -60,46 +62,63 @@ static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
 
     InitializeObjectAttributes(&objatt, &us, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
-    Status = ZwOpenSymbolicLinkObject(&h, GENERIC_READ, &objatt);
-    if (!NT_SUCCESS(Status)) {
-        ERR("ZwOpenSymbolicLinkObject returned %08x\n", Status);
-        return false;
-    }
+    while (true) {
+        Status = ZwOpenSymbolicLinkObject(&h, GENERIC_READ, &objatt);
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwOpenSymbolicLinkObject returned %08x\n", Status);
+            return false;
+        }
 
-    target.Length = target.MaximumLength = 0;
+        target.Length = target.MaximumLength = 0;
 
-    Status = ZwQuerySymbolicLinkObject(h, &target, &retlen);
-    if (Status != STATUS_BUFFER_TOO_SMALL) {
-        ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
+        Status = ZwQuerySymbolicLinkObject(h, &target, &retlen);
+        if (Status != STATUS_BUFFER_TOO_SMALL) {
+            ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
+            NtClose(h);
+            return false;
+        }
+
+        if (retlen == 0) {
+            NtClose(h);
+            return false;
+        }
+
+        target.Buffer = ExAllocatePoolWithTag(NonPagedPool, retlen, ALLOC_TAG);
+        if (!target.Buffer) {
+            ERR("out of memory\n");
+            NtClose(h);
+            return false;
+        }
+
+        target.Length = target.MaximumLength = (USHORT)retlen;
+
+        Status = ZwQuerySymbolicLinkObject(h, &target, NULL);
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
+            NtClose(h);
+            ExFreePool(target.Buffer);
+            return false;
+        }
+
         NtClose(h);
-        return false;
+
+        if (second_time) {
+            TRACE("boot device is %.*S\n", target.Length / sizeof(WCHAR), target.Buffer);
+        } else {
+            TRACE("system root is %.*S\n", target.Length / sizeof(WCHAR), target.Buffer);
+        }
+
+        if (!second_time && target.Length >= sizeof(boot_device) - sizeof(WCHAR) &&
+            RtlCompareMemory(target.Buffer, boot_device, sizeof(boot_device) - sizeof(WCHAR)) == sizeof(boot_device) - sizeof(WCHAR)) {
+            ExFreePool(target.Buffer);
+
+            us.Buffer = (WCHAR*)boot_device;
+            us.Length = us.MaximumLength = sizeof(boot_device) - sizeof(WCHAR);
+
+            second_time = true;
+        } else
+            break;
     }
-
-    if (retlen == 0) {
-        NtClose(h);
-        return false;
-    }
-
-    target.Buffer = ExAllocatePoolWithTag(NonPagedPool, retlen, ALLOC_TAG);
-    if (!target.Buffer) {
-        ERR("out of memory\n");
-        NtClose(h);
-        return false;
-    }
-
-    target.Length = target.MaximumLength = (USHORT)retlen;
-
-    Status = ZwQuerySymbolicLinkObject(h, &target, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
-        NtClose(h);
-        ExFreePool(target.Buffer);
-        return false;
-    }
-
-    NtClose(h);
-
-    TRACE("system root is %.*S\n", target.Length / sizeof(WCHAR), target.Buffer);
 
     if (target.Length <= sizeof(arc_prefix) - sizeof(WCHAR) ||
         RtlCompareMemory(target.Buffer, arc_prefix, sizeof(arc_prefix) - sizeof(WCHAR)) != sizeof(arc_prefix) - sizeof(WCHAR)) {
