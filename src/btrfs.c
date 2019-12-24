@@ -1117,6 +1117,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
                 data->Flags |= SSINFO_FLAGS_TRIM_ENABLED;
 
             BytesCopied = sizeof(FILE_FS_SECTOR_SIZE_INFORMATION);
+            Status = STATUS_SUCCESS;
 
             break;
         }
