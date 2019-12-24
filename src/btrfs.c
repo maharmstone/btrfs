@@ -107,6 +107,7 @@ bool degraded_wait = true;
 KEVENT mountmgr_thread_event;
 bool shutting_down = false;
 ERESOURCE boot_lock;
+extern BTRFS_UUID boot_uuid;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -5794,6 +5795,11 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
 
     if (pdode->removable)
         voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
+
+    if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        voldev->Flags |= DO_SYSTEM_BOOT_PARTITION;
+        PhysicalDeviceObject->Flags |= DO_SYSTEM_BOOT_PARTITION;
+    }
 
     voldev->Flags &= ~DO_DEVICE_INITIALIZING;
 

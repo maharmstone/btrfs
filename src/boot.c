@@ -26,6 +26,8 @@ extern LIST_ENTRY pdo_list;
 extern ERESOURCE boot_lock;
 extern PDRIVER_OBJECT drvobj;
 
+BTRFS_UUID boot_uuid; // initialized to 0
+
 #ifndef _MSC_VER
 NTSTATUS RtlUnicodeStringPrintf(PUNICODE_STRING DestinationString, const WCHAR* pszFormat, ...); // not in mingw
 #endif
@@ -281,6 +283,7 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     LIST_ENTRY* le;
     bool done = false;
     PDEVICE_OBJECT pdo_to_add = NULL;
+    volume_child* boot_vc = NULL;
 
     TRACE("(%p, %p, %u)\n", DriverObject, Context, Count);
 
@@ -311,8 +314,12 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
                 change_symlink(disk_num, partition_num, &pdode->uuid);
                 done = true;
 
+                boot_uuid = pdode->uuid;
+
                 if (!pdode->vde)
                     pdo_to_add = pdode->pdo;
+
+                boot_vc = vc;
 
                 break;
             }
@@ -360,6 +367,38 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     }
 
     ExReleaseResourceLite(&pdo_list_lock);
+
+    if (boot_vc) {
+        NTSTATUS Status;
+        UNICODE_STRING name;
+
+        /* On Windows 8, mountmgr!MountMgrFindBootVolume returns the first volume in its database
+         * with the DO_SYSTEM_BOOT_PARTITION flag set. We've cleared the bit on the underlying devices,
+         * but as it caches it we need to disable and re-enable the volume so mountmgr receives a PNP
+         * notification to refresh its list. */
+
+        static const WCHAR prefix[] = L"\\??";
+
+        name.Length = name.MaximumLength = boot_vc->pnp_name.Length + sizeof(prefix) - sizeof(WCHAR);
+
+        name.Buffer = ExAllocatePoolWithTag(PagedPool, name.MaximumLength, ALLOC_TAG);
+        if (!name.Buffer)
+            ERR("out of memory\n");
+        else {
+            RtlCopyMemory(name.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+            RtlCopyMemory(&name.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], boot_vc->pnp_name.Buffer, boot_vc->pnp_name.Length);
+
+            Status = IoSetDeviceInterfaceState(&name, false);
+            if (!NT_SUCCESS(Status))
+                ERR("IoSetDeviceInterfaceState returned %08x\n", Status);
+
+            Status = IoSetDeviceInterfaceState(&name, true);
+            if (!NT_SUCCESS(Status))
+                ERR("IoSetDeviceInterfaceState returned %08x\n", Status);
+
+            ExFreePool(name.Buffer);
+        }
+    }
 
     // If our FS depends on volumes that aren't there when we do our IoRegisterPlugPlayNotification calls
     // in DriverEntry, bus_query_device_relations won't get called until it's too late. We need to do our
