@@ -314,6 +314,7 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
                 change_symlink(disk_num, partition_num, &pdode->uuid);
                 done = true;
 
+                vc->boot_volume = true;
                 boot_uuid = pdode->uuid;
 
                 if (!pdode->vde)

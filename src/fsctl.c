@@ -3029,6 +3029,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     vc->devobj = DeviceObject;
     vc->fileobj = fileobj;
     vc->notification_entry = NULL;
+    vc->boot_volume = false;
 
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj,
                                             drvobj, pnp_removal, vde->pdode, &vc->notification_entry);

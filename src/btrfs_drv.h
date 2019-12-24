@@ -820,6 +820,7 @@ typedef struct {
     void* notification_entry;
     ULONG disk_num;
     ULONG part_num;
+    bool boot_volume;
     LIST_ENTRY list_entry;
 } volume_child;
 

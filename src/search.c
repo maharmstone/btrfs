@@ -624,8 +624,10 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                 if (vc->pnp_name.Length == devpath2.Length && RtlCompareMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length) == devpath2.Length) {
                     TRACE("removing device\n");
 
-                    remove_volume_child(pdode->vde, vc, false);
-                    changed = true;
+                    if (!vc->boot_volume) {
+                        remove_volume_child(pdode->vde, vc, false);
+                        changed = true;
+                    }
 
                     break;
                 }

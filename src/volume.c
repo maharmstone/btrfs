@@ -1263,6 +1263,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
     vc->devid = sb->dev_item.dev_id;
     vc->generation = sb->generation;
     vc->notification_entry = NULL;
+    vc->boot_volume = false;
 
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
                                             drvobj, pnp_removal, pdode, &vc->notification_entry);
