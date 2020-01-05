@@ -537,7 +537,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         return;
     }
 
-    RtlSetOwnerSecurityDescriptor(&fcb->sd, usersid, false);
+    RtlSetOwnerSecurityDescriptor(fcb->sd, usersid, false);
 
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
@@ -546,7 +546,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         return;
     }
 
-    RtlSetGroupSecurityDescriptor(&fcb->sd, groupsid, false);
+    RtlSetGroupSecurityDescriptor(fcb->sd, groupsid, false);
 
     ExFreePool(usersid);
     ExFreePool(groupsid);
