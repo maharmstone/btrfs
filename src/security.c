@@ -513,6 +513,12 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     PSID usersid = NULL, groupsid = NULL;
     SECURITY_SUBJECT_CONTEXT subjcont;
     ULONG buflen;
+    PSECURITY_DESCRIPTOR* abssd;
+    PSECURITY_DESCRIPTOR newsd;
+    PACL dacl, sacl;
+    PSID owner, group;
+    ULONG abssdlen = 0, dacllen = 0, sacllen = 0, ownerlen = 0, grouplen = 0;
+    uint8_t* buf;
 
     if (look_for_xattr && get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (uint8_t**)&fcb->sd, (uint16_t*)&buflen, Irp))
         return;
@@ -531,25 +537,100 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         return;
     }
 
-    Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
-    if (!NT_SUCCESS(Status)) {
-        ERR("uid_to_sid returned %08x\n", Status);
+    Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, NULL, &abssdlen, NULL, &dacllen, NULL, &sacllen, NULL, &ownerlen,
+                                         NULL, &grouplen);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
+        ERR("RtlSelfRelativeToAbsoluteSD returned %08x\n", Status);
         return;
     }
 
-    RtlSetOwnerSecurityDescriptor(fcb->sd, usersid, false);
+    if (abssdlen + dacllen + sacllen + ownerlen + grouplen == 0) {
+        ERR("RtlSelfRelativeToAbsoluteSD returned zero lengths\n");
+        return;
+    }
+
+    buf = (uint8_t*)ExAllocatePoolWithTag(PagedPool, abssdlen + dacllen + sacllen + ownerlen + grouplen, ALLOC_TAG);
+    if (!buf) {
+        ERR("out of memory\n");
+        return;
+    }
+
+    abssd = (PSECURITY_DESCRIPTOR)buf;
+    dacl = (PACL)(buf + abssdlen);
+    sacl = (PACL)(buf + abssdlen + dacllen);
+    owner = (PSID)(buf + abssdlen + dacllen + sacllen);
+    group = (PSID)(buf + abssdlen + dacllen + sacllen + ownerlen);
+
+    Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, abssd, &abssdlen, dacl, &dacllen, sacl, &sacllen, owner, &ownerlen,
+                                         group, &grouplen);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
+        ERR("RtlSelfRelativeToAbsoluteSD returned %08x\n", Status);
+        ExFreePool(buf);
+        return;
+    }
+
+    Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+    if (!NT_SUCCESS(Status)) {
+        ERR("uid_to_sid returned %08x\n", Status);
+        ExFreePool(buf);
+        return;
+    }
+
+    RtlSetOwnerSecurityDescriptor(abssd, usersid, false);
 
     gid_to_sid(fcb->inode_item.st_gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
         ExFreePool(usersid);
+        ExFreePool(buf);
         return;
     }
 
-    RtlSetGroupSecurityDescriptor(fcb->sd, groupsid, false);
+    RtlSetGroupSecurityDescriptor(abssd, groupsid, false);
+
+    buflen = 0;
+
+    Status = RtlAbsoluteToSelfRelativeSD(abssd, NULL, &buflen);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
+        ERR("RtlAbsoluteToSelfRelativeSD returned %08x\n", Status);
+        ExFreePool(usersid);
+        ExFreePool(groupsid);
+        ExFreePool(buf);
+        return;
+    }
+
+    if (buflen == 0) {
+        ERR("RtlAbsoluteToSelfRelativeSD returned a buffer size of 0\n");
+        ExFreePool(usersid);
+        ExFreePool(groupsid);
+        ExFreePool(buf);
+        return;
+    }
+
+    newsd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+    if (!newsd) {
+        ERR("out of memory\n");
+        ExFreePool(usersid);
+        ExFreePool(groupsid);
+        ExFreePool(buf);
+        return;
+    }
+
+    Status = RtlAbsoluteToSelfRelativeSD(abssd, newsd, &buflen);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlAbsoluteToSelfRelativeSD returned %08x\n", Status);
+        ExFreePool(usersid);
+        ExFreePool(groupsid);
+        ExFreePool(buf);
+        return;
+    }
+
+    ExFreePool(fcb->sd);
+    fcb->sd = newsd;
 
     ExFreePool(usersid);
     ExFreePool(groupsid);
+    ExFreePool(buf);
 }
 
 static NTSTATUS get_file_security(PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {
