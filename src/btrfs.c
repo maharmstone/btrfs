@@ -5322,7 +5322,7 @@ static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
     device_extension* Vcb = DeviceObject->DeviceExtension;
     bool top_level;
 
-    FsRtlEnterFileSystem();
+    // no need for FsRtlEnterFileSystem, as this only ever gets called in a system thread
 
     top_level = is_top_level(Irp);
 
@@ -5364,8 +5364,6 @@ static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
 exit:
     if (top_level)
         IoSetTopLevelIrp(NULL);
-
-    FsRtlExitFileSystem();
 
     return Status;
 }
