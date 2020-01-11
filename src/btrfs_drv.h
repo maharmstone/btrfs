@@ -53,9 +53,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <emmintrin.h>
 #include "btrfs.h"
 #include "btrfsioctl.h"
+
+#ifdef _X86_ || _AMD64_
+#include <emmintrin.h>
+#endif
 
 #ifdef _DEBUG
 // #define DEBUG_FCB_REFCOUNTS
@@ -1639,6 +1642,8 @@ static __inline bool write_fcb_compressed(fcb* fcb) {
 
 static __inline void do_xor(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     uint32_t j;
+
+#ifdef _X86_ || _AMD64_
     __m128i x1, x2;
 
     if (have_sse2 && ((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
@@ -1653,6 +1658,22 @@ static __inline void do_xor(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
             len -= 16;
         }
     }
+#else
+    uint64x2_t x1, x2;
+
+    if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
+        while (len >= 16) {
+            x1 = vld1q_u64(buf1);
+            x2 = vld1q_u64(buf2);
+            x1 = veorq_u64(x1, x2);
+            vst1q_u64(buf1, x1);
+
+            buf1 += 16;
+            buf2 += 16;
+            len -= 16;
+        }
+    }
+#endif
 
     for (j = 0; j < len; j++) {
         *buf1 ^= *buf2;
