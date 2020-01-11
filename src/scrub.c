@@ -3172,7 +3172,11 @@ static void __stdcall scrub_thread(void* context) {
 
     ExAcquireResourceExclusiveLite(&Vcb->scrub.stats_lock, true);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&Vcb->scrub.start_time);
+#else
     KeQuerySystemTime(&Vcb->scrub.start_time);
+#endif
     Vcb->scrub.finish_time.QuadPart = 0;
     Vcb->scrub.resume_time.QuadPart = Vcb->scrub.start_time.QuadPart;
     Vcb->scrub.duration.QuadPart = 0;
@@ -3245,15 +3249,22 @@ static void __stdcall scrub_thread(void* context) {
             Vcb->scrub.chunks_left--;
 
         if (IsListEmpty(&chunks))
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+            KeQuerySystemTimePrecise(&Vcb->scrub.finish_time);
+#else
             KeQuerySystemTime(&Vcb->scrub.finish_time);
+#endif
 
         ExReleaseResource(&Vcb->scrub.stats_lock);
 
         c->reloc = false;
         c->list_entry_balance.Flink = NULL;
     }
-
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     Vcb->scrub.duration.QuadPart += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
 
 end:
@@ -3335,7 +3346,11 @@ NTSTATUS query_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode, void
     if (bqs->status == BTRFS_SCRUB_RUNNING) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         bqs->duration += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
     }
 
@@ -3419,7 +3434,11 @@ NTSTATUS pause_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     Vcb->scrub.paused = true;
     KeClearEvent(&Vcb->scrub.event);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     Vcb->scrub.duration.QuadPart += time.QuadPart - Vcb->scrub.resume_time.QuadPart;
 
     return STATUS_SUCCESS;
@@ -3438,7 +3457,11 @@ NTSTATUS resume_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     Vcb->scrub.paused = false;
     KeSetEvent(&Vcb->scrub.event, 0, false);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&Vcb->scrub.resume_time);
+#else
     KeQuerySystemTime(&Vcb->scrub.resume_time);
+#endif
 
     return STATUS_SUCCESS;
 }

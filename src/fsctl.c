@@ -380,7 +380,11 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     r->root_item.inode.generation = 1;
@@ -857,7 +861,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     // no need for fcb_lock as we have tree_lock exclusively
@@ -2043,7 +2051,11 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     CcPurgeCacheSection(FileObject->SectionObjectPointer, &fzdi->FileOffset, (ULONG)(fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart), false);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb->inode_item.transid = Vcb->superblock.generation;
@@ -3636,7 +3648,11 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         }
     }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     if (fcb->ads) {
@@ -3808,7 +3824,11 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         goto end;
     }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb = create_fcb(Vcb, PagedPool);
@@ -4103,7 +4123,11 @@ static NTSTATUS recvd_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, voi
         goto end;
     }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     RtlCopyMemory(&fcb->subvol->root_item.received_uuid, &brs->uuid, sizeof(BTRFS_UUID));

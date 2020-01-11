@@ -716,7 +716,11 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
 
     ExFreePool(oldsd);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb->inode_item.transid = Vcb->superblock.generation;

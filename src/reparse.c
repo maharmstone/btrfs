@@ -246,7 +246,11 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     } else
         Status = STATUS_SUCCESS;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb->inode_item.transid = fcb->Vcb->superblock.generation;
@@ -339,7 +343,11 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
             }
         }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         fcb->inode_item.transid = fcb->Vcb->superblock.generation;
@@ -514,7 +522,11 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
             goto end;
         }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         fileref->fcb->type = BTRFS_TYPE_FILE;
@@ -557,7 +569,11 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
         fcb->atts_changed = true;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         fcb->inode_item.transid = fcb->Vcb->superblock.generation;
@@ -590,7 +606,11 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         fcb->reparse_xattr_changed = true;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         fcb->inode_item.transid = fcb->Vcb->superblock.generation;

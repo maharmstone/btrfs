@@ -2161,7 +2161,11 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
     NTSTATUS Status;
     ULONG utf8len = 0;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     ExAcquireResourceExclusiveLite(fileref->fcb->Header.Resource, true);
@@ -2987,7 +2991,11 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         RtlZeroMemory(ii, sizeof(INODE_ITEM));
@@ -5578,9 +5586,11 @@ static void check_cpu() {
     have_sse42 = cpuInfo[2] & bit_SSE4_2;
     have_sse2 = cpuInfo[3] & bit_SSE2;
 #else
+#ifdef _X86_ || _AMD64_
    __cpuid(cpuInfo, 1);
    have_sse42 = cpuInfo[2] & (1 << 20);
    have_sse2 = cpuInfo[3] & (1 << 26);
+#endif
 #endif
 
     if (have_sse42)

@@ -274,7 +274,11 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
 
         fcb->atts = fbi->FileAttributes;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         if (!ccb->user_set_change_time)
@@ -754,7 +758,11 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb->Vcb = Vcb;
@@ -856,7 +864,11 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
     InitializeListHead(&move_list);
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     acquire_fcb_lock_exclusive(fileref->fcb->Vcb);
@@ -2767,7 +2779,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             goto end;
         }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         if (fcb != Vcb->dummy_fcb && (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp))) {
@@ -2987,7 +3003,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     // update inode's INODE_ITEM
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     if (fcb != Vcb->dummy_fcb && (fileref->parent->fcb->subvol == fcb->subvol || !is_subvol_readonly(fcb->subvol, Irp))) {
@@ -3111,7 +3131,11 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
     fcb->Header.FileSize.QuadPart = end;
     fcb->Header.ValidDataLength.QuadPart = end;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fileref->parent->fcb->inode_item.transid = Vcb->superblock.generation;
@@ -3178,7 +3202,11 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
         filter = FILE_NOTIFY_CHANGE_STREAM_SIZE;
 
         if (!ccb->user_set_write_time) {
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+            KeQuerySystemTimePrecise(&time);
+#else
             KeQuerySystemTime(&time);
+#endif
             win_time_to_unix(time, &fileref->parent->fcb->inode_item.st_mtime);
             filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
 
@@ -3243,7 +3271,11 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     filter = FILE_NOTIFY_CHANGE_SIZE;
 
     if (!ccb->user_set_write_time) {
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &fcb->inode_item.st_mtime);
         filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
@@ -3588,7 +3620,11 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     // update inode's INODE_ITEM
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb->inode_item.transid = Vcb->superblock.generation;
@@ -3696,7 +3732,11 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
     filter = FILE_NOTIFY_CHANGE_SIZE;
 
     if (!ccb->user_set_write_time) {
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &fcb->inode_item.st_mtime);
         filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
@@ -3985,7 +4025,11 @@ static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INOD
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         fbi->CreationTime = fbi->LastAccessTime = fbi->LastWriteTime = fbi->ChangeTime = time;
     } else {
         fbi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
@@ -4031,7 +4075,11 @@ static NTSTATUS fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMAT
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
     } else {
         fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
@@ -4757,7 +4805,11 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         fsi->CreationTime = fsi->LastAccessTime = fsi->LastWriteTime = fsi->ChangeTime = time;
     } else {
         fsi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
@@ -4817,7 +4869,11 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         fsli->CreationTime = fsli->LastAccessTime = fsli->LastWriteTime = fsli->ChangeTime = time;
     } else {
         fsli->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
@@ -5849,7 +5905,11 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     fcb->ea_changed = true;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     fcb->inode_item.transid = Vcb->superblock.generation;

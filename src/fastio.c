@@ -70,7 +70,11 @@ static BOOLEAN __stdcall fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN 
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         fbi->CreationTime = fbi->LastAccessTime = fbi->LastWriteTime = fbi->ChangeTime = time;
     } else {
         fbi->CreationTime.QuadPart = unix_time_to_win(&fcb->inode_item.otime);
@@ -223,7 +227,11 @@ static BOOLEAN __stdcall fast_io_query_network_open_info(PFILE_OBJECT FileObject
     if (fcb == fcb->Vcb->dummy_fcb) {
         LARGE_INTEGER time;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
     } else {
         INODE_ITEM* ii;

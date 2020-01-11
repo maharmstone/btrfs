@@ -223,7 +223,11 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                     atts = fcb->Vcb->dummy_fcb->atts;
                     ealen = fcb->Vcb->dummy_fcb->ealen;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+                    KeQuerySystemTimePrecise(&time);
+#else
                     KeQuerySystemTime(&time);
+#endif
                     win_time_to_unix(time, &ii.otime);
                     ii.st_atime = ii.st_mtime = ii.st_ctime = ii.otime;
                 } else {

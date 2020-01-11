@@ -2178,7 +2178,11 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     utf8[utf8len] = 0;
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     TRACE("create file %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
@@ -2855,7 +2859,11 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
         return Status;
     }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    KeQuerySystemTimePrecise(&time);
+#else
     KeQuerySystemTime(&time);
+#endif
     win_time_to_unix(time, &now);
 
     ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, true);
@@ -3848,7 +3856,11 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
             }
         }
 
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+        KeQuerySystemTimePrecise(&time);
+#else
         KeQuerySystemTime(&time);
+#endif
         win_time_to_unix(time, &now);
 
         filter = FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
