@@ -30,7 +30,9 @@
 #include <intrin.h>
 #endif
 
+#if defined(_X86_) || defined(_AMD64_)
 #include <smmintrin.h>
+#endif
 
 const string EA_NTACL = "security.NTACL";
 const string EA_DOSATTRIB = "user.DOSATTRIB";
@@ -38,7 +40,9 @@ const string EA_REPARSE = "user.reparse";
 const string EA_EA = "user.EA";
 const string XATTR_USER = "user.";
 
+#if defined(_X86_) || defined(_AMD64_)
 bool have_sse42 = false;
+#endif
 
 static const uint32_t crctable[] = {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
@@ -85,6 +89,7 @@ do {                                                                  \
     }                                                                   \
 } while(0)
 
+#if defined(_X86_) || defined(_AMD64_)
 static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
     const char* buf = (const char*)input;
 
@@ -124,11 +129,14 @@ static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
 
     return crc;
 }
+#endif
 
 static uint32_t calc_crc32c(uint32_t seed, uint8_t* msg, ULONG msglen) {
+#if defined(_X86_) || defined(_AMD64_)
     if (have_sse42)
         return crc32c_hw(msg, msglen, seed);
     else {
+#endif
         uint32_t rem;
         ULONG i;
 
@@ -139,7 +147,9 @@ static uint32_t calc_crc32c(uint32_t seed, uint8_t* msg, ULONG msglen) {
         }
 
         return rem;
+#if defined(_X86_) || defined(_AMD64_)
     }
+#endif
 }
 
 bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len) {
@@ -1602,18 +1612,22 @@ static INT_PTR CALLBACK stub_RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM
 }
 
 void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool quiet) {
+#if defined(_X86_) || defined(_AMD64_)
     uint32_t cpuInfo[4];
+#endif
 
     streamfile = file;
     dirpath = path;
     subvolpath = L"";
 
+#if defined(_X86_) || defined(_AMD64_)
 #ifndef _MSC_VER
     __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
     have_sse42 = cpuInfo[2] & bit_SSE4_2;
 #else
     __cpuid((int*)cpuInfo, 1);
     have_sse42 = cpuInfo[2] & (1 << 20);
+#endif
 #endif
 
     if (quiet)
