@@ -30,8 +30,6 @@
 #include <intrin.h>
 #endif
 
-#include <smmintrin.h>
-
 const string EA_NTACL = "security.NTACL";
 const string EA_DOSATTRIB = "user.DOSATTRIB";
 const string EA_REPARSE = "user.reparse";
@@ -111,7 +109,14 @@ static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
 #pragma warning(pop)
 #endif
 #endif
+
+#ifdef _AMD64_ || _X86_
     CALC_CRC(_mm_crc32_u32, crc, uint32_t, buf, len);
+#endif
+
+#ifdef _ARM64_
+    CALC_CRC(__crc32w, crc, uint32_t, buf, len);
+#endif
 
 #ifdef _MSC_VER
     for (; len > 0; len--, buf++) {
@@ -1608,12 +1613,14 @@ void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool q
     dirpath = path;
     subvolpath = L"";
 
+#ifdef _X86_ || _AMD64_
 #ifndef _MSC_VER
     __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
     have_sse42 = cpuInfo[2] & bit_SSE4_2;
 #else
     __cpuid((int*)cpuInfo, 1);
     have_sse42 = cpuInfo[2] & (1 << 20);
+#endif
 #endif
 
     if (quiet)
