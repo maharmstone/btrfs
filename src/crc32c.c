@@ -16,7 +16,11 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <windef.h>
+
+#if defined(_X86_) || defined(_AMD64_)
 #include <smmintrin.h>
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -67,6 +71,7 @@ static const uint32_t crctable[] = {
     }                                                                   \
   } while(0)
 
+#if defined(_X86_) || defined(_AMD64_)
 static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
     const char* buf = (const char*)input;
 
@@ -106,20 +111,25 @@ static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
 
     return crc;
 }
+#endif
 
 uint32_t calc_crc32c(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
     uint32_t rem;
     ULONG i;
 
+#if defined(_X86_) || defined(_AMD64_)
     if (have_sse42) {
         return crc32c_hw(msg, msglen, seed);
     } else {
+#endif
         rem = seed;
 
         for (i = 0; i < msglen; i++) {
             rem = crctable[(rem ^ msg[i]) & 0xff] ^ (rem >> 8);
         }
+#if defined(_X86_) || defined(_AMD64_)
     }
+#endif
 
     return rem;
 }

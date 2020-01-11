@@ -63,7 +63,9 @@ DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x6
 
 PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT master_devobj, busobj;
+#if defined(_X86_) || defined(_AMD64_)
 bool have_sse42 = false, have_sse2 = false;
+#endif
 uint64_t num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
 LIST_ENTRY VcbList;
@@ -5570,6 +5572,7 @@ static void init_serial(bool first_time) {
 }
 #endif
 
+#if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
     unsigned int cpuInfo[4];
 #ifndef _MSC_VER
@@ -5592,6 +5595,7 @@ static void check_cpu() {
     else
         TRACE("SSE2 is not supported\n");
 }
+#endif
 
 #ifdef _DEBUG
 static void init_logging() {
@@ -5887,7 +5891,9 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
     TRACE("DriverEntry\n");
 
+#if defined(_X86_) || defined(_AMD64_)
     check_cpu();
+#endif
 
     if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
         UNICODE_STRING name;
