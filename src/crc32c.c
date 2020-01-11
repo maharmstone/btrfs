@@ -16,7 +16,6 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <windef.h>
-#include <smmintrin.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -93,7 +92,14 @@ static uint32_t crc32c_hw(const void *input, ULONG len, uint32_t crc) {
 #pragma warning(pop)
 #endif
 #endif
+
+#ifdef _AMD64_ || _X86_
     CALC_CRC(_mm_crc32_u32, crc, uint32_t, buf, len);
+#endif
+
+#ifdef _ARM64_
+    CALC_CRC(__crc32w, crc, uint32_t, buf, len);
+#endif
 
 #ifdef _MSC_VER
     for (; len > 0; len--, buf++) {
