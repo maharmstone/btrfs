@@ -428,6 +428,8 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
 
         ExReleaseResourceLite(&pdo_list_lock);
     } else if (sr.type == system_root_btrfs) {
+        boot_uuid = sr.uuid;
+
         ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
         le = pdo_list.Flink;
