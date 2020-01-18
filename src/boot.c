@@ -45,7 +45,19 @@ typedef struct {
     ULONG ExtensionFlags;
 } DEVOBJ_EXTENSION2;
 
-static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_num) {
+typedef enum {
+    system_root_unknown,
+    system_root_partition
+} system_root_type;
+
+typedef struct {
+    uint32_t disk_num;
+    uint32_t partition_num;
+    BTRFS_UUID uuid;
+    system_root_type type;
+} system_root;
+
+static void get_system_root(system_root* sr) {
     NTSTATUS Status;
     HANDLE h;
     UNICODE_STRING us, target;
@@ -68,7 +80,7 @@ static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
         Status = ZwOpenSymbolicLinkObject(&h, GENERIC_READ, &objatt);
         if (!NT_SUCCESS(Status)) {
             ERR("ZwOpenSymbolicLinkObject returned %08x\n", Status);
-            return false;
+            return;
         }
 
         target.Length = target.MaximumLength = 0;
@@ -77,19 +89,19 @@ static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
         if (Status != STATUS_BUFFER_TOO_SMALL) {
             ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
             NtClose(h);
-            return false;
+            return;
         }
 
         if (retlen == 0) {
             NtClose(h);
-            return false;
+            return;
         }
 
         target.Buffer = ExAllocatePoolWithTag(NonPagedPool, retlen, ALLOC_TAG);
         if (!target.Buffer) {
             ERR("out of memory\n");
             NtClose(h);
-            return false;
+            return;
         }
 
         target.Length = target.MaximumLength = (USHORT)retlen;
@@ -99,7 +111,7 @@ static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
             ERR("ZwQuerySymbolicLinkObject returned %08x\n", Status);
             NtClose(h);
             ExFreePool(target.Buffer);
-            return false;
+            return;
         }
 
         NtClose(h);
@@ -122,55 +134,54 @@ static bool get_system_root_partition(uint32_t* disk_num, uint32_t* partition_nu
             break;
     }
 
-    if (target.Length <= sizeof(arc_prefix) - sizeof(WCHAR) ||
-        RtlCompareMemory(target.Buffer, arc_prefix, sizeof(arc_prefix) - sizeof(WCHAR)) != sizeof(arc_prefix) - sizeof(WCHAR)) {
-        ExFreePool(target.Buffer);
-        return false;
-    }
+    sr->type = system_root_unknown;
 
-    s = &target.Buffer[(sizeof(arc_prefix) / sizeof(WCHAR)) - 1];
-    left = ((target.Length - sizeof(arc_prefix)) / sizeof(WCHAR)) + 1;
+    if (target.Length >= sizeof(arc_prefix) - sizeof(WCHAR) &&
+        RtlCompareMemory(target.Buffer, arc_prefix, sizeof(arc_prefix) - sizeof(WCHAR)) == sizeof(arc_prefix) - sizeof(WCHAR)) {
+        s = &target.Buffer[(sizeof(arc_prefix) / sizeof(WCHAR)) - 1];
+        left = ((target.Length - sizeof(arc_prefix)) / sizeof(WCHAR)) + 1;
 
-    if (left == 0 || s[0] < '0' || s[0] > '9') {
-        ExFreePool(target.Buffer);
-        return false;
-    }
+        if (left == 0 || s[0] < '0' || s[0] > '9') {
+            ExFreePool(target.Buffer);
+            return;
+        }
 
-    *disk_num = 0;
+        sr->disk_num = 0;
 
-    while (left > 0 && s[0] >= '0' && s[0] <= '9') {
-        *disk_num *= 10;
-        *disk_num += s[0] - '0';
-        s++;
-        left--;
-    }
+        while (left > 0 && s[0] >= '0' && s[0] <= '9') {
+            sr->disk_num *= 10;
+            sr->disk_num += s[0] - '0';
+            s++;
+            left--;
+        }
 
-    if (left <= (sizeof(arc_middle) / sizeof(WCHAR)) - 1 ||
-        RtlCompareMemory(s, arc_middle, sizeof(arc_middle) - sizeof(WCHAR)) != sizeof(arc_middle) - sizeof(WCHAR)) {
-        ExFreePool(target.Buffer);
-        return false;
-    }
+        if (left <= (sizeof(arc_middle) / sizeof(WCHAR)) - 1 ||
+            RtlCompareMemory(s, arc_middle, sizeof(arc_middle) - sizeof(WCHAR)) != sizeof(arc_middle) - sizeof(WCHAR)) {
+            ExFreePool(target.Buffer);
+            return;
+        }
 
-    s = &s[(sizeof(arc_middle) / sizeof(WCHAR)) - 1];
-    left -= (sizeof(arc_middle) / sizeof(WCHAR)) - 1;
+        s = &s[(sizeof(arc_middle) / sizeof(WCHAR)) - 1];
+        left -= (sizeof(arc_middle) / sizeof(WCHAR)) - 1;
 
-    if (left == 0 || s[0] < '0' || s[0] > '9') {
-        ExFreePool(target.Buffer);
-        return false;
-    }
+        if (left == 0 || s[0] < '0' || s[0] > '9') {
+            ExFreePool(target.Buffer);
+            return;
+        }
 
-    *partition_num = 0;
+        sr->partition_num = 0;
 
-    while (left > 0 && s[0] >= '0' && s[0] <= '9') {
-        *partition_num *= 10;
-        *partition_num += s[0] - '0';
-        s++;
-        left--;
+        while (left > 0 && s[0] >= '0' && s[0] <= '9') {
+            sr->partition_num *= 10;
+            sr->partition_num += s[0] - '0';
+            s++;
+            left--;
+        }
+
+        sr->type = system_root_partition;
     }
 
     ExFreePool(target.Buffer);
-
-    return true;
 }
 
 static void change_symlink(uint32_t disk_num, uint32_t partition_num, BTRFS_UUID* uuid) {
@@ -279,7 +290,7 @@ static void mountmgr_notification(BTRFS_UUID* uuid) {
  * point to.
  */
 void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count) {
-    uint32_t disk_num, partition_num;
+    system_root sr;
     LIST_ENTRY* le;
     bool done = false;
     PDEVICE_OBJECT pdo_to_add = NULL;
@@ -291,10 +302,12 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     ExAcquireResourceExclusiveLite(&boot_lock, TRUE);
     ExReleaseResourceLite(&boot_lock);
 
-    if (!get_system_root_partition(&disk_num, &partition_num))
+    get_system_root(&sr);
+
+    if (sr.type != system_root_partition)
         return;
 
-    TRACE("system boot partition is disk %u, partition %u\n", disk_num, partition_num);
+    TRACE("system boot partition is disk %u, partition %u\n", sr.disk_num, sr.partition_num);
 
     ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
@@ -310,8 +323,8 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
         while (le2 != &pdode->children) {
             volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
 
-            if (vc->disk_num == disk_num && vc->part_num == partition_num) {
-                change_symlink(disk_num, partition_num, &pdode->uuid);
+            if (vc->disk_num == sr.disk_num && vc->part_num == sr.partition_num) {
+                change_symlink(sr.disk_num, sr.partition_num, &pdode->uuid);
                 done = true;
 
                 vc->boot_volume = true;
