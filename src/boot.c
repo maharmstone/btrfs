@@ -47,7 +47,8 @@ typedef struct {
 
 typedef enum {
     system_root_unknown,
-    system_root_partition
+    system_root_partition,
+    system_root_btrfs
 } system_root_type;
 
 typedef struct {
@@ -62,14 +63,14 @@ static void get_system_root(system_root* sr) {
     HANDLE h;
     UNICODE_STRING us, target;
     OBJECT_ATTRIBUTES objatt;
-    WCHAR* s;
-    ULONG retlen = 0, left;
+    ULONG retlen = 0;
     bool second_time = false;
 
     static const WCHAR system_root[] = L"\\SystemRoot";
     static const WCHAR boot_device[] = L"\\Device\\BootDevice";
     static const WCHAR arc_prefix[] = L"\\ArcName\\multi(0)disk(0)rdisk(";
     static const WCHAR arc_middle[] = L")partition(";
+    static const WCHAR arc_btrfs_prefix[] = L"\\ArcName\\btrfs(";
 
     us.Buffer = (WCHAR*)system_root;
     us.Length = us.MaximumLength = sizeof(system_root) - sizeof(WCHAR);
@@ -138,8 +139,8 @@ static void get_system_root(system_root* sr) {
 
     if (target.Length >= sizeof(arc_prefix) - sizeof(WCHAR) &&
         RtlCompareMemory(target.Buffer, arc_prefix, sizeof(arc_prefix) - sizeof(WCHAR)) == sizeof(arc_prefix) - sizeof(WCHAR)) {
-        s = &target.Buffer[(sizeof(arc_prefix) / sizeof(WCHAR)) - 1];
-        left = ((target.Length - sizeof(arc_prefix)) / sizeof(WCHAR)) + 1;
+        WCHAR* s = &target.Buffer[(sizeof(arc_prefix) / sizeof(WCHAR)) - 1];
+        ULONG left = ((target.Length - sizeof(arc_prefix)) / sizeof(WCHAR)) + 1;
 
         if (left == 0 || s[0] < '0' || s[0] > '9') {
             ExFreePool(target.Buffer);
@@ -179,6 +180,53 @@ static void get_system_root(system_root* sr) {
         }
 
         sr->type = system_root_partition;
+    } else if (target.Length >= sizeof(arc_btrfs_prefix) - sizeof(WCHAR) &&
+        RtlCompareMemory(target.Buffer, arc_btrfs_prefix, sizeof(arc_btrfs_prefix) - sizeof(WCHAR)) == sizeof(arc_btrfs_prefix) - sizeof(WCHAR)) {
+        WCHAR* s = &target.Buffer[(sizeof(arc_btrfs_prefix) / sizeof(WCHAR)) - 1];
+
+        for (unsigned int i = 0; i < 16; i++) {
+            if (*s >= '0' && *s <= '9')
+                sr->uuid.uuid[i] = (*s - '0') << 4;
+            else if (*s >= 'a' && *s <= 'f')
+                sr->uuid.uuid[i] = (*s - 'a' + 0xa) << 4;
+            else if (*s >= 'A' && *s <= 'F')
+                sr->uuid.uuid[i] = (*s - 'A' + 0xa) << 4;
+            else {
+                ExFreePool(target.Buffer);
+                return;
+            }
+
+            s++;
+
+            if (*s >= '0' && *s <= '9')
+                sr->uuid.uuid[i] |= *s - '0';
+            else if (*s >= 'a' && *s <= 'f')
+                sr->uuid.uuid[i] |= *s - 'a' + 0xa;
+            else if (*s >= 'A' && *s <= 'F')
+                sr->uuid.uuid[i] |= *s - 'A' + 0xa;
+            else {
+                ExFreePool(target.Buffer);
+                return;
+            }
+
+            s++;
+
+            if (i == 3 || i == 5 || i == 7 || i == 9) {
+                if (*s != '-') {
+                    ExFreePool(target.Buffer);
+                    return;
+                }
+
+                s++;
+            }
+        }
+
+        if (*s != ')') {
+            ExFreePool(target.Buffer);
+            return;
+        }
+
+        sr->type = system_root_btrfs;
     }
 
     ExFreePool(target.Buffer);
@@ -304,83 +352,100 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
 
     get_system_root(&sr);
 
-    if (sr.type != system_root_partition)
-        return;
+    if (sr.type == system_root_partition) {
+        TRACE("system boot partition is disk %u, partition %u\n", sr.disk_num, sr.partition_num);
 
-    TRACE("system boot partition is disk %u, partition %u\n", sr.disk_num, sr.partition_num);
+        ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
-    ExAcquireResourceSharedLite(&pdo_list_lock, true);
+        le = pdo_list.Flink;
+        while (le != &pdo_list) {
+            LIST_ENTRY* le2;
+            pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-    le = pdo_list.Flink;
-    while (le != &pdo_list) {
-        LIST_ENTRY* le2;
-        pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+            ExAcquireResourceSharedLite(&pdode->child_lock, true);
 
-        ExAcquireResourceSharedLite(&pdode->child_lock, true);
-
-        le2 = pdode->children.Flink;
-
-        while (le2 != &pdode->children) {
-            volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
-
-            if (vc->disk_num == sr.disk_num && vc->part_num == sr.partition_num) {
-                change_symlink(sr.disk_num, sr.partition_num, &pdode->uuid);
-                done = true;
-
-                vc->boot_volume = true;
-                boot_uuid = pdode->uuid;
-
-                if (!pdode->vde)
-                    pdo_to_add = pdode->pdo;
-
-                boot_vc = vc;
-
-                break;
-            }
-
-            le2 = le2->Flink;
-        }
-
-        if (done) {
             le2 = pdode->children.Flink;
 
             while (le2 != &pdode->children) {
                 volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
 
-                /* On Windows 7 we need to clear the DO_SYSTEM_BOOT_PARTITION flag of
-                 * all of our underlying partition objects - otherwise IopMountVolume
-                 * will bugcheck with UNMOUNTABLE_BOOT_VOLUME when it tries and fails
-                 * to mount one. */
-                if (vc->devobj) {
-                    PDEVICE_OBJECT dev = vc->devobj;
+                if (vc->disk_num == sr.disk_num && vc->part_num == sr.partition_num) {
+                    change_symlink(sr.disk_num, sr.partition_num, &pdode->uuid);
+                    done = true;
 
-                    ObReferenceObject(dev);
+                    vc->boot_volume = true;
+                    boot_uuid = pdode->uuid;
 
-                    while (dev) {
-                        PDEVICE_OBJECT dev2 = IoGetLowerDeviceObject(dev);
+                    if (!pdode->vde)
+                        pdo_to_add = pdode->pdo;
 
-                        dev->Flags &= ~DO_SYSTEM_BOOT_PARTITION;
+                    boot_vc = vc;
 
-                        ObDereferenceObject(dev);
-
-                        dev = dev2;
-                    }
+                    break;
                 }
 
                 le2 = le2->Flink;
             }
 
+            if (done) {
+                le2 = pdode->children.Flink;
+
+                while (le2 != &pdode->children) {
+                    volume_child* vc = CONTAINING_RECORD(le2, volume_child, list_entry);
+
+                    /* On Windows 7 we need to clear the DO_SYSTEM_BOOT_PARTITION flag of
+                    * all of our underlying partition objects - otherwise IopMountVolume
+                    * will bugcheck with UNMOUNTABLE_BOOT_VOLUME when it tries and fails
+                    * to mount one. */
+                    if (vc->devobj) {
+                        PDEVICE_OBJECT dev = vc->devobj;
+
+                        ObReferenceObject(dev);
+
+                        while (dev) {
+                            PDEVICE_OBJECT dev2 = IoGetLowerDeviceObject(dev);
+
+                            dev->Flags &= ~DO_SYSTEM_BOOT_PARTITION;
+
+                            ObDereferenceObject(dev);
+
+                            dev = dev2;
+                        }
+                    }
+
+                    le2 = le2->Flink;
+                }
+
+                ExReleaseResourceLite(&pdode->child_lock);
+
+                break;
+            }
+
             ExReleaseResourceLite(&pdode->child_lock);
 
-            break;
+            le = le->Flink;
         }
 
-        ExReleaseResourceLite(&pdode->child_lock);
+        ExReleaseResourceLite(&pdo_list_lock);
+    } else if (sr.type == system_root_btrfs) {
+        ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
-        le = le->Flink;
+        le = pdo_list.Flink;
+        while (le != &pdo_list) {
+            pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
+
+            if (RtlCompareMemory(&pdode->uuid, &sr.uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                if (!pdode->vde)
+                    pdo_to_add = pdode->pdo;
+
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        ExReleaseResourceLite(&pdo_list_lock);
     }
-
-    ExReleaseResourceLite(&pdo_list_lock);
 
     if (boot_vc) {
         NTSTATUS Status;
