@@ -5705,10 +5705,17 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     LIST_ENTRY* le;
     NTSTATUS Status;
     UNICODE_STRING volname;
-    ULONG i, j;
+    ULONG i;
+    WCHAR* s;
     pdo_device_extension* pdode = NULL;
     PDEVICE_OBJECT voldev;
     volume_device_extension* vde;
+    UNICODE_STRING arc_name_us;
+    WCHAR* anp;
+
+    static const WCHAR arc_name_prefix[] = L"\\ArcName\\btrfs(";
+
+    WCHAR arc_name[(sizeof(arc_name_prefix) / sizeof(WCHAR)) - 1 + 37];
 
     TRACE("(%p, %p)\n", DriverObject, PhysicalDeviceObject);
 
@@ -5749,19 +5756,29 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     }
 
     RtlCopyMemory(volname.Buffer, BTRFS_VOLUME_PREFIX, sizeof(BTRFS_VOLUME_PREFIX) - sizeof(WCHAR));
+    RtlCopyMemory(arc_name, arc_name_prefix, sizeof(arc_name_prefix) - sizeof(WCHAR));
 
-    j = (sizeof(BTRFS_VOLUME_PREFIX) / sizeof(WCHAR)) - 1;
+    anp = &arc_name[(sizeof(arc_name_prefix) / sizeof(WCHAR)) - 1];
+    s = &volname.Buffer[(sizeof(BTRFS_VOLUME_PREFIX) / sizeof(WCHAR)) - 1];
+
     for (i = 0; i < 16; i++) {
-        volname.Buffer[j] = hex_digit(pdode->uuid.uuid[i] >> 4); j++;
-        volname.Buffer[j] = hex_digit(pdode->uuid.uuid[i] & 0xf); j++;
+        *s = *anp = hex_digit(pdode->uuid.uuid[i] >> 4);
+        s++;
+        anp++;
+
+        *s = *anp = hex_digit(pdode->uuid.uuid[i] & 0xf);
+        s++;
+        anp++;
 
         if (i == 3 || i == 5 || i == 7 || i == 9) {
-            volname.Buffer[j] = '-';
-            j++;
+            *s = *anp = '-';
+            s++;
+            anp++;
         }
     }
 
-    volname.Buffer[j] = '}';
+    *s = '}';
+    *anp = ')';
 
     Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK,
                             WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN8) ? FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL : 0, false, &voldev);
@@ -5769,6 +5786,13 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
         ERR("IoCreateDevice returned %08x\n", Status);
         goto end2;
     }
+
+    arc_name_us.Buffer = arc_name;
+    arc_name_us.Length = arc_name_us.MaximumLength = sizeof(arc_name);
+
+    Status = IoCreateSymbolicLink(&arc_name_us, &volname);
+    if (!NT_SUCCESS(Status))
+        WARN("IoCreateSymbolicLink returned %08x\n", Status);
 
     voldev->SectorSize = PhysicalDeviceObject->SectorSize;
     voldev->Flags |= DO_DIRECT_IO;
