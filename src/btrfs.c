@@ -4443,6 +4443,12 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
+    if (Vcb->superblock.csum_type != 0) {
+        WARN("cannot mount as csum type is unsupported (%x)\n", Vcb->superblock.csum_type);
+        Status = STATUS_UNRECOGNIZED_VOLUME;
+        goto exit;
+    }
+
     Vcb->readonly = false;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
         WARN("mounting read-only because of unsupported flags (%I64x)\n", Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED);
