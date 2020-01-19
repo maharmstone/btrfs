@@ -64,7 +64,7 @@ DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x6
 PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT master_devobj, busobj;
 #if defined(_X86_) || defined(_AMD64_)
-bool have_sse42 = false, have_sse2 = false;
+bool have_sse2 = false;
 #endif
 uint64_t num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
@@ -5575,19 +5575,22 @@ static void init_serial(bool first_time) {
 #if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
     unsigned int cpuInfo[4];
+    bool have_sse42;
+
 #ifndef _MSC_VER
     __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
     have_sse42 = cpuInfo[2] & bit_SSE4_2;
     have_sse2 = cpuInfo[3] & bit_SSE2;
 #else
-   __cpuid(cpuInfo, 1);
-   have_sse42 = cpuInfo[2] & (1 << 20);
-   have_sse2 = cpuInfo[3] & (1 << 26);
+    __cpuid(cpuInfo, 1);
+    have_sse42 = cpuInfo[2] & (1 << 20);
+    have_sse2 = cpuInfo[3] & (1 << 26);
 #endif
 
-    if (have_sse42)
+    if (have_sse42) {
         TRACE("SSE4.2 is supported\n");
-    else
+        calc_crc32c = calc_crc32c_hw;
+    } else
         TRACE("SSE4.2 not supported\n");
 
     if (have_sse2)
