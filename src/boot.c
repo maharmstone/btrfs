@@ -27,6 +27,7 @@ extern ERESOURCE boot_lock;
 extern PDRIVER_OBJECT drvobj;
 
 BTRFS_UUID boot_uuid; // initialized to 0
+uint64_t boot_subvol = 0;
 
 #ifndef _MSC_VER
 NTSTATUS RtlUnicodeStringPrintf(PUNICODE_STRING DestinationString, const WCHAR* pszFormat, ...); // not in mingw
@@ -327,6 +328,92 @@ static void mountmgr_notification(BTRFS_UUID* uuid) {
     ExFreePool(mmtn);
 }
 
+static void check_boot_options() {
+    NTSTATUS Status;
+    WCHAR* s;
+
+    static const WCHAR pathw[] = L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control";
+    static const WCHAR namew[] = L"SystemStartOptions";
+    static const WCHAR subvol[] = L"SUBVOL=";
+
+    try {
+        HANDLE control;
+        OBJECT_ATTRIBUTES oa;
+        UNICODE_STRING path;
+        ULONG kvfilen = sizeof(KEY_VALUE_FULL_INFORMATION) - sizeof(WCHAR) + (255 * sizeof(WCHAR));
+        KEY_VALUE_FULL_INFORMATION* kvfi;
+        UNICODE_STRING name;
+        WCHAR* options;
+
+        path.Buffer = (WCHAR*)pathw;
+        path.Length = path.MaximumLength = sizeof(pathw) - sizeof(WCHAR);
+
+        InitializeObjectAttributes(&oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+        Status = ZwOpenKey(&control, KEY_QUERY_VALUE, &oa);
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwOpenKey returned %08x\n", Status);
+            return;
+        }
+
+        // FIXME - don't fail if value too long (can we query for the length?)
+
+        kvfi = ExAllocatePoolWithTag(PagedPool, kvfilen, ALLOC_TAG);
+        if (!kvfi) {
+            ERR("out of memory\n");
+            NtClose(control);
+            return;
+        }
+
+        name.Buffer = (WCHAR*)namew;
+        name.Length = name.MaximumLength = sizeof(namew) - sizeof(WCHAR);
+
+        Status = ZwQueryValueKey(control, &name, KeyValueFullInformation, kvfi,
+                                 kvfilen, &kvfilen);
+        if (!NT_SUCCESS(Status)) {
+            ERR("ZwQueryValueKey returned %08x\n", Status);
+            NtClose(control);
+            return;
+        }
+
+        NtClose(control);
+
+        options = (WCHAR*)((uint8_t*)kvfi + kvfi->DataOffset);
+        options[kvfi->DataLength / sizeof(WCHAR)] = 0; // FIXME - make sure buffer long enough to allow this
+
+        s = wcsstr(options, subvol);
+
+        if (!s)
+            return;
+
+        s += (sizeof(subvol) / sizeof(WCHAR)) - 1;
+
+        boot_subvol = 0;
+
+        while (true) {
+            if (*s >= '0' && *s <= '9') {
+                boot_subvol <<= 4;
+                boot_subvol |= *s - '0';
+            } else if (*s >= 'a' && *s <= 'f') {
+                boot_subvol <<= 4;
+                boot_subvol |= *s - 'a' + 0xa;
+            } else if (*s >= 'A' && *s <= 'F') {
+                boot_subvol <<= 4;
+                boot_subvol |= *s - 'A' + 0xa;
+            } else
+                break;
+
+            s++;
+        }
+    } except (EXCEPTION_EXECUTE_HANDLER) {
+        return;
+    }
+
+    if (boot_subvol != 0) {
+        TRACE("passed subvol %I64x in boot options\n", boot_subvol);
+    }
+}
+
 /* If booting from Btrfs, Windows will pass the device object for the raw partition to
  * mount_vol - which is no good to us, as we only use the \Device\Btrfs{} devices we
  * create so that RAID works correctly.
@@ -480,6 +567,9 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
             ExFreePool(name.Buffer);
         }
     }
+
+    if (sr.type == system_root_btrfs || boot_vc)
+        check_boot_options();
 
     // If our FS depends on volumes that aren't there when we do our IoRegisterPlugPlayNotification calls
     // in DriverEntry, bus_query_device_relations won't get called until it's too late. We need to do our

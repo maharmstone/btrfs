@@ -110,6 +110,7 @@ KEVENT mountmgr_thread_event;
 bool shutting_down = false;
 ERESOURCE boot_lock;
 extern BTRFS_UUID boot_uuid;
+extern uint64_t boot_subvol;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -4424,6 +4425,9 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         ERR("registry_load_volume_options returned %08x\n", Status);
         goto exit;
     }
+
+    if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && boot_subvol != 0)
+        Vcb->options.subvol_id = boot_subvol;
 
     if (pdode && pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
         ERR("could not mount as %u device(s) missing\n", pdode->num_children - pdode->children_loaded);
