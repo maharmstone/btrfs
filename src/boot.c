@@ -414,6 +414,24 @@ static void check_boot_options() {
     }
 }
 
+void boot_add_device(DEVICE_OBJECT* pdo) {
+    pdo_device_extension* pdode = pdo->DeviceExtension;
+
+    AddDevice(drvobj, pdo);
+
+    // To stop Windows sneakily setting DOE_START_PENDING
+    pdode->dont_report = true;
+
+    if (pdo->DeviceObjectExtension) {
+        ((DEVOBJ_EXTENSION2*)pdo->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
+
+        if (pdode && pdode->vde && pdode->vde->device)
+            ((DEVOBJ_EXTENSION2*)pdode->vde->device->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
+    }
+
+    mountmgr_notification(&pdode->uuid);
+}
+
 /* If booting from Btrfs, Windows will pass the device object for the raw partition to
  * mount_vol - which is no good to us, as we only use the \Device\Btrfs{} devices we
  * create so that RAID works correctly.
@@ -575,21 +593,6 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     // in DriverEntry, bus_query_device_relations won't get called until it's too late. We need to do our
     // own call to AddDevice here as a result. We need to clear the DOE_START_PENDING bits, or NtOpenFile
     // will return STATUS_NO_SUCH_DEVICE.
-    if (pdo_to_add) {
-        pdo_device_extension* pdode = pdo_to_add->DeviceExtension;
-
-        AddDevice(drvobj, pdo_to_add);
-
-        // To stop Windows sneakily setting DOE_START_PENDING
-        pdode->dont_report = true;
-
-        if (pdo_to_add->DeviceObjectExtension) {
-            ((DEVOBJ_EXTENSION2*)pdo_to_add->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
-
-            if (pdode && pdode->vde && pdode->vde->device)
-                ((DEVOBJ_EXTENSION2*)pdode->vde->device->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
-        }
-
-        mountmgr_notification(&pdode->uuid);
-    }
+    if (pdo_to_add)
+        boot_add_device(pdo_to_add);
 }

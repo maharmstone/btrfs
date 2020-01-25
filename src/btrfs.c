@@ -109,7 +109,6 @@ bool degraded_wait = true;
 KEVENT mountmgr_thread_event;
 bool shutting_down = false;
 ERESOURCE boot_lock;
-extern BTRFS_UUID boot_uuid;
 extern uint64_t boot_subvol;
 
 #ifdef _DEBUG

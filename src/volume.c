@@ -1372,7 +1372,9 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         drive_letter_callback(pdode);
 
     if (new_pdo) {
-        if (no_pnp)
+        if (RtlCompareMemory(&sb->uuid, &boot_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
+            boot_add_device(pdo);
+        else if (no_pnp)
             AddDevice(drvobj, pdo);
         else {
             bus_device_extension* bde = busobj->DeviceExtension;
