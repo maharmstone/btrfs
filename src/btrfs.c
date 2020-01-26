@@ -5212,11 +5212,15 @@ void do_shutdown(PIRP Irp) {
 
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
         volume_device_extension* vde = Vcb->vde;
+        PDEVICE_OBJECT devobj = vde ? vde->device : NULL;
 
         TRACE("shutting down Vcb %p\n", Vcb);
 
         if (vde)
             InterlockedIncrement(&vde->open_count);
+
+        if (devobj)
+            ObReferenceObject(devobj);
 
         dismount_volume(Vcb, true, Irp);
 
@@ -5226,6 +5230,7 @@ void do_shutdown(PIRP Irp) {
             PDEVICE_OBJECT mountmgr;
             PFILE_OBJECT mountmgrfo;
             KIRQL irql;
+            PVPB newvpb;
 
             RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
             Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &mountmgrfo, &mountmgr);
@@ -5239,13 +5244,29 @@ void do_shutdown(PIRP Irp) {
 
             vde->removing = true;
 
+            newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
+            if (!newvpb) {
+                ERR("out of memory\n");
+                return;
+            }
+
+            RtlZeroMemory(newvpb, sizeof(VPB));
+
+            newvpb->Type = IO_TYPE_VPB;
+            newvpb->Size = sizeof(VPB);
+            newvpb->RealDevice = newvpb->DeviceObject = vde->device;
+            newvpb->Flags = VPB_DIRECT_WRITES_ALLOWED;
+
             IoAcquireVpbSpinLock(&irql);
-            vde->device->Vpb->DeviceObject = vde->device;
+            vde->device->Vpb = newvpb;
             IoReleaseVpbSpinLock(irql);
 
             if (InterlockedDecrement(&vde->open_count) == 0)
                 free_vol(vde);
         }
+
+        if (devobj)
+            ObDereferenceObject(devobj);
 
         le = le2;
     }
