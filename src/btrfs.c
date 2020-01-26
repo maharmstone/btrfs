@@ -5347,6 +5347,30 @@ static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         volume_device_extension* vde = DeviceObject->DeviceExtension;
 
+        /* If power state is about to go to sleep or hibernate, do a flush. We do this on IRP_MJ_QUERY_POWER
+         * rather than IRP_MJ_SET_POWER because we know that the hard disks are still awake. */
+        if (IrpSp->MinorFunction == IRP_MN_QUERY_POWER && IrpSp->Parameters.Power.Type == SystemPowerState &&
+            IrpSp->Parameters.Power.State.SystemState != PowerSystemWorking && vde->mounted_device) {
+            device_extension* Vcb2 = vde->mounted_device->DeviceExtension;
+
+            if (Vcb2) {
+                ExAcquireResourceExclusiveLite(&Vcb2->tree_lock, true);
+
+                if (Vcb2->need_write && !Vcb2->readonly) {
+                    TRACE("doing protective flush on power state change\n");
+                    Status = do_write(Vcb2, NULL);
+                } else
+                    Status = STATUS_SUCCESS;
+
+                free_trees(Vcb2);
+
+                if (!NT_SUCCESS(Status))
+                    ERR("do_write returned %08x\n", Status);
+
+                ExReleaseResourceLite(&Vcb2->tree_lock);
+            }
+        }
+
         PoStartNextPowerIrp(Irp);
         IoSkipCurrentIrpStackLocation(Irp);
         Status = PoCallDriver(vde->attached_device, Irp);
