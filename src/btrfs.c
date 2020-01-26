@@ -1911,7 +1911,9 @@ void uninit(_In_ device_extension* Vcb) {
     Vcb->Vpb->DeviceObject = NULL;
     IoReleaseVpbSpinLock(irql);
 
-    RemoveEntryList(&Vcb->list_entry);
+    // FIXME - needs global_loading_lock to be held
+    if (Vcb->list_entry.Flink)
+        RemoveEntryList(&Vcb->list_entry);
 
     if (Vcb->balance.thread) {
         Vcb->balance.paused = false;
@@ -5330,6 +5332,118 @@ end:
     return Status;
 }
 
+static bool device_still_valid(device* dev, uint64_t expected_generation) {
+    NTSTATUS Status;
+    unsigned int to_read;
+    superblock* sb;
+    uint32_t crc32;
+
+    to_read = (unsigned int)(dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize));
+
+    sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
+    if (!sb) {
+        ERR("out of memory\n");
+        return false;
+    }
+
+    Status = sync_read_phys(dev->devobj, dev->fileobj, superblock_addrs[0], to_read, (PUCHAR)sb, false);
+    if (!NT_SUCCESS(Status)) {
+        ERR("sync_read_phys returned %08x\n", Status);
+        ExFreePool(sb);
+        return false;
+    }
+
+    if (sb->magic != BTRFS_MAGIC) {
+        ERR("magic not found\n");
+        ExFreePool(sb);
+        return false;
+    }
+
+    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+
+    if (crc32 != *((uint32_t*)sb->checksum)) {
+        ERR("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
+        ExFreePool(sb);
+        return false;
+    }
+
+    if (sb->generation > expected_generation) {
+        ERR("generation was %I64x, expected %I64x\n", sb->generation, expected_generation);
+        ExFreePool(sb);
+        return false;
+    }
+
+    ExFreePool(sb);
+
+    return true;
+}
+
+_Function_class_(IO_WORKITEM_ROUTINE)
+static void __stdcall check_after_wakeup(PDEVICE_OBJECT DeviceObject, PVOID con) {
+    device_extension* Vcb = (device_extension*)con;
+    LIST_ENTRY* le;
+
+    UNUSED(DeviceObject);
+
+    ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
+
+    le = Vcb->devices.Flink;
+
+    // FIXME - do reads in parallel?
+
+    while (le != &Vcb->devices) {
+        device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+        if (dev->devobj) {
+            if (!device_still_valid(dev, Vcb->superblock.generation - 1)) {
+                PDEVICE_OBJECT voldev = Vcb->Vpb->RealDevice;
+                KIRQL irql;
+                PVPB newvpb;
+
+                WARN("forcing remount\n");
+
+                newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
+                if (!newvpb) {
+                    ERR("out of memory\n");
+                    return;
+                }
+
+                RtlZeroMemory(newvpb, sizeof(VPB));
+
+                newvpb->Type = IO_TYPE_VPB;
+                newvpb->Size = sizeof(VPB);
+                newvpb->RealDevice = voldev;
+                newvpb->Flags = VPB_DIRECT_WRITES_ALLOWED;
+
+                Vcb->removing = true;
+
+                IoAcquireVpbSpinLock(&irql);
+                voldev->Vpb = newvpb;
+                IoReleaseVpbSpinLock(irql);
+
+                Vcb->vde = NULL;
+
+                ExReleaseResourceLite(&Vcb->tree_lock);
+
+                if (Vcb->open_files == 0)
+                    uninit(Vcb);
+                else { // remove from VcbList
+                    ExAcquireResourceExclusiveLite(&global_loading_lock, true);
+                    RemoveEntryList(&Vcb->list_entry);
+                    Vcb->list_entry.Flink = NULL;
+                    ExReleaseResourceLite(&global_loading_lock);
+                }
+
+                return;
+            }
+        }
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
+}
+
 _Dispatch_type_(IRP_MJ_POWER)
 _Function_class_(DRIVER_DISPATCH)
 static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
@@ -5347,11 +5461,12 @@ static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
         volume_device_extension* vde = DeviceObject->DeviceExtension;
 
-        /* If power state is about to go to sleep or hibernate, do a flush. We do this on IRP_MJ_QUERY_POWER
-         * rather than IRP_MJ_SET_POWER because we know that the hard disks are still awake. */
         if (IrpSp->MinorFunction == IRP_MN_QUERY_POWER && IrpSp->Parameters.Power.Type == SystemPowerState &&
             IrpSp->Parameters.Power.State.SystemState != PowerSystemWorking && vde->mounted_device) {
             device_extension* Vcb2 = vde->mounted_device->DeviceExtension;
+
+            /* If power state is about to go to sleep or hibernate, do a flush. We do this on IRP_MJ_QUERY_POWER
+            * rather than IRP_MJ_SET_POWER because we know that the hard disks are still awake. */
 
             if (Vcb2) {
                 ExAcquireResourceExclusiveLite(&Vcb2->tree_lock, true);
@@ -5368,6 +5483,21 @@ static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
                     ERR("do_write returned %08x\n", Status);
 
                 ExReleaseResourceLite(&Vcb2->tree_lock);
+            }
+        } else if (IrpSp->MinorFunction == IRP_MN_SET_POWER && IrpSp->Parameters.Power.Type == SystemPowerState &&
+            IrpSp->Parameters.Power.State.SystemState == PowerSystemWorking && vde->mounted_device) {
+            device_extension* Vcb2 = vde->mounted_device->DeviceExtension;
+
+            /* If waking up, make sure that the FS hasn't been changed while we've been out (e.g., by dual-boot Linux) */
+
+            if (Vcb2) {
+                PIO_WORKITEM work_item;
+
+                work_item = IoAllocateWorkItem(DeviceObject);
+                if (!work_item) {
+                    ERR("out of memory\n");
+                } else
+                    IoQueueWorkItem(work_item, check_after_wakeup, DelayedWorkQueue, Vcb2);
             }
         }
 
