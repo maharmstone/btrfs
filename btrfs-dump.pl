@@ -45,6 +45,7 @@ open($f,$ARGV[0]) || die "Error opening ".$ARGV[0].": $!";
 binmode($f);
 
 my %roots=();
+my %logroots=();
 my @l2p=();
 my @l2p_bs=();
 
@@ -69,6 +70,14 @@ my @rs=sort { $a <=> $b } (keys(%roots));
 foreach my $r (@rs) {
 	printf("Tree %x:\n",$r);
 	dump_tree($roots{$r}, "");
+	print "\n";
+}
+
+my @lrs=sort { $a <=> $b } (keys(%logroots));
+
+foreach my $lr (@lrs) {
+	printf("Tree %x (log):\n",$lr);
+	dump_tree($logroots{$lr}, "");
 	print "\n";
 }
 
@@ -874,8 +883,12 @@ sub dump_tree {
 # 				print Dumper(@l2p);
             }
 
-			if ($treenum==1&&$ihb[1]==0x84) {
-				$roots{$ihb[0]}=unpack("x176Q",$item);
+			if ($ihb[1] == 0x84) {
+				if ($treenum == 1) {
+					$roots{$ihb[0]}=unpack("x176Q",$item);
+				} elsif ($treenum == 0xfffffffffffffffa && $ihb[0] == 0xfffffffffffffffa) {
+					$logroots{$ihb[2]}=unpack("x176Q",$item);
+				}
 			}
 		}
 	} else {
