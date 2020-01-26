@@ -80,9 +80,10 @@ Todo
 * Support for Btrfs quotas
 * Windows 10 reserved storage
 * Transaction log
-* Three- and four-disk RAID1 (Linux 5.6)
-* New checksum types (xxhash, sha256, blake2)
-* Metadata UUID incompat flag
+* Three- and four-disk RAID1 (Linux 5.5)
+* New checksum types (xxhash, sha256, blake2) (Linux 5.5)
+* Metadata UUID incompat flag (Linux 5.0)
+* Support for Windows transactions (TxF)
 
 Installation
 ------------
