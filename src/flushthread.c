@@ -7624,9 +7624,12 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     while (!IsListEmpty(&Vcb->drop_roots)) {
         root* r = CONTAINING_RECORD(RemoveHeadList(&Vcb->drop_roots), root, list_entry);
 
-        ExDeleteResourceLite(&r->nonpaged->load_tree_lock);
-        ExFreePool(r->nonpaged);
-        ExFreePool(r);
+        if (IsListEmpty(&r->fcbs)) {
+            ExDeleteResourceLite(&r->nonpaged->load_tree_lock);
+            ExFreePool(r->nonpaged);
+            ExFreePool(r);
+        } else
+            r->dropped = true;
     }
 
 end:

@@ -445,6 +445,7 @@ typedef struct _root {
     LONG send_ops;
     uint64_t fcbs_version;
     bool checked_for_orphans;
+    bool dropped;
     LIST_ENTRY fcbs;
     LIST_ENTRY* fcbs_ptrs[256];
     LIST_ENTRY list_entry;

@@ -1226,6 +1226,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     r->root_item.num_references = 1;
     r->fcbs_version = 0;
     r->checked_for_orphans = true;
+    r->dropped = false;
     InitializeListHead(&r->fcbs);
     RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
@@ -1646,8 +1647,15 @@ void reap_fcb(fcb* fcb) {
             fcb->subvol->fcbs_ptrs[c] = NULL;
     }
 
-    if (fcb->list_entry.Flink)
+    if (fcb->list_entry.Flink) {
         RemoveEntryList(&fcb->list_entry);
+
+        if (fcb->subvol && fcb->subvol->dropped && IsListEmpty(&fcb->subvol->fcbs)) {
+            ExDeleteResourceLite(&fcb->subvol->nonpaged->load_tree_lock);
+            ExFreePool(fcb->subvol->nonpaged);
+            ExFreePool(fcb->subvol);
+        }
+    }
 
     if (fcb->list_entry_all.Flink)
         RemoveEntryList(&fcb->list_entry_all);
@@ -2846,6 +2854,7 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
     r->send_ops = 0;
     r->fcbs_version = 0;
     r->checked_for_orphans = false;
+    r->dropped = false;
     InitializeListHead(&r->fcbs);
     RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
