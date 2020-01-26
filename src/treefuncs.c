@@ -814,7 +814,7 @@ void free_trees(device_extension* Vcb) {
                     r->treeholder.tree = NULL;
 
                 if (IsListEmpty(&Vcb->trees))
-                    return;
+                    break;
             } else if (t->header.level > level)
                 empty = false;
 
