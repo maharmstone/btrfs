@@ -4464,6 +4464,11 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->superblock.generation++;
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
 
+    if (Vcb->superblock.log_tree_addr != 0) {
+        FIXME("FIXME - replay transaction log (clearing for now)\n");
+        Vcb->superblock.log_tree_addr = 0;
+    }
+
     InitializeListHead(&Vcb->devices);
     dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
     if (!dev) {
