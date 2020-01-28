@@ -260,8 +260,6 @@
       <PreprocessorDefinitions>WIN32;_ARM_;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <BufferSecurityCheck>
-      </BufferSecurityCheck>
       <PrecompiledHeader>
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
@@ -273,7 +271,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
+      <AdditionalDependencies>armrt.lib;ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -294,7 +292,6 @@
       <StackCommitSize />
       <ImageHasSafeExceptionHandlers>
       </ImageHasSafeExceptionHandlers>
-      <ForceFileOutput>UndefinedSymbolOnly</ForceFileOutput>
     </Link>
     <Inf>
       <SpecifyArchitecture>true</SpecifyArchitecture>
@@ -309,8 +306,6 @@
       <PreprocessorDefinitions>WIN32;_ARM64_;_DEBUG;_WINDOWS;_KERNEL_MODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <BufferSecurityCheck>
-      </BufferSecurityCheck>
       <PrecompiledHeader>
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
@@ -324,7 +319,7 @@
       <CallingConvention>Cdecl</CallingConvention>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
+      <AdditionalDependencies>arm64rt.lib;ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -338,7 +333,6 @@
       </DataExecutionPrevention>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
       <SpecifySectionAttributes>INIT,d</SpecifySectionAttributes>
-      <ForceFileOutput>UndefinedSymbolOnly</ForceFileOutput>
       <StackReserveSize />
       <StackCommitSize />
       <IgnoreSpecificDefaultLibraries />
@@ -433,10 +427,9 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <TreatWarningAsError>false</TreatWarningAsError>
       <ControlFlowGuard>Guard</ControlFlowGuard>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
+      <AdditionalDependencies>armrt.lib;ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -455,7 +448,6 @@
       <SpecifySectionAttributes>INIT,d</SpecifySectionAttributes>
       <IgnoreSpecificDefaultLibraries>
       </IgnoreSpecificDefaultLibraries>
-      <ForceFileOutput>UndefinedSymbolOnly</ForceFileOutput>
       <StackReserveSize />
       <StackCommitSize />
     </Link>
@@ -466,7 +458,6 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_ARM64_;NDEBUG;_WINDOWS;_KERNEL_MODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
       <PrecompiledHeader>
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
@@ -476,7 +467,7 @@
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
+      <AdditionalDependencies>arm64rt.lib;ntoskrnl.lib;hal.lib;bufferoverflowfastfailk.lib;rtlver.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName).sys</OutputFile>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -492,7 +483,6 @@
       </DataExecutionPrevention>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
       <SpecifySectionAttributes>INIT,d</SpecifySectionAttributes>
-      <ForceFileOutput>UndefinedSymbolOnly</ForceFileOutput>
       <StackReserveSize />
       <StackCommitSize />
       <IgnoreSpecificDefaultLibraries />
