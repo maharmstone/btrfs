@@ -1,4 +1,4 @@
-WinBtrfs v1.5
+WinBtrfs v1.6
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -79,7 +79,7 @@ Todo
 * Defragmentation
 * Support for Btrfs quotas
 * Windows 10 reserved storage
-* Transaction log
+* Full transaction log support
 * Three- and four-disk RAID1 (Linux 5.5)
 * New checksum types (xxhash, sha256, blake2) (Linux 5.5)
 * Metadata UUID incompat flag (Linux 5.0)
@@ -245,6 +245,13 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.6 (2020-02-04):
+* Added experimental (i.e. untested) ARM support (thanks to [DjArt](https://github.com/DjArt) for this)
+* Added fixes for booting from Btrfs on Windows 10
+* Volumes will now get remounted if changed while Windows is asleep or hibernating
+* Fixed corruption when mounting volume that hasn't been unmounted cleanly by Linux
+* Fixed crash when deleting subvolume
 
 v1.5 (2019-11-10):
 * More fixes for booting from Btrfs
