@@ -500,7 +500,7 @@ via the usual Plug and Play method.
 
 * `NoTrim` (DWORD): set this to 1 to disable TRIM support.
 
-* `NoRootDir` (DWORD): if you have chaned your default subvolume, either natively or by a registry option,
+* `NoRootDir` (DWORD): if you have changed your default subvolume, either natively or by a registry option,
 there will be a hidden directory called $Root which points to where the root would normally be. Set this
 value to 1 to prevent this appearing.
 
