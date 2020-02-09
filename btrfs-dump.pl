@@ -180,6 +180,8 @@ sub read_superblock {
 
 	if ($csum_type == 1) {
 		$csum = sprintf("%016x", unpack("Q", $b[0]));
+	} elsif ($csum_type == 2) {
+		$csum = sprintf("%016x%016x%016x%016x", unpack("QQQQ", $b[0]));
 	} else {
 		$csum = sprintf("%08x", unpack("V", $b[0]));
 	}
@@ -538,6 +540,11 @@ sub dump_item {
 				printf(" %016x",unpack("Q",$s));
 				$s=substr($s,8);
 			}
+		} elsif ($csum_type == 2) { # sha256
+			while (length($s)>0) {
+				printf(" %016x%016x%016x%016x",unpack("QQQQ",$s));
+				$s=substr($s,32);
+			}
 		} else {
 			while (length($s)>0) {
 				printf(" %08x",unpack("V",$s));
@@ -831,6 +838,8 @@ sub dump_tree {
 
 	if ($csum_type == 1) {
 		$csum = sprintf("%016x", unpack("Q", $headbits[0]));
+	} elsif ($csum_type == 2) {
+		$csum = sprintf("%016x%016x%016x%016x", unpack("QQQQ", $headbits[0]));
 	} else {
 		$csum = sprintf("%08x", unpack("V", $headbits[0]));
 	}
