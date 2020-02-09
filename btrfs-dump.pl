@@ -48,6 +48,7 @@ my %roots=();
 my %logroots=();
 my @l2p=();
 my @l2p_bs=();
+my $csum_type;
 
 read_superblock($f);
 
@@ -177,6 +178,8 @@ sub read_superblock {
 
 	printf("superblock csum=%x fsuuid=%s physaddr=%x flags=%x magic=%s gen=%x roottree=%x chunktree=%x logtree=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x n=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%s incompat_flags=%s csum_type=%x root_level=%x chunk_root_level=%x log_root_level=%x (dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s) label=%s cache_gen=%x uuid_tree_gen=%x\n", $b[0], format_uuid($b[1]), $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], compat_ro_flags($b[21]), incompat_flags($b[22]), $b[23], $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30]);
 	my $devid=format_uuid($di[12]);
+
+	$csum_type = $b[23];
 
 	$nodesize = $b[15];
 
@@ -523,10 +526,16 @@ sub dump_item {
 	} elsif ($type == 0x80) { # EXTENT_CSUM
 		print "extent_csum";
 
-		# FIXME
-		while (length($s)>0) {
-			printf(" %08x",unpack("V",$s));
-			$s=substr($s,4);
+		if ($csum_type == 1) { # xxhash
+			while (length($s)>0) {
+				printf(" %016x",unpack("Q",$s));
+				$s=substr($s,8);
+			}
+		} else {
+			while (length($s)>0) {
+				printf(" %08x",unpack("V",$s));
+				$s=substr($s,4);
+			}
 		}
 	} elsif ($type == 0x90 || $type == 0x9c) { # ROOT_BACKREF or ROOT_REF
 		@b=unpack("QQv",$s);
