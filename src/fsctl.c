@@ -2408,6 +2408,8 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
 
                 RtlZeroMemory(newvpb, sizeof(VPB));
 
+                ObReferenceObject(devobj);
+
                 ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
                 Vcb->removing = true;
@@ -2431,6 +2433,7 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
                     ERR("do_write returned %08x\n", Status);
                     ExReleaseResourceLite(&Vcb->tree_lock);
                     ExFreePool(newvpb);
+                    ObDereferenceObject(devobj);
                     goto end;
                 }
 
@@ -2457,6 +2460,8 @@ static NTSTATUS invalidate_volumes(PIRP Irp) {
 
                 if (Vcb->open_files == 0)
                     uninit(Vcb);
+
+                ObDereferenceObject(devobj);
             }
 
             break;
