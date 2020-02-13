@@ -10,6 +10,9 @@ If your Btrfs filesystem is on a MD software RAID device created by Linux, you
 will also need [WinMD](https://github.com/maharmstone/winmd) to get this to appear
 under Windows.
 
+See also [Quibble](https://github.com/maharmstone/quibble), which is an experimental
+bootloader allowing Windows to boot from Btrfs.
+
 First, a disclaimer:
 
 You use this software at your own risk. I take no responsibility for any damage
