@@ -88,54 +88,64 @@ sub incompat_flags {
     my ($f)=@_;
     my @l;
 
-    if ($f&1) {
+    if ($f & 0x1) {
         push @l,"mixed_backref";
-        $f&=~1;
+        $f &= ~0x1;
     }
 
-    if ($f&2) {
+    if ($f & 0x2) {
         push @l,"default_subvol";
-        $f&=~2;
+        $f &= ~0x2;
     }
 
-    if ($f&4) {
+    if ($f & 0x4) {
         push @l,"mixed_groups";
-        $f&=~4;
+        $f &= ~0x4;
     }
 
-    if ($f&8) {
+    if ($f & 0x8) {
         push @l,"compress_lzo";
-        $f&=~8;
+        $f &= ~0x8;
     }
 
-    if ($f&16) {
+    if ($f & 0x10) {
         push @l,"compress_zstd";
-        $f&=~16;
+        $f &= ~0x10;
     }
 
-    if ($f&32) {
+    if ($f & 0x20) {
         push @l,"big_metadata";
-        $f&=~32;
+        $f &= ~0x20;
     }
 
-    if ($f&64) {
+    if ($f & 0x40) {
         push @l,"extended_iref";
-        $f&=~64;
+        $f &= ~0x40;
     }
 
-    if ($f&128) {
+    if ($f & 0x80) {
         push @l,"raid56";
-        $f&=~128;
+        $f &= ~0x80;
     }
 
-    if ($f&256) {
+    if ($f & 0x100) {
         push @l,"skinny_metadata";
-        $f&=~256;
+        $f &= ~0x100;
     }
 
-    if ($f&512) {
+    if ($f & 0x200) {
         push @l,"no_holes";
-        $f&=~512;
+        $f &= ~0x200;
+    }
+
+    if ($f & 0x400) {
+        push @l,"metadata_uuid";
+        $f &= ~0x400;
+    }
+
+    if ($f & 0x800) {
+        push @l,"raid1c34";
+        $f &= ~0x800;
     }
 
     if ($f!=0 || $#l==-1) {
