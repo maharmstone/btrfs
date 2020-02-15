@@ -311,7 +311,9 @@
 #define IDC_SOFT                        1057
 #define IDC_PAUSE_SCRUB                 1057
 #define IDC_CANCEL_SCRUB                1058
+#define IDC_PROFILES_RAID1C3            1058
 #define IDC_SCRUB_PROGRESS              1059
+#define IDC_PROFILES_RAID1C4            1059
 #define IDC_SCRUB_STATUS                1060
 #define IDC_COMPRESS_TYPE               1061
 #define IDC_CHECK1                      1062
@@ -336,10 +338,10 @@
 #define IDC_DRIVE_LETTER_COMBO          1074
 
 // Next default values for new objects
-// 
+//
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        178
+#define _APS_NEXT_RESOURCE_VALUE        179
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1075
 #define _APS_NEXT_SYMED_VALUE           101
