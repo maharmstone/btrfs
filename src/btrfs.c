@@ -53,7 +53,7 @@ NTSTATUS RtlStringCbVPrintfA(char* pszDest, size_t cbDest, const char* pszFormat
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES | \
-                            BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD)
+                            BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD | BTRFS_INCOMPAT_FLAGS_METADATA_UUID)
 #define COMPAT_RO_SUPPORTED (BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE | BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID)
 
 static const WCHAR device_name[] = {'\\','B','t','r','f','s',0};
@@ -4456,6 +4456,9 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
+
+    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_METADATA_UUID))
+        Vcb->superblock.metadata_uuid = Vcb->superblock.uuid;
 
     if (Vcb->superblock.csum_type != 0) {
         WARN("cannot mount as csum type is unsupported (%x)\n", Vcb->superblock.csum_type);

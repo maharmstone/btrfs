@@ -1951,7 +1951,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             t->header.generation = Vcb->superblock.generation;
             t->header.tree_id = t->root->id;
             t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
-            t->header.fs_uuid = Vcb->superblock.uuid;
+            t->header.fs_uuid = Vcb->superblock.metadata_uuid;
             t->has_address = true;
 
             data = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);

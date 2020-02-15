@@ -238,7 +238,8 @@ typedef struct {
     char label[MAX_LABEL_SIZE];
     uint64_t cache_generation;
     uint64_t uuid_tree_generation;
-    uint64_t reserved[30];
+    BTRFS_UUID metadata_uuid;
+    uint64_t reserved[28];
     uint8_t sys_chunk_array[SYS_CHUNK_ARRAY_SIZE];
     superblock_backup backup[BTRFS_NUM_BACKUP_ROOTS];
     uint8_t reserved2[565];
