@@ -53,7 +53,7 @@ NTSTATUS RtlStringCbVPrintfA(char* pszDest, size_t cbDest, const char* pszFormat
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES | \
-                            BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD | BTRFS_INCOMPAT_FLAGS_METADATA_UUID)
+                            BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD | BTRFS_INCOMPAT_FLAGS_METADATA_UUID | BTRFS_INCOMPAT_FLAGS_RAID1C34)
 #define COMPAT_RO_SUPPORTED (BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE | BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID)
 
 static const WCHAR device_name[] = {'\\','B','t','r','f','s',0};
@@ -582,6 +582,12 @@ static void calculate_total_space(_In_ device_extension* Vcb, _Out_ uint64_t* to
     } else if (Vcb->data_flags & BLOCK_FLAG_RAID6) {
         nfactor = Vcb->superblock.num_devices - 2;
         dfactor = Vcb->superblock.num_devices;
+    } else if (Vcb->data_flags & BLOCK_FLAG_RAID1C3) {
+        nfactor = 1;
+        dfactor = 3;
+    } else if (Vcb->data_flags & BLOCK_FLAG_RAID1C4) {
+        nfactor = 1;
+        dfactor = 4;
     } else {
         nfactor = 1;
         dfactor = 1;
@@ -3696,7 +3702,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     space_list_subtract(c, false, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
-        } else { // SINGLE, DUPLICATE, RAID1
+        } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
@@ -3727,6 +3733,12 @@ uint64_t chunk_estimate_phys_size(device_extension* Vcb, chunk* c, uint64_t u) {
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         nfactor = Vcb->superblock.num_devices - 2;
         dfactor = Vcb->superblock.num_devices;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3) {
+        nfactor = 1;
+        dfactor = 3;
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4) {
+        nfactor = 1;
+        dfactor = 4;
     } else {
         nfactor = 1;
         dfactor = 1;

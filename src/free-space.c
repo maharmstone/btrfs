@@ -426,7 +426,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
                     }
                 }
             }
-        } else { // SINGLE, DUPLICATE, RAID1
+        } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             for (j = 0; j < ci->num_stripes; j++) {
                 if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
                     off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;

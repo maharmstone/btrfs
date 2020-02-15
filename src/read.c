@@ -1508,6 +1508,12 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
     } else if (ci->type & BLOCK_FLAG_RAID6) {
         type = BLOCK_FLAG_RAID6;
         allowed_missing = 2;
+    } else if (ci->type & BLOCK_FLAG_RAID1C3) {
+        type = BLOCK_FLAG_DUPLICATE;
+        allowed_missing = 2;
+    } else if (ci->type & BLOCK_FLAG_RAID1C4) {
+        type = BLOCK_FLAG_DUPLICATE;
+        allowed_missing = 3;
     } else { // SINGLE
         type = BLOCK_FLAG_DUPLICATE;
         allowed_missing = 0;

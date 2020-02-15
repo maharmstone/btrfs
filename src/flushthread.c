@@ -177,6 +177,10 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
             type = BLOCK_FLAG_RAID5;
         else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
             type = BLOCK_FLAG_RAID6;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
+            type = BLOCK_FLAG_DUPLICATE;
+        else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
+            type = BLOCK_FLAG_DUPLICATE;
         else // SINGLE
             type = BLOCK_FLAG_DUPLICATE;
     }
@@ -4209,7 +4213,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         factor = c->chunk_item->num_stripes - 1;
     else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
         factor = c->chunk_item->num_stripes - 2;
-    else // SINGLE, DUPLICATE, RAID1
+    else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
         factor = 1;
 
     // add DEV_EXTENTs to tree 4
@@ -5382,7 +5386,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         factor = c->chunk_item->num_stripes - 1;
     else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
         factor = c->chunk_item->num_stripes - 2;
-    else // SINGLE, DUPLICATE, RAID1
+    else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
         factor = 1;
 
     // do TRIM
@@ -7099,6 +7103,61 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
 
             le = le->Flink;
         }
+    } else if (Vcb->metadata_flags & BLOCK_FLAG_RAID1C3) {
+        uint64_t s1 = 0, s2 = 0, s3 = 0;
+
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+
+                if (space >= s1) {
+                    s3 = s2;
+                    s2 = s1;
+                    s1 = space;
+                } else if (space >= s2) {
+                    s3 = s2;
+                    s2 = space;
+                } else if (space >= s3)
+                    s3 = space;
+            }
+
+            le = le->Flink;
+        }
+
+        could_alloc = s3;
+    } else if (Vcb->metadata_flags & BLOCK_FLAG_RAID1C4) {
+        uint64_t s1 = 0, s2 = 0, s3 = 0, s4 = 0;
+
+        le = Vcb->devices.Flink;
+        while (le != &Vcb->devices) {
+            device* dev = CONTAINING_RECORD(le, device, list_entry);
+
+            if (!dev->readonly) {
+                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+
+                if (space >= s1) {
+                    s4 = s3;
+                    s3 = s2;
+                    s2 = s1;
+                    s1 = space;
+                } else if (space >= s2) {
+                    s4 = s3;
+                    s3 = s2;
+                    s2 = space;
+                } else if (space >= s3) {
+                    s4 = s3;
+                    s3 = space;
+                } else if (space >= s4)
+                    s4 = space;
+            }
+
+            le = le->Flink;
+        }
+
+        could_alloc = s4;
     } else { // SINGLE
         le = Vcb->devices.Flink;
         while (le != &Vcb->devices) {

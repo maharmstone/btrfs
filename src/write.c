@@ -436,6 +436,18 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         sub_stripes = 1;
         type = BLOCK_FLAG_RAID6;
         allowed_missing = 2;
+    } else if (flags & BLOCK_FLAG_RAID1C3) {
+        min_stripes = 3;
+        max_stripes = 3;
+        sub_stripes = 1;
+        type = BLOCK_FLAG_RAID1C3;
+        allowed_missing = 2;
+    } else if (flags & BLOCK_FLAG_RAID1C4) {
+        min_stripes = 4;
+        max_stripes = 4;
+        sub_stripes = 1;
+        type = BLOCK_FLAG_RAID1C4;
+        allowed_missing = 3;
     } else { // SINGLE
         min_stripes = 1;
         max_stripes = 1;
@@ -464,8 +476,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         if (!find_new_dup_stripes(Vcb, stripes, max_stripe_size, full_size)) {
             Status = STATUS_DISK_FULL;
             goto end;
-        }
-        else
+        } else
             num_stripes = max_stripes;
     } else {
         for (i = 0; i < max_stripes; i++) {
@@ -532,7 +543,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         }
     }
 
-    if (type == 0 || type == BLOCK_FLAG_DUPLICATE || type == BLOCK_FLAG_RAID1)
+    if (type == 0 || type == BLOCK_FLAG_DUPLICATE || type == BLOCK_FLAG_RAID1 || type == BLOCK_FLAG_RAID1C3 || type == BLOCK_FLAG_RAID1C4)
         factor = 1;
     else if (type == BLOCK_FLAG_RAID0)
         factor = num_stripes;
@@ -1939,7 +1950,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
         }
 
         allowed_missing = 2;
-    } else {  // write same data to every location - SINGLE, DUP, RAID1
+    } else {  // write same data to every location - SINGLE, DUP, RAID1, RAID1C3, RAID1C4
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             stripes[i].start = address - c->offset;
             stripes[i].end = stripes[i].start + length;
