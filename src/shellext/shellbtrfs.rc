@@ -700,6 +700,7 @@ BEGIN
     IDS_OUT_OF_MEMORY       "Out of memory."
     IDS_RECV_UNKNOWN_COMMAND "Unrecognized command %u encountered."
     IDS_RECV_CANT_OPEN_PATH "Couldn't open path %s (error %u, %s)."
+    IDS_RAID1C3             "RAID1C3"
     IDS_RECV_CREATE_SUBVOL_FAILED 
                             "FSCTL_BTRFS_CREATE_SUBVOL returned %08x (%s)."
     IDS_RECV_MISSING_PARAM  "%S: could not find %s parameter."
@@ -718,6 +719,7 @@ BEGIN
                             "CreateHardLink (%s -> %s) failed (error %u, %s)."
     IDS_RECV_SETENDOFFILE_FAILED "SetEndOfFile failed (error %u, %s)."
     IDS_RECV_CANT_CREATE_FILE "Couldn't create %s (error %u, %s)."
+    IDS_RAID1C4             "RAID1C4"
     IDS_RECV_SETINODEINFO_FAILED 
                             "FSCTL_BTRFS_SET_INODE_INFO returned %08x (%s)."
     IDS_RECV_SUCCESS        "Received 1 subvolume successfully."

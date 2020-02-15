@@ -134,6 +134,7 @@
 #define IDS_OUT_OF_MEMORY               215
 #define IDS_RECV_UNKNOWN_COMMAND        216
 #define IDS_RECV_CANT_OPEN_PATH         217
+#define IDS_RAID1C3                     218
 #define IDS_RECV_CREATE_SUBVOL_FAILED   219
 #define IDS_RECV_MISSING_PARAM          220
 #define IDS_RECV_SHORT_PARAM            221
@@ -145,6 +146,7 @@
 #define IDS_RECV_CREATEHARDLINK_FAILED  227
 #define IDS_RECV_SETENDOFFILE_FAILED    228
 #define IDS_RECV_CANT_CREATE_FILE       229
+#define IDS_RAID1C4                     230
 #define IDS_RECV_SETINODEINFO_FAILED    231
 #define IDS_RECV_SUCCESS                232
 #define IDS_RECV_BUTTON_OK              233
