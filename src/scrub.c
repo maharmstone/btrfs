@@ -2956,7 +2956,11 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         Status = scrub_chunk_raid56(Vcb, c, offset, changed);
         goto end;
-    } else // SINGLE
+    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
+        type = BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
+        type = BLOCK_FLAG_DUPLICATE;
+    else // SINGLE
         type = BLOCK_FLAG_DUPLICATE;
 
     searchkey.obj_id = *offset;
