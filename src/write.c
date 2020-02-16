@@ -2792,8 +2792,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
 
 NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superblock.sector_size) uint8_t* data,
                    _In_ uint32_t sectors, _Out_writes_bytes_(sectors*sizeof(uint32_t)) uint32_t* csum) {
-    NTSTATUS Status;
-    calc_job* cj;
+    calc_job cj;
 
     // From experimenting, it seems that 40 sectors is roughly the crossover
     // point where offloading the crc32 calculation becomes worth it.
@@ -2808,14 +2807,9 @@ NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->sup
         return STATUS_SUCCESS;
     }
 
-    Status = add_calc_job(Vcb, data, sectors, csum, &cj);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_calc_job returned %08x\n", Status);
-        return Status;
-    }
+    add_calc_job(Vcb, data, sectors, csum, &cj);
 
-    KeWaitForSingleObject(&cj->event, Executive, KernelMode, false, NULL);
-    free_calc_job(cj);
+    KeWaitForSingleObject(&cj.event, Executive, KernelMode, false, NULL);
 
     return STATUS_SUCCESS;
 }

@@ -19,20 +19,12 @@
 
 #define SECTOR_BLOCK 16
 
-NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job** pcj) {
-    calc_job* cj;
+void add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job* cj) {
     KIRQL irql;
-
-    cj = ExAllocatePoolWithTag(NonPagedPool, sizeof(calc_job), ALLOC_TAG);
-    if (!cj) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
 
     cj->data = data;
     cj->csum = csum;
     cj->left = cj->not_started = sectors;
-    cj->refcount = 1;
     KeInitializeEvent(&cj->event, NotificationEvent, false);
 
     KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
@@ -43,17 +35,6 @@ NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, ui
     KeClearEvent(&Vcb->calcthreads.event);
 
     KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
-
-    *pcj = cj;
-
-    return STATUS_SUCCESS;
-}
-
-void free_calc_job(calc_job* cj) {
-    LONG rc = InterlockedDecrement(&cj->refcount);
-
-    if (rc == 0)
-        ExFreePool(cj);
 }
 
 static void do_calc(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {
@@ -92,7 +73,6 @@ void __stdcall calc_thread(void* context) {
             }
 
             cj = CONTAINING_RECORD(Vcb->calcthreads.job_list.Flink, calc_job, list_entry);
-            cj->refcount++;
 
             src = cj->data;
             cj->data += Vcb->superblock.sector_size;
@@ -108,8 +88,6 @@ void __stdcall calc_thread(void* context) {
             KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
             do_calc(Vcb, cj, src, dest);
-
-            free_calc_job(cj);
 
             if (last_one)
                 break;

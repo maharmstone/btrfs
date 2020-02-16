@@ -607,7 +607,6 @@ typedef struct {
     uint32_t* csum;
     LONG left, not_started;
     KEVENT event;
-    LONG refcount;
     LIST_ENTRY list_entry;
 } calc_job;
 
@@ -1516,8 +1515,7 @@ NTSTATUS __stdcall drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
 _Function_class_(KSTART_ROUTINE)
 void __stdcall calc_thread(void* context);
 
-NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job** pcj);
-void free_calc_job(calc_job* cj);
+void add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job* cj);
 
 // in balance.c
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);

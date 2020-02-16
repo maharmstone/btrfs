@@ -83,8 +83,7 @@ static NTSTATUS __stdcall read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP
 }
 
 NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum) {
-    NTSTATUS Status;
-    calc_job* cj;
+    calc_job cj;
     uint32_t* csum2;
 
     // From experimenting, it seems that 40 sectors is roughly the crossover
@@ -110,22 +109,15 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = add_calc_job(Vcb, data, sectors, csum2, &cj);
-    if (!NT_SUCCESS(Status)) {
-        ERR("add_calc_job returned %08x\n", Status);
-        ExFreePool(csum2);
-        return Status;
-    }
+    add_calc_job(Vcb, data, sectors, csum2, &cj);
 
-    KeWaitForSingleObject(&cj->event, Executive, KernelMode, false, NULL);
+    KeWaitForSingleObject(&cj.event, Executive, KernelMode, false, NULL);
 
     if (RtlCompareMemory(csum2, csum, sectors * sizeof(uint32_t)) != sectors * sizeof(uint32_t)) {
-        free_calc_job(cj);
         ExFreePool(csum2);
         return STATUS_CRC_ERROR;
     }
 
-    free_calc_job(cj);
     ExFreePool(csum2);
 
     return STATUS_SUCCESS;
