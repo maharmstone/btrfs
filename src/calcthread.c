@@ -19,7 +19,7 @@
 
 #define SECTOR_BLOCK 16
 
-void add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job* cj) {
+void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job* cj) {
     KIRQL irql;
 
     cj->data = data;
@@ -35,6 +35,8 @@ void add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32
     KeClearEvent(&Vcb->calcthreads.event);
 
     KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
+
+    KeWaitForSingleObject(&cj->event, Executive, KernelMode, false, NULL);
 }
 
 static void do_calc(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {

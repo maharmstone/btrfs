@@ -109,9 +109,7 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    add_calc_job(Vcb, data, sectors, csum2, &cj);
-
-    KeWaitForSingleObject(&cj.event, Executive, KernelMode, false, NULL);
+    do_calc_job(Vcb, data, sectors, csum2, &cj);
 
     if (RtlCompareMemory(csum2, csum, sectors * sizeof(uint32_t)) != sectors * sizeof(uint32_t)) {
         ExFreePool(csum2);

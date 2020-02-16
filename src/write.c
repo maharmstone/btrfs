@@ -2807,9 +2807,7 @@ NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->sup
         return STATUS_SUCCESS;
     }
 
-    add_calc_job(Vcb, data, sectors, csum, &cj);
-
-    KeWaitForSingleObject(&cj.event, Executive, KernelMode, false, NULL);
+    do_calc_job(Vcb, data, sectors, csum, &cj);
 
     return STATUS_SUCCESS;
 }
