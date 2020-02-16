@@ -605,8 +605,7 @@ typedef struct {
 typedef struct {
     uint8_t* data;
     uint32_t* csum;
-    uint32_t sectors;
-    LONG pos, done;
+    LONG left, not_started;
     KEVENT event;
     LONG refcount;
     LIST_ENTRY list_entry;

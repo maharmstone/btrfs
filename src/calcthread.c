@@ -30,10 +30,8 @@ NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, ui
     }
 
     cj->data = data;
-    cj->sectors = sectors;
     cj->csum = csum;
-    cj->pos = 0;
-    cj->done = 0;
+    cj->left = cj->not_started = sectors;
     cj->refcount = 1;
     KeInitializeEvent(&cj->event, NotificationEvent, false);
 
@@ -58,40 +56,13 @@ void free_calc_job(calc_job* cj) {
         ExFreePool(cj);
 }
 
-static bool do_calc(device_extension* Vcb, calc_job* cj) {
-    LONG pos, done;
-    uint32_t* csum;
-    uint8_t* data;
-    ULONG blocksize, i;
+static void do_calc(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {
+    // FIXME - do at DISPATCH irql
 
-    pos = InterlockedIncrement(&cj->pos) - 1;
+    *dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sector_size);
 
-    if ((uint32_t)pos * SECTOR_BLOCK >= cj->sectors)
-        return false;
-
-    csum = &cj->csum[pos * SECTOR_BLOCK];
-    data = cj->data + (pos * SECTOR_BLOCK * Vcb->superblock.sector_size);
-
-    blocksize = min(SECTOR_BLOCK, cj->sectors - (pos * SECTOR_BLOCK));
-    for (i = 0; i < blocksize; i++) {
-        *csum = ~calc_crc32c(0xffffffff, data, Vcb->superblock.sector_size);
-        csum++;
-        data += Vcb->superblock.sector_size;
-    }
-
-    done = InterlockedIncrement(&cj->done);
-
-    if ((uint32_t)done * SECTOR_BLOCK >= cj->sectors) {
-        KIRQL irql;
-
-        KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
-        RemoveEntryList(&cj->list_entry);
-        KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
-
+    if (InterlockedDecrement(&cj->left) == 0)
         KeSetEvent(&cj->event, 0, false);
-    }
-
-    return true;
 }
 
 _Function_class_(KSTART_ROUTINE)
@@ -109,7 +80,9 @@ void __stdcall calc_thread(void* context) {
         while (true) {
             KIRQL irql;
             calc_job* cj;
-            bool b;
+            uint8_t* src;
+            uint32_t* dest;
+            bool last_one = false;
 
             KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
 
@@ -121,13 +94,24 @@ void __stdcall calc_thread(void* context) {
             cj = CONTAINING_RECORD(Vcb->calcthreads.job_list.Flink, calc_job, list_entry);
             cj->refcount++;
 
+            src = cj->data;
+            cj->data += Vcb->superblock.sector_size;
+
+            dest = cj->csum;
+            cj->csum++;
+
+            if (InterlockedDecrement(&cj->not_started) == 0) {
+                RemoveEntryList(&cj->list_entry);
+                last_one = true;
+            }
+
             KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
-            b = do_calc(Vcb, cj);
+            do_calc(Vcb, cj, src, dest);
 
             free_calc_job(cj);
 
-            if (!b)
+            if (last_one)
                 break;
         }
 
