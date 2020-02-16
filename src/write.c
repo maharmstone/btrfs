@@ -2790,8 +2790,8 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
-NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superblock.sector_size) uint8_t* data,
-                   _In_ uint32_t sectors, _Out_writes_bytes_(sectors*sizeof(uint32_t)) uint32_t* csum) {
+void calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superblock.sector_size) uint8_t* data,
+               _In_ uint32_t sectors, _Out_writes_bytes_(sectors*sizeof(uint32_t)) uint32_t* csum) {
     calc_job cj;
 
     // From experimenting, it seems that 40 sectors is roughly the crossover
@@ -2804,12 +2804,10 @@ NTSTATUS calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->sup
             csum[j] = ~calc_crc32c(0xffffffff, data + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
         }
 
-        return STATUS_SUCCESS;
+        return;
     }
 
     do_calc_job(Vcb, data, sectors, csum, &cj);
-
-    return STATUS_SUCCESS;
 }
 
 _Requires_lock_held_(c->lock)
@@ -2858,13 +2856,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
             return false;
         }
 
-        Status = calc_csum(Vcb, data, sl, csum);
-        if (!NT_SUCCESS(Status)) {
-            ERR("calc_csum returned %08x\n", Status);
-            ExFreePool(csum);
-            ExFreePool(ed);
-            return false;
-        }
+        calc_csum(Vcb, data, sl, csum);
     }
 
     Status = add_extent_to_fcb(fcb, start_data, ed, edsize, true, csum, rollback);
@@ -3589,13 +3581,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            Status = calc_csum(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
-            if (!NT_SUCCESS(Status)) {
-                ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(csum);
-                ExFreePool(newext);
-                return Status;
-            }
+            calc_csum(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
 
             newext->csum = csum;
         } else
@@ -3662,14 +3648,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            Status = calc_csum(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
-            if (!NT_SUCCESS(Status)) {
-                ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(newext1);
-                ExFreePool(newext2);
-                ExFreePool(csum);
-                return Status;
-            }
+            calc_csum(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
 
             newext1->csum = csum;
         } else
@@ -3759,14 +3738,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            Status = calc_csum(fcb->Vcb, data, sl, csum);
-            if (!NT_SUCCESS(Status)) {
-                ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(newext1);
-                ExFreePool(newext2);
-                ExFreePool(csum);
-                return Status;
-            }
+            calc_csum(fcb->Vcb, data, sl, csum);
 
             newext2->csum = csum;
         } else
@@ -3871,15 +3843,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            Status = calc_csum(fcb->Vcb, data, sl, csum);
-            if (!NT_SUCCESS(Status)) {
-                ERR("calc_csum returned %08x\n", Status);
-                ExFreePool(newext1);
-                ExFreePool(newext2);
-                ExFreePool(newext3);
-                ExFreePool(csum);
-                return Status;
-            }
+            calc_csum(fcb->Vcb, data, sl, csum);
 
             newext2->csum = csum;
         } else
