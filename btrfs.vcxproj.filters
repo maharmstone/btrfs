@@ -287,4 +287,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <MASM Include="src\crc32c-masm.S">
+      <Filter>Source Files</Filter>
+    </MASM>
+  </ItemGroup>
 </Project>

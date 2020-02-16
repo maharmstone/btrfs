@@ -29,7 +29,7 @@ uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
 
 crc_func calc_crc32c = calc_crc32c_sw;
 
-static const uint32_t crctable[] = {
+const uint32_t crctable[] = {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4, 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
     0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b, 0x4d43cfd0, 0xbf284cd3, 0xac78bf27, 0x5e133c24,
     0x105ec76f, 0xe235446c, 0xf165b798, 0x030e349b, 0xd7c45070, 0x25afd373, 0x36ff2087, 0xc494a384,
@@ -117,6 +117,7 @@ uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
 }
 #endif
 
+#ifndef _X86_
 uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
     uint32_t rem = seed;
 
@@ -126,3 +127,4 @@ uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
 
     return rem;
 }
+#endif
