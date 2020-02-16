@@ -616,6 +616,7 @@ typedef struct {
     PDEVICE_OBJECT DeviceObject;
     HANDLE handle;
     KEVENT finished;
+    unsigned int number;
     bool quit;
 } drv_calc_thread;
 

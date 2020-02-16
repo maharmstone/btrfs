@@ -3990,6 +3990,7 @@ static NTSTATUS create_calc_threads(_In_ PDEVICE_OBJECT DeviceObject) {
         NTSTATUS Status;
 
         Vcb->calcthreads.threads[i].DeviceObject = DeviceObject;
+        Vcb->calcthreads.threads[i].number = i;
         KeInitializeEvent(&Vcb->calcthreads.threads[i].finished, NotificationEvent, false);
 
         Status = PsCreateSystemThread(&Vcb->calcthreads.threads[i].handle, 0, &oa, NULL, NULL, calc_thread, &Vcb->calcthreads.threads[i]);

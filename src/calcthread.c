@@ -98,6 +98,8 @@ void __stdcall calc_thread(void* context) {
 
     ObReferenceObject(thread->DeviceObject);
 
+    KeSetSystemAffinityThread(1 << thread->number);
+
     while (true) {
         KeWaitForSingleObject(&Vcb->calcthreads.event, Executive, KernelMode, false, NULL);
 
