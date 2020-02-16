@@ -2792,8 +2792,6 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
 
 void calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superblock.sector_size) uint8_t* data,
                _In_ uint32_t sectors, _Out_writes_bytes_(sectors*sizeof(uint32_t)) uint32_t* csum) {
-    calc_job cj;
-
     // From experimenting, it seems that 40 sectors is roughly the crossover
     // point where offloading the crc32 calculation becomes worth it.
 
@@ -2807,7 +2805,7 @@ void calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superbl
         return;
     }
 
-    do_calc_job(Vcb, data, sectors, csum, &cj);
+    do_calc_job(Vcb, data, sectors, csum);
 }
 
 _Requires_lock_held_(c->lock)

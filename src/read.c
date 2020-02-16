@@ -83,7 +83,6 @@ static NTSTATUS __stdcall read_data_completion(PDEVICE_OBJECT DeviceObject, PIRP
 }
 
 NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum) {
-    calc_job cj;
     uint32_t* csum2;
 
     csum2 = ExAllocatePoolWithTag(PagedPool, sizeof(uint32_t) * sectors, ALLOC_TAG);
@@ -92,7 +91,7 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    do_calc_job(Vcb, data, sectors, csum2, &cj);
+    do_calc_job(Vcb, data, sectors, csum2);
 
     if (RtlCompareMemory(csum2, csum, sectors * sizeof(uint32_t)) != sectors * sizeof(uint32_t)) {
         ExFreePool(csum2);

@@ -26,17 +26,18 @@ static void do_calc(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t*
         KeSetEvent(&cj->event, 0, false);
 }
 
-void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job* cj) {
+void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum) {
     KIRQL irql;
+    calc_job cj;
 
-    cj->data = data;
-    cj->csum = csum;
-    cj->left = cj->not_started = sectors;
-    KeInitializeEvent(&cj->event, NotificationEvent, false);
+    cj.data = data;
+    cj.csum = csum;
+    cj.left = cj.not_started = sectors;
+    KeInitializeEvent(&cj.event, NotificationEvent, false);
 
     KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
 
-    InsertTailList(&Vcb->calcthreads.job_list, &cj->list_entry);
+    InsertTailList(&Vcb->calcthreads.job_list, &cj.list_entry);
 
     KeSetEvent(&Vcb->calcthreads.event, 0, false);
     KeClearEvent(&Vcb->calcthreads.event);
@@ -51,32 +52,32 @@ void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_
 
         KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
 
-        if (cj->not_started == 0) {
+        if (cj.not_started == 0) {
             KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
             break;
         }
 
-        src = cj->data;
-        cj->data += Vcb->superblock.sector_size;
+        src = cj.data;
+        cj.data += Vcb->superblock.sector_size;
 
-        dest = cj->csum;
-        cj->csum++;
+        dest = cj.csum;
+        cj.csum++;
 
-        cj->not_started--;
-        if (cj->not_started == 0) {
-            RemoveEntryList(&cj->list_entry);
+        cj.not_started--;
+        if (cj.not_started == 0) {
+            RemoveEntryList(&cj.list_entry);
             last_one = true;
         }
 
         KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
-        do_calc(Vcb, cj, src, dest);
+        do_calc(Vcb, &cj, src, dest);
 
         if (last_one)
             break;
     }
 
-    KeWaitForSingleObject(&cj->event, Executive, KernelMode, false, NULL);
+    KeWaitForSingleObject(&cj.event, Executive, KernelMode, false, NULL);
 }
 
 _Function_class_(KSTART_ROUTINE)
