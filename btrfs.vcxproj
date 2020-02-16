@@ -392,7 +392,7 @@
       </Command>
     </PostBuildEvent>
     <MASM>
-      <UseSafeExceptionHandlers>true</UseSafeExceptionHandlers>
+      <UseSafeExceptionHandlers>false</UseSafeExceptionHandlers>
     </MASM>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -547,7 +547,7 @@
       </Command>
     </PostBuildEvent>
     <MASM>
-      <UseSafeExceptionHandlers>true</UseSafeExceptionHandlers>
+      <UseSafeExceptionHandlers>false</UseSafeExceptionHandlers>
     </MASM>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -663,6 +663,13 @@
       <FileType>Document</FileType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </MASM>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="src\crc32c-amd64-masm.S">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <FileType>Document</FileType>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
     </MASM>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

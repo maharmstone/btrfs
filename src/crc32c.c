@@ -115,7 +115,7 @@ uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
 }
 #endif
 
-#ifndef _X86_
+#if !defined(_X86_) && !defined(_AMD64_)
 uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
     uint32_t rem = seed;
 
