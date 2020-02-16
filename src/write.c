@@ -2790,24 +2790,6 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     }
 }
 
-void calc_csum(_In_ device_extension* Vcb, _In_reads_bytes_(sectors*Vcb->superblock.sector_size) uint8_t* data,
-               _In_ uint32_t sectors, _Out_writes_bytes_(sectors*sizeof(uint32_t)) uint32_t* csum) {
-    // From experimenting, it seems that 40 sectors is roughly the crossover
-    // point where offloading the crc32 calculation becomes worth it.
-
-    if (sectors < 40 || get_num_of_processors() < 2) {
-        ULONG j;
-
-        for (j = 0; j < sectors; j++) {
-            csum[j] = ~calc_crc32c(0xffffffff, data + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-        }
-
-        return;
-    }
-
-    do_calc_job(Vcb, data, sectors, csum);
-}
-
 _Requires_lock_held_(c->lock)
 _When_(return != 0, _Releases_lock_(c->lock))
 bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c, _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc, _In_opt_ void* data,
@@ -2854,7 +2836,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
             return false;
         }
 
-        calc_csum(Vcb, data, sl, csum);
+        do_calc_job(Vcb, data, sl, csum);
     }
 
     Status = add_extent_to_fcb(fcb, start_data, ed, edsize, true, csum, rollback);
@@ -3579,7 +3561,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            calc_csum(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
+            do_calc_job(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
 
             newext->csum = csum;
         } else
@@ -3646,7 +3628,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            calc_csum(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
+            do_calc_job(fcb->Vcb, (uint8_t*)data + ext->offset - start_data, sl, csum);
 
             newext1->csum = csum;
         } else
@@ -3736,7 +3718,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            calc_csum(fcb->Vcb, data, sl, csum);
+            do_calc_job(fcb->Vcb, data, sl, csum);
 
             newext2->csum = csum;
         } else
@@ -3841,7 +3823,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            calc_csum(fcb->Vcb, data, sl, csum);
+            do_calc_job(fcb->Vcb, data, sl, csum);
 
             newext2->csum = csum;
         } else
@@ -3977,8 +3959,8 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
                     // This shouldn't ever get called - nocow files should always also be nosum.
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                        calc_csum(fcb->Vcb, (uint8_t*)data + written, (uint32_t)(write_len / fcb->Vcb->superblock.sector_size),
-                                  &ext->csum[(start + written - ext->offset) / fcb->Vcb->superblock.sector_size]);
+                        do_calc_job(fcb->Vcb, (uint8_t*)data + written, (uint32_t)(write_len / fcb->Vcb->superblock.sector_size),
+                                    &ext->csum[(start + written - ext->offset) / fcb->Vcb->superblock.sector_size]);
 
                         ext->inserted = true;
                         extents_changed = true;
