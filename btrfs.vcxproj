@@ -659,7 +659,7 @@
     </FilesToPackage>
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="src\crc32c-masm.S">
+    <MASM Include="src\crc32c-x86-masm.S">
       <FileType>Document</FileType>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
