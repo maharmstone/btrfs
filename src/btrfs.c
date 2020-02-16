@@ -1988,7 +1988,6 @@ void uninit(_In_ device_extension* Vcb) {
         ZwClose(Vcb->calcthreads.threads[i].handle);
     }
 
-    ExDeleteResourceLite(&Vcb->calcthreads.lock);
     ExFreePool(Vcb->calcthreads.threads);
 
     time.QuadPart = 0;
@@ -3979,7 +3978,7 @@ static NTSTATUS create_calc_threads(_In_ PDEVICE_OBJECT DeviceObject) {
     }
 
     InitializeListHead(&Vcb->calcthreads.job_list);
-    ExInitializeResourceLite(&Vcb->calcthreads.lock);
+    KeInitializeSpinLock(&Vcb->calcthreads.spinlock);
     KeInitializeEvent(&Vcb->calcthreads.event, NotificationEvent, false);
 
     RtlZeroMemory(Vcb->calcthreads.threads, sizeof(drv_calc_thread) * Vcb->calcthreads.num_threads);

@@ -21,6 +21,7 @@
 
 NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job** pcj) {
     calc_job* cj;
+    KIRQL irql;
 
     cj = ExAllocatePoolWithTag(NonPagedPool, sizeof(calc_job), ALLOC_TAG);
     if (!cj) {
@@ -36,14 +37,14 @@ NTSTATUS add_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, ui
     cj->refcount = 1;
     KeInitializeEvent(&cj->event, NotificationEvent, false);
 
-    ExAcquireResourceExclusiveLite(&Vcb->calcthreads.lock, true);
+    KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
 
     InsertTailList(&Vcb->calcthreads.job_list, &cj->list_entry);
 
     KeSetEvent(&Vcb->calcthreads.event, 0, false);
     KeClearEvent(&Vcb->calcthreads.event);
 
-    ExReleaseResourceLite(&Vcb->calcthreads.lock);
+    KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
     *pcj = cj;
 
@@ -81,9 +82,11 @@ static bool do_calc(device_extension* Vcb, calc_job* cj) {
     done = InterlockedIncrement(&cj->done);
 
     if ((uint32_t)done * SECTOR_BLOCK >= cj->sectors) {
-        ExAcquireResourceExclusiveLite(&Vcb->calcthreads.lock, true);
+        KIRQL irql;
+
+        KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
         RemoveEntryList(&cj->list_entry);
-        ExReleaseResourceLite(&Vcb->calcthreads.lock);
+        KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
         KeSetEvent(&cj->event, 0, false);
     }
@@ -104,20 +107,21 @@ void __stdcall calc_thread(void* context) {
         KeWaitForSingleObject(&Vcb->calcthreads.event, Executive, KernelMode, false, NULL);
 
         while (true) {
+            KIRQL irql;
             calc_job* cj;
             bool b;
 
-            ExAcquireResourceExclusiveLite(&Vcb->calcthreads.lock, true);
+            KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
 
             if (IsListEmpty(&Vcb->calcthreads.job_list)) {
-                ExReleaseResourceLite(&Vcb->calcthreads.lock);
+                KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
                 break;
             }
 
             cj = CONTAINING_RECORD(Vcb->calcthreads.job_list.Flink, calc_job, list_entry);
             cj->refcount++;
 
-            ExReleaseResourceLite(&Vcb->calcthreads.lock);
+            KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
             b = do_calc(Vcb, cj);
 

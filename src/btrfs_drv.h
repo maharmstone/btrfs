@@ -623,7 +623,7 @@ typedef struct {
 typedef struct {
     ULONG num_threads;
     LIST_ENTRY job_list;
-    ERESOURCE lock;
+    KSPIN_LOCK spinlock;
     drv_calc_thread* threads;
     KEVENT event;
 } drv_calc_threads;
