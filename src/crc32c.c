@@ -74,7 +74,7 @@ const uint32_t crctable[] = {
     }                                                                   \
   } while(0)
 
-#if defined(_X86_) || defined(_AMD64_)
+#ifdef _AMD64_
 uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
     uint32_t crc = seed;
     const char* buf = (const char*)msg;
@@ -91,7 +91,6 @@ uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
 #endif
     }
 
-#ifdef _AMD64_
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable:4244) // _mm_crc32_u64 wants to return uint64_t(!)
@@ -100,7 +99,6 @@ uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
     CALC_CRC(_mm_crc32_u64, crc, uint64_t, buf, msglen);
 #ifdef _MSC_VER
 #pragma warning(pop)
-#endif
 #endif
     CALC_CRC(_mm_crc32_u32, crc, uint32_t, buf, msglen);
 
