@@ -17,7 +17,14 @@
 
 #include "btrfs_drv.h"
 
-#define SECTOR_BLOCK 16
+static void do_calc(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {
+    // FIXME - do at DISPATCH irql
+
+    *dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sector_size);
+
+    if (InterlockedDecrement(&cj->left) == 0)
+        KeSetEvent(&cj->event, 0, false);
+}
 
 void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum, calc_job* cj) {
     KIRQL irql;
@@ -36,16 +43,40 @@ void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_
 
     KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
+    while (true) {
+        KIRQL irql;
+        uint8_t* src;
+        uint32_t* dest;
+        bool last_one = false;
+
+        KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
+
+        if (cj->not_started == 0) {
+            KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
+            break;
+        }
+
+        src = cj->data;
+        cj->data += Vcb->superblock.sector_size;
+
+        dest = cj->csum;
+        cj->csum++;
+
+        cj->not_started--;
+        if (cj->not_started == 0) {
+            RemoveEntryList(&cj->list_entry);
+            last_one = true;
+        }
+
+        KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
+
+        do_calc(Vcb, cj, src, dest);
+
+        if (last_one)
+            break;
+    }
+
     KeWaitForSingleObject(&cj->event, Executive, KernelMode, false, NULL);
-}
-
-static void do_calc(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {
-    // FIXME - do at DISPATCH irql
-
-    *dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sector_size);
-
-    if (InterlockedDecrement(&cj->left) == 0)
-        KeSetEvent(&cj->event, 0, false);
 }
 
 _Function_class_(KSTART_ROUTINE)
@@ -82,7 +113,9 @@ void __stdcall calc_thread(void* context) {
             dest = cj->csum;
             cj->csum++;
 
-            if (InterlockedDecrement(&cj->not_started) == 0) {
+            cj->not_started--;
+
+            if (cj->not_started == 0) {
                 RemoveEntryList(&cj->list_entry);
                 last_one = true;
             }
