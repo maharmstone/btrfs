@@ -86,23 +86,6 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint
     calc_job cj;
     uint32_t* csum2;
 
-    // From experimenting, it seems that 40 sectors is roughly the crossover
-    // point where offloading the crc32 calculation becomes worth it.
-
-    if (sectors < 40 || get_num_of_processors() < 2) {
-        ULONG j;
-
-        for (j = 0; j < sectors; j++) {
-            uint32_t crc32 = ~calc_crc32c(0xffffffff, data + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
-
-            if (crc32 != csum[j]) {
-                return STATUS_CRC_ERROR;
-            }
-        }
-
-        return STATUS_SUCCESS;
-    }
-
     csum2 = ExAllocatePoolWithTag(PagedPool, sizeof(uint32_t) * sectors, ALLOC_TAG);
     if (!csum2) {
         ERR("out of memory\n");
