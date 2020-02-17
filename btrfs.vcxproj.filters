@@ -288,13 +288,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="src\crc32c-x86-masm.S">
-      <Filter>Source Files</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
     <MASM Include="src\crc32c-amd64-masm.S">
       <Filter>Source Files</Filter>
     </MASM>
+    <MASM Include="src\crc32c-x86-masm.S" />
   </ItemGroup>
 </Project>
