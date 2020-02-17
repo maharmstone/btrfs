@@ -17,15 +17,8 @@
 
 #include "btrfs_drv.h"
 #include <windef.h>
-
-#if defined(_X86_) || defined(_AMD64_)
-#include <smmintrin.h>
-#endif
-
 #include <stdint.h>
 #include <stdbool.h>
-
-uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen);
 
 crc_func calc_crc32c = calc_crc32c_sw;
 
@@ -64,57 +57,7 @@ const uint32_t crctable[] = {
     0x79b737ba, 0x8bdcb4b9, 0x988c474d, 0x6ae7c44e, 0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351,
 };
 
-// HW code taken from https://github.com/rurban/smhasher/blob/master/crc32_hw.c
-#define ALIGN_SIZE      0x08UL
-#define ALIGN_MASK      (ALIGN_SIZE - 1)
-#define CALC_CRC(op, crc, type, buf, len)                               \
-  do {                                                                  \
-    for (; (len) >= sizeof (type); (len) -= sizeof(type), buf += sizeof (type)) { \
-      (crc) = op((crc), *(type *) (buf));                               \
-    }                                                                   \
-  } while(0)
-
-#ifdef _AMD64_
-uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
-    uint32_t crc = seed;
-    const char* buf = (const char*)msg;
-
-    // Annoyingly, the CRC32 intrinsics don't work properly in modern versions of MSVC -
-    // it compiles _mm_crc32_u8 as if it was _mm_crc32_u32. And because we're apparently
-    // not allowed to use inline asm on amd64, there's no easy way to fix this!
-
-    for (; (msglen > 0) && ((size_t)buf & ALIGN_MASK); msglen--, buf++) {
-#ifdef _MSC_VER
-        crc = crctable[(crc ^ *buf) & 0xff] ^ (crc >> 8);
-#else
-        crc = _mm_crc32_u8(crc, *buf);
-#endif
-    }
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable:4244) // _mm_crc32_u64 wants to return uint64_t(!)
-#pragma warning(disable:4242)
-#endif
-    CALC_CRC(_mm_crc32_u64, crc, uint64_t, buf, msglen);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-    CALC_CRC(_mm_crc32_u32, crc, uint32_t, buf, msglen);
-
-#ifdef _MSC_VER
-    for (; msglen > 0; msglen--, buf++) {
-        crc = crctable[(crc ^ *buf) & 0xff] ^ (crc >> 8);
-    }
-#else
-    CALC_CRC(_mm_crc32_u16, crc, uint16_t, buf, msglen);
-    CALC_CRC(_mm_crc32_u8, crc, uint8_t, buf, msglen);
-#endif
-
-    return crc;
-}
-#endif
-
+// x86 and amd64 versions live in asm files
 #if !defined(_X86_) && !defined(_AMD64_)
 uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
     uint32_t rem = seed;
