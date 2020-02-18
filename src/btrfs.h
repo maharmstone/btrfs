@@ -122,6 +122,9 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 
 #define BTRFS_ORPHAN_INODE_OBJID         0xFFFFFFFFFFFFFFFB
 
+#define CSUM_TYPE_CRC32C        0
+#define CSUM_TYPE_XXHASH        1
+
 #pragma pack(push, 1)
 
 typedef struct {

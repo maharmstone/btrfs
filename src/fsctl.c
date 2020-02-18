@@ -2630,7 +2630,6 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
-    uint32_t crc32;
     BTRFS_UUID fsuuid, devuuid;
     LIST_ENTRY* le;
 
@@ -2655,9 +2654,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
         return STATUS_SUCCESS;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-
-    if (crc32 != *((uint32_t*)sb->checksum)) {
+    if (!check_superblock_checksum(sb)) {
         TRACE("device has Btrfs magic, but invalid superblock checksum\n");
         ExFreePool(sb);
         return STATUS_SUCCESS;

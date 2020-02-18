@@ -163,11 +163,8 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
 
     if (NT_SUCCESS(Status) && ((superblock*)data)->magic == BTRFS_MAGIC) {
         superblock* sb = (superblock*)data;
-        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
 
-        if (crc32 != *((uint32_t*)sb->checksum))
-            ERR("checksum error on superblock\n");
-        else {
+        if (check_superblock_checksum(sb)) {
             TRACE("volume found\n");
 
             if (length >= superblock_addrs[1] + toread) {
@@ -183,9 +180,7 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                     Status = sync_read_phys(DeviceObject, FileObject, superblock_addrs[i], toread, (PUCHAR)sb2, true);
 
                     if (NT_SUCCESS(Status) && sb2->magic == BTRFS_MAGIC) {
-                        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb2->uuid, (ULONG)sizeof(superblock) - sizeof(sb2->checksum));
-
-                        if (crc32 == *((uint32_t*)sb2->checksum) && sb2->generation > sb->generation)
+                        if (check_superblock_checksum(sb2) && sb2->generation > sb->generation)
                             RtlCopyMemory(sb, sb2, toread);
                     }
 

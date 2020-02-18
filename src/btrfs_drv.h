@@ -1119,6 +1119,7 @@ _Ret_maybenull_
 root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
 
 void do_shutdown(PIRP Irp);
+bool check_superblock_checksum(superblock* sb);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

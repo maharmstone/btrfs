@@ -20,6 +20,7 @@
 #endif
 
 #include "btrfs_drv.h"
+#include "xxhash.h"
 #ifndef _MSC_VER
 #include <cpuid.h>
 #else
@@ -2723,6 +2724,37 @@ exit:
     return Status;
 }
 
+bool check_superblock_checksum(superblock* sb) {
+    switch (sb->csum_type) {
+        case CSUM_TYPE_CRC32C: {
+            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+
+            if (crc32 == *((uint32_t*)sb->checksum))
+                return true;
+
+            WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
+
+            break;
+        }
+
+        case CSUM_TYPE_XXHASH: {
+            uint64_t hash = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+
+            if (hash == *((uint64_t*)sb->checksum))
+                return true;
+
+            WARN("superblock hash was %I64x, expected %I64x\n", hash, *((uint64_t*)sb->checksum));
+
+            break;
+        }
+
+        default:
+            WARN("unrecognized csum type %x\n", sb->csum_type);
+    }
+
+    return false;
+}
+
 static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ uint64_t length) {
     NTSTATUS Status;
     superblock* sb;
@@ -2747,8 +2779,6 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
     valid_superblocks = 0;
 
     while (superblock_addrs[i] > 0) {
-        uint32_t crc32;
-
         if (i > 0 && superblock_addrs[i] + to_read > length)
             break;
 
@@ -2768,17 +2798,13 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
         } else {
             TRACE("got superblock %u!\n", i);
 
-            crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-
-            if (crc32 != *((uint32_t*)sb->checksum))
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
-            else if (sb->sector_size == 0)
+            if (sb->sector_size == 0)
                 WARN("superblock sector size was 0\n");
             else if (sb->node_size < sizeof(tree_header) + sizeof(internal_node) || sb->node_size > 0x10000)
                 WARN("invalid node size %x\n", sb->node_size);
             else if ((sb->node_size % sb->sector_size) != 0)
                 WARN("node size %x was not a multiple of sector_size %x\n", sb->node_size, sb->sector_size);
-            else if (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation) {
+            else if (check_superblock_checksum(sb) && (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation)) {
                 RtlCopyMemory(&Vcb->superblock, sb, sizeof(superblock));
                 valid_superblocks++;
             }
@@ -4132,7 +4158,6 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool*
     NTSTATUS Status;
     ULONG to_read;
     superblock* sb;
-    uint32_t crc32;
     UNICODE_STRING pnp_name;
     const GUID* guid;
 
@@ -4155,10 +4180,7 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool*
         goto end;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-
-    if (crc32 != *((uint32_t*)sb->checksum)) {
-        WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
+    if (!check_superblock_checksum(sb)) {
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -4214,10 +4236,7 @@ static bool still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT f
         ExFreePool(sb);
         return false;
     } else {
-        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-
-        if (crc32 != *((uint32_t*)sb->checksum)) {
-            WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
+        if (!check_superblock_checksum(sb)) {
             ExFreePool(sb);
             return false;
         }
@@ -4471,12 +4490,6 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_METADATA_UUID))
         Vcb->superblock.metadata_uuid = Vcb->superblock.uuid;
-
-    if (Vcb->superblock.csum_type != 0) {
-        WARN("cannot mount as csum type is unsupported (%x)\n", Vcb->superblock.csum_type);
-        Status = STATUS_UNRECOGNIZED_VOLUME;
-        goto exit;
-    }
 
     Vcb->readonly = false;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
@@ -4942,7 +4955,6 @@ exit2:
 static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
     NTSTATUS Status;
     superblock* sb;
-    uint32_t crc32;
     ULONG to_read, cc;
 
     if (!dev->devobj)
@@ -5014,11 +5026,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
         return STATUS_WRONG_VOLUME;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-    TRACE("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
-
-    if (crc32 != *((uint32_t*)sb->checksum)) {
-        ERR("checksum error\n");
+    if (!check_superblock_checksum(sb)) {
         ExFreePool(sb);
         return STATUS_WRONG_VOLUME;
     }
@@ -5381,7 +5389,6 @@ static bool device_still_valid(device* dev, uint64_t expected_generation) {
     NTSTATUS Status;
     unsigned int to_read;
     superblock* sb;
-    uint32_t crc32;
 
     to_read = (unsigned int)(dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize));
 
@@ -5404,10 +5411,7 @@ static bool device_still_valid(device* dev, uint64_t expected_generation) {
         return false;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
-
-    if (crc32 != *((uint32_t*)sb->checksum)) {
-        ERR("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
+    if (!check_superblock_checksum(sb)) {
         ExFreePool(sb);
         return false;
     }
