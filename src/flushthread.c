@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include "xxhash.h"
 #include <ata.h>
 #include <ntddscsi.h>
 #include <ntddstor.h>
@@ -1787,10 +1788,21 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
     return STATUS_SUCCESS;
 }
 
+static void calc_tree_checksum(device_extension* Vcb, tree_header* th) {
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C:
+            *((uint32_t*)th) = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            *((uint64_t*)th) = XXH64((uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), 0);
+        break;
+    }
+}
+
 static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     ULONG level;
     uint8_t *data, *body;
-    uint32_t crc32;
     NTSTATUS Status;
     LIST_ENTRY* le;
     LIST_ENTRY tree_writes;
@@ -2010,10 +2022,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 }
             }
 
-            crc32 = calc_crc32c(0xffffffff, (uint8_t*)&((tree_header*)data)->fs_uuid, Vcb->superblock.node_size - sizeof(((tree_header*)data)->csum));
-            crc32 = ~crc32;
-            *((uint32_t*)data) = crc32;
-            TRACE("setting crc32 to %08x\n", crc32);
+            calc_tree_checksum(Vcb, (tree_header*)data);
 
             tw = ExAllocatePoolWithTag(PagedPool, sizeof(tree_write), ALLOC_TAG);
             if (!tw) {
@@ -2176,6 +2185,18 @@ static NTSTATUS __stdcall write_superblock_completion(PDEVICE_OBJECT DeviceObjec
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+static void calc_superblock_checksum(superblock* sb) {
+    switch (sb->csum_type) {
+        case CSUM_TYPE_CRC32C:
+            *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            *(uint64_t*)sb = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+        break;
+    }
+}
+
 static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_superblocks_context* context) {
     unsigned int i = 0;
 
@@ -2185,7 +2206,6 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
     while (superblock_addrs[i] > 0 && device->devitem.num_bytes >= superblock_addrs[i] + sizeof(superblock)) {
         ULONG sblen = (ULONG)sector_align(sizeof(superblock), Vcb->superblock.sector_size);
         superblock* sb;
-        uint32_t crc32;
         write_superblocks_stripe* stripe;
         PIO_STACK_LOCATION IrpSp;
 
@@ -2203,8 +2223,7 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
         RtlCopyMemory(&sb->dev_item, &device->devitem, sizeof(DEV_ITEM));
         sb->sb_phys_addr = superblock_addrs[i];
 
-        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-        RtlCopyMemory(&sb->checksum, &crc32, sizeof(uint32_t));
+        calc_superblock_checksum(sb);
 
         stripe = ExAllocatePoolWithTag(NonPagedPool, sizeof(write_superblocks_stripe), ALLOC_TAG);
         if (!stripe) {
