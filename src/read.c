@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include "xxhash.h"
 
 enum read_data_status {
     ReadDataStatus_Pending,
@@ -103,6 +104,34 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint
     return STATUS_SUCCESS;
 }
 
+static bool check_tree_checksum(device_extension* Vcb, tree_header* th) {
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C: {
+            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+
+            if (crc32 == *((uint32_t*)th->csum))
+                return true;
+
+            WARN("hash was %08x, expected %08x\n", crc32, *((uint32_t*)th->csum));
+
+            break;
+        }
+
+        case CSUM_TYPE_XXHASH: {
+            uint64_t hash = XXH64((uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), 0);
+
+            if (hash == *((uint64_t*)th->csum))
+                return true;
+
+            WARN("hash was %I64x, expected %I64x\n", hash, *((uint64_t*)th->csum));
+
+            break;
+        }
+    }
+
+    return false;
+}
+
 static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr, read_data_context* context, CHUNK_ITEM* ci,
                               device** devices, uint64_t generation) {
     ULONG i;
@@ -127,11 +156,8 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
 
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
-        uint32_t crc32;
 
-        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, context->buflen - sizeof(th->csum));
-
-        if (th->address != context->address || crc32 != *((uint32_t*)th->csum)) {
+        if (th->address != context->address || !check_tree_checksum(Vcb, th)) {
             checksum_error = true;
             log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
         } else if (generation != 0 && th->generation != generation) {
@@ -174,9 +200,9 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
                     WARN("sync_read_phys returned %08x\n", Status);
                     log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
                 } else {
-                    uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&t2->fs_uuid, Vcb->superblock.node_size - sizeof(t2->csum));
+                    bool checksum_error = !check_tree_checksum(Vcb, t2);
 
-                    if (t2->address == addr && crc32 == *((uint32_t*)t2->csum) && (generation == 0 || t2->generation == generation)) {
+                    if (t2->address == addr && !checksum_error && (generation == 0 || t2->generation == generation)) {
                         RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
                         ERR("recovering from checksum error at %I64x, device %I64x\n", addr, devices[stripe]->devitem.dev_id);
                         recovered = true;
@@ -191,7 +217,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
                         }
 
                         break;
-                    } else if (t2->address != addr || crc32 != *((uint32_t*)t2->csum))
+                    } else if (t2->address != addr || checksum_error)
                         log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     else
                         log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_GENERATION_ERRORS);
@@ -283,9 +309,9 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
     if (context->tree) { // shouldn't happen, as trees shouldn't cross stripe boundaries
         tree_header* th = (tree_header*)buf;
-        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+        bool checksum_error = !check_tree_checksum(Vcb, th);
 
-        if (crc32 != *((uint32_t*)th->csum) || addr != th->address || (generation != 0 && generation != th->generation)) {
+        if (checksum_error || addr != th->address || (generation != 0 && generation != th->generation)) {
             uint64_t off;
             uint16_t stripe;
 
@@ -293,8 +319,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
             ERR("unrecoverable checksum error at %I64x, device %I64x\n", addr, devices[stripe]->devitem.dev_id);
 
-            if (crc32 != *((uint32_t*)th->csum)) {
-                WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)th->csum));
+            if (checksum_error) {
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 return STATUS_CRC_ERROR;
             } else if (addr != th->address) {
@@ -359,10 +384,8 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
-        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
 
-        if (crc32 != *((uint32_t*)th->csum)) {
-            WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)th->csum));
+        if (!check_tree_checksum(Vcb, th)) {
             checksum_error = true;
             log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
         } else if (addr != th->address) {
@@ -419,9 +442,9 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
                     WARN("sync_read_phys returned %08x\n", Status);
                     log_device_error(Vcb, devices[stripe + j], BTRFS_DEV_STAT_READ_ERRORS);
                 } else {
-                    uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&t2->fs_uuid, Vcb->superblock.node_size - sizeof(t2->csum));
+                    bool checksum_error = !check_tree_checksum(Vcb, t2);
 
-                    if (t2->address == addr && crc32 == *((uint32_t*)t2->csum) && (generation == 0 || t2->generation == generation)) {
+                    if (t2->address == addr && !checksum_error && (generation == 0 || t2->generation == generation)) {
                         RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
                         ERR("recovering from checksum error at %I64x, device %I64x\n", addr, devices[stripe + j]->devitem.dev_id);
                         recovered = true;
@@ -436,7 +459,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
                         }
 
                         break;
-                    } else if (t2->address != addr || crc32 != *((uint32_t*)t2->csum))
+                    } else if (t2->address != addr || checksum_error)
                         log_device_error(Vcb, devices[stripe + j], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     else
                         log_device_error(Vcb, devices[stripe + j], BTRFS_DEV_STAT_GENERATION_ERRORS);
@@ -595,9 +618,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
-        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
 
-        if (addr != th->address || crc32 != *((uint32_t*)th->csum)) {
+        if (addr != th->address || !check_tree_checksum(Vcb, th)) {
             checksum_error = true;
             if (!no_success && !degraded)
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -674,9 +696,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
         if (!failed) {
             tree_header* t3 = (tree_header*)t2;
-            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&t3->fs_uuid, Vcb->superblock.node_size - sizeof(t3->csum));
 
-            if (t3->address == addr && crc32 == *((uint32_t*)t3->csum) && (generation == 0 || t3->generation == generation)) {
+            if (t3->address == addr && check_tree_checksum(Vcb, t3) && (generation == 0 || t3->generation == generation)) {
                 RtlCopyMemory(buf, t2, Vcb->superblock.node_size);
 
                 if (!degraded)
@@ -956,9 +977,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
     if (context->tree) {
         tree_header* th = (tree_header*)buf;
-        uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
 
-        if (addr != th->address || crc32 != *((uint32_t*)th->csum)) {
+        if (addr != th->address || !check_tree_checksum(Vcb, th)) {
             checksum_error = true;
             if (!no_success && !degraded && devices[stripe])
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -1039,7 +1059,6 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
         if (!failed) {
             if (num_errors == 0) {
                 tree_header* th = (tree_header*)(sector + (stripe * Vcb->superblock.node_size));
-                uint32_t crc32;
 
                 RtlCopyMemory(sector + (stripe * Vcb->superblock.node_size), sector + ((ci->num_stripes - 2) * Vcb->superblock.node_size),
                               Vcb->superblock.node_size);
@@ -1049,9 +1068,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                         do_xor(sector + (stripe * Vcb->superblock.node_size), sector + (j * Vcb->superblock.node_size), Vcb->superblock.node_size);
                 }
 
-                crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-
-                if (th->address == addr && crc32 == *((uint32_t*)th->csum) && (generation == 0 || th->generation == generation)) {
+                if (th->address == addr && check_tree_checksum(Vcb, th) && (generation == 0 || th->generation == generation)) {
                     RtlCopyMemory(buf, sector + (stripe * Vcb->superblock.node_size), Vcb->superblock.node_size);
 
                     if (devices[physstripe] && devices[physstripe]->devobj)
@@ -1071,7 +1088,6 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
             }
 
             if (!recovered) {
-                uint32_t crc32;
                 tree_header* th = (tree_header*)(sector + (ci->num_stripes * Vcb->superblock.node_size));
                 bool read_q = false;
 
@@ -1089,18 +1105,14 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                     if (num_errors == 1) {
                         raid6_recover2(sector, ci->num_stripes, Vcb->superblock.node_size, stripe, error_stripe, sector + (ci->num_stripes * Vcb->superblock.node_size));
 
-                        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-
-                        if (th->address == addr && crc32 == *((uint32_t*)th->csum) && (generation == 0 || th->generation == generation))
+                        if (th->address == addr && check_tree_checksum(Vcb, th) && (generation == 0 || th->generation == generation))
                             recovered = true;
                     } else {
                         for (j = 0; j < ci->num_stripes - 1; j++) {
                             if (j != stripe) {
                                 raid6_recover2(sector, ci->num_stripes, Vcb->superblock.node_size, stripe, j, sector + (ci->num_stripes * Vcb->superblock.node_size));
 
-                                crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
-
-                                if (th->address == addr && crc32 == *((uint32_t*)th->csum) && (generation == 0 || th->generation == generation)) {
+                                if (th->address == addr && check_tree_checksum(Vcb, th) && (generation == 0 || th->generation == generation)) {
                                     recovered = true;
                                     error_stripe = j;
                                     break;
