@@ -87,9 +87,6 @@
     <ClInclude Include="src\zstd\mem.h">
       <Filter>Header Files\zstd</Filter>
     </ClInclude>
-    <ClInclude Include="src\zstd\xxhash.h">
-      <Filter>Header Files\zstd</Filter>
-    </ClInclude>
     <ClInclude Include="src\zstd\zstd.h">
       <Filter>Header Files\zstd</Filter>
     </ClInclude>
@@ -119,6 +116,9 @@
     </ClInclude>
     <ClInclude Include="src\zstd\hist.h">
       <Filter>Header Files\zstd</Filter>
+    </ClInclude>
+    <ClInclude Include="src\xxhash.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -244,9 +244,6 @@
     <ClCompile Include="src\zstd\huf_decompress.c">
       <Filter>Source Files\zstd</Filter>
     </ClCompile>
-    <ClCompile Include="src\zstd\xxhash.c">
-      <Filter>Source Files\zstd</Filter>
-    </ClCompile>
     <ClCompile Include="src\zstd\zstd_common.c">
       <Filter>Source Files\zstd</Filter>
     </ClCompile>
@@ -284,6 +281,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\boot.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\xxhash.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
