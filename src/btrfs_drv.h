@@ -210,7 +210,7 @@ typedef struct {
     bool unique;
     bool ignore;
     bool inserted;
-    uint32_t* csum;
+    void* csum;
 
     LIST_ENTRY list_entry;
 
@@ -604,7 +604,7 @@ typedef struct {
 
 typedef struct {
     uint8_t* data;
-    uint32_t* csum;
+    void* csum;
     LONG left, not_started;
     KEVENT event;
     LIST_ENTRY list_entry;
@@ -728,6 +728,7 @@ typedef struct _device_extension {
 #endif
     uint64_t devices_loaded;
     superblock superblock;
+    unsigned int csum_size;
     bool readonly;
     bool removing;
     bool locked;
@@ -1382,7 +1383,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
                       _In_ bool case_sensitive, _In_opt_ PIRP Irp);
 NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
                   root* subvol, uint64_t inode, uint8_t type, PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
-NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, uint32_t* csum, uint64_t start, uint64_t length, PIRP Irp);
+NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp);
 NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp);
 NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, dir_child** pdc);
 NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
@@ -1434,7 +1435,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULONG* pbr, PIRP Irp);
 NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULONG* pbr);
 NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read);
-NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum);
+NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* csum);
 void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, uint16_t missing1, uint16_t missing2, uint8_t* out);
 
 // in pnp.c
@@ -1514,7 +1515,7 @@ NTSTATUS __stdcall drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
 _Function_class_(KSTART_ROUTINE)
 void __stdcall calc_thread(void* context);
 
-void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, uint32_t* csum);
+void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* csum);
 
 // in balance.c
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);

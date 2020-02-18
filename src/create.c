@@ -413,12 +413,13 @@ cleanup:
     return Status;
 }
 
-NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, uint32_t* csum, uint64_t start, uint64_t length, PIRP Irp) {
+NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
     uint64_t i, j;
     bool b;
+    void* ptr = csum;
 
     searchkey.obj_id = EXTENT_CSUM_ID;
     searchkey.obj_type = TYPE_EXTENT_CSUM;
@@ -440,13 +441,15 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
             else
                 j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
 
-            if (j * sizeof(uint32_t) > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
+            if (j * Vcb->csum_size > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
                 ERR("checksum not found for %I64x\n", start + (i * Vcb->superblock.sector_size));
                 return STATUS_INTERNAL_ERROR;
             }
 
-            readlen = (ULONG)min((tp.item->size / sizeof(uint32_t)) - j, length - i);
-            RtlCopyMemory(&csum[i], tp.item->data + (j * sizeof(uint32_t)), readlen * sizeof(uint32_t));
+            readlen = (ULONG)min((tp.item->size / Vcb->csum_size) - j, length - i);
+            RtlCopyMemory(ptr, tp.item->data + (j * Vcb->csum_size), readlen * Vcb->csum_size);
+
+            ptr = (uint8_t*)ptr + (readlen * Vcb->csum_size);
             i += readlen;
 
             if (i == length)
@@ -3482,7 +3485,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
             len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / Vcb->superblock.sector_size;
 
-            ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * sizeof(uint32_t)), ALLOC_TAG);
+            ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * Vcb->csum_size), ALLOC_TAG);
             if (!ext->csum) {
                 ERR("out of memory\n");
                 goto end;

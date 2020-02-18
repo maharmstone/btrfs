@@ -2302,7 +2302,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 uint16_t length = (uint16_t)min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
                 ULONG skip_start;
                 uint64_t addr = ed2->address + off;
-                uint32_t* csum;
+                void* csum;
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
                     Status = wait_for_flush(context, tp1, tp2);
@@ -2332,7 +2332,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                     len = (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size) / context->Vcb->superblock.sector_size;
 
-                    csum = ExAllocatePoolWithTag(PagedPool, len * sizeof(uint32_t), ALLOC_TAG);
+                    csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                     if (!csum) {
                         ERR("out of memory\n");
                         ExFreePool(buf);
@@ -2385,7 +2385,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         } else {
             uint8_t *buf, *compbuf;
             uint64_t off;
-            uint32_t* csum;
+            void* csum;
 
             buf = ExAllocatePoolWithTag(PagedPool, (ULONG)se->data.decoded_size, ALLOC_TAG);
             if (!buf) {
@@ -2411,7 +2411,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 len = (uint32_t)(ed2->size / context->Vcb->superblock.sector_size);
 
-                csum = ExAllocatePoolWithTag(PagedPool, len * sizeof(uint32_t), ALLOC_TAG);
+                csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                 if (!csum) {
                     ERR("out of memory\n");
                     ExFreePool(compbuf);

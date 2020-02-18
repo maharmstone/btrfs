@@ -4508,6 +4508,20 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         Vcb->superblock.log_tree_addr = 0;
     }
 
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C:
+            Vcb->csum_size = sizeof(uint32_t);
+            break;
+
+        case CSUM_TYPE_XXHASH:
+            Vcb->csum_size = sizeof(uint64_t);
+            break;
+
+        default:
+            ERR("unrecognized csum type %x\n", Vcb->superblock.csum_type);
+            break;
+    }
+
     InitializeListHead(&Vcb->devices);
     dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
     if (!dev) {
