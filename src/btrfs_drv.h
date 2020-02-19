@@ -1153,7 +1153,7 @@ extern uint32_t debug_log_level;
 
 #ifdef DEBUG_LONG_MESSAGES
 
-#define MSG(fn, file, line, s, level, ...) (!log_started || level <= debug_log_level) ? _debug_message(fn, file, line, s, ##__VA_ARGS__) : 0
+#define MSG(fn, file, line, s, level, ...) (!log_started || level <= debug_log_level) ? _debug_message(fn, file, line, s, ##__VA_ARGS__) : (void)0
 
 #define TRACE(s, ...) MSG(funcname, __FILE__, __LINE__, s, 3, ##__VA_ARGS__)
 #define WARN(s, ...) MSG(funcname, __FILE__, __LINE__, s, 2, ##__VA_ARGS__)
@@ -1164,7 +1164,7 @@ void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned 
 
 #else
 
-#define MSG(fn, s, level, ...) (!log_started || level <= debug_log_level) ? _debug_message(fn, s, ##__VA_ARGS__) : 0
+#define MSG(fn, s, level, ...) (!log_started || level <= debug_log_level) ? _debug_message(fn, s, ##__VA_ARGS__) : (void)0
 
 #define TRACE(s, ...) MSG(funcname, s, 3, ##__VA_ARGS__)
 #define WARN(s, ...) MSG(funcname, s, 2, ##__VA_ARGS__)
