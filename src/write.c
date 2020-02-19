@@ -3553,7 +3553,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
             ULONG sl = (ULONG)(ed2->num_bytes / fcb->Vcb->superblock.sector_size);
-            uint32_t* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
+            void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
                 ERR("out of memory\n");
@@ -3709,7 +3709,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
             ULONG sl = (ULONG)(ned2->num_bytes / fcb->Vcb->superblock.sector_size);
-            uint32_t* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
+            void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
                 ERR("out of memory\n");
