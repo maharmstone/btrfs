@@ -2568,13 +2568,12 @@ end:
     return STATUS_SUCCESS;
 }
 
-void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, uint32_t* csum, PIRP Irp) {
+void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, void* csum, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     uint64_t startaddr, endaddr;
     ULONG len;
-    uint32_t* checksums;
     RTL_BITMAP bmp;
     ULONG* bmparr;
     ULONG runlength, index;
@@ -2592,21 +2591,21 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
         if (csum) { // not deleted
             ULONG length2 = length;
             uint64_t off = address;
-            uint32_t* data = csum;
+            void* data = csum;
 
             do {
-                uint16_t il = (uint16_t)min(length2, MAX_CSUM_SIZE / sizeof(uint32_t));
+                uint16_t il = (uint16_t)min(length2, MAX_CSUM_SIZE / Vcb->csum_size);
 
-                checksums = ExAllocatePoolWithTag(PagedPool, il * sizeof(uint32_t), ALLOC_TAG);
+                void* checksums = ExAllocatePoolWithTag(PagedPool, il * Vcb->csum_size, ALLOC_TAG);
                 if (!checksums) {
                     ERR("out of memory\n");
                     return;
                 }
 
-                RtlCopyMemory(checksums, data, il * sizeof(uint32_t));
+                RtlCopyMemory(checksums, data, il * Vcb->csum_size);
 
                 Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, checksums,
-                                          il * sizeof(uint32_t), NULL, Irp);
+                                          il * Vcb->csum_size, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     ExFreePool(checksums);
@@ -2617,7 +2616,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
 
                 if (length2 > 0) {
                     off += il * Vcb->superblock.sector_size;
-                    data += il;
+                    data = (uint8_t*)data + (il * Vcb->csum_size);
                 }
             } while (length2 > 0);
         }
@@ -2626,10 +2625,11 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
         return;
     } else {
         uint32_t tplen;
+        void* checksums;
 
         // FIXME - check entry is TYPE_EXTENT_CSUM?
 
-        if (tp.item->key.offset < address && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(uint32_t)) >= address)
+        if (tp.item->key.offset < address && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / Vcb->csum_size) >= address)
             startaddr = tp.item->key.offset;
         else
             startaddr = address;
@@ -2644,7 +2644,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
             return;
         }
 
-        tplen = tp.item->size / sizeof(uint32_t);
+        tplen = tp.item->size / Vcb->csum_size;
 
         if (tp.item->key.offset + (tplen * Vcb->superblock.sector_size) >= address + (length * Vcb->superblock.sector_size))
             endaddr = tp.item->key.offset + (tplen * Vcb->superblock.sector_size);
@@ -2657,7 +2657,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
 
         len = (ULONG)((endaddr - startaddr) / Vcb->superblock.sector_size);
 
-        checksums = ExAllocatePoolWithTag(PagedPool, sizeof(uint32_t) * len, ALLOC_TAG);
+        checksums = ExAllocatePoolWithTag(PagedPool, Vcb->csum_size * len, ALLOC_TAG);
         if (!checksums) {
             ERR("out of memory\n");
             return;
@@ -2690,10 +2690,11 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
         while (tp.item->key.offset < endaddr) {
             if (tp.item->key.offset >= startaddr) {
                 if (tp.item->size > 0) {
-                    ULONG itemlen = (ULONG)min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * sizeof(uint32_t), tp.item->size);
+                    ULONG itemlen = (ULONG)min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * Vcb->csum_size, tp.item->size);
 
-                    RtlCopyMemory(&checksums[(tp.item->key.offset - startaddr) / Vcb->superblock.sector_size], tp.item->data, itemlen);
-                    RtlClearBits(&bmp, (ULONG)((tp.item->key.offset - startaddr) / Vcb->superblock.sector_size), itemlen / sizeof(uint32_t));
+                    RtlCopyMemory((uint8_t*)checksums + ((tp.item->key.offset - startaddr) * Vcb->csum_size / Vcb->superblock.sector_size),
+                                  tp.item->data, itemlen);
+                    RtlClearBits(&bmp, (ULONG)((tp.item->key.offset - startaddr) / Vcb->superblock.sector_size), itemlen / Vcb->csum_size);
                 }
 
                 Status = delete_tree_item(Vcb, &tp);
@@ -2714,7 +2715,8 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
         if (!csum) { // deleted
             RtlSetBits(&bmp, (ULONG)((address - startaddr) / Vcb->superblock.sector_size), length);
         } else {
-            RtlCopyMemory(&checksums[(address - startaddr) / Vcb->superblock.sector_size], csum, length * sizeof(uint32_t));
+            RtlCopyMemory((uint8_t*)checksums + ((address - startaddr) * Vcb->csum_size / Vcb->superblock.sector_size),
+                          csum, length * Vcb->csum_size);
             RtlClearBits(&bmp, (ULONG)((address - startaddr) / Vcb->superblock.sector_size), length);
         }
 
@@ -2734,14 +2736,14 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
             do {
                 uint16_t rl;
                 uint64_t off;
-                uint32_t* data;
+                void* data;
 
-                if (runlength * sizeof(uint32_t) > MAX_CSUM_SIZE)
-                    rl = MAX_CSUM_SIZE / sizeof(uint32_t);
+                if (runlength * Vcb->csum_size > MAX_CSUM_SIZE)
+                    rl = MAX_CSUM_SIZE / Vcb->csum_size;
                 else
                     rl = (uint16_t)runlength;
 
-                data = ExAllocatePoolWithTag(PagedPool, sizeof(uint32_t) * rl, ALLOC_TAG);
+                data = ExAllocatePoolWithTag(PagedPool, Vcb->csum_size * rl, ALLOC_TAG);
                 if (!data) {
                     ERR("out of memory\n");
                     ExFreePool(bmparr);
@@ -2749,11 +2751,11 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, u
                     return;
                 }
 
-                RtlCopyMemory(data, &checksums[index], sizeof(uint32_t) * rl);
+                RtlCopyMemory(data, (uint8_t*)checksums + (Vcb->csum_size * index), Vcb->csum_size * rl);
 
                 off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
 
-                Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, sizeof(uint32_t) * rl, NULL, Irp);
+                Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, Vcb->csum_size * rl, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08x\n", Status);
                     ExFreePool(data);
@@ -4900,18 +4902,18 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
                             if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->csum) {
                                 ULONG len = (ULONG)((ed2->num_bytes + ned2->num_bytes) / fcb->Vcb->superblock.sector_size);
-                                uint32_t* csum;
+                                void* csum;
 
-                                csum = ExAllocatePoolWithTag(NonPagedPool, len * sizeof(uint32_t), ALLOC_TAG);
+                                csum = ExAllocatePoolWithTag(NonPagedPool, len * fcb->Vcb->csum_size, ALLOC_TAG);
                                 if (!csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
                                     goto end;
                                 }
 
-                                RtlCopyMemory(csum, ext->csum, (ULONG)(ed2->num_bytes * sizeof(uint32_t) / fcb->Vcb->superblock.sector_size));
-                                RtlCopyMemory(&csum[ed2->num_bytes / fcb->Vcb->superblock.sector_size], nextext->csum,
-                                              (ULONG)(ned2->num_bytes * sizeof(uint32_t) / fcb->Vcb->superblock.sector_size));
+                                RtlCopyMemory(csum, ext->csum, (ULONG)(ed2->num_bytes * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size));
+                                RtlCopyMemory((uint8_t*)csum + (ed2->num_bytes * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size), nextext->csum,
+                                              (ULONG)(ned2->num_bytes * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size));
 
                                 ExFreePool(ext->csum);
                                 ext->csum = csum;
