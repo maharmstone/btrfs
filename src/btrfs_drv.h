@@ -192,6 +192,8 @@ _Create_lock_level_(tree_lock)
 _Create_lock_level_(fcb_lock)
 _Lock_level_order_(tree_lock, fcb_lock)
 
+#define MAX_HASH_SIZE 8
+
 struct _device_extension;
 
 typedef struct _fcb_nonpaged {
@@ -1438,6 +1440,10 @@ NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULON
 NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read);
 NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* csum);
 void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, uint16_t missing1, uint16_t missing2, uint8_t* out);
+void get_tree_checksum(device_extension* Vcb, tree_header* th, void* csum);
+bool check_tree_checksum(device_extension* Vcb, tree_header* th);
+void get_sector_csum(device_extension* Vcb, void* buf, void* csum);
+bool check_sector_csum(device_extension* Vcb, void* buf, void* csum);
 
 // in pnp.c
 

@@ -104,7 +104,19 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, void
     return STATUS_SUCCESS;
 }
 
-static bool check_tree_checksum(device_extension* Vcb, tree_header* th) {
+void get_tree_checksum(device_extension* Vcb, tree_header* th, void* csum) {
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C:
+            *(uint32_t*)csum = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            *(uint64_t*)csum = XXH64((uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), 0);
+        break;
+    }
+}
+
+bool check_tree_checksum(device_extension* Vcb, tree_header* th) {
     switch (Vcb->superblock.csum_type) {
         case CSUM_TYPE_CRC32C: {
             uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
@@ -132,7 +144,19 @@ static bool check_tree_checksum(device_extension* Vcb, tree_header* th) {
     return false;
 }
 
-static bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
+void get_sector_csum(device_extension* Vcb, void* buf, void* csum) {
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C:
+            *(uint32_t*)csum = ~calc_crc32c(0xffffffff, buf, Vcb->superblock.sector_size);
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            *(uint64_t*)csum = XXH64(buf, Vcb->superblock.sector_size, 0);
+        break;
+    }
+}
+
+bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
     switch (Vcb->superblock.csum_type) {
         case CSUM_TYPE_CRC32C: {
             uint32_t crc32 = ~calc_crc32c(0xffffffff, buf, Vcb->superblock.sector_size);
