@@ -1422,6 +1422,7 @@ NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, ro
                                 _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, uint16_t datalen, enum batch_operation operation);
 NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
+void calc_tree_checksum(device_extension* Vcb, tree_header* th);
 
 // in read.c
 

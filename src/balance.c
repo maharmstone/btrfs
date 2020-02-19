@@ -1025,7 +1025,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     t3 = t4;
                 }
 
-                *((uint32_t*)mr->data) = ~calc_crc32c(0xffffffff, (uint8_t*)&mr->data->fs_uuid, Vcb->superblock.node_size - sizeof(mr->data->csum));
+                calc_tree_checksum(Vcb, mr->data);
 
                 tw = ExAllocatePoolWithTag(PagedPool, sizeof(tree_write), ALLOC_TAG);
                 if (!tw) {

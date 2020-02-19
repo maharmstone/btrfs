@@ -1788,7 +1788,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
     return STATUS_SUCCESS;
 }
 
-static void calc_tree_checksum(device_extension* Vcb, tree_header* th) {
+void calc_tree_checksum(device_extension* Vcb, tree_header* th) {
     switch (Vcb->superblock.csum_type) {
         case CSUM_TYPE_CRC32C:
             *((uint32_t*)th) = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
