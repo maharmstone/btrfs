@@ -1756,7 +1756,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
         data_reloc* dr = CONTAINING_RECORD(le, data_reloc, list_entry);
         bool done = false;
         LIST_ENTRY* le2;
-        uint32_t* csum;
+        void* csum;
         RTL_BITMAP bmp;
         ULONG* bmparr;
         ULONG bmplen, runlength, index, lastoff;
@@ -1842,7 +1842,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
             goto end;
         }
 
-        csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(dr->size * sizeof(uint32_t) / Vcb->superblock.sector_size), ALLOC_TAG);
+        csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(dr->size * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
         if (!csum) {
             ERR("out of memory\n");
             ExFreePool(bmparr);
@@ -1872,13 +1872,13 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 if (tp.item->key.obj_type == TYPE_EXTENT_CSUM) {
                     if (tp.item->key.offset >= dr->address + dr->size)
                         break;
-                    else if (tp.item->size >= sizeof(uint32_t) && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(uint32_t)) >= dr->address) {
+                    else if (tp.item->size >= Vcb->csum_size && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / Vcb->csum_size) >= dr->address) {
                         uint64_t cs = max(dr->address, tp.item->key.offset);
-                        uint64_t ce = min(dr->address + dr->size, tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / sizeof(uint32_t)));
+                        uint64_t ce = min(dr->address + dr->size, tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / Vcb->csum_size));
 
-                        RtlCopyMemory(csum + ((cs - dr->address) / Vcb->superblock.sector_size),
-                                      tp.item->data + ((cs - tp.item->key.offset) * sizeof(uint32_t) / Vcb->superblock.sector_size),
-                                      (ULONG)((ce - cs) * sizeof(uint32_t) / Vcb->superblock.sector_size));
+                        RtlCopyMemory((uint8_t*)csum + ((cs - dr->address) * Vcb->csum_size / Vcb->superblock.sector_size),
+                                      tp.item->data + ((cs - tp.item->key.offset) * Vcb->csum_size / Vcb->superblock.sector_size),
+                                      (ULONG)((ce - cs) * Vcb->csum_size / Vcb->superblock.sector_size));
 
                         RtlClearBits(&bmp, (ULONG)((cs - dr->address) / Vcb->superblock.sector_size), (ULONG)((ce - cs) / Vcb->superblock.sector_size));
 
@@ -1944,7 +1944,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 } while (size > 0);
             }
 
-            add_checksum_entry(Vcb, dr->new_address + (index * Vcb->superblock.sector_size), runlength, &csum[index], NULL);
+            add_checksum_entry(Vcb, dr->new_address + (index * Vcb->superblock.sector_size), runlength, (uint8_t*)csum + (index * Vcb->csum_size), NULL);
             add_checksum_entry(Vcb, dr->address + (index * Vcb->superblock.sector_size), runlength, NULL, NULL);
 
             // handle csum run
@@ -1956,8 +1956,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 else
                     rl = runlength;
 
-                Status = read_data(Vcb, dr->address + (index * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, &csum[index], false, data,
-                                   c, NULL, NULL, 0, false, NormalPagePriority);
+                Status = read_data(Vcb, dr->address + (index * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size,
+                                   (uint8_t*)csum + (index * Vcb->csum_size), false, data, c, NULL, NULL, 0, false, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08x\n", Status);
                     ExFreePool(csum);
