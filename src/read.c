@@ -113,6 +113,10 @@ void get_tree_checksum(device_extension* Vcb, tree_header* th, void* csum) {
         case CSUM_TYPE_XXHASH:
             *(uint64_t*)csum = XXH64((uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), 0);
         break;
+
+        case CSUM_TYPE_SHA256:
+            calc_sha256(csum, &th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+        break;
     }
 }
 
@@ -139,6 +143,19 @@ bool check_tree_checksum(device_extension* Vcb, tree_header* th) {
 
             break;
         }
+
+        case CSUM_TYPE_SHA256: {
+            uint8_t hash[SHA256_HASH_SIZE];
+
+            calc_sha256(hash, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+
+            if (RtlCompareMemory(hash, th, SHA256_HASH_SIZE) == SHA256_HASH_SIZE)
+                return true;
+
+            WARN("hash was invalid\n");
+
+            break;
+        }
     }
 
     return false;
@@ -152,6 +169,10 @@ void get_sector_csum(device_extension* Vcb, void* buf, void* csum) {
 
         case CSUM_TYPE_XXHASH:
             *(uint64_t*)csum = XXH64(buf, Vcb->superblock.sector_size, 0);
+        break;
+
+        case CSUM_TYPE_SHA256:
+            calc_sha256(csum, buf, Vcb->superblock.sector_size);
         break;
     }
 }
@@ -168,6 +189,14 @@ bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
             uint64_t hash = XXH64(buf, Vcb->superblock.sector_size, 0);
 
             return *(uint64_t*)csum == hash;
+        }
+
+        case CSUM_TYPE_SHA256: {
+            uint8_t hash[SHA256_HASH_SIZE];
+
+            calc_sha256(hash, buf, Vcb->superblock.sector_size);
+
+            return RtlCompareMemory(hash, csum, SHA256_HASH_SIZE) == SHA256_HASH_SIZE;
         }
     }
 

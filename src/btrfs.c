@@ -2748,6 +2748,19 @@ bool check_superblock_checksum(superblock* sb) {
             break;
         }
 
+        case CSUM_TYPE_SHA256: {
+            uint8_t hash[SHA256_HASH_SIZE];
+
+            calc_sha256(hash, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+
+            if (RtlCompareMemory(hash, sb, SHA256_HASH_SIZE) == SHA256_HASH_SIZE)
+                return true;
+
+            WARN("superblock hash was invalid\n");
+
+            break;
+        }
+
         default:
             WARN("unrecognized csum type %x\n", sb->csum_type);
     }
@@ -4515,6 +4528,10 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         case CSUM_TYPE_XXHASH:
             Vcb->csum_size = sizeof(uint64_t);
+            break;
+
+        case CSUM_TYPE_SHA256:
+            Vcb->csum_size = SHA256_HASH_SIZE;
             break;
 
         default:

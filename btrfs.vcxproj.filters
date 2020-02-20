@@ -286,6 +286,9 @@
     <ClCompile Include="src\xxhash.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\sha256.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="src\crc32c-amd64-masm.S">

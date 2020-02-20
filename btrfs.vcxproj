@@ -612,6 +612,7 @@
     <ClCompile Include="src\search.c" />
     <ClCompile Include="src\security.c" />
     <ClCompile Include="src\send.c" />
+    <ClCompile Include="src\sha256.c" />
     <ClCompile Include="src\treefuncs.c" />
     <ClCompile Include="src\volume.c" />
     <ClCompile Include="src\worker-thread.c" />

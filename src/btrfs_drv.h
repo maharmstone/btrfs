@@ -192,7 +192,7 @@ _Create_lock_level_(tree_lock)
 _Create_lock_level_(fcb_lock)
 _Lock_level_order_(tree_lock, fcb_lock)
 
-#define MAX_HASH_SIZE 8
+#define MAX_HASH_SIZE 32
 
 struct _device_extension;
 
@@ -1201,6 +1201,10 @@ uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) u
 uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen);
 typedef uint32_t (__stdcall *crc_func)(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen);
 extern crc_func calc_crc32c;
+
+// in sha256.c
+void calc_sha256(uint8_t* hash, const void* input, size_t len);
+#define SHA256_HASH_SIZE 32
 
 typedef struct {
     LIST_ENTRY* list;

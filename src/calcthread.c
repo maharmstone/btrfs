@@ -36,6 +36,15 @@ static void do_calc_xxhash(device_extension* Vcb, calc_job* cj, uint8_t* src, ui
         KeSetEvent(&cj->event, 0, false);
 }
 
+static void do_calc_sha256(device_extension* Vcb, calc_job* cj, uint8_t* src, uint8_t* dest) {
+    // FIXME - do at DISPATCH irql?
+
+    calc_sha256(dest, src, Vcb->superblock.sector_size);
+
+    if (InterlockedDecrement(&cj->left) == 0)
+        KeSetEvent(&cj->event, 0, false);
+}
+
 static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
     while (true) {
         KIRQL irql;
@@ -86,6 +95,9 @@ static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
                 do_calc_xxhash(Vcb, cj2, src, dest);
             break;
 
+            case CSUM_TYPE_SHA256:
+                do_calc_sha256(Vcb, cj2, src, dest);
+            break;
         }
 
         if (last_one)
