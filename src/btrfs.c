@@ -21,6 +21,7 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
+#include "blake2.h"
 #ifndef _MSC_VER
 #include <cpuid.h>
 #else
@@ -2761,6 +2762,19 @@ bool check_superblock_checksum(superblock* sb) {
             break;
         }
 
+        case CSUM_TYPE_BLAKE2: {
+            uint8_t hash[BLAKE2_HASH_SIZE];
+
+            blake2b(hash, sizeof(hash), &sb->uuid, sizeof(superblock) - sizeof(sb->checksum), NULL, 0);
+
+            if (RtlCompareMemory(hash, sb, BLAKE2_HASH_SIZE) == BLAKE2_HASH_SIZE)
+                return true;
+
+            WARN("superblock hash was invalid\n");
+
+            break;
+        }
+
         default:
             WARN("unrecognized csum type %x\n", sb->csum_type);
     }
@@ -4532,6 +4546,10 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
         case CSUM_TYPE_SHA256:
             Vcb->csum_size = SHA256_HASH_SIZE;
+            break;
+
+        case CSUM_TYPE_BLAKE2:
+            Vcb->csum_size = BLAKE2_HASH_SIZE;
             break;
 
         default:

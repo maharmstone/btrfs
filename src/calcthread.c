@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
+#include "blake2.h"
 
 static void do_calc_crc32(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {
     // FIXME - do at DISPATCH irql?
@@ -40,6 +41,15 @@ static void do_calc_sha256(device_extension* Vcb, calc_job* cj, uint8_t* src, ui
     // FIXME - do at DISPATCH irql?
 
     calc_sha256(dest, src, Vcb->superblock.sector_size);
+
+    if (InterlockedDecrement(&cj->left) == 0)
+        KeSetEvent(&cj->event, 0, false);
+}
+
+static void do_calc_blake2(device_extension* Vcb, calc_job* cj, uint8_t* src, uint8_t* dest) {
+    // FIXME - do at DISPATCH irql?
+
+    blake2b(dest, BLAKE2_HASH_SIZE, src, Vcb->superblock.sector_size, NULL, 0);
 
     if (InterlockedDecrement(&cj->left) == 0)
         KeSetEvent(&cj->event, 0, false);
@@ -97,6 +107,10 @@ static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
             case CSUM_TYPE_SHA256:
                 do_calc_sha256(Vcb, cj2, src, dest);
+            break;
+
+            case CSUM_TYPE_BLAKE2:
+                do_calc_blake2(Vcb, cj2, src, dest);
             break;
         }
 

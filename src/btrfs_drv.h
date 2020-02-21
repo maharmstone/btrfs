@@ -1204,7 +1204,9 @@ extern crc_func calc_crc32c;
 
 // in sha256.c
 void calc_sha256(uint8_t* hash, const void* input, size_t len);
+
 #define SHA256_HASH_SIZE 32
+#define BLAKE2_HASH_SIZE 32
 
 typedef struct {
     LIST_ENTRY* list;

@@ -551,6 +551,8 @@
     </MASM>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\blake2-impl.h" />
+    <ClInclude Include="src\blake2.h" />
     <ClInclude Include="src\btrfs.h" />
     <ClInclude Include="src\btrfs_drv.h" />
     <ClInclude Include="src\resource.h" />
@@ -587,6 +589,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\balance.c" />
+    <ClCompile Include="src\blake2b-ref.c" />
     <ClCompile Include="src\boot.c" />
     <ClCompile Include="src\btrfs.c" />
     <ClCompile Include="src\cache.c" />

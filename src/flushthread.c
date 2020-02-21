@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
+#include "blake2.h"
 #include <ata.h>
 #include <ntddscsi.h>
 #include <ntddstor.h>
@@ -1801,6 +1802,10 @@ void calc_tree_checksum(device_extension* Vcb, tree_header* th) {
         case CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)th, &th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         break;
+
+        case CSUM_TYPE_BLAKE2:
+            blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), NULL, 0);
+        break;
     }
 }
 
@@ -2201,6 +2206,10 @@ static void calc_superblock_checksum(superblock* sb) {
 
         case CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)sb, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+        break;
+
+        case CSUM_TYPE_BLAKE2:
+            blake2b((uint8_t*)sb, BLAKE2_HASH_SIZE, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum), NULL, 0);
         break;
     }
 }
