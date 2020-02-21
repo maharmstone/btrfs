@@ -552,7 +552,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\blake2-impl.h" />
-    <ClInclude Include="src\blake2.h" />
     <ClInclude Include="src\btrfs.h" />
     <ClInclude Include="src\btrfs_drv.h" />
     <ClInclude Include="src\resource.h" />

@@ -120,9 +120,6 @@
     <ClInclude Include="src\xxhash.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\blake2.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\blake2-impl.h">
       <Filter>Header Files</Filter>
     </ClInclude>

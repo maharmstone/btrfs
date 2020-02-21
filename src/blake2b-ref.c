@@ -17,7 +17,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "blake2.h"
 #include "blake2-impl.h"
 
 static const uint64_t blake2b_IV[8] =
@@ -44,6 +43,7 @@ static const uint8_t blake2b_sigma[12][16] =
   { 14, 10,  4,  8,  9, 15, 13,  6,  1, 12,  0,  2, 11,  7,  5,  3 }
 };
 
+static int blake2b_update(blake2b_state* S, const void* in, size_t inlen);
 
 static void blake2b_set_lastnode( blake2b_state *S )
 {
@@ -78,7 +78,7 @@ static void blake2b_init0( blake2b_state *S )
 }
 
 /* init xors IV with input parameter block */
-int blake2b_init_param( blake2b_state *S, const blake2b_param *P )
+static void blake2b_init_param( blake2b_state *S, const blake2b_param *P )
 {
   const uint8_t *p = ( const uint8_t * )( P );
   size_t i;
@@ -90,16 +90,13 @@ int blake2b_init_param( blake2b_state *S, const blake2b_param *P )
     S->h[i] ^= load64( p + sizeof( S->h[i] ) * i );
 
   S->outlen = P->digest_length;
-  return 0;
 }
 
 
 
-int blake2b_init( blake2b_state *S, size_t outlen )
+static void blake2b_init( blake2b_state *S, size_t outlen )
 {
   blake2b_param P[1];
-
-  if ( ( !outlen ) || ( outlen > BLAKE2B_OUTBYTES ) ) return -1;
 
   P->digest_length = (uint8_t)outlen;
   P->key_length    = 0;
@@ -113,41 +110,8 @@ int blake2b_init( blake2b_state *S, size_t outlen )
   memset( P->reserved, 0, sizeof( P->reserved ) );
   memset( P->salt,     0, sizeof( P->salt ) );
   memset( P->personal, 0, sizeof( P->personal ) );
-  return blake2b_init_param( S, P );
-}
 
-
-int blake2b_init_key( blake2b_state *S, size_t outlen, const void *key, size_t keylen )
-{
-  blake2b_param P[1];
-
-  if ( ( !outlen ) || ( outlen > BLAKE2B_OUTBYTES ) ) return -1;
-
-  if ( !key || !keylen || keylen > BLAKE2B_KEYBYTES ) return -1;
-
-  P->digest_length = (uint8_t)outlen;
-  P->key_length    = (uint8_t)keylen;
-  P->fanout        = 1;
-  P->depth         = 1;
-  store32( &P->leaf_length, 0 );
-  store32( &P->node_offset, 0 );
-  store32( &P->xof_length, 0 );
-  P->node_depth    = 0;
-  P->inner_length  = 0;
-  memset( P->reserved, 0, sizeof( P->reserved ) );
-  memset( P->salt,     0, sizeof( P->salt ) );
-  memset( P->personal, 0, sizeof( P->personal ) );
-
-  if( blake2b_init_param( S, P ) < 0 ) return -1;
-
-  {
-    uint8_t block[BLAKE2B_BLOCKBYTES];
-    memset( block, 0, BLAKE2B_BLOCKBYTES );
-    memcpy( block, key, keylen );
-    blake2b_update( S, block, BLAKE2B_BLOCKBYTES );
-    secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
-  }
-  return 0;
+  blake2b_init_param( S, P );
 }
 
 #define G(r,i,a,b,c,d)                      \
@@ -218,7 +182,7 @@ static void blake2b_compress( blake2b_state *S, const uint8_t block[BLAKE2B_BLOC
 #undef G
 #undef ROUND
 
-int blake2b_update( blake2b_state *S, const void *pin, size_t inlen )
+static int blake2b_update( blake2b_state *S, const void *pin, size_t inlen )
 {
   const unsigned char * in = (const unsigned char *)pin;
   if( inlen > 0 )
@@ -245,7 +209,7 @@ int blake2b_update( blake2b_state *S, const void *pin, size_t inlen )
   return 0;
 }
 
-int blake2b_final( blake2b_state *S, void *out, size_t outlen )
+static int blake2b_final( blake2b_state *S, void *out, size_t outlen )
 {
   uint8_t buffer[BLAKE2B_OUTBYTES] = {0};
   size_t i;
@@ -265,115 +229,17 @@ int blake2b_final( blake2b_state *S, void *out, size_t outlen )
     store64( buffer + sizeof( S->h[i] ) * i, S->h[i] );
 
   memcpy( out, buffer, S->outlen );
-  secure_zero_memory(buffer, sizeof(buffer));
+
   return 0;
 }
 
 /* inlen, at least, should be uint64_t. Others can be size_t. */
-int blake2b( void *out, size_t outlen, const void *in, size_t inlen, const void *key, size_t keylen )
+void blake2b( void *out, size_t outlen, const void *in, size_t inlen )
 {
   blake2b_state S[1];
 
-  /* Verify parameters */
-  if ( NULL == in && inlen > 0 ) return -1;
-
-  if ( NULL == out ) return -1;
-
-  if( NULL == key && keylen > 0 ) return -1;
-
-  if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
-
-  if( keylen > BLAKE2B_KEYBYTES ) return -1;
-
-  if( keylen > 0 )
-  {
-    if( blake2b_init_key( S, outlen, key, keylen ) < 0 ) return -1;
-  }
-  else
-  {
-    if( blake2b_init( S, outlen ) < 0 ) return -1;
-  }
+  blake2b_init( S, outlen );
 
   blake2b_update( S, ( const uint8_t * )in, inlen );
   blake2b_final( S, out, outlen );
-  return 0;
 }
-
-int blake2( void *out, size_t outlen, const void *in, size_t inlen, const void *key, size_t keylen ) {
-  return blake2b(out, outlen, in, inlen, key, keylen);
-}
-
-#if defined(SUPERCOP)
-int crypto_hash( unsigned char *out, unsigned char *in, unsigned long long inlen )
-{
-  return blake2b( out, BLAKE2B_OUTBYTES, in, inlen, NULL, 0 );
-}
-#endif
-
-#if defined(BLAKE2B_SELFTEST)
-#include <string.h>
-#include "blake2-kat.h"
-int main( void )
-{
-  uint8_t key[BLAKE2B_KEYBYTES];
-  uint8_t buf[BLAKE2_KAT_LENGTH];
-  size_t i, step;
-
-  for( i = 0; i < BLAKE2B_KEYBYTES; ++i )
-    key[i] = ( uint8_t )i;
-
-  for( i = 0; i < BLAKE2_KAT_LENGTH; ++i )
-    buf[i] = ( uint8_t )i;
-
-  /* Test simple API */
-  for( i = 0; i < BLAKE2_KAT_LENGTH; ++i )
-  {
-    uint8_t hash[BLAKE2B_OUTBYTES];
-    blake2b( hash, BLAKE2B_OUTBYTES, buf, i, key, BLAKE2B_KEYBYTES );
-
-    if( 0 != memcmp( hash, blake2b_keyed_kat[i], BLAKE2B_OUTBYTES ) )
-    {
-      goto fail;
-    }
-  }
-
-  /* Test streaming API */
-  for(step = 1; step < BLAKE2B_BLOCKBYTES; ++step) {
-    for (i = 0; i < BLAKE2_KAT_LENGTH; ++i) {
-      uint8_t hash[BLAKE2B_OUTBYTES];
-      blake2b_state S;
-      uint8_t * p = buf;
-      size_t mlen = i;
-      int err = 0;
-
-      if( (err = blake2b_init_key(&S, BLAKE2B_OUTBYTES, key, BLAKE2B_KEYBYTES)) < 0 ) {
-        goto fail;
-      }
-
-      while (mlen >= step) {
-        if ( (err = blake2b_update(&S, p, step)) < 0 ) {
-          goto fail;
-        }
-        mlen -= step;
-        p += step;
-      }
-      if ( (err = blake2b_update(&S, p, mlen)) < 0) {
-        goto fail;
-      }
-      if ( (err = blake2b_final(&S, hash, BLAKE2B_OUTBYTES)) < 0) {
-        goto fail;
-      }
-
-      if (0 != memcmp(hash, blake2b_keyed_kat[i], BLAKE2B_OUTBYTES)) {
-        goto fail;
-      }
-    }
-  }
-
-  puts( "ok" );
-  return 0;
-fail:
-  puts("error");
-  return -1;
-}
-#endif

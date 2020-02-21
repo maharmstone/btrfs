@@ -21,7 +21,6 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
-#include "blake2.h"
 #ifndef _MSC_VER
 #include <cpuid.h>
 #else
@@ -2765,7 +2764,7 @@ bool check_superblock_checksum(superblock* sb) {
         case CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
-            blake2b(hash, sizeof(hash), &sb->uuid, sizeof(superblock) - sizeof(sb->checksum), NULL, 0);
+            blake2b(hash, sizeof(hash), &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
 
             if (RtlCompareMemory(hash, sb, BLAKE2_HASH_SIZE) == BLAKE2_HASH_SIZE)
                 return true;

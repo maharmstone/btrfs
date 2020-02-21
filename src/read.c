@@ -17,7 +17,6 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
-#include "blake2.h"
 
 enum read_data_status {
     ReadDataStatus_Pending,
@@ -120,7 +119,7 @@ void get_tree_checksum(device_extension* Vcb, tree_header* th, void* csum) {
         break;
 
         case CSUM_TYPE_BLAKE2:
-            blake2b(csum, BLAKE2_HASH_SIZE, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), NULL, 0);
+            blake2b(csum, BLAKE2_HASH_SIZE, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
         break;
     }
 }
@@ -165,7 +164,7 @@ bool check_tree_checksum(device_extension* Vcb, tree_header* th) {
         case CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
-            blake2b(hash, sizeof(hash), (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), NULL, 0);
+            blake2b(hash, sizeof(hash), (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
 
             if (RtlCompareMemory(hash, th, BLAKE2_HASH_SIZE) == BLAKE2_HASH_SIZE)
                 return true;
@@ -194,7 +193,7 @@ void get_sector_csum(device_extension* Vcb, void* buf, void* csum) {
         break;
 
         case CSUM_TYPE_BLAKE2:
-            blake2b(csum, BLAKE2_HASH_SIZE, buf, Vcb->superblock.sector_size, NULL, 0);
+            blake2b(csum, BLAKE2_HASH_SIZE, buf, Vcb->superblock.sector_size);
         break;
     }
 }
@@ -224,7 +223,7 @@ bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
         case CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
-            blake2b(hash, sizeof(hash), buf, Vcb->superblock.sector_size, NULL, 0);
+            blake2b(hash, sizeof(hash), buf, Vcb->superblock.sector_size);
 
             return RtlCompareMemory(hash, csum, BLAKE2_HASH_SIZE) == BLAKE2_HASH_SIZE;
         }
