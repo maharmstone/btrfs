@@ -2770,13 +2770,32 @@ NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULON
     return STATUS_SUCCESS;
 }
 
+typedef struct {
+    LIST_ENTRY list_entry;
+    uint64_t addr;
+    chunk* c;
+    uint32_t read;
+    uint32_t to_read;
+    void* csum;
+    uint8_t* buf;
+    bool buf_free;
+    uint32_t bumpoff;
+    bool mdl;
+    void* data;
+    uint8_t compression;
+    uint64_t off;
+    uint64_t ed_size;
+    uint64_t ed_offset;
+    uint64_t ed_num_bytes;
+} read_part;
+
 NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
-    EXTENT_DATA* ed;
     uint32_t bytes_read = 0;
     uint64_t last_end;
     LIST_ENTRY* le;
     POOL_TYPE pool_type;
+    LIST_ENTRY read_parts;
 
     TRACE("(%p, %p, %I64x, %I64x, %p)\n", fcb, data, start, length, pbr);
 
@@ -2789,6 +2808,8 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
         goto exit;
     }
 
+    InitializeListHead(&read_parts);
+
     pool_type = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? NonPagedPool : PagedPool;
 
     le = fcb->extents.Flink;
@@ -2798,12 +2819,10 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     while (le != &fcb->extents) {
         uint64_t len;
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-        EXTENT_DATA2* ed2;
 
         if (!ext->ignore) {
-            ed = &ext->extent_data;
-
-            ed2 = (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ed->data : NULL;
+            EXTENT_DATA* ed = &ext->extent_data;
+            EXTENT_DATA2* ed2 = (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ed->data : NULL;
 
             len = ed2 ? ed2->num_bytes : ed->decoded_size;
 
@@ -2921,193 +2940,85 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 
                 case EXTENT_TYPE_REGULAR:
                 {
-                    uint64_t off = start + bytes_read - ext->offset;
-                    uint32_t to_read, read;
-                    uint8_t* buf;
-                    bool mdl = (Irp && Irp->MdlAddress) ? true : false;
-                    bool buf_free;
-                    uint32_t bumpoff = 0;
-                    void* csum;
-                    uint64_t addr;
-                    chunk* c;
+                    read_part* rp;
 
-                    read = (uint32_t)(len - off);
-                    if (read > length) read = (uint32_t)length;
+                    rp = ExAllocatePoolWithTag(pool_type, sizeof(read_part), ALLOC_TAG);
+                    if (!rp) {
+                        ERR("out of memory\n");
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto exit;
+                    }
+
+                    rp->mdl = (Irp && Irp->MdlAddress) ? true : false;
+                    rp->off = start + bytes_read - ext->offset;
+                    rp->bumpoff = 0;
+
+                    rp->read = (uint32_t)(len - rp->off);
+                    if (rp->read > length) rp->read = (uint32_t)length;
 
                     if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                        addr = ed2->address + ed2->offset + off;
-                        to_read = (uint32_t)sector_align(read, fcb->Vcb->superblock.sector_size);
+                        rp->addr = ed2->address + ed2->offset + rp->off;
+                        rp->to_read = (uint32_t)sector_align(rp->read, fcb->Vcb->superblock.sector_size);
 
-                        if (addr % fcb->Vcb->superblock.sector_size > 0) {
-                            bumpoff = addr % fcb->Vcb->superblock.sector_size;
-                            addr -= bumpoff;
-                            to_read = (uint32_t)sector_align(read + bumpoff, fcb->Vcb->superblock.sector_size);
+                        if (rp->addr % fcb->Vcb->superblock.sector_size > 0) {
+                            rp->bumpoff = rp->addr % fcb->Vcb->superblock.sector_size;
+                            rp->addr -= rp->bumpoff;
+                            rp->to_read = (uint32_t)sector_align(rp->read + rp->bumpoff, fcb->Vcb->superblock.sector_size);
                         }
                     } else {
-                        addr = ed2->address;
-                        to_read = (uint32_t)sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
+                        rp->addr = ed2->address;
+                        rp->to_read = (uint32_t)sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
                     }
 
                     if (ed->compression == BTRFS_COMPRESSION_NONE && start % fcb->Vcb->superblock.sector_size == 0 &&
                         length % fcb->Vcb->superblock.sector_size == 0) {
-                        buf = data + bytes_read;
-                        buf_free = false;
+                        rp->buf = data + bytes_read;
+                        rp->buf_free = false;
                     } else {
-                        buf = ExAllocatePoolWithTag(pool_type, to_read, ALLOC_TAG);
-                        buf_free = true;
+                        rp->buf = ExAllocatePoolWithTag(pool_type, rp->to_read, ALLOC_TAG);
+                        rp->buf_free = true;
 
-                        if (!buf) {
+                        if (!rp->buf) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
+                            ExFreePool(rp);
                             goto exit;
                         }
 
-                        mdl = false;
+                        rp->mdl = false;
                     }
 
-                    c = get_chunk_from_address(fcb->Vcb, addr);
+                    rp->c = get_chunk_from_address(fcb->Vcb, rp->addr);
 
-                    if (!c) {
-                        ERR("get_chunk_from_address(%I64x) failed\n", addr);
+                    if (!rp->c) {
+                        ERR("get_chunk_from_address(%I64x) failed\n", rp->addr);
 
-                        if (buf_free)
-                            ExFreePool(buf);
+                        if (rp->buf_free)
+                            ExFreePool(rp->buf);
+
+                        ExFreePool(rp);
 
                         goto exit;
                     }
 
                     if (ext->csum) {
                         if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                            csum = (uint8_t*)ext->csum + (off * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
+                            rp->csum = (uint8_t*)ext->csum + (rp->off * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
                         } else
-                            csum = ext->csum;
+                            rp->csum = ext->csum;
                     } else
-                        csum = NULL;
+                        rp->csum = NULL;
 
-                    Status = read_data(fcb->Vcb, addr, to_read, csum, false, buf, c, NULL, Irp, 0, mdl,
-                                       fcb && fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("read_data returned %08x\n", Status);
+                    rp->data = data + bytes_read;
+                    rp->compression = ed->compression;
+                    rp->ed_offset = ed2->offset;
+                    rp->ed_size = ed2->size;
+                    rp->ed_num_bytes = ed2->num_bytes;
 
-                        if (buf_free)
-                            ExFreePool(buf);
+                    InsertTailList(&read_parts, &rp->list_entry);
 
-                        goto exit;
-                    }
-
-                    if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                        if (buf_free)
-                            RtlCopyMemory(data + bytes_read, buf + bumpoff, read);
-                    } else {
-                        uint8_t *decomp = NULL, *buf2;
-                        ULONG outlen, inlen, off2;
-                        uint32_t inpageoff = 0;
-
-                        off2 = (ULONG)(ed2->offset + off);
-                        buf2 = buf;
-                        inlen = (ULONG)ed2->size;
-
-                        if (ed->compression == BTRFS_COMPRESSION_LZO) {
-                            ULONG inoff = sizeof(uint32_t);
-
-                            inlen -= sizeof(uint32_t);
-
-                            // If reading a few sectors in, skip to the interesting bit
-                            while (off2 > LZO_PAGE_SIZE) {
-                                uint32_t partlen;
-
-                                if (inlen < sizeof(uint32_t))
-                                    break;
-
-                                partlen = *(uint32_t*)(buf2 + inoff);
-
-                                if (partlen < inlen) {
-                                    off2 -= LZO_PAGE_SIZE;
-                                    inoff += partlen + sizeof(uint32_t);
-                                    inlen -= partlen + sizeof(uint32_t);
-
-                                    if (LZO_PAGE_SIZE - (inoff % LZO_PAGE_SIZE) < sizeof(uint32_t))
-                                        inoff = ((inoff / LZO_PAGE_SIZE) + 1) * LZO_PAGE_SIZE;
-                                } else
-                                    break;
-                            }
-
-                            buf2 = &buf2[inoff];
-                            inpageoff = inoff % LZO_PAGE_SIZE;
-                        }
-
-                        if (off2 != 0) {
-                            outlen = off2 + min(read, (uint32_t)(ed2->num_bytes - off));
-
-                            decomp = ExAllocatePoolWithTag(pool_type, outlen, ALLOC_TAG);
-                            if (!decomp) {
-                                ERR("out of memory\n");
-                                ExFreePool(buf);
-                                Status = STATUS_INSUFFICIENT_RESOURCES;
-                                goto exit;
-                            }
-                        } else
-                            outlen = min(read, (uint32_t)(ed2->num_bytes - off));
-
-                        if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
-                            Status = zlib_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen);
-
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("zlib_decompress returned %08x\n", Status);
-                                ExFreePool(buf);
-
-                                if (decomp)
-                                    ExFreePool(decomp);
-
-                                goto exit;
-                            }
-                        } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
-                            Status = lzo_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen, inpageoff);
-
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("lzo_decompress returned %08x\n", Status);
-                                ExFreePool(buf);
-
-                                if (decomp)
-                                    ExFreePool(decomp);
-
-                                goto exit;
-                            }
-                        } else if (ed->compression == BTRFS_COMPRESSION_ZSTD) {
-                            Status = zstd_decompress(buf2, inlen, decomp ? decomp : (data + bytes_read), outlen);
-
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("zstd_decompress returned %08x\n", Status);
-                                ExFreePool(buf);
-
-                                if (decomp)
-                                    ExFreePool(decomp);
-
-                                goto exit;
-                            }
-                        } else {
-                            ERR("unsupported compression type %x\n", ed->compression);
-                            Status = STATUS_NOT_SUPPORTED;
-
-                            ExFreePool(buf);
-
-                            if (decomp)
-                                ExFreePool(decomp);
-
-                            goto exit;
-                        }
-
-                        if (decomp) {
-                            RtlCopyMemory(data + bytes_read, decomp + off2, (size_t)min(read, ed2->num_bytes - off));
-                            ExFreePool(decomp);
-                        }
-                    }
-
-                    if (buf_free)
-                        ExFreePool(buf);
-
-                    bytes_read += read;
-                    length -= read;
+                    bytes_read += rp->read;
+                    length -= rp->read;
 
                     break;
                 }
@@ -3143,6 +3054,122 @@ nextitem:
         le = le->Flink;
     }
 
+    le = read_parts.Flink;
+    while (le != &read_parts) {
+        read_part* rp = CONTAINING_RECORD(le, read_part, list_entry);
+
+        Status = read_data(fcb->Vcb, rp->addr, rp->to_read, rp->csum, false, rp->buf, rp->c, NULL, Irp, 0, rp->mdl,
+                           fcb && fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
+        if (!NT_SUCCESS(Status)) {
+            ERR("read_data returned %08x\n", Status);
+            goto exit;
+        }
+
+        if (rp->compression == BTRFS_COMPRESSION_NONE) {
+            if (rp->buf_free)
+                RtlCopyMemory(rp->data, rp->buf + rp->bumpoff, rp->read);
+        } else {
+            uint8_t *decomp = NULL, *buf2;
+            ULONG outlen, inlen, off2;
+            uint32_t inpageoff = 0;
+
+            off2 = (ULONG)(rp->ed_offset + rp->off);
+            buf2 = rp->buf;
+            inlen = (ULONG)rp->ed_size;
+
+            if (rp->compression == BTRFS_COMPRESSION_LZO) {
+                ULONG inoff = sizeof(uint32_t);
+
+                rp->ed_size -= sizeof(uint32_t);
+
+                // If reading a few sectors in, skip to the interesting bit
+                while (off2 > LZO_PAGE_SIZE) {
+                    uint32_t partlen;
+
+                    if (inlen < sizeof(uint32_t))
+                        break;
+
+                    partlen = *(uint32_t*)(buf2 + inoff);
+
+                    if (partlen < inlen) {
+                        off2 -= LZO_PAGE_SIZE;
+                        inoff += partlen + sizeof(uint32_t);
+                        inlen -= partlen + sizeof(uint32_t);
+
+                        if (LZO_PAGE_SIZE - (inoff % LZO_PAGE_SIZE) < sizeof(uint32_t))
+                            inoff = ((inoff / LZO_PAGE_SIZE) + 1) * LZO_PAGE_SIZE;
+                    } else
+                        break;
+                }
+
+                buf2 = &buf2[inoff];
+                inpageoff = inoff % LZO_PAGE_SIZE;
+            }
+
+            if (off2 != 0) {
+                outlen = off2 + min(rp->read, (uint32_t)(rp->ed_num_bytes - rp->off));
+
+                decomp = ExAllocatePoolWithTag(pool_type, outlen, ALLOC_TAG);
+                if (!decomp) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
+            } else
+                outlen = min(rp->read, (uint32_t)(rp->ed_num_bytes - rp->off));
+
+            if (rp->compression == BTRFS_COMPRESSION_ZLIB) {
+                Status = zlib_decompress(buf2, inlen, decomp ? decomp : rp->data, outlen);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zlib_decompress returned %08x\n", Status);
+
+                    if (decomp)
+                        ExFreePool(decomp);
+
+                    goto exit;
+                }
+            } else if (rp->compression == BTRFS_COMPRESSION_LZO) {
+                Status = lzo_decompress(buf2, inlen, decomp ? decomp : rp->data, outlen, inpageoff);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("lzo_decompress returned %08x\n", Status);
+
+                    if (decomp)
+                        ExFreePool(decomp);
+
+                    goto exit;
+                }
+            } else if (rp->compression == BTRFS_COMPRESSION_ZSTD) {
+                Status = zstd_decompress(buf2, inlen, decomp ? decomp : rp->data, outlen);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zstd_decompress returned %08x\n", Status);
+
+                    if (decomp)
+                        ExFreePool(decomp);
+
+                    goto exit;
+                }
+            } else {
+                ERR("unsupported compression type %x\n", rp);
+                Status = STATUS_NOT_SUPPORTED;
+
+                if (decomp)
+                    ExFreePool(decomp);
+
+                goto exit;
+            }
+
+            if (decomp) {
+                RtlCopyMemory(rp->data, decomp + off2, (size_t)min(rp->read, rp->ed_num_bytes - rp->off));
+                ExFreePool(decomp);
+            }
+        }
+
+        le = le->Flink;
+    }
+
     if (length > 0 && start + bytes_read < fcb->inode_item.st_size) {
         uint32_t read = (uint32_t)min(fcb->inode_item.st_size - start - bytes_read, length);
 
@@ -3157,6 +3184,15 @@ nextitem:
         *pbr = bytes_read;
 
 exit:
+    while (!IsListEmpty(&read_parts)) {
+        read_part* rp = CONTAINING_RECORD(RemoveHeadList(&read_parts), read_part, list_entry);
+
+        if (rp->buf_free)
+            ExFreePool(rp->buf);
+
+        ExFreePool(rp);
+    }
+
     return Status;
 }
 
