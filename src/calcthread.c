@@ -18,43 +18,7 @@
 #include "btrfs_drv.h"
 #include "xxhash.h"
 
-static void do_calc_crc32(device_extension* Vcb, calc_job* cj, uint8_t* src, uint32_t* dest) {
-    // FIXME - do at DISPATCH irql?
-
-    *dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sector_size);
-
-    if (InterlockedDecrement(&cj->left) == 0)
-        KeSetEvent(&cj->event, 0, false);
-}
-
-static void do_calc_xxhash(device_extension* Vcb, calc_job* cj, uint8_t* src, uint64_t* dest) {
-    // FIXME - do at DISPATCH irql?
-
-    *dest = XXH64(src, Vcb->superblock.sector_size, 0);
-
-    if (InterlockedDecrement(&cj->left) == 0)
-        KeSetEvent(&cj->event, 0, false);
-}
-
-static void do_calc_sha256(device_extension* Vcb, calc_job* cj, uint8_t* src, uint8_t* dest) {
-    // FIXME - do at DISPATCH irql?
-
-    calc_sha256(dest, src, Vcb->superblock.sector_size);
-
-    if (InterlockedDecrement(&cj->left) == 0)
-        KeSetEvent(&cj->event, 0, false);
-}
-
-static void do_calc_blake2(device_extension* Vcb, calc_job* cj, uint8_t* src, uint8_t* dest) {
-    // FIXME - do at DISPATCH irql?
-
-    blake2b(dest, BLAKE2_HASH_SIZE, src, Vcb->superblock.sector_size);
-
-    if (InterlockedDecrement(&cj->left) == 0)
-        KeSetEvent(&cj->event, 0, false);
-}
-
-static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
+void calc_thread_main(device_extension* Vcb, calc_job* cj) {
     while (true) {
         KIRQL irql;
         calc_job* cj2;
@@ -80,11 +44,21 @@ static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
             cj2 = CONTAINING_RECORD(Vcb->calcthreads.job_list.Flink, calc_job, list_entry);
         }
 
-        src = cj2->data;
-        cj2->data += Vcb->superblock.sector_size;
+        src = cj2->in;
+        dest = cj2->out;
 
-        dest = cj2->csum;
-        cj2->csum = (uint8_t*)cj2->csum + Vcb->csum_size;
+        switch (cj2->type) {
+            case calc_thread_crc32c:
+            case calc_thread_xxhash:
+            case calc_thread_sha256:
+            case calc_thread_blake2:
+                cj2->in = (uint8_t*)cj2->in + Vcb->superblock.sector_size;
+                cj2->out = (uint8_t*)cj2->out + Vcb->csum_size;
+            break;
+
+            default:
+                break;
+        }
 
         cj2->not_started--;
 
@@ -97,21 +71,48 @@ static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
         switch (cj2->type) {
             case calc_thread_crc32c:
-                do_calc_crc32(Vcb, cj2, src, dest);
+                *(uint32_t*)dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sector_size);
             break;
 
             case calc_thread_xxhash:
-                do_calc_xxhash(Vcb, cj2, src, dest);
+                *(uint64_t*)dest = XXH64(src, Vcb->superblock.sector_size, 0);
             break;
 
             case calc_thread_sha256:
-                do_calc_sha256(Vcb, cj2, src, dest);
+                calc_sha256(dest, src, Vcb->superblock.sector_size);
             break;
 
             case calc_thread_blake2:
-                do_calc_blake2(Vcb, cj2, src, dest);
+                blake2b(dest, BLAKE2_HASH_SIZE, src, Vcb->superblock.sector_size);
+            break;
+
+            case calc_thread_decomp_zlib:
+                cj2->Status = zlib_decompress(src, cj2->inlen, dest, cj2->outlen);
+
+                if (!NT_SUCCESS(cj2->Status))
+                    ERR("zlib_decompress returned %08x\n", cj2->Status);
+
+            break;
+
+            case calc_thread_decomp_lzo:
+                cj2->Status = lzo_decompress(src, cj2->inlen, dest, cj2->outlen, cj2->off);
+
+                if (!NT_SUCCESS(cj2->Status))
+                    ERR("lzo_decompress returned %08x\n", cj2->Status);
+
+            break;
+
+            case calc_thread_decomp_zstd:
+                cj2->Status = zstd_decompress(src, cj2->inlen, dest, cj2->outlen);
+
+                if (!NT_SUCCESS(cj2->Status))
+                    ERR("zstd_decompress returned %08x\n", cj2->Status);
+
             break;
         }
+
+        if (InterlockedDecrement(&cj2->left) == 0)
+            KeSetEvent(&cj2->event, 0, false);
 
         if (last_one)
             break;
@@ -122,8 +123,8 @@ void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* c
     KIRQL irql;
     calc_job cj;
 
-    cj.data = data;
-    cj.csum = csum;
+    cj.in = data;
+    cj.out = csum;
     cj.left = cj.not_started = sectors;
 
     switch (Vcb->superblock.csum_type) {
@@ -158,6 +159,60 @@ void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* c
     calc_thread_main(Vcb, &cj);
 
     KeWaitForSingleObject(&cj.event, Executive, KernelMode, false, NULL);
+}
+
+NTSTATUS add_calc_job_decomp(device_extension* Vcb, uint8_t compression, void* in, unsigned int inlen,
+                             void* out, unsigned int outlen, unsigned int off, calc_job** pcj) {
+    calc_job* cj;
+    KIRQL irql;
+
+    cj = ExAllocatePoolWithTag(NonPagedPool, sizeof(calc_job), ALLOC_TAG);
+    if (!cj) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    cj->in = in;
+    cj->inlen = inlen;
+    cj->out = out;
+    cj->outlen = outlen;
+    cj->off = off;
+    cj->left = cj->not_started = 1;
+    cj->Status = STATUS_SUCCESS;
+
+    switch (compression) {
+        case BTRFS_COMPRESSION_ZLIB:
+            cj->type = calc_thread_decomp_zlib;
+        break;
+
+        case BTRFS_COMPRESSION_LZO:
+            cj->type = calc_thread_decomp_lzo;
+        break;
+
+        case BTRFS_COMPRESSION_ZSTD:
+            cj->type = calc_thread_decomp_zstd;
+        break;
+
+        default:
+            ERR("unexpected compression type %x\n", compression);
+            ExFreePool(cj);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    KeInitializeEvent(&cj->event, NotificationEvent, false);
+
+    KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
+
+    InsertTailList(&Vcb->calcthreads.job_list, &cj->list_entry);
+
+    KeSetEvent(&Vcb->calcthreads.event, 0, false);
+    KeClearEvent(&Vcb->calcthreads.event);
+
+    KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
+
+    *pcj = cj;
+
+    return STATUS_SUCCESS;
 }
 
 _Function_class_(KSTART_ROUTINE)

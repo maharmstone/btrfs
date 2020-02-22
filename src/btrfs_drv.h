@@ -608,16 +608,21 @@ enum calc_thread_type {
     calc_thread_crc32c,
     calc_thread_xxhash,
     calc_thread_sha256,
-    calc_thread_blake2
+    calc_thread_blake2,
+    calc_thread_decomp_zlib,
+    calc_thread_decomp_lzo,
+    calc_thread_decomp_zstd,
 };
 
 typedef struct {
     LIST_ENTRY list_entry;
-    uint8_t* data;
-    void* csum;
+    void* in;
+    void* out;
+    unsigned int inlen, outlen, off;
     LONG left, not_started;
     KEVENT event;
     enum calc_thread_type type;
+    NTSTATUS Status;
 } calc_job;
 
 typedef struct {
@@ -1539,6 +1544,9 @@ _Function_class_(KSTART_ROUTINE)
 void __stdcall calc_thread(void* context);
 
 void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* csum);
+NTSTATUS add_calc_job_decomp(device_extension* Vcb, uint8_t compression, void* in, unsigned int inlen,
+                             void* out, unsigned int outlen, unsigned int off, calc_job** pcj);
+void calc_thread_main(device_extension* Vcb, calc_job* cj);
 
 // in balance.c
 NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);

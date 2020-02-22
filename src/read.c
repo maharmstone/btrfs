@@ -2795,13 +2795,22 @@ typedef struct {
     read_part_extent extents[1];
 } read_part;
 
+typedef struct {
+    LIST_ENTRY list_entry;
+    calc_job* cj;
+    void* decomp;
+    void* data;
+    unsigned int offset;
+    size_t length;
+} comp_calc_job;
+
 NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
     uint32_t bytes_read = 0;
     uint64_t last_end;
     LIST_ENTRY* le;
     POOL_TYPE pool_type;
-    LIST_ENTRY read_parts;
+    LIST_ENTRY read_parts, calc_jobs;
 
     TRACE("(%p, %p, %I64x, %I64x, %p)\n", fcb, data, start, length, pbr);
 
@@ -2815,6 +2824,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     }
 
     InitializeListHead(&read_parts);
+    InitializeListHead(&calc_jobs);
 
     pool_type = fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? NonPagedPool : PagedPool;
 
@@ -3174,6 +3184,7 @@ nextitem:
                 uint8_t *decomp = NULL, *buf2;
                 ULONG outlen, inlen, off2;
                 uint32_t inpageoff = 0;
+                comp_calc_job* ccj;
 
                 off2 = (ULONG)(rp->extents[i].ed_offset + rp->extents[i].off);
                 buf2 = buf;
@@ -3220,60 +3231,37 @@ nextitem:
                 } else
                     outlen = min(rp->read, (uint32_t)(rp->extents[i].ed_num_bytes - rp->extents[i].off));
 
-                switch (rp->compression) {
-                    case BTRFS_COMPRESSION_ZLIB:
-                        Status = zlib_decompress(buf2, inlen, decomp ? decomp : rp->data, outlen);
+                ccj = (comp_calc_job*)ExAllocatePoolWithTag(pool_type, sizeof(comp_calc_job), ALLOC_TAG);
+                if (!ccj) {
+                    ERR("out of memory\n");
 
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("zlib_decompress returned %08x\n", Status);
+                    if (decomp)
+                        ExFreePool(decomp);
 
-                            if (decomp)
-                                ExFreePool(decomp);
-
-                            goto exit;
-                        }
-                    break;
-
-                    case BTRFS_COMPRESSION_LZO:
-                        Status = lzo_decompress(buf2, inlen, decomp ? decomp : rp->data, outlen, inpageoff);
-
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("lzo_decompress returned %08x\n", Status);
-
-                            if (decomp)
-                                ExFreePool(decomp);
-
-                            goto exit;
-                        }
-                    break;
-
-                    case BTRFS_COMPRESSION_ZSTD:
-                        Status = zstd_decompress(buf2, inlen, decomp ? decomp : rp->data, outlen);
-
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("zstd_decompress returned %08x\n", Status);
-
-                            if (decomp)
-                                ExFreePool(decomp);
-
-                            goto exit;
-                        }
-                    break;
-
-                    default:
-                        ERR("unsupported compression type %x\n", rp);
-                        Status = STATUS_NOT_SUPPORTED;
-
-                        if (decomp)
-                            ExFreePool(decomp);
-
-                        goto exit;
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
                 }
 
-                if (decomp) {
-                    RtlCopyMemory(rp->data, decomp + off2, (size_t)min(rp->read, rp->extents[i].ed_num_bytes - rp->extents[i].off));
-                    ExFreePool(decomp);
+                Status = add_calc_job_decomp(fcb->Vcb, rp->compression, buf2, inlen, decomp ? decomp : rp->data, outlen,
+                                             inpageoff, &ccj->cj);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_calc_job_decomp returned %08x\n", Status);
+
+                    if (decomp)
+                        ExFreePool(decomp);
+
+                    ExFreePool(ccj);
+
+                    goto exit;
                 }
+
+                ccj->data = rp->data;
+                ccj->decomp = decomp;
+
+                ccj->offset = off2;
+                ccj->length = (size_t)min(rp->read, rp->extents[i].ed_num_bytes - rp->extents[i].off);
+
+                InsertTailList(&calc_jobs, &ccj->list_entry);
 
                 buf += rp->extents[i].ed_size;
                 rp->data = (uint8_t*)rp->data + rp->extents[i].ed_num_bytes - rp->extents[i].off;
@@ -3294,6 +3282,25 @@ nextitem:
     }
 
     Status = STATUS_SUCCESS;
+
+    while (!IsListEmpty(&calc_jobs)) {
+        comp_calc_job* ccj = CONTAINING_RECORD(RemoveTailList(&calc_jobs), comp_calc_job, list_entry);
+
+        calc_thread_main(fcb->Vcb, ccj->cj);
+
+        KeWaitForSingleObject(&ccj->cj->event, Executive, KernelMode, false, NULL);
+
+        if (!NT_SUCCESS(ccj->cj->Status))
+            Status = ccj->cj->Status;
+
+        if (ccj->decomp) {
+            RtlCopyMemory(ccj->data, (uint8_t*)ccj->decomp + ccj->offset, ccj->length);
+            ExFreePool(ccj->decomp);
+        }
+
+        ExFreePool(ccj);
+    }
+
     if (pbr)
         *pbr = bytes_read;
 
@@ -3308,6 +3315,15 @@ exit:
             ExFreePool(rp->csum);
 
         ExFreePool(rp);
+    }
+
+    while (!IsListEmpty(&calc_jobs)) {
+        comp_calc_job* ccj = CONTAINING_RECORD(RemoveHeadList(&calc_jobs), comp_calc_job, list_entry);
+
+        if (ccj->decomp)
+            ExFreePool(ccj->decomp);
+
+        ExFreePool(ccj);
     }
 
     return Status;
@@ -3432,10 +3448,17 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
             return STATUS_PENDING;
         }
 
-        if (fcb->ads)
+        if (fcb->ads) {
             Status = read_stream(fcb, data, start, length, bytes_read);
-        else
+
+            if (!NT_SUCCESS(Status))
+                ERR("read_stream returned %08x\n", Status);
+        } else {
             Status = read_file(fcb, data, start, length, bytes_read, Irp);
+
+            if (!NT_SUCCESS(Status))
+                ERR("read_file returned %08x\n", Status);
+        }
 
         *bytes_read += addon;
         TRACE("read %u bytes\n", *bytes_read);

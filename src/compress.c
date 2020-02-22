@@ -336,7 +336,7 @@ NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
     ret = inflateInit(&c_stream);
 
     if (ret != Z_OK) {
-        ERR("inflateInit returned %08x\n", ret);
+        ERR("inflateInit returned %i\n", ret);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -350,7 +350,7 @@ NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
         ret = inflate(&c_stream, Z_NO_FLUSH);
 
         if (ret != Z_OK && ret != Z_STREAM_END) {
-            ERR("inflate returned %08x\n", ret);
+            ERR("inflate returned %i\n", ret);
             inflateEnd(&c_stream);
             return STATUS_INTERNAL_ERROR;
         }
@@ -362,7 +362,7 @@ NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
     ret = inflateEnd(&c_stream);
 
     if (ret != Z_OK) {
-        ERR("inflateEnd returned %08x\n", ret);
+        ERR("inflateEnd returned %i\n", ret);
         return STATUS_INTERNAL_ERROR;
     }
 
