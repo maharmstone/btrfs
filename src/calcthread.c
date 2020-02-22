@@ -95,20 +95,20 @@ static void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
         KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
 
-        switch (Vcb->superblock.csum_type) {
-            case CSUM_TYPE_CRC32C:
+        switch (cj2->type) {
+            case calc_thread_crc32c:
                 do_calc_crc32(Vcb, cj2, src, dest);
             break;
 
-            case CSUM_TYPE_XXHASH:
+            case calc_thread_xxhash:
                 do_calc_xxhash(Vcb, cj2, src, dest);
             break;
 
-            case CSUM_TYPE_SHA256:
+            case calc_thread_sha256:
                 do_calc_sha256(Vcb, cj2, src, dest);
             break;
 
-            case CSUM_TYPE_BLAKE2:
+            case calc_thread_blake2:
                 do_calc_blake2(Vcb, cj2, src, dest);
             break;
         }
@@ -125,6 +125,25 @@ void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* c
     cj.data = data;
     cj.csum = csum;
     cj.left = cj.not_started = sectors;
+
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C:
+            cj.type = calc_thread_crc32c;
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            cj.type = calc_thread_xxhash;
+        break;
+
+        case CSUM_TYPE_SHA256:
+            cj.type = calc_thread_sha256;
+        break;
+
+        case CSUM_TYPE_BLAKE2:
+            cj.type = calc_thread_blake2;
+        break;
+    }
+
     KeInitializeEvent(&cj.event, NotificationEvent, false);
 
     KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);

@@ -604,12 +604,20 @@ typedef struct {
     LIST_ENTRY list_entry;
 } sys_chunk;
 
+enum calc_thread_type {
+    calc_thread_crc32c,
+    calc_thread_xxhash,
+    calc_thread_sha256,
+    calc_thread_blake2
+};
+
 typedef struct {
+    LIST_ENTRY list_entry;
     uint8_t* data;
     void* csum;
     LONG left, not_started;
     KEVENT event;
-    LIST_ENTRY list_entry;
+    enum calc_thread_type type;
 } calc_job;
 
 typedef struct {
