@@ -4047,48 +4047,6 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, LIST_ENTRY* rollback) {
-    NTSTATUS Status;
-    uint64_t i;
-
-    for (i = 0; i < sector_align(end_data - start_data, COMPRESSED_EXTENT_SIZE) / COMPRESSED_EXTENT_SIZE; i++) {
-        uint64_t s2, e2;
-        bool compressed;
-
-        s2 = start_data + (i * COMPRESSED_EXTENT_SIZE);
-        e2 = min(s2 + COMPRESSED_EXTENT_SIZE, end_data);
-
-        Status = write_compressed_bit(fcb, s2, e2, (uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), &compressed, Irp, rollback);
-
-        if (!NT_SUCCESS(Status)) {
-            ERR("write_compressed_bit returned %08x\n", Status);
-            return Status;
-        }
-
-        // If the first 128 KB of a file is incompressible, we set the nocompress flag so we don't
-        // bother with the rest of it.
-        if (s2 == 0 && e2 == COMPRESSED_EXTENT_SIZE && !compressed && !fcb->Vcb->options.compress_force) {
-            fcb->inode_item.flags |= BTRFS_INODE_NOCOMPRESS;
-            fcb->inode_item_changed = true;
-            mark_fcb_dirty(fcb);
-
-            // write subsequent data non-compressed
-            if (e2 < end_data) {
-                Status = do_write_file(fcb, e2, end_data, (uint8_t*)data + e2, Irp, false, 0, rollback);
-
-                if (!NT_SUCCESS(Status)) {
-                    ERR("do_write_file returned %08x\n", Status);
-                    return Status;
-                }
-            }
-
-            return STATUS_SUCCESS;
-        }
-    }
-
-    return STATUS_SUCCESS;
-}
-
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, bool paging_io, bool no_cache,
                      bool wait, bool deferred_write, bool write_irp, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);

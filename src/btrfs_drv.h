@@ -1069,6 +1069,23 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
     }
 }
 
+__inline static uint8_t choose_compression_type(fcb* fcb) {
+    if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
+        return fcb->Vcb->options.compress_type;
+    else {
+        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
+            return BTRFS_COMPRESSION_ZSTD;
+        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
+            return BTRFS_COMPRESSION_ZSTD;
+        else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
+            return BTRFS_COMPRESSION_LZO;
+        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
+            return BTRFS_COMPRESSION_LZO;
+        else
+            return BTRFS_COMPRESSION_ZLIB;
+    }
+}
+
 // in btrfs.c
 _Ret_maybenull_
 device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid);
@@ -1330,7 +1347,6 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
                          _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ uint8_t compression, _In_ uint64_t decoded_size, _In_ bool file_write, _In_ uint64_t irp_offset);
 
 NTSTATUS do_write_file(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, bool file_write, uint32_t irp_offset, LIST_ENTRY* rollback);
-NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, LIST_ENTRY* rollback);
 bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length, uint64_t* address);
 void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t* lockaddr, uint64_t* locklen);
 void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext);
@@ -1523,7 +1539,7 @@ void watch_registry(HANDLE regh);
 NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen);
 NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t inpageoff);
 NTSTATUS zstd_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen);
-NTSTATUS write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, LIST_ENTRY* rollback);
 
 // in galois.c
 void galois_double(uint8_t* data, uint32_t len);

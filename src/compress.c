@@ -325,6 +325,47 @@ static void zlib_free(void* opaque, void* ptr) {
     ExFreePool(ptr);
 }
 
+static NTSTATUS zlib_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int level, unsigned int* space_left) {
+    z_stream c_stream;
+    int ret;
+
+    c_stream.zalloc = zlib_alloc;
+    c_stream.zfree = zlib_free;
+    c_stream.opaque = (voidpf)0;
+
+    ret = deflateInit(&c_stream, level);
+
+    if (ret != Z_OK) {
+        ERR("deflateInit returned %i\n", ret);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    c_stream.next_in = inbuf;
+    c_stream.avail_in = inlen;
+
+    c_stream.next_out = outbuf;
+    c_stream.avail_out = outlen;
+
+    do {
+        ret = deflate(&c_stream, Z_FINISH);
+
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            ERR("deflate returned %i\n", ret);
+            deflateEnd(&c_stream);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (c_stream.avail_in == 0 || c_stream.avail_out == 0)
+            break;
+    } while (ret != Z_STREAM_END);
+
+    deflateEnd(&c_stream);
+
+    *space_left = c_stream.avail_in > 0 ? 0 : c_stream.avail_out;
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen) {
     z_stream c_stream;
     int ret;
@@ -1082,23 +1123,8 @@ static NTSTATUS zstd_write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_
     return STATUS_DISK_FULL;
 }
 
-NTSTATUS write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback) {
-    uint8_t type;
-
-    if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
-        type = fcb->Vcb->options.compress_type;
-    else {
-        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
-            type = BTRFS_COMPRESSION_ZSTD;
-        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
-            type = BTRFS_COMPRESSION_ZSTD;
-        else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
-            type = BTRFS_COMPRESSION_LZO;
-        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
-            type = BTRFS_COMPRESSION_LZO;
-        else
-            type = BTRFS_COMPRESSION_ZLIB;
-    }
+static NTSTATUS write_compressed_bit(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, bool* compressed, PIRP Irp, LIST_ENTRY* rollback) {
+    uint8_t type = choose_compression_type(fcb);
 
     if (type == BTRFS_COMPRESSION_ZSTD) {
         fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD;
@@ -1166,4 +1192,288 @@ end:
     ZSTD_freeDStream(stream);
 
     return Status;
+}
+
+typedef struct {
+    uint8_t buf[COMPRESSED_EXTENT_SIZE];
+    uint8_t compression_type;
+    unsigned int inlen;
+    unsigned int outlen;
+} comp_part;
+
+NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+    uint64_t i;
+    unsigned int num_parts = (unsigned int)sector_align(end_data - start_data, COMPRESSED_EXTENT_SIZE) / COMPRESSED_EXTENT_SIZE;
+    uint8_t type = BTRFS_COMPRESSION_ZLIB; // choose_compression_type(fcb); // FIXME
+    comp_part* parts;
+    unsigned int buflen = 0;
+    uint8_t* buf;
+    chunk* c = NULL;
+    LIST_ENTRY* le;
+    uint64_t address, extaddr;
+    void* csum = NULL;
+
+    parts = ExAllocatePoolWithTag(PagedPool, sizeof(comp_part) * num_parts, ALLOC_TAG);
+    if (!parts) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    // FIXME - parallelize
+
+    for (i = 0; i < num_parts; i++) {
+        unsigned int space_left;
+
+        if (i == num_parts - 1)
+            parts[i].inlen = ((unsigned int)(end_data - start_data) - ((num_parts - 1) * COMPRESSED_EXTENT_SIZE));
+        else
+            parts[i].inlen = COMPRESSED_EXTENT_SIZE;
+
+        switch (type) {
+            case BTRFS_COMPRESSION_ZLIB:
+                Status = zlib_compress((uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen, parts[i].buf, parts[i].inlen,
+                                       fcb->Vcb->options.zlib_level, &space_left);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zlib_compress returned %08x\n", Status);
+                    ExFreePool(parts);
+                    return Status;
+                }
+            break;
+
+            // FIXME - lzo and zstd
+        }
+
+        if (space_left >= fcb->Vcb->superblock.sector_size) {
+            parts[i].compression_type = type;
+            parts[i].outlen = parts[i].inlen - space_left;
+
+            if ((parts[i].outlen % fcb->Vcb->superblock.sector_size) != 0) {
+                unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sector_size);
+
+                RtlZeroMemory(parts[i].buf + parts[i].outlen, newlen - parts[i].outlen);
+
+                parts[i].outlen = newlen;
+            }
+        } else {
+            parts[i].compression_type = BTRFS_COMPRESSION_NONE;
+            parts[i].outlen = (unsigned int)sector_align(parts[i].inlen, fcb->Vcb->superblock.sector_size);
+        }
+
+        buflen += parts[i].outlen;
+    }
+
+    // FIXME - check if first 128 KB of file is incompressible
+
+    // join together into continuous buffer
+
+    buf = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
+    if (!buf) {
+        ERR("out of memory\n");
+        ExFreePool(parts);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    {
+        uint8_t* buf2 = buf;
+
+        for (i = 0; i < num_parts; i++) {
+            if (parts[i].compression_type == BTRFS_COMPRESSION_NONE)
+                RtlCopyMemory(buf2, (uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].outlen);
+            else
+                RtlCopyMemory(buf2, parts[i].buf, parts[i].outlen);
+
+            buf2 += parts[i].outlen;
+        }
+    }
+
+    // find an address
+
+    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, true);
+
+    le = fcb->Vcb->chunks.Flink;
+    while (le != &fcb->Vcb->chunks) {
+        chunk* c2 = CONTAINING_RECORD(le, chunk, list_entry);
+
+        if (!c2->readonly && !c2->reloc) {
+            acquire_chunk_lock(c2, fcb->Vcb);
+
+            if (c2->chunk_item->type == fcb->Vcb->data_flags && (c2->chunk_item->size - c2->used) >= buflen) {
+                if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
+                    c = c2;
+                    c->used += buflen;
+                    space_list_subtract(c, false, address, buflen, rollback);
+                    release_chunk_lock(c2, fcb->Vcb);
+                    break;
+                }
+            }
+
+            release_chunk_lock(c2, fcb->Vcb);
+        }
+
+        le = le->Flink;
+    }
+
+    ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+    if (!c) {
+        chunk* c2;
+
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, true);
+
+        Status = alloc_chunk(fcb->Vcb, fcb->Vcb->data_flags, &c2, false);
+
+        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("alloc_chunk returned %08x\n", Status);
+            ExFreePool(buf);
+            ExFreePool(parts);
+            return Status;
+        }
+
+        acquire_chunk_lock(c2, fcb->Vcb);
+
+        if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
+            c = c2;
+            c->used += buflen;
+            space_list_subtract(c, false, address, buflen, rollback);
+        }
+
+        release_chunk_lock(c2, fcb->Vcb);
+    }
+
+    if (!c) {
+        WARN("couldn't find any data chunks with %I64x bytes free\n", buflen);
+        ExFreePool(buf);
+        ExFreePool(parts);
+        return STATUS_DISK_FULL;
+    }
+
+    // write to disk
+
+    TRACE("writing %x bytes to %I64x\n", buflen, address);
+
+    Status = write_data_complete(fcb->Vcb, address, buf, buflen, Irp, NULL, false, 0,
+                                 fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
+    if (!NT_SUCCESS(Status)) {
+        ERR("write_data_complete returned %08x\n", Status);
+        ExFreePool(buf);
+        ExFreePool(parts);
+        return Status;
+    }
+
+    // FIXME - do rest of the function while we're waiting for I/O to finish?
+
+    // calculate csums if necessary
+
+    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+        unsigned int sl = buflen / fcb->Vcb->superblock.sector_size;
+
+        csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
+        if (!csum) {
+            ERR("out of memory\n");
+            ExFreePool(buf);
+            ExFreePool(parts);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        do_calc_job(fcb->Vcb, buf, sl, csum);
+    }
+
+    ExFreePool(buf);
+
+    // add extents to fcb
+
+    extaddr = address;
+
+    for (i = 0; i < num_parts; i++) {
+        EXTENT_DATA* ed;
+        EXTENT_DATA2* ed2;
+        void* csum2;
+
+        ed = ExAllocatePoolWithTag(PagedPool, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2), ALLOC_TAG);
+        if (!ed) {
+            ERR("out of memory\n");
+            ExFreePool(parts);
+
+            if (csum)
+                ExFreePool(csum);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ed->generation = fcb->Vcb->superblock.generation;
+        ed->decoded_size = parts[i].inlen;
+        ed->compression = parts[i].compression_type;
+        ed->encryption = BTRFS_ENCRYPTION_NONE;
+        ed->encoding = BTRFS_ENCODING_NONE;
+        ed->type = EXTENT_TYPE_REGULAR;
+
+        ed2 = (EXTENT_DATA2*)ed->data;
+        ed2->address = extaddr;
+        ed2->size = parts[i].outlen;
+        ed2->offset = 0;
+        ed2->num_bytes = parts[i].inlen;
+
+        if (csum) {
+            csum2 = ExAllocatePoolWithTag(PagedPool, parts[i].outlen * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size, ALLOC_TAG);
+            if (!csum2) {
+                ERR("out of memory\n");
+                ExFreePool(ed);
+                ExFreePool(parts);
+                ExFreePool(csum);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            RtlCopyMemory(csum2, (uint8_t*)csum + ((extaddr - address) * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size),
+                          parts[i].outlen * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
+        } else
+            csum2 = NULL;
+
+        Status = add_extent_to_fcb(fcb, start_data + (i * COMPRESSED_EXTENT_SIZE), ed, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2),
+                                   true, csum2, rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_extent_to_fcb returned %08x\n", Status);
+            ExFreePool(ed);
+            ExFreePool(parts);
+
+            if (csum)
+                ExFreePool(csum);
+
+            return Status;
+        }
+
+        ExFreePool(ed);
+
+        fcb->inode_item.st_blocks += parts[i].inlen;
+
+        extaddr += parts[i].outlen;
+    }
+
+    if (csum)
+        ExFreePool(csum);
+
+    // update extent refcounts
+
+    ExAcquireResourceExclusiveLite(&c->changed_extents_lock, true);
+
+    extaddr = address;
+
+    for (i = 0; i < num_parts; i++) {
+        add_changed_extent_ref(c, extaddr, parts[i].outlen, fcb->subvol->id, fcb->inode,
+                               start_data + (i * COMPRESSED_EXTENT_SIZE), 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+
+        extaddr += parts[i].outlen;
+    }
+
+    ExReleaseResourceLite(&c->changed_extents_lock);
+
+    fcb->extents_changed = true;
+    fcb->inode_item_changed = true;
+    mark_fcb_dirty(fcb);
+
+    ExFreePool(parts);
+
+    return STATUS_SUCCESS;
 }
