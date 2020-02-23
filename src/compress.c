@@ -90,7 +90,7 @@ typedef struct {
 static void* zstd_malloc(void* opaque, size_t size);
 static void zstd_free(void* opaque, void* address);
 
-ZSTD_customMem zstd_mem = { .customAlloc = zstd_malloc, .customFree = zstd_free, .opaque = NULL };
+static const ZSTD_customMem zstd_mem = { .customAlloc = zstd_malloc, .customFree = zstd_free, .opaque = NULL };
 
 static uint8_t lzo_nextbyte(lzo_stream* stream) {
     uint8_t c;
@@ -1272,6 +1272,68 @@ static NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, ui
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS zstd_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t level, unsigned int* space_left) {
+    ZSTD_CStream* stream;
+    size_t init_res, written;
+    ZSTD_inBuffer input;
+    ZSTD_outBuffer output;
+    ZSTD_parameters params;
+
+    stream = ZSTD_createCStream_advanced(zstd_mem);
+
+    if (!stream) {
+        ERR("ZSTD_createCStream failed.\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    params = ZSTD_getParams(level, inlen, 0);
+
+    if (params.cParams.windowLog > ZSTD_BTRFS_MAX_WINDOWLOG)
+        params.cParams.windowLog = ZSTD_BTRFS_MAX_WINDOWLOG;
+
+    init_res = ZSTD_initCStream_advanced(stream, NULL, 0, params, inlen);
+
+    if (ZSTD_isError(init_res)) {
+        ERR("ZSTD_initCStream_advanced failed: %s\n", ZSTD_getErrorName(init_res));
+        ZSTD_freeCStream(stream);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    input.src = inbuf;
+    input.size = inlen;
+    input.pos = 0;
+
+    output.dst = outbuf;
+    output.size = outlen;
+    output.pos = 0;
+
+    while (input.pos < input.size && output.pos < output.size) {
+        written = ZSTD_compressStream(stream, &output, &input);
+
+        if (ZSTD_isError(written)) {
+            ERR("ZSTD_compressStream failed: %s\n", ZSTD_getErrorName(written));
+            ZSTD_freeCStream(stream);
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    written = ZSTD_endStream(stream, &output);
+    if (ZSTD_isError(written)) {
+        ERR("ZSTD_endStream failed: %s\n", ZSTD_getErrorName(written));
+        ZSTD_freeCStream(stream);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ZSTD_freeCStream(stream);
+
+    if (input.pos < input.size) // output would be larger than input
+        *space_left = 0;
+    else
+        *space_left = output.size - output.pos;
+
+    return STATUS_SUCCESS;
+}
+
 typedef struct {
     uint8_t buf[COMPRESSED_EXTENT_SIZE];
     uint8_t compression_type;
@@ -1283,7 +1345,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     NTSTATUS Status;
     uint64_t i;
     unsigned int num_parts = (unsigned int)sector_align(end_data - start_data, COMPRESSED_EXTENT_SIZE) / COMPRESSED_EXTENT_SIZE;
-    uint8_t type = BTRFS_COMPRESSION_LZO; // choose_compression_type(fcb); // FIXME
+    uint8_t type = choose_compression_type(fcb);
     comp_part* parts;
     unsigned int buflen = 0;
     uint8_t* buf;
@@ -1329,7 +1391,15 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
                 }
             break;
 
-            // FIXME - zstd
+            case BTRFS_COMPRESSION_ZSTD:
+                Status = zstd_compress((uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen, parts[i].buf, parts[i].inlen,
+                                       fcb->Vcb->options.zstd_level, &space_left);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("zstd_compress returned %08x\n", Status);
+                    ExFreePool(parts);
+                    return Status;
+                }
+            break;
         }
 
         if (space_left >= fcb->Vcb->superblock.sector_size) {
@@ -1338,6 +1408,8 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
 
             if (type == BTRFS_COMPRESSION_LZO)
                 fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO;
+            else if (type == BTRFS_COMPRESSION_ZSTD)
+                fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD;
 
             if ((parts[i].outlen % fcb->Vcb->superblock.sector_size) != 0) {
                 unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sector_size);
