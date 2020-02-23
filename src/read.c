@@ -3091,6 +3091,7 @@ nextitem:
                 rp2->c = last_rp->c;
                 rp2->read = last_rp->read + rp->read;
                 rp2->to_read = last_rp->to_read + rp->to_read;
+                rp2->csum_free = false;
 
                 if (last_rp->csum) {
                     uint32_t sectors = (last_rp->to_read + rp->to_read) / fcb->Vcb->superblock.sector_size;
