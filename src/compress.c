@@ -886,6 +886,12 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
             type = BTRFS_COMPRESSION_ZLIB;
     }
 
+    Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
+    if (!NT_SUCCESS(Status)) {
+        ERR("excise_extents returned %08x\n", Status);
+        return Status;
+    }
+
     parts = ExAllocatePoolWithTag(PagedPool, sizeof(comp_part) * num_parts, ALLOC_TAG);
     if (!parts) {
         ERR("out of memory\n");
