@@ -1069,23 +1069,6 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
     }
 }
 
-__inline static uint8_t choose_compression_type(fcb* fcb) {
-    if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
-        return fcb->Vcb->options.compress_type;
-    else {
-        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
-            return BTRFS_COMPRESSION_ZSTD;
-        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
-            return BTRFS_COMPRESSION_ZSTD;
-        else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
-            return BTRFS_COMPRESSION_LZO;
-        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
-            return BTRFS_COMPRESSION_LZO;
-        else
-            return BTRFS_COMPRESSION_ZLIB;
-    }
-}
-
 // in btrfs.c
 _Ret_maybenull_
 device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid);
