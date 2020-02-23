@@ -964,7 +964,15 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         buflen += parts[i].outlen;
     }
 
-    // FIXME - check if first 128 KB of file is incompressible
+    // check if first 128 KB of file is incompressible
+
+    if (start_data == 0 && parts[0].compression_type == BTRFS_COMPRESSION_NONE && !fcb->Vcb->options.compress_force) {
+        TRACE("adding nocompress flag to subvol %I64x, inode %I64x\n", fcb->subvol->id, fcb->inode);
+
+        fcb->inode_item.flags |= BTRFS_INODE_NOCOMPRESS;
+        fcb->inode_item_changed = true;
+        mark_fcb_dirty(fcb);
+    }
 
     // join together into continuous buffer
 
