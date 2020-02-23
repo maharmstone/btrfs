@@ -325,7 +325,7 @@ static void zlib_free(void* opaque, void* ptr) {
     ExFreePool(ptr);
 }
 
-static NTSTATUS zlib_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int level, unsigned int* space_left) {
+NTSTATUS zlib_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int level, unsigned int* space_left) {
     z_stream c_stream;
     int ret;
 
@@ -711,7 +711,7 @@ end:
     return Status;
 }
 
-static NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int* space_left) {
+NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int* space_left) {
     NTSTATUS Status;
     unsigned int num_pages;
     unsigned int comp_data_len;
@@ -789,7 +789,7 @@ static NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, ui
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS zstd_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t level, unsigned int* space_left) {
+NTSTATUS zstd_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t level, unsigned int* space_left) {
     ZSTD_CStream* stream;
     size_t init_res, written;
     ZSTD_inBuffer input;
@@ -856,6 +856,7 @@ typedef struct {
     uint8_t compression_type;
     unsigned int inlen;
     unsigned int outlen;
+    calc_job* cj;
 } comp_part;
 
 NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, LIST_ENTRY* rollback) {
@@ -898,51 +899,53 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    // FIXME - parallelize
-
     for (i = 0; i < num_parts; i++) {
-        unsigned int space_left;
-
         if (i == num_parts - 1)
             parts[i].inlen = ((unsigned int)(end_data - start_data) - ((num_parts - 1) * COMPRESSED_EXTENT_SIZE));
         else
             parts[i].inlen = COMPRESSED_EXTENT_SIZE;
 
-        switch (type) {
-            case BTRFS_COMPRESSION_ZLIB:
-                Status = zlib_compress((uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen, parts[i].buf, parts[i].inlen,
-                                       fcb->Vcb->options.zlib_level, &space_left);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("zlib_compress returned %08x\n", Status);
-                    ExFreePool(parts);
-                    return Status;
-                }
-            break;
+        Status = add_calc_job_comp(fcb->Vcb, type, (uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen,
+                                   parts[i].buf, parts[i].inlen, &parts[i].cj);
+        if (!NT_SUCCESS(Status)) {
+            ERR("add_calc_job_comp returned %08x\n", Status);
 
-            case BTRFS_COMPRESSION_LZO:
-                Status = lzo_compress((uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen, parts[i].buf, parts[i].inlen,
-                                      &space_left);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("lzo_compress returned %08x\n", Status);
-                    ExFreePool(parts);
-                    return Status;
-                }
-            break;
+            for (unsigned int j = 0; j < i; j++) {
+                KeWaitForSingleObject(&parts[j].cj->event, Executive, KernelMode, false, NULL);
+                ExFreePool(parts[j].cj);
+            }
 
-            case BTRFS_COMPRESSION_ZSTD:
-                Status = zstd_compress((uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen, parts[i].buf, parts[i].inlen,
-                                       fcb->Vcb->options.zstd_level, &space_left);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("zstd_compress returned %08x\n", Status);
-                    ExFreePool(parts);
-                    return Status;
-                }
-            break;
+            ExFreePool(parts);
+            return Status;
+        }
+    }
+
+    Status = STATUS_SUCCESS;
+
+    for (int i = num_parts - 1; i >= 0; i--) {
+        calc_thread_main(fcb->Vcb, parts[i].cj);
+
+        KeWaitForSingleObject(&parts[i].cj->event, Executive, KernelMode, false, NULL);
+
+        if (!NT_SUCCESS(parts[i].cj->Status))
+            Status = parts[i].cj->Status;
+    }
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("calc job returned %08x\n", Status);
+
+        for (unsigned int i = 0; i < num_parts; i++) {
+            ExFreePool(parts[i].cj);
         }
 
-        if (space_left >= fcb->Vcb->superblock.sector_size) {
+        ExFreePool(parts);
+        return Status;
+    }
+
+    for (unsigned int i = 0; i < num_parts; i++) {
+        if (parts[i].cj->space_left >= fcb->Vcb->superblock.sector_size) {
             parts[i].compression_type = type;
-            parts[i].outlen = parts[i].inlen - space_left;
+            parts[i].outlen = parts[i].inlen - parts[i].cj->space_left;
 
             if (type == BTRFS_COMPRESSION_LZO)
                 fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO;
@@ -962,6 +965,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         }
 
         buflen += parts[i].outlen;
+        ExFreePool(parts[i].cj);
     }
 
     // check if first 128 KB of file is incompressible

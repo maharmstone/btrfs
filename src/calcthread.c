@@ -91,7 +91,6 @@ void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
                 if (!NT_SUCCESS(cj2->Status))
                     ERR("zlib_decompress returned %08x\n", cj2->Status);
-
             break;
 
             case calc_thread_decomp_lzo:
@@ -99,7 +98,6 @@ void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
                 if (!NT_SUCCESS(cj2->Status))
                     ERR("lzo_decompress returned %08x\n", cj2->Status);
-
             break;
 
             case calc_thread_decomp_zstd:
@@ -107,7 +105,27 @@ void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
                 if (!NT_SUCCESS(cj2->Status))
                     ERR("zstd_decompress returned %08x\n", cj2->Status);
+            break;
 
+            case calc_thread_comp_zlib:
+                cj2->Status = zlib_compress(src, cj2->inlen, dest, cj2->outlen, Vcb->options.zlib_level, &cj2->space_left);
+
+                if (!NT_SUCCESS(cj2->Status))
+                    ERR("zlib_compress returned %08x\n", cj2->Status);
+            break;
+
+            case calc_thread_comp_lzo:
+                cj2->Status = lzo_compress(src, cj2->inlen, dest, cj2->outlen, &cj2->space_left);
+
+                if (!NT_SUCCESS(cj2->Status))
+                    ERR("lzo_compress returned %08x\n", cj2->Status);
+            break;
+
+            case calc_thread_comp_zstd:
+                cj2->Status = zstd_compress(src, cj2->inlen, dest, cj2->outlen, Vcb->options.zstd_level, &cj2->space_left);
+
+                if (!NT_SUCCESS(cj2->Status))
+                    ERR("zstd_compress returned %08x\n", cj2->Status);
             break;
         }
 
@@ -191,6 +209,59 @@ NTSTATUS add_calc_job_decomp(device_extension* Vcb, uint8_t compression, void* i
 
         case BTRFS_COMPRESSION_ZSTD:
             cj->type = calc_thread_decomp_zstd;
+        break;
+
+        default:
+            ERR("unexpected compression type %x\n", compression);
+            ExFreePool(cj);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    KeInitializeEvent(&cj->event, NotificationEvent, false);
+
+    KeAcquireSpinLock(&Vcb->calcthreads.spinlock, &irql);
+
+    InsertTailList(&Vcb->calcthreads.job_list, &cj->list_entry);
+
+    KeSetEvent(&Vcb->calcthreads.event, 0, false);
+    KeClearEvent(&Vcb->calcthreads.event);
+
+    KeReleaseSpinLock(&Vcb->calcthreads.spinlock, irql);
+
+    *pcj = cj;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS add_calc_job_comp(device_extension* Vcb, uint8_t compression, void* in, unsigned int inlen,
+                           void* out, unsigned int outlen, calc_job** pcj) {
+    calc_job* cj;
+    KIRQL irql;
+
+    cj = ExAllocatePoolWithTag(NonPagedPool, sizeof(calc_job), ALLOC_TAG);
+    if (!cj) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    cj->in = in;
+    cj->inlen = inlen;
+    cj->out = out;
+    cj->outlen = outlen;
+    cj->left = cj->not_started = 1;
+    cj->Status = STATUS_SUCCESS;
+
+    switch (compression) {
+        case BTRFS_COMPRESSION_ZLIB:
+            cj->type = calc_thread_comp_zlib;
+        break;
+
+        case BTRFS_COMPRESSION_LZO:
+            cj->type = calc_thread_comp_lzo;
+        break;
+
+        case BTRFS_COMPRESSION_ZSTD:
+            cj->type = calc_thread_comp_zstd;
         break;
 
         default:

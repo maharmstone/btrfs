@@ -612,13 +612,16 @@ enum calc_thread_type {
     calc_thread_decomp_zlib,
     calc_thread_decomp_lzo,
     calc_thread_decomp_zstd,
+    calc_thread_comp_zlib,
+    calc_thread_comp_lzo,
+    calc_thread_comp_zstd,
 };
 
 typedef struct {
     LIST_ENTRY list_entry;
     void* in;
     void* out;
-    unsigned int inlen, outlen, off;
+    unsigned int inlen, outlen, off, space_left;
     LONG left, not_started;
     KEVENT event;
     enum calc_thread_type type;
@@ -1523,6 +1526,9 @@ NTSTATUS zlib_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
 NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t inpageoff);
 NTSTATUS zstd_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen);
 NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS zlib_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int level, unsigned int* space_left);
+NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int* space_left);
+NTSTATUS zstd_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, uint32_t level, unsigned int* space_left);
 
 // in galois.c
 void galois_double(uint8_t* data, uint32_t len);
@@ -1545,6 +1551,8 @@ void __stdcall calc_thread(void* context);
 void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* csum);
 NTSTATUS add_calc_job_decomp(device_extension* Vcb, uint8_t compression, void* in, unsigned int inlen,
                              void* out, unsigned int outlen, unsigned int off, calc_job** pcj);
+NTSTATUS add_calc_job_comp(device_extension* Vcb, uint8_t compression, void* in, unsigned int inlen,
+                           void* out, unsigned int outlen, calc_job** pcj);
 void calc_thread_main(device_extension* Vcb, calc_job* cj);
 
 // in balance.c
