@@ -3321,8 +3321,12 @@ exit:
     while (!IsListEmpty(&calc_jobs)) {
         comp_calc_job* ccj = CONTAINING_RECORD(RemoveHeadList(&calc_jobs), comp_calc_job, list_entry);
 
+        KeWaitForSingleObject(&ccj->cj->event, Executive, KernelMode, false, NULL);
+
         if (ccj->decomp)
             ExFreePool(ccj->decomp);
+
+        ExFreePool(ccj->cj);
 
         ExFreePool(ccj);
     }
