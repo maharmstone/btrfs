@@ -1194,6 +1194,84 @@ end:
     return Status;
 }
 
+static NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t outlen, unsigned int* space_left) {
+    NTSTATUS Status;
+    unsigned int num_pages;
+    unsigned int comp_data_len;
+    uint8_t* comp_data;
+    lzo_stream stream;
+    uint32_t* out_size;
+
+    num_pages = sector_align(inlen, LZO_PAGE_SIZE) / LZO_PAGE_SIZE;
+
+    // Four-byte overall header
+    // Another four-byte header page
+    // Each page has a maximum size of lzo_max_outlen(LZO_PAGE_SIZE)
+    // Plus another four bytes for possible padding
+    comp_data_len = sizeof(uint32_t) + ((lzo_max_outlen(LZO_PAGE_SIZE) + (2 * sizeof(uint32_t))) * num_pages);
+
+    // FIXME - can we write this so comp_data isn't necessary?
+
+    comp_data = ExAllocatePoolWithTag(PagedPool, comp_data_len, ALLOC_TAG);
+    if (!comp_data) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    stream.wrkmem = ExAllocatePoolWithTag(PagedPool, LZO1X_MEM_COMPRESS, ALLOC_TAG);
+    if (!stream.wrkmem) {
+        ERR("out of memory\n");
+        ExFreePool(comp_data);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    out_size = (uint32_t*)comp_data;
+    *out_size = sizeof(uint32_t);
+
+    stream.in = inbuf;
+    stream.out = comp_data + (2 * sizeof(uint32_t));
+
+    for (unsigned int i = 0; i < num_pages; i++) {
+        uint32_t* pagelen = (uint32_t*)(stream.out - sizeof(uint32_t));
+
+        stream.inlen = (uint32_t)min(LZO_PAGE_SIZE, outlen - (i * LZO_PAGE_SIZE));
+
+        Status = lzo1x_1_compress(&stream);
+        if (!NT_SUCCESS(Status)) {
+            ERR("lzo1x_1_compress returned %08x\n", Status);
+            ExFreePool(comp_data);
+            return Status;
+        }
+
+        *pagelen = stream.outlen;
+        *out_size += stream.outlen + sizeof(uint32_t);
+
+        stream.in += LZO_PAGE_SIZE;
+        stream.out += stream.outlen + sizeof(uint32_t);
+
+        // new page needs to start at a 32-bit boundary
+        if (LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE) < sizeof(uint32_t)) {
+            RtlZeroMemory(stream.out, LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE));
+            stream.out += LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE);
+            *out_size += LZO_PAGE_SIZE - (*out_size % LZO_PAGE_SIZE);
+        }
+    }
+
+    ExFreePool(stream.wrkmem);
+
+    if (*out_size >= outlen)
+        *space_left = 0;
+    else {
+        *space_left = outlen - *out_size;
+
+        RtlCopyMemory(outbuf, comp_data, *out_size);
+    }
+
+    ExFreePool(comp_data);
+
+    return STATUS_SUCCESS;
+}
+
 typedef struct {
     uint8_t buf[COMPRESSED_EXTENT_SIZE];
     uint8_t compression_type;
@@ -1205,7 +1283,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     NTSTATUS Status;
     uint64_t i;
     unsigned int num_parts = (unsigned int)sector_align(end_data - start_data, COMPRESSED_EXTENT_SIZE) / COMPRESSED_EXTENT_SIZE;
-    uint8_t type = BTRFS_COMPRESSION_ZLIB; // choose_compression_type(fcb); // FIXME
+    uint8_t type = BTRFS_COMPRESSION_LZO; // choose_compression_type(fcb); // FIXME
     comp_part* parts;
     unsigned int buflen = 0;
     uint8_t* buf;
@@ -1241,12 +1319,25 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
                 }
             break;
 
-            // FIXME - lzo and zstd
+            case BTRFS_COMPRESSION_LZO:
+                Status = lzo_compress((uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen, parts[i].buf, parts[i].inlen,
+                                      &space_left);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("lzo_compress returned %08x\n", Status);
+                    ExFreePool(parts);
+                    return Status;
+                }
+            break;
+
+            // FIXME - zstd
         }
 
         if (space_left >= fcb->Vcb->superblock.sector_size) {
             parts[i].compression_type = type;
             parts[i].outlen = parts[i].inlen - space_left;
+
+            if (type == BTRFS_COMPRESSION_LZO)
+                fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO;
 
             if ((parts[i].outlen % fcb->Vcb->superblock.sector_size) != 0) {
                 unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sector_size);
