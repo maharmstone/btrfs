@@ -461,6 +461,9 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         max_stripe_size = max_chunk_size / min_stripes;
     }
 
+    if (max_stripe_size > total_size / (10 * min_stripes))
+        max_stripe_size = total_size / (10 * min_stripes);
+
     TRACE("would allocate a new chunk of %I64x bytes and stripe %I64x\n", max_chunk_size, max_stripe_size);
 
     stripes = ExAllocatePoolWithTag(PagedPool, sizeof(stripe) * max_stripes, ALLOC_TAG);
