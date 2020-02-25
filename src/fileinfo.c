@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include "crc32c.h"
 
 // not currently in mingw - introduced with Windows 10
 #ifndef _MSC_VER

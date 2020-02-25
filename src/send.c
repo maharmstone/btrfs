@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include "crc32c.h"
 
 typedef struct send_dir {
     LIST_ENTRY list_entry;

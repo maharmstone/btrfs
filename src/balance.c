@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "btrfsioctl.h"
+#include "crc32c.h"
 #include <ntddstor.h>
 
 typedef struct {

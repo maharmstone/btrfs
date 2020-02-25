@@ -15,8 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public Licence
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
-#include "btrfs_drv.h"
-#include <windef.h>
+#include "crc32c.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -59,10 +58,10 @@ const uint32_t crctable[] = {
 
 // x86 and amd64 versions live in asm files
 #if !defined(_X86_) && !defined(_AMD64_)
-uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen) {
+uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ uint32_t msglen) {
     uint32_t rem = seed;
 
-    for (ULONG i = 0; i < msglen; i++) {
+    for (uint32_t i = 0; i < msglen; i++) {
         rem = crctable[(rem ^ msg[i]) & 0xff] ^ (rem >> 8);
     }
 

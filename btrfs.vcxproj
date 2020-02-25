@@ -554,6 +554,7 @@
     <ClInclude Include="src\blake2-impl.h" />
     <ClInclude Include="src\btrfs.h" />
     <ClInclude Include="src\btrfs_drv.h" />
+    <ClInclude Include="src\crc32c.h" />
     <ClInclude Include="src\resource.h" />
     <ClInclude Include="src\xxhash.h" />
     <ClInclude Include="src\zlib\deflate.h" />

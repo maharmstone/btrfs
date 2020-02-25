@@ -17,6 +17,7 @@
 
 #include <sys/stat.h>
 #include "btrfs_drv.h"
+#include "crc32c.h"
 #include <ntddstor.h>
 
 extern PDEVICE_OBJECT master_devobj;

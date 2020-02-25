@@ -123,6 +123,9 @@
     <ClInclude Include="src\blake2-impl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\crc32c.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\btrfs.rc">

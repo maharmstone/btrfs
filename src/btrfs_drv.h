@@ -1210,14 +1210,6 @@ void _free_fcb(_Inout_ fcb* fcb, _In_ const char* func);
 // in fastio.c
 void init_fast_io_dispatch(FAST_IO_DISPATCH** fiod);
 
-// in crc32c.c
-#if defined(_X86_) || defined(_AMD64_)
-uint32_t __stdcall calc_crc32c_hw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen);
-#endif
-uint32_t __stdcall calc_crc32c_sw(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen);
-typedef uint32_t (__stdcall *crc_func)(_In_ uint32_t seed, _In_reads_bytes_(msglen) uint8_t* msg, _In_ ULONG msglen);
-extern crc_func calc_crc32c;
-
 // in sha256.c
 void calc_sha256(uint8_t* hash, const void* input, size_t len);
 #define SHA256_HASH_SIZE 32

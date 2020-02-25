@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
+#include "crc32c.h"
 
 enum read_data_status {
     ReadDataStatus_Pending,

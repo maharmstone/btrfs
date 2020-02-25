@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
+#include "crc32c.h"
 #include <ata.h>
 #include <ntddscsi.h>
 #include <ntddstor.h>

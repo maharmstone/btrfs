@@ -16,6 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
+#include "crc32c.h"
 
 // Number of increments in the size of each cache inode, in sectors. Should
 // this be a constant number of sectors, a constant 256 KB, or what?

@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "xxhash.h"
+#include "crc32c.h"
 
 void calc_thread_main(device_extension* Vcb, calc_job* cj) {
     while (true) {
