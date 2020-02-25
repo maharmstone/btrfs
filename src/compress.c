@@ -719,7 +719,7 @@ NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t 
     lzo_stream stream;
     uint32_t* out_size;
 
-    num_pages = sector_align(inlen, LZO_PAGE_SIZE) / LZO_PAGE_SIZE;
+    num_pages = (unsigned int)sector_align(inlen, LZO_PAGE_SIZE) / LZO_PAGE_SIZE;
 
     // Four-byte overall header
     // Another four-byte header page
