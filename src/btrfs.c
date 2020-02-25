@@ -4832,6 +4832,9 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     root_fcb->atts = get_file_attributes(Vcb, root_fcb->subvol, root_fcb->inode, root_fcb->type, false, false, Irp);
 
+    if (root_fcb->subvol->id == BTRFS_ROOT_FSTREE)
+        root_fcb->atts &= ~FILE_ATTRIBUTE_HIDDEN;
+
     Vcb->root_fileref = create_fileref(Vcb);
     if (!Vcb->root_fileref) {
         ERR("out of memory\n");
