@@ -30,9 +30,16 @@
 #include <ata.h>
 #include <mountmgr.h>
 #include <stringapiset.h>
+#include <stdbool.h>
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 #include "../crc32c.h"
+
+#ifndef _MSC_VER
+#include <cpuid.h>
+#else
+#include <intrin.h>
+#endif
 
 #define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_UNLOCK_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  7, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -1112,6 +1119,22 @@ static BOOL is_power_of_two(ULONG i) {
     return ((i != 0) && !(i & (i - 1)));
 }
 
+static void check_cpu() {
+    unsigned int cpuInfo[4];
+    bool have_sse42;
+
+#ifndef _MSC_VER
+    __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
+    have_sse42 = cpuInfo[2] & bit_SSE4_2;
+#else
+    __cpuid(cpuInfo, 1);
+    have_sse42 = cpuInfo[2] & (1 << 20);
+#endif
+
+    if (have_sse42)
+        calc_crc32c = calc_crc32c_hw;
+}
+
 static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                                 BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
 {
@@ -1149,6 +1172,8 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     }
 
     CloseHandle(token);
+
+    check_cpu();
 
     InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);
 
