@@ -32,8 +32,21 @@ static const WCHAR root_dir_utf16[] = L"$Root";
 
 // Windows 10
 #define ATOMIC_CREATE_ECP_IN_FLAG_REPARSE_POINT_SPECIFIED   0x0002
+#define ATOMIC_CREATE_ECP_IN_FLAG_OP_FLAGS_SPECIFIED        0x0080
 #define ATOMIC_CREATE_ECP_IN_FLAG_BEST_EFFORT               0x0100
+
 #define ATOMIC_CREATE_ECP_OUT_FLAG_REPARSE_POINT_SET        0x0002
+#define ATOMIC_CREATE_ECP_OUT_FLAG_OP_FLAGS_HONORED         0x0080
+
+#define ATOMIC_CREATE_ECP_IN_OP_FLAG_CASE_SENSITIVE_FLAGS_SPECIFIED       1
+#define ATOMIC_CREATE_ECP_OUT_OP_FLAG_CASE_SENSITIVE_FLAGS_SET            1
+
+typedef struct _FILE_TIMESTAMPS {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+} FILE_TIMESTAMPS, *PFILE_TIMESTAMPS;
 
 typedef struct _ATOMIC_CREATE_ECP_CONTEXT {
     USHORT Size;
@@ -43,6 +56,18 @@ typedef struct _ATOMIC_CREATE_ECP_CONTEXT {
     PREPARSE_DATA_BUFFER ReparseBuffer;
     LONGLONG FileSize;
     LONGLONG ValidDataLength;
+    PFILE_TIMESTAMPS FileTimestamps;
+    ULONG FileAttributes;
+    ULONG UsnSourceInfo;
+    USN Usn;
+    ULONG SuppressFileAttributeInheritanceMask;
+    ULONG InOpFlags;
+    ULONG OutOpFlags;
+    ULONG InGenFlags;
+    ULONG OutGenFlags;
+    ULONG CaseSensitiveFlagsMask;
+    ULONG InCaseSensitiveFlags;
+    ULONG OutCaseSensitiveFlags;
 } ATOMIC_CREATE_ECP_CONTEXT, *PATOMIC_CREATE_ECP_CONTEXT;
 
 static const GUID GUID_ECP_ATOMIC_CREATE = { 0x4720bd83, 0x52ac, 0x4104, { 0xa1, 0x30, 0xd1, 0xec, 0x6a, 0x8c, 0xc8, 0xe5 } };
@@ -3205,6 +3230,20 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         }
 
         acec->OutFlags |= ATOMIC_CREATE_ECP_OUT_FLAG_REPARSE_POINT_SET;
+    }
+
+    if (acec && acec->InFlags & ATOMIC_CREATE_ECP_IN_FLAG_OP_FLAGS_SPECIFIED) {
+        if (acec->InOpFlags & ATOMIC_CREATE_ECP_IN_OP_FLAG_CASE_SENSITIVE_FLAGS_SPECIFIED && fileref->fcb->atts & FILE_ATTRIBUTE_DIRECTORY) {
+            if ((acec->InCaseSensitiveFlags & acec->CaseSensitiveFlagsMask) & FILE_CS_FLAG_CASE_SENSITIVE_DIR) {
+                acec->OutCaseSensitiveFlags = FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+                fileref->fcb->case_sensitive = true;
+                ccb->case_sensitive = true;
+            }
+
+            acec->OutOpFlags |= ATOMIC_CREATE_ECP_OUT_OP_FLAG_CASE_SENSITIVE_FLAGS_SET;
+        }
+
+        acec->OutFlags |= ATOMIC_CREATE_ECP_OUT_FLAG_OP_FLAGS_HONORED;
     }
 
     fileref->dc->type = fileref->fcb->type;
