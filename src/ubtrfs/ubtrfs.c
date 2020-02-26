@@ -389,7 +389,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     return c;
 }
 
-static BOOL superblock_collision(btrfs_chunk* c, uint64_t address) {
+static bool superblock_collision(btrfs_chunk* c, uint64_t address) {
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     uint64_t stripe = (address - c->offset) / c->chunk_item->stripe_length;
     uint16_t i, j;
@@ -401,13 +401,13 @@ static BOOL superblock_collision(btrfs_chunk* c, uint64_t address) {
                 uint64_t stripe2 = (superblock_addrs[j] - cis[i].offset) / c->chunk_item->stripe_length;
 
                 if (stripe2 == stripe)
-                    return TRUE;
+                    return true;
             }
             j++;
         }
     }
 
-    return FALSE;
+    return false;
 }
 
 static uint64_t get_next_address(btrfs_chunk* c) {
@@ -439,7 +439,7 @@ typedef struct {
 } EXTENT_ITEM_METADATA2;
 
 static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, uint32_t node_size,
-                             btrfs_root* root_root, btrfs_root* extent_root, BOOL skinny) {
+                             btrfs_root* root_root, btrfs_root* extent_root, bool skinny) {
     LIST_ENTRY* le;
 
     le = roots->Flink;
@@ -818,7 +818,7 @@ static NTSTATUS clear_first_megabyte(HANDLE h) {
     return Status;
 }
 
-static BOOL is_ssd(HANDLE h) {
+static bool is_ssd(HANDLE h) {
     ULONG aptelen;
     ATA_PASS_THROUGH_EX* apte;
     IO_STATUS_BLOCK iosb;
@@ -844,13 +844,13 @@ static BOOL is_ssd(HANDLE h) {
 
         if (idd->NominalMediaRotationRate == 1) {
             free(apte);
-            return TRUE;
+            return true;
         }
     }
 
     free(apte);
 
-    return FALSE;
+    return false;
 }
 
 static void add_dir_item(btrfs_root* root, uint64_t inode, uint32_t hash, uint64_t key_objid, uint8_t key_type,
@@ -911,7 +911,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     btrfs_chunk *sys_chunk, *metadata_chunk;
     btrfs_dev dev;
     BTRFS_UUID fsuuid, chunkuuid;
-    BOOL ssd;
+    bool ssd;
     uint64_t metadata_flags;
 
     srand((unsigned int)time(0));
@@ -978,7 +978,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     return STATUS_SUCCESS;
 }
 
-static BOOL look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
+static bool look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
     uint32_t i;
     btrfs_filesystem_device* dev;
 
@@ -989,13 +989,13 @@ static BOOL look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
             dev = (btrfs_filesystem_device*)((uint8_t*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
 
         if (RtlCompareMemory(&dev->uuid, devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
-            return TRUE;
+            return true;
     }
 
-    return FALSE;
+    return false;
 }
 
-static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
+static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     NTSTATUS Status;
     superblock* sb;
     ULONG sblen;
@@ -1008,7 +1008,7 @@ static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     HANDLE h2;
     btrfs_filesystem *bfs = NULL, *bfs2;
     ULONG bfssize;
-    BOOL ret = FALSE;
+    bool ret = false;
 
     static WCHAR btrfs[] = L"\\Btrfs";
 
@@ -1023,18 +1023,18 @@ static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     Status = NtReadFile(h, NULL, NULL, NULL, &iosb, sb, sblen, &off, NULL);
     if (!NT_SUCCESS(Status)) {
         free(sb);
-        return FALSE;
+        return false;
     }
 
     if (sb->magic != BTRFS_MAGIC) {
         free(sb);
-        return FALSE;
+        return false;
     }
 
     crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
     if (crc32 != *((uint32_t*)sb)) {
         free(sb);
-        return FALSE;
+        return false;
     }
 
     fsuuid = sb->uuid;
@@ -1050,7 +1050,7 @@ static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     Status = NtOpenFile(&h2, SYNCHRONIZE | FILE_READ_ATTRIBUTES, &atts, &iosb,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_ALERT);
     if (!NT_SUCCESS(Status)) // not a problem, it usually just means the driver isn't loaded
-        return FALSE;
+        return false;
 
     bfssize = 0;
 
@@ -1063,7 +1063,7 @@ static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
         Status = NtDeviceIoControlFile(h2, NULL, NULL, NULL, &iosb, IOCTL_BTRFS_QUERY_FILESYSTEMS, NULL, 0, bfs, bfssize);
         if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
             NtClose(h2);
-            return FALSE;
+            return false;
         }
     } while (Status == STATUS_BUFFER_OVERFLOW);
 
@@ -1072,10 +1072,10 @@ static BOOL is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
 
     if (bfs->num_devices != 0) {
         bfs2 = bfs;
-        while (TRUE) {
+        while (true) {
             if (RtlCompareMemory(&bfs2->uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 if (bfs2->num_devices == 1)
-                    ret = FALSE;
+                    ret = false;
                 else
                     ret = look_for_device(bfs2, &devuuid);
 
@@ -1115,7 +1115,7 @@ static void do_full_trim(HANDLE h) {
     NtDeviceIoControlFile(h, NULL, NULL, NULL, &iosb, IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES, &dmdsa, sizeof(DEVICE_MANAGE_DATA_SET_ATTRIBUTES), NULL, 0);
 }
 
-static BOOL is_power_of_two(ULONG i) {
+static bool is_power_of_two(ULONG i) {
     return ((i != 0) && !(i & (i - 1)));
 }
 
@@ -1166,7 +1166,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     tp.Privileges[0].Luid = luid;
     tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-    if (!AdjustTokenPrivileges(token, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+    if (!AdjustTokenPrivileges(token, false, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
         CloseHandle(token);
         return STATUS_PRIVILEGE_NOT_HELD;
     }
@@ -1285,7 +1285,7 @@ end:
     }
 
     if (Callback) {
-        BOOL success = NT_SUCCESS(Status);
+        bool success = NT_SUCCESS(Status);
         Callback(DONE, 0, (PVOID)&success);
     }
 
@@ -1297,7 +1297,7 @@ BOOL __stdcall FormatEx(DSTRING* root, STREAM_MESSAGE* message, options* opts, u
     NTSTATUS Status;
 
     if (!root || !root->string)
-        return FALSE;
+        return false;
 
     DriveRoot.Length = DriveRoot.MaximumLength = (USHORT)(wcslen(root->string) * sizeof(WCHAR));
     DriveRoot.Buffer = root->string;
@@ -1330,12 +1330,12 @@ void __stdcall SetIncompatFlags(uint64_t incompat_flags) {
 BOOL __stdcall GetFilesystemInformation(uint32_t unk1, uint32_t unk2, void* unk3) {
     // STUB - undocumented
 
-    return TRUE;
+    return true;
 }
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
     if (dwReason == DLL_PROCESS_ATTACH)
         module = (HMODULE)hModule;
 
-    return TRUE;
+    return true;
 }
