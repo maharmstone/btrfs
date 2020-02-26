@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stringapiset.h>
 #include "resource.h"
 #include "../btrfs.h"
@@ -78,7 +79,7 @@ static void print_string(FILE* f, int resid, ...) {
 
 int main(int argc, char** argv) {
     HMODULE ubtrfs;
-    BOOL baddrive = FALSE, success;
+    bool baddrive = false, success;
     char *ds = NULL, *labels = NULL;
     WCHAR dsw[10], labelw[255], dsw2[255];
     UNICODE_STRING drive, label;
@@ -87,7 +88,7 @@ int main(int argc, char** argv) {
     DSTRING labelds, rootds;
     ULONG sector_size = 0, node_size = 0;
     int i;
-    BOOL invalid_args = FALSE;
+    bool invalid_args = false;
     uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
     uint16_t csum_type = CSUM_TYPE_CRC32C;
     pSetIncompatFlags SetIncompatFlags;
@@ -109,14 +110,14 @@ int main(int argc, char** argv) {
                 if (!_stricmp(cmd, "sectorsize")) {
                     if (!colon || colon[1] == 0) {
                         print_string(stdout, IDS_NO_SECTOR_SIZE);
-                        invalid_args = TRUE;
+                        invalid_args = true;
                         break;
                     } else
                         sector_size = atoi(&colon[1]);
                 } else if (!_stricmp(cmd, "nodesize")) {
                     if (!colon || colon[1] == 0) {
                         print_string(stdout, IDS_NO_NODE_SIZE);
-                        invalid_args = TRUE;
+                        invalid_args = true;
                         break;
                     } else
                         node_size = atoi(&colon[1]);
@@ -125,7 +126,7 @@ int main(int argc, char** argv) {
 
                     if (!colon || colon[1] == 0) {
                         print_string(stdout, IDS_NO_CSUM);
-                        invalid_args = TRUE;
+                        invalid_args = true;
                         break;
                     }
 
@@ -141,7 +142,7 @@ int main(int argc, char** argv) {
                         csum_type = CSUM_TYPE_BLAKE2;
                     else {
                         print_string(stdout, IDS_INVALID_CSUM_TYPE);
-                        invalid_args = TRUE;
+                        invalid_args = true;
                         break;
                     }
                 } else if (!_stricmp(cmd, "mixed"))
@@ -162,7 +163,7 @@ int main(int argc, char** argv) {
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_NO_HOLES;
                 else {
                     print_string(stdout, IDS_UNKNOWN_ARG);
-                    invalid_args = TRUE;
+                    invalid_args = true;
                     break;
                 }
             } else {
@@ -172,13 +173,13 @@ int main(int argc, char** argv) {
                     labels = argv[i];
                 else {
                     print_string(stdout, IDS_TOO_MANY_ARGS);
-                    invalid_args = TRUE;
+                    invalid_args = true;
                     break;
                 }
             }
         }
     } else
-        invalid_args = TRUE;
+        invalid_args = true;
 
     if (invalid_args) {
         char* c = argv[0] + strlen(argv[0]) - 1;
@@ -227,9 +228,9 @@ int main(int argc, char** argv) {
                 drive.Buffer = dsw;
                 drive.Length = drive.MaximumLength = (USHORT)(wcslen(drive.Buffer) * sizeof(WCHAR));
             } else
-                baddrive = TRUE;
+                baddrive = true;
         } else
-            baddrive = TRUE;
+            baddrive = true;
     } else {
         if (!MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, ds, -1, dsw2, sizeof(dsw2) / sizeof(WCHAR))) {
             print_string(stderr, IDS_MULTIBYTE_FAILED, GetLastError());
