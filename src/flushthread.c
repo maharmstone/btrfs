@@ -2756,7 +2756,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                 void* data;
 
                 if (runlength * Vcb->csum_size > MAX_CSUM_SIZE)
-                    rl = MAX_CSUM_SIZE / Vcb->csum_size;
+                    rl = (uint16_t)(MAX_CSUM_SIZE / Vcb->csum_size);
                 else
                     rl = (uint16_t)runlength;
 
