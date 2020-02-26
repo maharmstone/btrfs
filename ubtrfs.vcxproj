@@ -370,10 +370,12 @@
   <ItemGroup>
     <ClCompile Include="src\crc32c.c" />
     <ClCompile Include="src\ubtrfs\ubtrfs.c" />
+    <ClCompile Include="src\xxhash.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\crc32c.h" />
     <ClInclude Include="src\ubtrfs\resource.h" />
+    <ClInclude Include="src\xxhash.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\ubtrfs\ubtrfs.rc" />

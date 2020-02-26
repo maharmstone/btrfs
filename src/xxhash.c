@@ -102,15 +102,29 @@
 #include <ntifs.h>
 #include <ntddk.h>
 
+#ifndef _USRDLL
+
 #define XXH_ALLOC_TAG 0x32485858 // "XXH "
 
 static void* XXH_malloc(size_t s) {
     return ExAllocatePoolWithTag(PagedPool, s, XXH_ALLOC_TAG);
 }
 
-static void  XXH_free  (void* p)  {
+static void XXH_free(void* p) {
     ExFreePool(p);
 }
+
+#else
+
+static void* XXH_malloc(size_t s) {
+    return malloc(s);
+}
+
+static void XXH_free(void* p) {
+    free(p);
+}
+
+#endif
 
 /* for memcpy() */
 #include <string.h>

@@ -34,6 +34,7 @@
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 #include "../crc32c.h"
+#include "../xxhash.h"
 
 #ifndef _MSC_VER
 #include <cpuid.h>
@@ -142,6 +143,7 @@ typedef struct {
 HMODULE module;
 ULONG def_sector_size = 0, def_node_size = 0;
 uint64_t def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+uint16_t def_csum_type = CSUM_TYPE_CRC32C;
 
 // the following definitions come from fmifs.h in ReactOS
 
@@ -532,7 +534,15 @@ static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* dat
 }
 
 static void calc_tree_checksum(tree_header* th, uint32_t node_size) {
-    *(uint32_t*)th = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum));
+    switch (def_csum_type) {
+        case CSUM_TYPE_CRC32C:
+            *(uint32_t*)th = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum));
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            *(uint64_t*)th = XXH64((uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum), 0);
+        break;
+    }
 }
 
 static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTRFS_UUID* fsuuid, BTRFS_UUID* chunkuuid) {
@@ -632,7 +642,15 @@ static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* 
 }
 
 static void calc_superblock_checksum(superblock* sb) {
-    *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+    switch (def_csum_type) {
+        case CSUM_TYPE_CRC32C:
+            *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+        break;
+
+        case CSUM_TYPE_XXHASH:
+            *(uint64_t*)sb = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+        break;
+    }
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
@@ -684,6 +702,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->n = sizeof(KEY) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     sb->chunk_root_generation = 1;
     sb->incompat_flags = incompat_flags;
+    sb->csum_type = def_csum_type;
     memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
 
     if (label->Length > 0) {
@@ -1007,6 +1026,12 @@ static bool check_superblock_checksum(superblock* sb) {
             return crc32 == *(uint32_t*)sb;
         }
 
+        case CSUM_TYPE_XXHASH: {
+            uint64_t hash = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+
+            return hash == *(uint64_t*)sb;
+        }
+
         default:
             return false;
     }
@@ -1190,6 +1215,9 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
 
     check_cpu();
 
+    if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH)
+        return STATUS_INVALID_PARAMETER;
+
     InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);
 
     Status = NtOpenFile(&h, FILE_GENERIC_READ | FILE_GENERIC_WRITE, &attr, &iosb,
@@ -1340,6 +1368,10 @@ void __stdcall SetSizes(ULONG sector, ULONG node) {
 
 void __stdcall SetIncompatFlags(uint64_t incompat_flags) {
     def_incompat_flags = incompat_flags;
+}
+
+void __stdcall SetCsumType(uint16_t csum_type) {
+    def_csum_type = csum_type;
 }
 
 BOOL __stdcall GetFilesystemInformation(uint32_t unk1, uint32_t unk2, void* unk3) {
