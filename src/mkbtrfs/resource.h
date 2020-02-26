@@ -16,6 +16,9 @@
 #define IDS_NO_NODE_SIZE                112
 #define IDS_CANT_FIND_SETINCOMPATFLAGS  113
 #define IDS_USAGE2                      114
+#define IDS_CANT_FIND_SETCSUMTYPE       115
+#define IDS_NO_CSUM                     116
+#define IDS_INVALID_CSUM_TYPE           117
 
 // Next default values for new objects
 // 

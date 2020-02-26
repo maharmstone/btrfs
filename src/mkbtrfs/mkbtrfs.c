@@ -57,6 +57,7 @@ typedef struct {
 typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, uint32_t unk1);
 typedef void (__stdcall* pSetSizes)(ULONG sector, ULONG node);
 typedef void (__stdcall* pSetIncompatFlags)(uint64_t incompat_flags);
+typedef void (__stdcall* pSetCsumType)(uint16_t csum_type);
 
 static void print_string(FILE* f, int resid, ...) {
     WCHAR s[1024], t[1024];
@@ -88,7 +89,9 @@ int main(int argc, char** argv) {
     int i;
     BOOL invalid_args = FALSE;
     uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+    uint16_t csum_type = CSUM_TYPE_CRC32C;
     pSetIncompatFlags SetIncompatFlags;
+    pSetCsumType SetCsumType;
 
     if (argc >= 2) {
         for (i = 1; i < argc; i++) {
@@ -117,6 +120,30 @@ int main(int argc, char** argv) {
                         break;
                     } else
                         node_size = atoi(&colon[1]);
+                } else if (!_stricmp(cmd, "csum")) {
+                    char* v;
+
+                    if (!colon || colon[1] == 0) {
+                        print_string(stdout, IDS_NO_CSUM);
+                        invalid_args = TRUE;
+                        break;
+                    }
+
+                    v = &colon[1];
+
+                    if (!_stricmp(v, "crc32c"))
+                        csum_type = CSUM_TYPE_CRC32C;
+                    else if (!_stricmp(v, "xxhash"))
+                        csum_type = CSUM_TYPE_XXHASH;
+                    else if (!_stricmp(v, "sha256"))
+                        csum_type = CSUM_TYPE_SHA256;
+                    else if (!_stricmp(v, "blake2"))
+                        csum_type = CSUM_TYPE_BLAKE2;
+                    else {
+                        print_string(stdout, IDS_INVALID_CSUM_TYPE);
+                        invalid_args = TRUE;
+                        break;
+                    }
                 } else if (!_stricmp(cmd, "mixed"))
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS;
                 else if (!_stricmp(cmd, "notmixed"))
@@ -272,6 +299,15 @@ int main(int argc, char** argv) {
     }
 
     SetIncompatFlags(incompat_flags);
+
+    SetCsumType = (pSetCsumType)GetProcAddress(ubtrfs, "SetCsumType");
+
+    if (!SetCsumType) {
+        print_string(stderr, IDS_CANT_FIND_SETCSUMTYPE, UBTRFS_DLL);
+        return 1;
+    }
+
+    SetCsumType(csum_type);
 
     FormatEx = (pFormatEx)GetProcAddress(ubtrfs, "FormatEx");
 
