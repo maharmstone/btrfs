@@ -369,6 +369,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\crc32c.c" />
+    <ClCompile Include="src\sha256.c" />
     <ClCompile Include="src\ubtrfs\ubtrfs.c" />
     <ClCompile Include="src\xxhash.c" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-OBJS = ubtrfs.o crc32c.o crc32c-asm.o xxhash.o
+OBJS = ubtrfs.o crc32c.o crc32c-asm.o xxhash.o sha256.o
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
@@ -20,6 +20,9 @@ crc32c-asm.o: ../crc32c-x86-gas.S
 	$(CC) -masm=intel -c $< -o $@
 
 xxhash.o: ../xxhash.c ../xxhash.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+sha256.o: ../sha256.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/ubtrfs.dll: $(OBJS)

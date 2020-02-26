@@ -42,6 +42,9 @@
 #include <intrin.h>
 #endif
 
+#define SHA256_HASH_SIZE 32
+void calc_sha256(uint8_t* hash, const void* input, size_t len);
+
 #define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_UNLOCK_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  7, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DISMOUNT_VOLUME           CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  8, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -542,6 +545,10 @@ static void calc_tree_checksum(tree_header* th, uint32_t node_size) {
         case CSUM_TYPE_XXHASH:
             *(uint64_t*)th = XXH64((uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum), 0);
         break;
+
+        case CSUM_TYPE_SHA256:
+            calc_sha256((uint8_t*)th, &th->fs_uuid, node_size - sizeof(th->csum));
+        break;
     }
 }
 
@@ -649,6 +656,10 @@ static void calc_superblock_checksum(superblock* sb) {
 
         case CSUM_TYPE_XXHASH:
             *(uint64_t*)sb = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+        break;
+
+        case CSUM_TYPE_SHA256:
+            calc_sha256((uint8_t*)sb, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
         break;
     }
 }
@@ -1032,6 +1043,14 @@ static bool check_superblock_checksum(superblock* sb) {
             return hash == *(uint64_t*)sb;
         }
 
+        case CSUM_TYPE_SHA256: {
+            uint8_t hash[SHA256_HASH_SIZE];
+
+            calc_sha256(hash, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+
+            return !memcmp(hash, sb, SHA256_HASH_SIZE);
+        }
+
         default:
             return false;
     }
@@ -1215,7 +1234,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
 
     check_cpu();
 
-    if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH)
+    if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH && def_csum_type != CSUM_TYPE_SHA256)
         return STATUS_INVALID_PARAMETER;
 
     InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);
