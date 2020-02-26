@@ -36,10 +36,12 @@
 #include "../crc32c.h"
 #include "../xxhash.h"
 
+#if defined(_X86_) || defined(_AMD64_)
 #ifndef _MSC_VER
 #include <cpuid.h>
 #else
 #include <intrin.h>
+#endif
 #endif
 
 #define SHA256_HASH_SIZE 32
@@ -1197,6 +1199,7 @@ static bool is_power_of_two(ULONG i) {
     return ((i != 0) && !(i & (i - 1)));
 }
 
+#if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
     unsigned int cpuInfo[4];
     bool have_sse42;
@@ -1212,6 +1215,7 @@ static void check_cpu() {
     if (have_sse42)
         calc_crc32c = calc_crc32c_hw;
 }
+#endif
 
 static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG MediaFlag, PUNICODE_STRING Label,
                                 BOOLEAN QuickFormat, ULONG ClusterSize, PFMIFSCALLBACK Callback)
@@ -1251,7 +1255,9 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
 
     CloseHandle(token);
 
+#if defined(_X86_) || defined(_AMD64_)
     check_cpu();
+#endif
 
     if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH && def_csum_type != CSUM_TYPE_SHA256 &&
         def_csum_type != CSUM_TYPE_BLAKE2)
