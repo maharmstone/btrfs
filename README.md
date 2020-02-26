@@ -1,4 +1,4 @@
-WinBtrfs v1.6
+WinBtrfs v1.7
 -------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -75,6 +75,9 @@ Features
 * Zstd compression
 * Windows 10 case-sensitive directory flag
 * Oplocks
+* Metadata UUID incompat flag (Linux 5.0)
+* Three- and four-disk RAID1 (Linux 5.5)
+* New checksum types (xxhash, sha256, blake2) (Linux 5.5)
 
 Todo
 ----
@@ -83,9 +86,6 @@ Todo
 * Support for Btrfs quotas
 * Windows 10 reserved storage
 * Full transaction log support
-* Three- and four-disk RAID1 (Linux 5.5)
-* New checksum types (xxhash, sha256, blake2) (Linux 5.5)
-* Metadata UUID incompat flag (Linux 5.0)
 * Support for Windows transactions (TxF)
 
 Installation
@@ -248,6 +248,15 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7 (2020-02-26):
+* Added support for metadata_uuid incompat flag (Linux 5.0)
+* Added support for three- and four-disk RAID1 (Linux 5.5)
+* Added support for new checksum types: xxhash, sha256, blake2 (Linux 5.5)
+* Greatly increased checksumming speed
+* Greatly increased compression and decompression speed
+* Fixed bug causing incorrect free-space reporting when data is DUP
+* Fixed issue creating directories on LXSS when `case=dir` option set
 
 v1.6 (2020-02-04):
 * Added experimental (i.e. untested) ARM support (thanks to [DjArt](https://github.com/DjArt) for this)
@@ -516,7 +525,9 @@ mark@harmstone.com.
 Copyright
 ---------
 
-This code also contains portions of zlib, which is licensed as follows:
+This code contains portions of the following software:
+
+### Zlib
 
   Copyright (C) 1995-2017 Jean-loup Gailly and Mark Adler
 
@@ -536,11 +547,13 @@ This code also contains portions of zlib, which is licensed as follows:
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 
-It also contains portions of an early version of lzo, which is copyright 1996
+### LZO
+
+WinBtrfs contains portions of an early version of lzo, which is copyright 1996
 Markus Oberhumer. Modern versions are licensed under the GPL, but this was
 licensed under the LGPL, so I believe it is okay to use.
 
-Finally, it also includes Zstd, licensed under the BSD licence:
+### Zstd
 
 Copyright (c) 2016-present, Facebook, Inc. All rights reserved.
 
@@ -568,3 +581,11 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
 ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+### BLAKE2
+
+[https://github.com/BLAKE2/BLAKE2](https://github.com/BLAKE2/BLAKE2) (public domain)
+
+### SHA256
+
+[https://github.com/amosnier/sha-2](https://github.com/amosnier/sha-2) (public domain)
