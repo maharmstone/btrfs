@@ -531,6 +531,10 @@ static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* dat
     return STATUS_SUCCESS;
 }
 
+static void calc_tree_checksum(tree_header* th, uint32_t node_size) {
+    *(uint32_t*)th = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum));
+}
+
 static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTRFS_UUID* fsuuid, BTRFS_UUID* chunkuuid) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
@@ -543,7 +547,6 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
         uint8_t* dp;
         leaf_node* ln;
-        uint32_t crc32;
 
         memset(tree, 0, node_size);
 
@@ -582,8 +585,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
 
         memcpy(tree, &r->header, sizeof(tree_header));
 
-        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&((tree_header*)tree)->fs_uuid, node_size - sizeof(((tree_header*)tree)->csum));
-        memcpy(tree, &crc32, sizeof(uint32_t));
+        calc_tree_checksum((tree_header*)tree, node_size);
 
         Status = write_data(h, r->header.address, r->c, tree, node_size);
         if (!NT_SUCCESS(Status)) {
@@ -629,13 +631,16 @@ static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* 
     dev->last_alloc = 0x100000; // skip first megabyte
 }
 
+static void calc_superblock_checksum(superblock* sb) {
+    *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+}
+
 static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
                                   btrfs_chunk* sys_chunk, uint32_t node_size, BTRFS_UUID* fsuuid, uint32_t sector_size, PUNICODE_STRING label, uint64_t incompat_flags) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
     int i;
-    uint32_t crc32;
     superblock* sb;
     KEY* key;
     uint64_t bytes_used;
@@ -720,8 +725,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
 
         sb->sb_phys_addr = superblock_addrs[i];
 
-        crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-        memcpy(&sb->checksum, &crc32, sizeof(uint32_t));
+        calc_superblock_checksum(sb);
 
         off.QuadPart = superblock_addrs[i];
 
@@ -995,6 +999,19 @@ static bool look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
     return false;
 }
 
+static bool check_superblock_checksum(superblock* sb) {
+    switch (sb->csum_type) {
+        case CSUM_TYPE_CRC32C: {
+            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+
+            return crc32 == *(uint32_t*)sb;
+        }
+
+        default:
+            return false;
+    }
+}
+
 static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     NTSTATUS Status;
     superblock* sb;
@@ -1002,7 +1019,6 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
     BTRFS_UUID fsuuid, devuuid;
-    uint32_t crc32;
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES atts;
     HANDLE h2;
@@ -1031,8 +1047,7 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
         return false;
     }
 
-    crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
-    if (crc32 != *((uint32_t*)sb)) {
+    if (!check_superblock_checksum(sb)) {
         free(sb);
         return false;
     }
