@@ -1,4 +1,4 @@
-OBJS = ubtrfs.o crc32c.o crc32c-asm.o xxhash.o sha256.o
+OBJS = ubtrfs.o crc32c.o crc32c-asm.o xxhash.o sha256.o blake2b-ref.o
 
 INCLUDES = -I/usr/i686-w64-mingw32/usr/include/ddk
 
@@ -23,6 +23,9 @@ xxhash.o: ../xxhash.c ../xxhash.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 sha256.o: ../sha256.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+blake2b-ref.o: ../blake2b-ref.c ../blake2-impl.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 ../../x86/ubtrfs.dll: $(OBJS)

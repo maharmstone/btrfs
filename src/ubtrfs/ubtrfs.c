@@ -45,6 +45,9 @@
 #define SHA256_HASH_SIZE 32
 void calc_sha256(uint8_t* hash, const void* input, size_t len);
 
+#define BLAKE2_HASH_SIZE 32
+void blake2b(void *out, size_t outlen, const void* in, size_t inlen);
+
 #define FSCTL_LOCK_VOLUME               CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  6, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_UNLOCK_VOLUME             CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  7, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DISMOUNT_VOLUME           CTL_CODE(FILE_DEVICE_FILE_SYSTEM,  8, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -549,6 +552,10 @@ static void calc_tree_checksum(tree_header* th, uint32_t node_size) {
         case CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)th, &th->fs_uuid, node_size - sizeof(th->csum));
         break;
+
+        case CSUM_TYPE_BLAKE2:
+            blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fs_uuid, node_size - sizeof(th->csum));
+        break;
     }
 }
 
@@ -660,6 +667,10 @@ static void calc_superblock_checksum(superblock* sb) {
 
         case CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)sb, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+        break;
+
+        case CSUM_TYPE_BLAKE2:
+            blake2b((uint8_t*)sb, BLAKE2_HASH_SIZE, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
         break;
     }
 }
@@ -1051,6 +1062,14 @@ static bool check_superblock_checksum(superblock* sb) {
             return !memcmp(hash, sb, SHA256_HASH_SIZE);
         }
 
+        case CSUM_TYPE_BLAKE2: {
+            uint8_t hash[BLAKE2_HASH_SIZE];
+
+            blake2b(hash, sizeof(hash), &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+
+            return !memcmp(hash, sb, BLAKE2_HASH_SIZE);
+        }
+
         default:
             return false;
     }
@@ -1234,7 +1253,8 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
 
     check_cpu();
 
-    if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH && def_csum_type != CSUM_TYPE_SHA256)
+    if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH && def_csum_type != CSUM_TYPE_SHA256 &&
+        def_csum_type != CSUM_TYPE_BLAKE2)
         return STATUS_INVALID_PARAMETER;
 
     InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);

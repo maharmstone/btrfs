@@ -368,12 +368,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\blake2b-ref.c" />
     <ClCompile Include="src\crc32c.c" />
     <ClCompile Include="src\sha256.c" />
     <ClCompile Include="src\ubtrfs\ubtrfs.c" />
     <ClCompile Include="src\xxhash.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\blake2-impl.h" />
     <ClInclude Include="src\crc32c.h" />
     <ClInclude Include="src\ubtrfs\resource.h" />
     <ClInclude Include="src\xxhash.h" />
