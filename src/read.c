@@ -2820,8 +2820,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 
     if (start >= fcb->inode_item.st_size) {
         WARN("Tried to read beyond end of file\n");
-        Status = STATUS_END_OF_FILE;
-        goto exit;
+        return STATUS_END_OF_FILE;
     }
 
     InitializeListHead(&read_parts);
