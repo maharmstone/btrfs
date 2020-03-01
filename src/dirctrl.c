@@ -108,13 +108,13 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8
         return IO_REPARSE_TAG_SYMLINK;
     else if (lxss) {
         if (type == BTRFS_TYPE_SOCKET)
-            return IO_REPARSE_TAG_LXSS_SOCKET;
+            return IO_REPARSE_TAG_AF_UNIX;
         else if (type == BTRFS_TYPE_FIFO)
-            return IO_REPARSE_TAG_LXSS_FIFO;
+            return IO_REPARSE_TAG_LX_FIFO;
         else if (type == BTRFS_TYPE_CHARDEV)
-            return IO_REPARSE_TAG_LXSS_CHARDEV;
+            return IO_REPARSE_TAG_LX_CHR;
         else if (type == BTRFS_TYPE_BLOCKDEV)
-            return IO_REPARSE_TAG_LXSS_BLOCKDEV;
+            return IO_REPARSE_TAG_LX_BLK;
     }
 
     if (type != BTRFS_TYPE_FILE && type != BTRFS_TYPE_DIRECTORY)

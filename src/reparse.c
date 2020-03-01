@@ -45,7 +45,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 goto end;
             }
 
-            rdb->ReparseTag = IO_REPARSE_TAG_LXSS_SYMLINK;
+            rdb->ReparseTag = IO_REPARSE_TAG_LX_SYMLINK;
             rdb->ReparseDataLength = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(uint32_t);
             rdb->Reserved = 0;
 
@@ -297,7 +297,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
     RtlCopyMemory(&tag, rdb, sizeof(ULONG));
 
     if (fcb->type == BTRFS_TYPE_FILE &&
-        ((tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) || tag == IO_REPARSE_TAG_LXSS_SYMLINK)) {
+        ((tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) || tag == IO_REPARSE_TAG_LX_SYMLINK)) {
         Status = set_symlink(Irp, fileref, fcb, ccb, rdb, buflen, tag == IO_REPARSE_TAG_SYMLINK, rollback);
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
     } else {

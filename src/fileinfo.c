@@ -4775,13 +4775,13 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
     }
 
     if (fcb->type == BTRFS_TYPE_SOCKET)
-        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_SOCKET;
+        fsi->ReparseTag = IO_REPARSE_TAG_AF_UNIX;
     else if (fcb->type == BTRFS_TYPE_FIFO)
-        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_FIFO;
+        fsi->ReparseTag = IO_REPARSE_TAG_LX_FIFO;
     else if (fcb->type == BTRFS_TYPE_CHARDEV)
-        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_CHARDEV;
+        fsi->ReparseTag = IO_REPARSE_TAG_LX_CHR;
     else if (fcb->type == BTRFS_TYPE_BLOCKDEV)
-        fsi->ReparseTag = IO_REPARSE_TAG_LXSS_BLOCKDEV;
+        fsi->ReparseTag = IO_REPARSE_TAG_LX_BLK;
     else if (!(fsi->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         fsi->ReparseTag = 0;
     else
@@ -4835,13 +4835,13 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
     }
 
     if (fcb->type == BTRFS_TYPE_SOCKET)
-        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_SOCKET;
+        fsli->ReparseTag = IO_REPARSE_TAG_AF_UNIX;
     else if (fcb->type == BTRFS_TYPE_FIFO)
-        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_FIFO;
+        fsli->ReparseTag = IO_REPARSE_TAG_LX_FIFO;
     else if (fcb->type == BTRFS_TYPE_CHARDEV)
-        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_CHARDEV;
+        fsli->ReparseTag = IO_REPARSE_TAG_LX_CHR;
     else if (fcb->type == BTRFS_TYPE_BLOCKDEV)
-        fsli->ReparseTag = IO_REPARSE_TAG_LXSS_BLOCKDEV;
+        fsli->ReparseTag = IO_REPARSE_TAG_LX_BLK;
     else if (!(fsli->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         fsli->ReparseTag = 0;
     else
