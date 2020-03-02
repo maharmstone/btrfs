@@ -1,5 +1,5 @@
-WinBtrfs v1.7
--------------
+WinBtrfs v1.7.1
+---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -248,6 +248,10 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7.1 (2020-03-02):
+* Fixed crash when reading beyond end of file
+* Fixed spurious checksum errors when doing unaligned read
 
 v1.7 (2020-02-26):
 * Added support for metadata_uuid incompat flag (Linux 5.0)
