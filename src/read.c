@@ -3021,7 +3021,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 
                     if (ext->csum) {
                         if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                            rp->csum = (uint8_t*)ext->csum + (rp->extents[0].off * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
+                            rp->csum = (uint8_t*)ext->csum + (fcb->Vcb->csum_size * (rp->extents[0].off / fcb->Vcb->superblock.sector_size));
                         } else
                             rp->csum = ext->csum;
                     } else
