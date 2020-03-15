@@ -28,6 +28,7 @@
 #define FileStatLxInformation (enum _FILE_INFORMATION_CLASS)70
 #define FileCaseSensitiveInformation (enum _FILE_INFORMATION_CLASS)71
 #define FileLinkInformationEx (enum _FILE_INFORMATION_CLASS)72
+#define FileStorageReserveIdInformation (enum _FILE_INFORMATION_CLASS)74
 
 typedef struct _FILE_ID_INFORMATION {
     ULONGLONG VolumeSerialNumber;
@@ -3953,6 +3954,11 @@ NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
 
             Status = set_case_sensitive_information(Irp);
             break;
+
+        case FileStorageReserveIdInformation:
+            WARN("unimplemented FileInformationClass FileStorageReserveIdInformation\n");
+            break;
+
 #ifndef _MSC_VER
 #pragma GCC diagnostic pop
 #endif
