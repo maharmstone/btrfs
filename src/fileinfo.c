@@ -4892,6 +4892,19 @@ static NTSTATUS fill_in_file_case_sensitive_information(FILE_CASE_SENSITIVE_INFO
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_compression_information(FILE_COMPRESSION_INFORMATION* fci, LONG* length, fcb* fcb) {
+    *length -= sizeof(FILE_COMPRESSION_INFORMATION);
+
+    memset(fci, 0, sizeof(FILE_COMPRESSION_INFORMATION));
+
+    if (fcb->ads)
+        fci->CompressedFileSize.QuadPart = fcb->adsdata.Length;
+    else if (!S_ISDIR(fcb->inode_item.st_mode))
+        fci->CompressedFileSize.QuadPart = fcb->inode_item.st_size;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP Irp) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     LONG length = IrpSp->Parameters.QueryFile.Length;
@@ -5021,9 +5034,14 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
         }
 
         case FileCompressionInformation:
-            FIXME("STUB: FileCompressionInformation\n");
-            Status = STATUS_INVALID_PARAMETER;
-            goto exit;
+        {
+            FILE_COMPRESSION_INFORMATION* fci = Irp->AssociatedIrp.SystemBuffer;
+
+            TRACE("FileCompressionInformation\n");
+
+            Status = fill_in_file_compression_information(fci, &length, fcb);
+            break;
+        }
 
         case FileEaInformation:
         {
