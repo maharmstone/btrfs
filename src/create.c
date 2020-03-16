@@ -71,6 +71,8 @@ typedef struct _ATOMIC_CREATE_ECP_CONTEXT {
 } ATOMIC_CREATE_ECP_CONTEXT, *PATOMIC_CREATE_ECP_CONTEXT;
 
 static const GUID GUID_ECP_ATOMIC_CREATE = { 0x4720bd83, 0x52ac, 0x4104, { 0xa1, 0x30, 0xd1, 0xec, 0x6a, 0x8c, 0xc8, 0xe5 } };
+static const GUID GUID_ECP_QUERY_ON_CREATE = { 0x1aca62e9, 0xabb4, 0x4ff2, { 0xbb, 0x5c, 0x1c, 0x79, 0x02, 0x5e, 0x41, 0x7f } };
+static const GUID GUID_ECP_CREATE_REDIRECTION = { 0x188d6bd6, 0xa126, 0x4fa8, { 0xbd, 0xf2, 0x1c, 0xcd, 0xf8, 0x96, 0xf3, 0xe0 } };
 
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb* fcb;
@@ -3013,7 +3015,11 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
                             ERR("GUID_ECP_ATOMIC_CREATE context was too short: %u bytes, expected %u\n", ctxsize,
                                 sizeof(ATOMIC_CREATE_ECP_CONTEXT));
                         }
-                    } else {
+                    } else if (RtlCompareMemory(&type, &GUID_ECP_QUERY_ON_CREATE, sizeof(GUID)) == sizeof(GUID))
+                        WARN("unhandled ECP GUID_ECP_QUERY_ON_CREATE\n");
+                    else if (RtlCompareMemory(&type, &GUID_ECP_CREATE_REDIRECTION, sizeof(GUID)) == sizeof(GUID))
+                        WARN("unhandled ECP GUID_ECP_CREATE_REDIRECTION\n");
+                    else {
                         WARN("unhandled ECP {%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\n", type.Data1, type.Data2,
                              type.Data3, type.Data4[0], type.Data4[1], type.Data4[2], type.Data4[3], type.Data4[4], type.Data4[5],
                              type.Data4[6], type.Data4[7]);
