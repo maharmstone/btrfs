@@ -241,7 +241,7 @@ static NTSTATUS control_ioctl(PIRP Irp) {
             break;
 
         default:
-            TRACE("unhandled ioctl %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+            TRACE("unhandled ioctl %lx\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
             Status = STATUS_NOT_IMPLEMENTED;
             break;
     }
@@ -294,7 +294,7 @@ NTSTATUS __stdcall drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
             goto end;
 
         default:
-            TRACE("unhandled control code %x\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
+            TRACE("unhandled control code %lx\n", IrpSp->Parameters.DeviceIoControl.IoControlCode);
             break;
     }
 

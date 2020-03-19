@@ -2180,7 +2180,7 @@ end:
 static NTSTATUS get_object_id(device_extension* Vcb, PFILE_OBJECT FileObject, FILE_OBJECTID_BUFFER* buf, ULONG buflen, ULONG_PTR* retlen) {
     fcb* fcb;
 
-    TRACE("(%p, %p, %p, %x, %p)\n", Vcb, FileObject, buf, buflen, retlen);
+    TRACE("(%p, %p, %p, %lx, %p)\n", Vcb, FileObject, buf, buflen, retlen);
 
     if (!FileObject) {
         ERR("FileObject was NULL\n");
@@ -3709,7 +3709,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     PSID owner;
     BOOLEAN defaulted;
 
-    TRACE("(%p, %p, %p, %u)\n", Vcb, FileObject, data, datalen);
+    TRACE("(%p, %p, %p, %lu)\n", Vcb, FileObject, data, datalen);
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)
         return STATUS_INVALID_PARAMETER;
@@ -3776,7 +3776,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     }
 
     if (len > 0xffff) {
-        ERR("len was too long (%x)\n", len);
+        ERR("len was too long (%lx)\n", len);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -4081,7 +4081,7 @@ static NTSTATUS recvd_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, voi
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
-    TRACE("(%p, %p, %p, %u)\n", Vcb, FileObject, data, datalen);
+    TRACE("(%p, %p, %p, %lu)\n", Vcb, FileObject, data, datalen);
 
     if (!data || datalen < sizeof(btrfs_received_subvol))
         return STATUS_INVALID_PARAMETER;
@@ -4199,7 +4199,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
     static const char stream_pref[] = "user.";
 
-    TRACE("(%p, %p, %p, %u)\n", Vcb, FileObject, data, datalen);
+    TRACE("(%p, %p, %p, %lu)\n", Vcb, FileObject, data, datalen);
 
     if (!data || datalen < sizeof(btrfs_set_xattr))
         return STATUS_INVALID_PARAMETER;
@@ -4347,7 +4347,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
             Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)(bsxa->data + bsxa->namelen), bsxa->valuelen, &offset);
 
             if (!NT_SUCCESS(Status))
-                WARN("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
+                WARN("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
             else {
                 FILE_FULL_EA_INFORMATION* eainfo;
 
@@ -4670,7 +4670,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
     LIST_ENTRY* le;
     device* dev = NULL;
 
-    TRACE("(%p, %p, %u)\n", Vcb, data, len);
+    TRACE("(%p, %p, %lu)\n", Vcb, data, len);
 
     if (!data || len < sizeof(btrfs_resize) || (br->size % Vcb->superblock.sector_size) != 0)
         return STATUS_INVALID_PARAMETER;
@@ -5534,7 +5534,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         default:
-            WARN("unknown control code %x (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
+            WARN("unknown control code %lx (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
                           IrpSp->Parameters.FileSystemControl.FsControlCode, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xff0000) >> 16,
                           (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xc000) >> 14, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0x3ffc) >> 2,
                           IrpSp->Parameters.FileSystemControl.FsControlCode & 0x3);

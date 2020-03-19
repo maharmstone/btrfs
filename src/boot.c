@@ -449,7 +449,7 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
     PDEVICE_OBJECT pdo_to_add = NULL;
     volume_child* boot_vc = NULL;
 
-    TRACE("(%p, %p, %u)\n", DriverObject, Context, Count);
+    TRACE("(%p, %p, %lu)\n", DriverObject, Context, Count);
 
     // wait for any PNP notifications in progress to finish
     ExAcquireResourceExclusiveLite(&boot_lock, TRUE);

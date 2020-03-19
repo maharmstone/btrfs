@@ -151,7 +151,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, uint64_t inode, PIR
         Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, len, &offset);
 
         if (!NT_SUCCESS(Status)) {
-            WARN("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
+            WARN("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
             ExFreePool(eadata);
             return 0;
         } else {
@@ -806,7 +806,7 @@ static NTSTATUS query_directory(PIRP Irp) {
         }
 
         if (flags != 0)
-            TRACE("    unknown flags: %u\n", flags);
+            TRACE("    unknown flags: %lu\n", flags);
     }
 
     if (IrpSp->Flags & SL_RESTART_SCAN) {
@@ -1035,7 +1035,7 @@ static NTSTATUS query_directory(PIRP Irp) {
                         curitem = (uint8_t*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
                         count++;
 
-                        TRACE("file(%u) %u = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
+                        TRACE("file(%lu) %u = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
                         TRACE("offset = %u\n", ccb->query_dir_offset - 1);
 
                         status2 = query_dir_item(fcb, ccb, curitem, &length, Irp, &de, fcb->subvol);
@@ -1190,7 +1190,7 @@ NTSTATUS __stdcall drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP
             break;
 
         default:
-            WARN("unknown minor %u\n", func);
+            WARN("unknown minor %lu\n", func);
             Status = STATUS_NOT_IMPLEMENTED;
             Irp->IoStatus.Status = Status;
             break;

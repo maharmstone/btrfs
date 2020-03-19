@@ -605,7 +605,7 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
     for (level = 0; level <= 255; level++) {
         bool nothing_found = true;
 
-        TRACE("level = %u\n", level);
+        TRACE("level = %lu\n", level);
 
         le = Vcb->trees.Flink;
         while (le != &Vcb->trees) {
@@ -1824,7 +1824,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
     for (level = 0; level <= 255; level++) {
         bool nothing_found = true;
 
-        TRACE("level = %u\n", level);
+        TRACE("level = %lu\n", level);
 
         le = Vcb->trees.Flink;
         while (le != &Vcb->trees) {
@@ -2595,7 +2595,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
     ULONG* bmparr;
     ULONG runlength, index;
 
-    TRACE("(%p, %I64x, %x, %p, %p)\n", Vcb, address, length, csum, Irp);
+    TRACE("(%p, %I64x, %lx, %p, %p)\n", Vcb, address, length, csum, Irp);
 
     searchkey.obj_id = EXTENT_CSUM_ID;
     searchkey.obj_type = TYPE_EXTENT_CSUM;
@@ -2668,7 +2668,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         else
             endaddr = address + (length * Vcb->superblock.sector_size);
 
-        TRACE("cs starts at %I64x (%x sectors)\n", address, length);
+        TRACE("cs starts at %I64x (%lx sectors)\n", address, length);
         TRACE("startaddr = %I64x\n", startaddr);
         TRACE("endaddr = %I64x\n", endaddr);
 
@@ -3660,7 +3660,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
         empty = true;
 
-        TRACE("doing level %u\n", level);
+        TRACE("doing level %lu\n", level);
 
         le = Vcb->trees.Flink;
 
@@ -3749,7 +3749,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         if (!empty) {
             max_level = level;
         } else {
-            TRACE("nothing found for level %u\n", level);
+            TRACE("nothing found for level %lu\n", level);
             break;
         }
     }

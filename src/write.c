@@ -2011,7 +2011,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
     }
 
     if (missing > allowed_missing) {
-        ERR("cannot write as %u missing devices (maximum %u)\n", missing, allowed_missing);
+        ERR("cannot write as %lu missing devices (maximum %lu)\n", missing, allowed_missing);
         Status = STATUS_DEVICE_NOT_READY;
         goto prepare_failed;
     }
@@ -4069,7 +4069,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     bool paging_lock = false, acquired_fcb_lock = false, acquired_tree_lock = false, pagefile;
     ULONG filter = 0;
 
-    TRACE("(%p, %p, %I64x, %p, %x, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
+    TRACE("(%p, %p, %I64x, %p, %lx, %u, %u)\n", Vcb, FileObject, offset.QuadPart, buf, *length, paging_io, no_cache);
 
     if (*length == 0) {
         TRACE("returning success for zero-length write\n");
@@ -4163,7 +4163,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     if (off64 + *length > newlength) {
         if (paging_io) {
             if (off64 >= newlength) {
-                TRACE("paging IO tried to write beyond end of file (file size = %I64x, offset = %I64x, length = %x)\n", newlength, off64, *length);
+                TRACE("paging IO tried to write beyond end of file (file size = %I64x, offset = %I64x, length = %lx)\n", newlength, off64, *length);
                 TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 Status = STATUS_SUCCESS;
@@ -4239,14 +4239,14 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             } else {
                 if (fCcCopyWriteEx) {
-                    TRACE("CcCopyWriteEx(%p, %I64x, %x, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
+                    TRACE("CcCopyWriteEx(%p, %I64x, %lx, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
                     if (!fCcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
                         Status = STATUS_PENDING;
                         goto end;
                     }
                     TRACE("CcCopyWriteEx finished\n");
                 } else {
-                    TRACE("CcCopyWrite(%p, %I64x, %x, %u, %p)\n", FileObject, off64, *length, wait, buf);
+                    TRACE("CcCopyWrite(%p, %I64x, %lx, %u, %p)\n", FileObject, off64, *length, wait, buf);
                     if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
                         Status = STATUS_PENDING;
                         goto end;
@@ -4271,7 +4271,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             char* data2;
 
             if (newlength > fcb->adsmaxlen) {
-                ERR("error - xattr too long (%I64u > %u)\n", newlength, fcb->adsmaxlen);
+                ERR("error - xattr too long (%I64u > %lu)\n", newlength, fcb->adsmaxlen);
                 Status = STATUS_DISK_FULL;
                 goto end;
             }
@@ -4552,7 +4552,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, bool wait, bool deferred_wr
     Irp->IoStatus.Information = 0;
 
     TRACE("offset = %I64x\n", offset.QuadPart);
-    TRACE("length = %x\n", IrpSp->Parameters.Write.Length);
+    TRACE("length = %lx\n", IrpSp->Parameters.Write.Length);
 
     if (!Irp->AssociatedIrp.SystemBuffer) {
         buf = map_user_buffer(Irp, fcb && fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);

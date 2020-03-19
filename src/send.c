@@ -2067,7 +2067,7 @@ static bool try_clone(send_context* context, send_ext* se) {
             len--;
 
             if (sectlen > len) {
-                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
                 return false;
             }
 

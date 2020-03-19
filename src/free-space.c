@@ -781,7 +781,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             explen = (ULONG)(tp.item->key.offset / (Vcb->superblock.sector_size * 8));
 
             if (tp.item->size < explen) {
-                WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, explen);
+                WARN("(%I64x,%x,%I64x) was %u bytes, expected %lu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, explen);
                 return STATUS_NOT_FOUND;
             } else if (tp.item->size == 0) {
                 WARN("(%I64x,%x,%I64x) has size of 0\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);

@@ -106,7 +106,7 @@ void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t uid) {
         }
 
         i++;
-        TRACE("val = %u, i = %u, ssl = %u\n", (uint32_t)val, i, sidstringlength);
+        TRACE("val = %u, i = %u, ssl = %lu\n", (uint32_t)val, i, sidstringlength);
 
         if (np == 0) {
             sid->auth[0] = (uint8_t)((val & 0xff0000000000) >> 40);
@@ -191,7 +191,7 @@ void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t gid) {
         }
 
         i++;
-        TRACE("val = %u, i = %u, ssl = %u\n", (uint32_t)val, i, sidstringlength);
+        TRACE("val = %u, i = %u, ssl = %lu\n", (uint32_t)val, i, sidstringlength);
 
         if (np == 0) {
             sid->auth[0] = (uint8_t)((val & 0xff0000000000) >> 40);
@@ -713,7 +713,7 @@ NTSTATUS __stdcall drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
     if (IrpSp->Parameters.QuerySecurity.SecurityInformation & SACL_SECURITY_INFORMATION)
         TRACE("SACL_SECURITY_INFORMATION\n");
 
-    TRACE("length = %u\n", IrpSp->Parameters.QuerySecurity.Length);
+    TRACE("length = %lu\n", IrpSp->Parameters.QuerySecurity.Length);
 
     sd = map_user_buffer(Irp, NormalPagePriority);
     TRACE("sd = %p\n", sd);
@@ -762,7 +762,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
-    TRACE("(%p, %p, %p, %x)\n", Vcb, FileObject, sd, *flags);
+    TRACE("(%p, %p, %p, %lx)\n", Vcb, FileObject, sd, *flags);
 
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;

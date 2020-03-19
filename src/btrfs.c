@@ -1058,7 +1058,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
             ULONG label_len, orig_label_len;
 
             TRACE("FileFsVolumeInformation\n");
-            TRACE("max length = %u\n", IrpSp->Parameters.QueryVolume.Length);
+            TRACE("max length = %lu\n", IrpSp->Parameters.QueryVolume.Length);
 
             ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
@@ -1080,7 +1080,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
                 overflow = true;
             }
 
-            TRACE("label_len = %u\n", label_len);
+            TRACE("label_len = %lu\n", label_len);
 
             ffvi.VolumeCreationTime.QuadPart = 0; // FIXME
             ffvi.VolumeSerialNumber = Vcb->superblock.uuid.uuid[12] << 24 | Vcb->superblock.uuid.uuid[13] << 16 | Vcb->superblock.uuid.uuid[14] << 8 | Vcb->superblock.uuid.uuid[15];
@@ -2554,7 +2554,7 @@ bool get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ uint16
                 dosnum |= val[i] + 10 - 'a';
         }
 
-        TRACE("DOSATTRIB: %08x\n", dosnum);
+        TRACE("DOSATTRIB: %08lx\n", dosnum);
 
         *atts = dosnum;
 
@@ -2811,7 +2811,7 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
 
         Status = sync_read_phys(device, fileobj, superblock_addrs[i], to_read, (PUCHAR)sb, false);
         if (!NT_SUCCESS(Status)) {
-            ERR("Failed to read superblock %u: %08lx\n", i, Status);
+            ERR("Failed to read superblock %lu: %08lx\n", i, Status);
             ExFreePool(sb);
             return Status;
         }
@@ -2823,7 +2823,7 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
                 return STATUS_UNRECOGNIZED_VOLUME;
             }
         } else {
-            TRACE("got superblock %u!\n", i);
+            TRACE("got superblock %lu!\n", i);
 
             if (sb->sector_size == 0)
                 WARN("superblock sector size was 0\n");

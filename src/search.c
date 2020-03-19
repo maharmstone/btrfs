@@ -317,7 +317,7 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         sdn.DeviceNumber = 0xffffffff;
         sdn.PartitionNumber = 0;
     } else
-        TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
+        TRACE("DeviceType = %lu, DeviceNumber = %lu, PartitionNumber = %lu\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
     test_vol(devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
 
@@ -529,7 +529,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
         sdn.DeviceNumber = 0xffffffff;
         sdn.PartitionNumber = 0;
     } else
-        TRACE("DeviceType = %u, DeviceNumber = %u, PartitionNumber = %u\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
+        TRACE("DeviceType = %lu, DeviceNumber = %lu, PartitionNumber = %lu\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
     // If we've just added a partition to a whole-disk filesystem, unmount it
     if (sdn.DeviceNumber != 0xffffffff && sdn.PartitionNumber != 0) {

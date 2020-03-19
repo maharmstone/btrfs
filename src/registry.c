@@ -596,7 +596,7 @@ static void read_mappings(PUNICODE_STRING regpath) {
 
                 RtlCopyMemory(&val, (uint8_t*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(uint32_t)));
 
-                TRACE("entry %u = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
+                TRACE("entry %lu = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
 
                 add_user_mapping(kvfi->Name, kvfi->NameLength / sizeof(WCHAR), val);
             }
@@ -675,7 +675,7 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
 
                 RtlCopyMemory(&val, (uint8_t*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(uint32_t)));
 
-                TRACE("entry %u = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
+                TRACE("entry %lu = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
 
                 add_group_mapping(kvfi->Name, kvfi->NameLength / sizeof(WCHAR), val);
             }
@@ -861,7 +861,7 @@ void read_registry(PUNICODE_STRING regpath, bool refresh) {
                 if (log_device.Buffer[(log_device.Length / sizeof(WCHAR)) - 1] == 0)
                     log_device.Length -= sizeof(WCHAR);
             } else {
-                ERR("LogDevice was type %u, length %u\n", kvfi->Type, kvfi->DataLength);
+                ERR("LogDevice was type %lu, length %lu\n", kvfi->Type, kvfi->DataLength);
 
                 Status = ZwDeleteValueKey(h, &us);
                 if (!NT_SUCCESS(Status)) {
@@ -938,7 +938,7 @@ void read_registry(PUNICODE_STRING regpath, bool refresh) {
                 if (log_file.Buffer[(log_file.Length / sizeof(WCHAR)) - 1] == 0)
                     log_file.Length -= sizeof(WCHAR);
             } else {
-                ERR("LogFile was type %u, length %u\n", kvfi->Type, kvfi->DataLength);
+                ERR("LogFile was type %lu, length %lu\n", kvfi->Type, kvfi->DataLength);
 
                 Status = ZwDeleteValueKey(h, &us);
                 if (!NT_SUCCESS(Status))

@@ -572,7 +572,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
         len--;
 
         if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %lx bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -998,7 +998,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
         len--;
 
         if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %lx bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1271,7 +1271,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     }
 
     if (tp2.item->size < datalen) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, datalen);
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %lu\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, datalen);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1604,7 +1604,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
             len--;
 
             if (sectlen > len) {
-                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
                 return 0;
             }
 
@@ -1762,7 +1762,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         len--;
 
         if (sectlen > len) {
-            WARN("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            WARN("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
             return false;
         }
 
@@ -2175,7 +2175,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
         len--;
 
         if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
             return 0;
         }
 
@@ -2260,7 +2260,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
         len--;
 
         if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
             return 0;
         }
 

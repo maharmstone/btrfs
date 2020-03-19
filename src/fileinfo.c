@@ -170,7 +170,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         return STATUS_INVALID_PARAMETER;
     }
 
-    TRACE("file = %p, attributes = %x\n", FileObject, fbi->FileAttributes);
+    TRACE("file = %p, attributes = %lx\n", FileObject, fbi->FileAttributes);
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
@@ -349,7 +349,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     } else
         atts = fcb->atts;
 
-    TRACE("atts = %x\n", atts);
+    TRACE("atts = %lx\n", atts);
 
     if (atts & FILE_ATTRIBUTE_READONLY) {
         TRACE("not allowing readonly file to be deleted\n");
@@ -2437,7 +2437,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         flags = fri->ReplaceIfExists ? FILE_RENAME_REPLACE_IF_EXISTS : 0;
 
     TRACE("tfo = %p\n", tfo);
-    TRACE("Flags = %x\n", flags);
+    TRACE("Flags = %lx\n", flags);
     TRACE("RootDirectory = %p\n", fri->RootDirectory);
     TRACE("FileName = %.*S\n", fri->FileNameLength / sizeof(WCHAR), fri->FileName);
 
@@ -3079,7 +3079,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
         TRACE("extending stream to %I64x bytes\n", end);
 
         if (end > fcb->adsmaxlen) {
-            ERR("error - xattr too long (%u > %u)\n", end, fcb->adsmaxlen);
+            ERR("error - xattr too long (%u > %lu)\n", end, fcb->adsmaxlen);
             return STATUS_DISK_FULL;
         }
 
@@ -3319,9 +3319,9 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     else
         flags = fli->ReplaceIfExists ? FILE_LINK_REPLACE_IF_EXISTS : 0;
 
-    TRACE("flags = %x\n", flags);
+    TRACE("flags = %lx\n", flags);
     TRACE("RootDirectory = %p\n", fli->RootDirectory);
-    TRACE("FileNameLength = %x\n", fli->FileNameLength);
+    TRACE("FileNameLength = %lx\n", fli->FileNameLength);
     TRACE("FileName = %.*S\n", fli->FileNameLength / sizeof(WCHAR), fli->FileName);
 
     fn = fli->FileName;
@@ -3653,7 +3653,7 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
     ULONG filter;
 
     if (IrpSp->Parameters.SetFile.Length < sizeof(FILE_VALID_DATA_LENGTH_INFORMATION)) {
-        ERR("input buffer length was %u, expected %u\n", IrpSp->Parameters.SetFile.Length, sizeof(FILE_VALID_DATA_LENGTH_INFORMATION));
+        ERR("input buffer length was %lu, expected %u\n", IrpSp->Parameters.SetFile.Length, sizeof(FILE_VALID_DATA_LENGTH_INFORMATION));
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -5604,7 +5604,7 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     Status = IoCheckEaBufferValidity(ffei, IrpSp->Parameters.SetEa.Length, &offset);
     if (!NT_SUCCESS(Status)) {
-        ERR("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
+        ERR("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
         goto end;
     }
 

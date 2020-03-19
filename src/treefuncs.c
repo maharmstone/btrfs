@@ -1297,7 +1297,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             // replace
 
                             if (td->size + bi->datalen - oldxasize > maxlen)
-                                ERR("DIR_ITEM would be over maximum size, truncating (%u + %u - %u > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
+                                ERR("DIR_ITEM would be over maximum size, truncating (%u + %u - %lu > %u)\n", td->size, bi->datalen, oldxasize, maxlen);
 
                             newdata = ExAllocatePoolWithTag(PagedPool, td->size + bi->datalen - oldxasize, ALLOC_TAG);
                             if (!newdata) {

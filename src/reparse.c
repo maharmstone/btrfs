@@ -184,7 +184,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     if (write) {
         minlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + sizeof(WCHAR);
         if (buflen < minlen) {
-            WARN("buffer was less than minimum length (%u < %u)\n", buflen, minlen);
+            WARN("buffer was less than minimum length (%lu < %lu)\n", buflen, minlen);
             return STATUS_INVALID_PARAMETER;
         }
 

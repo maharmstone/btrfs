@@ -990,7 +990,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)&di->name[di->n], di->m, &offset);
 
                         if (!NT_SUCCESS(Status))
-                            WARN("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
+                            WARN("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
                         else {
                             FILE_FULL_EA_INFORMATION* eainfo;
 
@@ -2812,7 +2812,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
 
     if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
-        WARN("not enough room for new DIR_ITEM (%u + %u > %u)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
+        WARN("not enough room for new DIR_ITEM (%u + %lu > %lu)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return STATUS_DISK_FULL;
@@ -2990,7 +2990,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     LONG oc;
 #endif
 
-    TRACE("(%p, %p, %p, %.*S, %x, %x)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
+    TRACE("(%p, %p, %p, %.*S, %lx, %lx)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
 
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
@@ -3012,7 +3012,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
                         if (ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT))
                             acec = ctx;
                         else {
-                            ERR("GUID_ECP_ATOMIC_CREATE context was too short: %u bytes, expected %u\n", ctxsize,
+                            ERR("GUID_ECP_ATOMIC_CREATE context was too short: %lu bytes, expected %u\n", ctxsize,
                                 sizeof(ATOMIC_CREATE_ECP_CONTEXT));
                         }
                     } else if (RtlCompareMemory(&type, &GUID_ECP_QUERY_ON_CREATE, sizeof(GUID)) == sizeof(GUID))
@@ -3137,7 +3137,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
 
             Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength, &offset);
             if (!NT_SUCCESS(Status)) {
-                ERR("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
+                ERR("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
                 goto end;
             }
         }
@@ -3383,7 +3383,7 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
         }
 
         if (options)
-            TRACE("    unknown options: %x\n", options);
+            TRACE("    unknown options: %lx\n", options);
     } else {
         TRACE("requested options: (none)\n");
     }
@@ -3807,7 +3807,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
 
                 Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength, &offset);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
+                    ERR("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
 
                     IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
@@ -4445,7 +4445,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             break;
 
         default:
-            ERR("unknown disposition: %x\n", RequestedDisposition);
+            ERR("unknown disposition: %lx\n", RequestedDisposition);
             Status = STATUS_NOT_IMPLEMENTED;
             goto exit;
     }
@@ -4750,7 +4750,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     FsRtlEnterFileSystem();
 
-    TRACE("create (flags = %x)\n", Irp->Flags);
+    TRACE("create (flags = %lx)\n", Irp->Flags);
 
     top_level = is_top_level(Irp);
 

@@ -3809,7 +3809,7 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
     uint64_t num_rw_devices;
     OBJECT_ATTRIBUTES oa;
 
-    TRACE("(%p, %p, %x)\n", Vcb, data, length);
+    TRACE("(%p, %p, %lx)\n", Vcb, data, length);
 
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;

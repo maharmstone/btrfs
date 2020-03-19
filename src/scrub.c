@@ -502,7 +502,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
             TREE_BLOCK_REF* tbr;
 
             if (len < sizeof(TREE_BLOCK_REF)) {
-                ERR("TREE_BLOCK_REF takes up %u bytes, but only %u remaining\n", sizeof(TREE_BLOCK_REF), len);
+                ERR("TREE_BLOCK_REF takes up %u bytes, but only %lu remaining\n", sizeof(TREE_BLOCK_REF), len);
                 break;
             }
 
@@ -518,7 +518,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
             EXTENT_DATA_REF* edr;
 
             if (len < sizeof(EXTENT_DATA_REF)) {
-                ERR("EXTENT_DATA_REF takes up %u bytes, but only %u remaining\n", sizeof(EXTENT_DATA_REF), len);
+                ERR("EXTENT_DATA_REF takes up %u bytes, but only %lu remaining\n", sizeof(EXTENT_DATA_REF), len);
                 break;
             }
 
@@ -534,7 +534,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
             SHARED_BLOCK_REF* sbr;
 
             if (len < sizeof(SHARED_BLOCK_REF)) {
-                ERR("SHARED_BLOCK_REF takes up %u bytes, but only %u remaining\n", sizeof(SHARED_BLOCK_REF), len);
+                ERR("SHARED_BLOCK_REF takes up %u bytes, but only %lu remaining\n", sizeof(SHARED_BLOCK_REF), len);
                 break;
             }
 
@@ -550,7 +550,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
             SHARED_DATA_REF* sdr;
 
             if (len < sizeof(SHARED_DATA_REF)) {
-                ERR("SHARED_DATA_REF takes up %u bytes, but only %u remaining\n", sizeof(SHARED_DATA_REF), len);
+                ERR("SHARED_DATA_REF takes up %u bytes, but only %lu remaining\n", sizeof(SHARED_DATA_REF), len);
                 break;
             }
 
@@ -1473,7 +1473,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
             context.stripes[i].start = offset - c->offset;
             context.stripes[i].length = size;
         } else if (type != BLOCK_FLAG_RAID0 && type != BLOCK_FLAG_RAID10) {
-            ERR("unexpected chunk type %x\n", type);
+            ERR("unexpected chunk type %lx\n", type);
             Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
