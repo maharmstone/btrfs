@@ -1170,6 +1170,10 @@ extern uint32_t mount_readonly;
 extern uint32_t mount_no_root_dir;
 extern uint32_t no_pnp;
 
+#ifndef __GNUC__
+#define __attribute__(x)
+#endif
+
 #ifdef _DEBUG
 
 extern bool log_started;
@@ -1184,7 +1188,7 @@ extern uint32_t debug_log_level;
 #define FIXME(s, ...) MSG(funcname, __FILE__, __LINE__, s, 1, ##__VA_ARGS__)
 #define ERR(s, ...) MSG(funcname, __FILE__, __LINE__, s, 1, ##__VA_ARGS__)
 
-void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned int line, _In_ char* s, ...);
+void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned int line, _In_ char* s, ...) __attribute__((format(printf, 4, 5)));
 
 #else
 
@@ -1195,7 +1199,7 @@ void _debug_message(_In_ const char* func, _In_ const char* file, _In_ unsigned 
 #define FIXME(s, ...) MSG(funcname, s, 1, ##__VA_ARGS__)
 #define ERR(s, ...) MSG(funcname, s, 1, ##__VA_ARGS__)
 
-void _debug_message(_In_ const char* func, _In_ char* s, ...);
+void _debug_message(_In_ const char* func, _In_ char* s, ...) __attribute__((format(printf, 2, 3)));
 
 #endif
 
