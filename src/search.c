@@ -83,7 +83,7 @@ static bool fs_ignored(BTRFS_UUID* uuid) {
     Status = ZwCreateKey(&h, KEY_QUERY_VALUE, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
 
     if (!NT_SUCCESS(Status)) {
-        TRACE("ZwCreateKey returned %08x\n", Status);
+        TRACE("ZwCreateKey returned %08lx\n", Status);
         ExFreePool(path.Buffer);
         return false;
     }
@@ -134,7 +134,7 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                            &geometry, sizeof(DISK_GEOMETRY), true, &iosb);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("%.*S had a sector size of 0, and IOCTL_DISK_GET_DRIVE_GEOMETRY returned %08x\n",
+            ERR("%.*S had a sector size of 0, and IOCTL_DISK_GET_DRIVE_GEOMETRY returned %08lx\n",
                 devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
             goto deref;
         }
@@ -227,7 +227,7 @@ NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, &mmps1, sizeof(MOUNTMGR_MOUNT_POINTS), false, NULL);
 
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
-        ERR("IOCTL_MOUNTMGR_DELETE_POINTS 1 returned %08x\n", Status);
+        ERR("IOCTL_MOUNTMGR_DELETE_POINTS 1 returned %08lx\n", Status);
         ExFreePool(mmp);
         return Status;
     }
@@ -247,7 +247,7 @@ NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_DELETE_POINTS, mmp, mmpsize, mmps2, mmps1.Size, false, NULL);
 
     if (!NT_SUCCESS(Status))
-        ERR("IOCTL_MOUNTMGR_DELETE_POINTS 2 returned %08x\n", Status);
+        ERR("IOCTL_MOUNTMGR_DELETE_POINTS 2 returned %08lx\n", Status);
 
     ExFreePool(mmps2);
     ExFreePool(mmp);
@@ -272,7 +272,7 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &fileobj, &devobj);
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&boot_lock);
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        ERR("IoGetDeviceObjectPointer returned %08lx\n", Status);
         return;
     }
 
@@ -306,14 +306,14 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
                         &gli, sizeof(gli), true, NULL);
 
     if (!NT_SUCCESS(Status)) {
-        ERR("error reading length information: %08x\n", Status);
+        ERR("error reading length information: %08lx\n", Status);
         goto end;
     }
 
     Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
                        &sdn, sizeof(STORAGE_DEVICE_NUMBER), true, NULL);
     if (!NT_SUCCESS(Status)) {
-        TRACE("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        TRACE("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08lx\n", Status);
         sdn.DeviceNumber = 0xffffffff;
         sdn.PartitionNumber = 0;
     } else
@@ -343,13 +343,13 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
     if (vde->mounted_device && (!Vcb || !Vcb->options.allow_degraded)) {
         Status = pnp_surprise_removal(vde->mounted_device, NULL);
         if (!NT_SUCCESS(Status))
-            ERR("pnp_surprise_removal returned %08x\n", Status);
+            ERR("pnp_surprise_removal returned %08lx\n", Status);
     }
 
     if (!Vcb || !Vcb->options.allow_degraded) {
         Status = IoSetDeviceInterfaceState(&vde->bus_name, false);
         if (!NT_SUCCESS(Status))
-            WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+            WARN("IoSetDeviceInterfaceState returned %08lx\n", Status);
     }
 
     if (pdode->children_loaded > 0) {
@@ -362,7 +362,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
             RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
             Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
             if (!NT_SUCCESS(Status))
-                ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+                ERR("IoGetDeviceObjectPointer returned %08lx\n", Status);
             else {
                 le = pdode->children.Flink;
 
@@ -374,7 +374,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
 
                         Status = dev_ioctl(vc2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), true, NULL);
                         if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
-                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08lx\n", Status);
                         else {
                             MOUNTDEV_NAME* mdn2;
                             ULONG mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
@@ -385,7 +385,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
                             else {
                                 Status = dev_ioctl(vc2->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, true, NULL);
                                 if (!NT_SUCCESS(Status))
-                                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08lx\n", Status);
                                 else {
                                     UNICODE_STRING name;
 
@@ -394,7 +394,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
 
                                     Status = mountmgr_add_drive_letter(mountmgr, &name);
                                     if (!NT_SUCCESS(Status))
-                                        WARN("mountmgr_add_drive_letter returned %08x\n", Status);
+                                        WARN("mountmgr_add_drive_letter returned %08lx\n", Status);
                                 }
 
                                 ExFreePool(mdn2);
@@ -458,7 +458,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
 
         Status = IoSetDeviceInterfaceState(&vde->bus_name, false);
         if (!NT_SUCCESS(Status))
-            WARN("IoSetDeviceInterfaceState returned %08x\n", Status);
+            WARN("IoSetDeviceInterfaceState returned %08lx\n", Status);
 
         if (vde->pdo->AttachedDevice)
             IoDetachDevice(vde->pdo);
@@ -503,7 +503,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     Status = IoGetDeviceObjectPointer(devpath, FILE_READ_ATTRIBUTES, &fileobj, &devobj);
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&boot_lock);
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        ERR("IoGetDeviceObjectPointer returned %08lx\n", Status);
         return;
     }
 
@@ -514,18 +514,18 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
 
     Status = dev_ioctl(devobj, IOCTL_VOLUME_ONLINE, NULL, 0, NULL, 0, true, NULL);
     if (!NT_SUCCESS(Status))
-        TRACE("IOCTL_VOLUME_ONLINE returned %08x\n", Status);
+        TRACE("IOCTL_VOLUME_ONLINE returned %08lx\n", Status);
 
     Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), true, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08x\n", Status);
+        ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08lx\n", Status);
         goto end;
     }
 
     Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
                        &sdn, sizeof(STORAGE_DEVICE_NUMBER), true, NULL);
     if (!NT_SUCCESS(Status)) {
-        TRACE("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08x\n", Status);
+        TRACE("IOCTL_STORAGE_GET_DEVICE_NUMBER returned %08lx\n", Status);
         sdn.DeviceNumber = 0xffffffff;
         sdn.PartitionNumber = 0;
     } else
@@ -758,7 +758,7 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
 
                 Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), true, NULL);
                 if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
-                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                    ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08lx\n", Status);
                 else {
                     MOUNTDEV_NAME* mdn2;
                     ULONG mdnsize = (ULONG)offsetof(MOUNTDEV_NAME, Name[0]) + mdn.NameLength;
@@ -769,7 +769,7 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
                     else {
                         Status = dev_ioctl(vc->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, mdn2, mdnsize, true, NULL);
                         if (!NT_SUCCESS(Status))
-                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08x\n", Status);
+                            ERR("IOCTL_MOUNTDEV_QUERY_DEVICE_NAME returned %08lx\n", Status);
                         else {
                             if (mdn2->NameLength == device_name->Length && RtlCompareMemory(mdn2->Name, device_name->Buffer, device_name->Length) == device_name->Length) {
                                 vc2 = vc;
@@ -799,7 +799,7 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
     if (need_remove) {
         Status = remove_drive_letter(mountmgr, device_name);
         if (!NT_SUCCESS(Status))
-            ERR("remove_drive_letter returned %08x\n", Status);
+            ERR("remove_drive_letter returned %08lx\n", Status);
         else
             vc2->had_drive_letter = true;
     }
@@ -848,7 +848,7 @@ void __stdcall mountmgr_thread(_In_ void* context) {
     RtlInitUnicodeString(&mmdevpath, MOUNTMGR_DEVICE_NAME);
     Status = IoGetDeviceObjectPointer(&mmdevpath, FILE_READ_ATTRIBUTES, &FileObject, &mountmgr);
     if (!NT_SUCCESS(Status)) {
-        ERR("IoGetDeviceObjectPointer returned %08x\n", Status);
+        ERR("IoGetDeviceObjectPointer returned %08lx\n", Status);
         return;
     }
 
@@ -881,7 +881,7 @@ void __stdcall mountmgr_thread(_In_ void* context) {
             break;
 
         if (!NT_SUCCESS(Status)) {
-            ERR("IOCTL_MOUNTMGR_CHANGE_NOTIFY returned %08x\n", Status);
+            ERR("IOCTL_MOUNTMGR_CHANGE_NOTIFY returned %08lx\n", Status);
             break;
         }
 
@@ -893,7 +893,7 @@ void __stdcall mountmgr_thread(_In_ void* context) {
                            false, NULL);
 
         if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
-            ERR("IOCTL_MOUNTMGR_QUERY_POINTS 1 returned %08x\n", Status);
+            ERR("IOCTL_MOUNTMGR_QUERY_POINTS 1 returned %08lx\n", Status);
         else if (mmps.Size > 0) {
             MOUNTMGR_MOUNT_POINTS* mmps2;
 
@@ -906,7 +906,7 @@ void __stdcall mountmgr_thread(_In_ void* context) {
             Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_QUERY_POINTS, &mmp, sizeof(MOUNTMGR_MOUNT_POINTS), mmps2, mmps.Size,
                                false, NULL);
             if (!NT_SUCCESS(Status))
-                ERR("IOCTL_MOUNTMGR_QUERY_POINTS returned %08x\n", Status);
+                ERR("IOCTL_MOUNTMGR_QUERY_POINTS returned %08lx\n", Status);
             else
                 mountmgr_updated(mountmgr, mmps2);
 

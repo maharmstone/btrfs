@@ -49,7 +49,7 @@ NTSTATUS do_read_job(PIRP Irp) {
         ExReleaseResourceLite(fcb->Header.Resource);
 
     if (!NT_SUCCESS(Status))
-        ERR("do_read returned %08x\n", Status);
+        ERR("do_read returned %08lx\n", Status);
 
     Irp->IoStatus.Status = Status;
 
@@ -60,7 +60,7 @@ NTSTATUS do_read_job(PIRP Irp) {
     if (top_level)
         IoSetTopLevelIrp(NULL);
 
-    TRACE("returning %08x\n", Status);
+    TRACE("returning %08lx\n", Status);
 
     return Status;
 }
@@ -76,7 +76,7 @@ NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp) {
     }
 
     if (!NT_SUCCESS(Status))
-        ERR("write_file returned %08x\n", Status);
+        ERR("write_file returned %08lx\n", Status);
 
     Irp->IoStatus.Status = Status;
 
@@ -87,7 +87,7 @@ NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp) {
     if (top_level)
         IoSetTopLevelIrp(NULL);
 
-    TRACE("returning %08x\n", Status);
+    TRACE("returning %08lx\n", Status);
 
     return Status;
 }
@@ -147,7 +147,7 @@ bool add_thread_job(device_extension* Vcb, PIRP Irp) {
         try {
             MmProbeAndLockPages(Mdl, Irp->RequestorMode, op);
         } except(EXCEPTION_EXECUTE_HANDLER) {
-            ERR("MmProbeAndLockPages raised status %08x\n", GetExceptionCode());
+            ERR("MmProbeAndLockPages raised status %08lx\n", GetExceptionCode());
 
             IoFreeMdl(Mdl);
             Irp->MdlAddress = NULL;

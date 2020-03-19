@@ -294,7 +294,7 @@ NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_
 
         Status = do_lzo_decompress(&stream);
         if (!NT_SUCCESS(Status)) {
-            ERR("do_lzo_decompress returned %08x\n", Status);
+            ERR("do_lzo_decompress returned %08lx\n", Status);
             return Status;
         }
 
@@ -755,7 +755,7 @@ NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t 
 
         Status = lzo1x_1_compress(&stream);
         if (!NT_SUCCESS(Status)) {
-            ERR("lzo1x_1_compress returned %08x\n", Status);
+            ERR("lzo1x_1_compress returned %08lx\n", Status);
             ExFreePool(comp_data);
             return Status;
         }
@@ -889,7 +889,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
 
     Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("excise_extents returned %08x\n", Status);
+        ERR("excise_extents returned %08lx\n", Status);
         return Status;
     }
 
@@ -908,7 +908,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         Status = add_calc_job_comp(fcb->Vcb, type, (uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].inlen,
                                    parts[i].buf, parts[i].inlen, &parts[i].cj);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_calc_job_comp returned %08x\n", Status);
+            ERR("add_calc_job_comp returned %08lx\n", Status);
 
             for (unsigned int j = 0; j < i; j++) {
                 KeWaitForSingleObject(&parts[j].cj->event, Executive, KernelMode, false, NULL);
@@ -932,7 +932,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     }
 
     if (!NT_SUCCESS(Status)) {
-        ERR("calc job returned %08x\n", Status);
+        ERR("calc job returned %08lx\n", Status);
 
         for (unsigned int i = 0; i < num_parts; i++) {
             ExFreePool(parts[i].cj);
@@ -1039,7 +1039,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("alloc_chunk returned %08x\n", Status);
+            ERR("alloc_chunk returned %08lx\n", Status);
             ExFreePool(buf);
             ExFreePool(parts);
             return Status;
@@ -1070,7 +1070,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     Status = write_data_complete(fcb->Vcb, address, buf, buflen, Irp, NULL, false, 0,
                                  fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
     if (!NT_SUCCESS(Status)) {
-        ERR("write_data_complete returned %08x\n", Status);
+        ERR("write_data_complete returned %08lx\n", Status);
         ExFreePool(buf);
         ExFreePool(parts);
         return Status;
@@ -1147,7 +1147,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         Status = add_extent_to_fcb(fcb, start_data + (i * COMPRESSED_EXTENT_SIZE), ed, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2),
                                    true, csum2, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_extent_to_fcb returned %08x\n", Status);
+            ERR("add_extent_to_fcb returned %08lx\n", Status);
             ExFreePool(ed);
             ExFreePool(parts);
 

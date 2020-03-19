@@ -91,42 +91,42 @@ void calc_thread_main(device_extension* Vcb, calc_job* cj) {
                 cj2->Status = zlib_decompress(src, cj2->inlen, dest, cj2->outlen);
 
                 if (!NT_SUCCESS(cj2->Status))
-                    ERR("zlib_decompress returned %08x\n", cj2->Status);
+                    ERR("zlib_decompress returned %08lx\n", cj2->Status);
             break;
 
             case calc_thread_decomp_lzo:
                 cj2->Status = lzo_decompress(src, cj2->inlen, dest, cj2->outlen, cj2->off);
 
                 if (!NT_SUCCESS(cj2->Status))
-                    ERR("lzo_decompress returned %08x\n", cj2->Status);
+                    ERR("lzo_decompress returned %08lx\n", cj2->Status);
             break;
 
             case calc_thread_decomp_zstd:
                 cj2->Status = zstd_decompress(src, cj2->inlen, dest, cj2->outlen);
 
                 if (!NT_SUCCESS(cj2->Status))
-                    ERR("zstd_decompress returned %08x\n", cj2->Status);
+                    ERR("zstd_decompress returned %08lx\n", cj2->Status);
             break;
 
             case calc_thread_comp_zlib:
                 cj2->Status = zlib_compress(src, cj2->inlen, dest, cj2->outlen, Vcb->options.zlib_level, &cj2->space_left);
 
                 if (!NT_SUCCESS(cj2->Status))
-                    ERR("zlib_compress returned %08x\n", cj2->Status);
+                    ERR("zlib_compress returned %08lx\n", cj2->Status);
             break;
 
             case calc_thread_comp_lzo:
                 cj2->Status = lzo_compress(src, cj2->inlen, dest, cj2->outlen, &cj2->space_left);
 
                 if (!NT_SUCCESS(cj2->Status))
-                    ERR("lzo_compress returned %08x\n", cj2->Status);
+                    ERR("lzo_compress returned %08lx\n", cj2->Status);
             break;
 
             case calc_thread_comp_zstd:
                 cj2->Status = zstd_compress(src, cj2->inlen, dest, cj2->outlen, Vcb->options.zstd_level, &cj2->space_left);
 
                 if (!NT_SUCCESS(cj2->Status))
-                    ERR("zstd_compress returned %08x\n", cj2->Status);
+                    ERR("zstd_compress returned %08lx\n", cj2->Status);
             break;
         }
 

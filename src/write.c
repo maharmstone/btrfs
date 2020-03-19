@@ -48,7 +48,7 @@ bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length
         NTSTATUS Status = load_cache_chunk(Vcb, c, NULL);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("load_cache_chunk returned %08x\n", Status);
+            ERR("load_cache_chunk returned %08lx\n", Status);
             return false;
         }
     }
@@ -763,7 +763,7 @@ static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stri
         }
 
         if (!NT_SUCCESS(Status)) {
-            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
             IoFreeMdl(master_mdl);
             return Status;
         }
@@ -891,7 +891,7 @@ static NTSTATUS prepare_raid10_write(_Pre_satisfies_(_Curr_->chunk_item->sub_str
         }
 
         if (!NT_SUCCESS(Status)) {
-            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
             IoFreeMdl(master_mdl);
             return Status;
         }
@@ -997,7 +997,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, uint64_t add
             if (RtlAreBitsClear(&ps->bmp, 0, (ULONG)((num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size))) {
                 Status = flush_partial_stripe(Vcb, c, ps);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("flush_partial_stripe returned %08x\n", Status);
+                    ERR("flush_partial_stripe returned %08lx\n", Status);
                     goto end;
                 }
 
@@ -1076,7 +1076,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
         delta = min(irp_offset + length, delta);
         Status = add_partial_stripe(Vcb, c, address + length - delta, (uint32_t)delta, (uint8_t*)data + irp_offset + length - delta);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_partial_stripe returned %08x\n", Status);
+            ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
         }
 
@@ -1088,7 +1088,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
 
         Status = add_partial_stripe(Vcb, c, address, (uint32_t)delta, (uint8_t*)data + irp_offset);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_partial_stripe returned %08x\n", Status);
+            ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
         }
 
@@ -1283,7 +1283,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
         }
 
         if (!NT_SUCCESS(Status)) {
-            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
             IoFreeMdl(master_mdl);
             return Status;
         }
@@ -1473,7 +1473,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
         delta = min(irp_offset + length, delta);
         Status = add_partial_stripe(Vcb, c, address + length - delta, (uint32_t)delta, (uint8_t*)data + irp_offset + length - delta);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_partial_stripe returned %08x\n", Status);
+            ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
         }
 
@@ -1485,7 +1485,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
 
         Status = add_partial_stripe(Vcb, c, address, (uint32_t)delta, (uint8_t*)data + irp_offset);
         if (!NT_SUCCESS(Status)) {
-            ERR("add_partial_stripe returned %08x\n", Status);
+            ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
         }
 
@@ -1698,7 +1698,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
         }
 
         if (!NT_SUCCESS(Status)) {
-            ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+            ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
             IoFreeMdl(master_mdl);
             goto exit;
         }
@@ -1924,7 +1924,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
     if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
         Status = prepare_raid0_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
-            ERR("prepare_raid0_write returned %08x\n", Status);
+            ERR("prepare_raid0_write returned %08lx\n", Status);
             goto prepare_failed;
         }
 
@@ -1932,7 +1932,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
         Status = prepare_raid10_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
-            ERR("prepare_raid10_write returned %08x\n", Status);
+            ERR("prepare_raid10_write returned %08lx\n", Status);
             goto prepare_failed;
         }
 
@@ -1940,7 +1940,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
         Status = prepare_raid5_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
-            ERR("prepare_raid5_write returned %08x\n", Status);
+            ERR("prepare_raid5_write returned %08lx\n", Status);
             goto prepare_failed;
         }
 
@@ -1948,7 +1948,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
     } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
         Status = prepare_raid6_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
-            ERR("prepare_raid6_write returned %08x\n", Status);
+            ERR("prepare_raid6_write returned %08lx\n", Status);
             goto prepare_failed;
         }
 
@@ -1992,7 +1992,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
                     }
 
                     if (!NT_SUCCESS(Status)) {
-                        ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                        ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
                         IoFreeMdl(stripes[i].mdl);
                         stripes[i].mdl = NULL;
                         goto prepare_failed;
@@ -2208,7 +2208,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
     }
 
     if (!NT_SUCCESS(Status)) {
-        ERR("write_data returned %08x\n", Status);
+        ERR("write_data returned %08lx\n", Status);
 
         if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
             chunk_unlock_range(Vcb, c, lockaddr, locklen);
@@ -2428,7 +2428,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
                                                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
                                 if (!NT_SUCCESS(Status)) {
-                                    ERR("update_changed_extent_ref returned %08x\n", Status);
+                                    ERR("update_changed_extent_ref returned %08lx\n", Status);
                                     goto end;
                                 }
                             }
@@ -2580,7 +2580,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                 Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
                                                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
                                 if (!NT_SUCCESS(Status)) {
-                                    ERR("update_changed_extent_ref returned %08x\n", Status);
+                                    ERR("update_changed_extent_ref returned %08lx\n", Status);
                                     goto end;
                                 }
                             }
@@ -2844,7 +2844,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
 
     Status = add_extent_to_fcb(fcb, start_data, ed, edsize, true, csum, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("add_extent_to_fcb returned %08x\n", Status);
+        ERR("add_extent_to_fcb returned %08lx\n", Status);
         if (csum) ExFreePool(csum);
         ExFreePool(ed);
         return false;
@@ -2873,7 +2873,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
         Status = write_data_complete(Vcb, address, data, (uint32_t)length, Irp, NULL, file_write, irp_offset,
                                      fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
         if (!NT_SUCCESS(Status))
-            ERR("write_data_complete returned %08x\n", Status);
+            ERR("write_data_complete returned %08lx\n", Status);
     }
 
     return true;
@@ -2939,7 +2939,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
         NTSTATUS Status = load_cache_chunk(Vcb, c, NULL);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("load_cache_chunk returned %08x\n", Status);
+            ERR("load_cache_chunk returned %08lx\n", Status);
             release_chunk_lock(c, Vcb);
             return false;
         }
@@ -2986,7 +2986,7 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t lengt
     } while (NT_SUCCESS(Status));
 
     if (Status != STATUS_DISK_FULL) {
-        ERR("alloc_chunk returned %08x\n", Status);
+        ERR("alloc_chunk returned %08lx\n", Status);
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
         return Status;
     }
@@ -3070,7 +3070,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("alloc_chunk returned %08x\n", Status);
+            ERR("alloc_chunk returned %08lx\n", Status);
             goto end;
         }
 
@@ -3085,7 +3085,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
 
         Status = insert_chunk_fragmented(fcb, start, length, NULL, true, rollback);
         if (!NT_SUCCESS(Status))
-            ERR("insert_chunk_fragmented returned %08x\n", Status);
+            ERR("insert_chunk_fragmented returned %08lx\n", Status);
 
         goto end;
 
@@ -3175,7 +3175,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
         ExReleaseResourceLite(&Vcb->chunk_lock);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("alloc_chunk returned %08x\n", Status);
+            ERR("alloc_chunk returned %08lx\n", Status);
             return Status;
         }
 
@@ -3202,7 +3202,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
         if (!done) {
             Status = insert_chunk_fragmented(fcb, start_data, length, data, false, rollback);
             if (!NT_SUCCESS(Status))
-                ERR("insert_chunk_fragmented returned %08x\n", Status);
+                ERR("insert_chunk_fragmented returned %08lx\n", Status);
 
             return Status;
         }
@@ -3228,14 +3228,14 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
 
         Status = read_file(fcb, make_inline ? (buf + offsetof(EXTENT_DATA, data[0])) : buf, 0, end, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
-            ERR("read_file returned %08x\n", Status);
+            ERR("read_file returned %08lx\n", Status);
             ExFreePool(buf);
             return Status;
         }
 
         Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("excise_extents returned %08x\n", Status);
+            ERR("excise_extents returned %08lx\n", Status);
             ExFreePool(buf);
             return Status;
         }
@@ -3245,7 +3245,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
 
             Status = do_write_file(fcb, 0, sector_align(end, fcb->Vcb->superblock.sector_size), buf, Irp, false, 0, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("do_write_file returned %08x\n", Status);
+                ERR("do_write_file returned %08lx\n", Status);
                 ExFreePool(buf);
                 return Status;
             }
@@ -3261,7 +3261,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
 
             Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + end), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_extent_to_fcb returned %08x\n", Status);
+                ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(buf);
                 return Status;
             }
@@ -3276,7 +3276,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
     Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sector_size),
                             sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("excise_extents returned %08x\n", Status);
+        ERR("excise_extents returned %08lx\n", Status);
         return Status;
     }
 
@@ -3350,7 +3350,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 Status = read_file(fcb, data, 0, origlength, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("read_file returned %08x\n", Status);
+                    ERR("read_file returned %08lx\n", Status);
                     ExFreePool(data);
                     return Status;
                 }
@@ -3359,14 +3359,14 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("excise_extents returned %08x\n", Status);
+                    ERR("excise_extents returned %08lx\n", Status);
                     ExFreePool(data);
                     return Status;
                 }
 
                 Status = do_write_file(fcb, 0, length, data, Irp, false, 0, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("do_write_file returned %08x\n", Status);
+                    ERR("do_write_file returned %08lx\n", Status);
                     ExFreePool(data);
                     return Status;
                 }
@@ -3397,7 +3397,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                     Status = read_file(fcb, ed->data, ext->offset, oldalloc, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("read_file returned %08x\n", Status);
+                        ERR("read_file returned %08lx\n", Status);
                         ExFreePool(ed);
                         return Status;
                     }
@@ -3408,7 +3408,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                     Status = add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("add_extent_to_fcb returned %08x\n", Status);
+                        ERR("add_extent_to_fcb returned %08lx\n", Status);
                         ExFreePool(ed);
                         return Status;
                     }
@@ -3437,7 +3437,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                         Status = insert_prealloc_extent(fcb, oldalloc, newalloc - oldalloc, rollback);
 
                         if (!NT_SUCCESS(Status)) {
-                            ERR("insert_prealloc_extent returned %08x\n", Status);
+                            ERR("insert_prealloc_extent returned %08lx\n", Status);
                             return Status;
                         }
                     }
@@ -3464,7 +3464,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     Status = insert_prealloc_extent(fcb, 0, newalloc, rollback);
 
                     if (!NT_SUCCESS(Status)) {
-                        ERR("insert_prealloc_extent returned %08x\n", Status);
+                        ERR("insert_prealloc_extent returned %08lx\n", Status);
                         return Status;
                     }
                 }
@@ -3503,7 +3503,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, rollback);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("add_extent_to_fcb returned %08x\n", Status);
+                    ERR("add_extent_to_fcb returned %08lx\n", Status);
                     ExFreePool(ed);
                     return Status;
                 }
@@ -3550,7 +3550,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)ed2->num_bytes, Irp,
                                      NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
-            ERR("write_data_complete returned %08x\n", Status);
+            ERR("write_data_complete returned %08lx\n", Status);
             return Status;
         }
 
@@ -3614,7 +3614,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)(end_data - ext->offset),
                                      Irp, NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
-            ERR("write_data_complete returned %08x\n", Status);
+            ERR("write_data_complete returned %08lx\n", Status);
             ExFreePool(newext1);
             ExFreePool(newext2);
             return Status;
@@ -3667,7 +3667,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                                                 fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("update_changed_extent_ref returned %08x\n", Status);
+                ERR("update_changed_extent_ref returned %08lx\n", Status);
                 return Status;
             }
         }
@@ -3704,7 +3704,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (uint32_t)ned2->num_bytes, Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
-            ERR("write_data_complete returned %08x\n", Status);
+            ERR("write_data_complete returned %08lx\n", Status);
             ExFreePool(newext1);
             ExFreePool(newext2);
             return Status;
@@ -3757,7 +3757,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("update_changed_extent_ref returned %08x\n", Status);
+                ERR("update_changed_extent_ref returned %08lx\n", Status);
                 return Status;
             }
         }
@@ -3807,7 +3807,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
         Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (uint32_t)(end_data - start_data), Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
-            ERR("write_data_complete returned %08x\n", Status);
+            ERR("write_data_complete returned %08lx\n", Status);
             ExFreePool(newext1);
             ExFreePool(newext2);
             ExFreePool(newext3);
@@ -3872,7 +3872,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("update_changed_extent_ref returned %08x\n", Status);
+                ERR("update_changed_extent_ref returned %08lx\n", Status);
                 return Status;
             }
         }
@@ -3926,13 +3926,13 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
                     Status = excise_extents(fcb->Vcb, fcb, start_write, ext->offset, Irp, rollback);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("excise_extents returned %08x\n", Status);
+                        ERR("excise_extents returned %08lx\n", Status);
                         return Status;
                     }
 
                     Status = insert_extent(fcb->Vcb, fcb, start_write, ext->offset - start_write, (uint8_t*)data + written, Irp, file_write, irp_offset + written, rollback);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("insert_extent returned %08x\n", Status);
+                        ERR("insert_extent returned %08lx\n", Status);
                         return Status;
                     }
 
@@ -3952,7 +3952,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
                     Status = write_data_complete(fcb->Vcb, writeaddr, (uint8_t*)data + written, (uint32_t)write_len, Irp, NULL, file_write, irp_offset + written, priority);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("write_data_complete returned %08x\n", Status);
+                        ERR("write_data_complete returned %08lx\n", Status);
                         return Status;
                     }
 
@@ -3980,7 +3980,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                     Status = do_write_file_prealloc(fcb, ext, start + written, end_data, (uint8_t*)data + written, &write_len,
                                                     Irp, file_write, irp_offset + written, priority, rollback);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("do_write_file_prealloc returned %08x\n", Status);
+                        ERR("do_write_file_prealloc returned %08lx\n", Status);
                         return Status;
                     }
 
@@ -4008,13 +4008,13 @@ nextitem:
 
         Status = excise_extents(fcb->Vcb, fcb, start_write, end_data, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("excise_extents returned %08x\n", Status);
+            ERR("excise_extents returned %08lx\n", Status);
             return Status;
         }
 
         Status = insert_extent(fcb->Vcb, fcb, start_write, end_data - start_write, (uint8_t*)data + written, Irp, file_write, irp_offset + written, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("insert_extent returned %08x\n", Status);
+            ERR("insert_extent returned %08lx\n", Status);
             return Status;
         }
     }
@@ -4112,7 +4112,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
         if (!NT_SUCCESS(iosb.Status)) {
             ExReleaseResourceLite(fcb->Header.PagingIoResource);
-            ERR("CcFlushCache returned %08x\n", iosb.Status);
+            ERR("CcFlushCache returned %08lx\n", iosb.Status);
             return iosb.Status;
         }
 
@@ -4201,7 +4201,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
             Status = extend_file(fcb, fileref, newlength, false, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("extend_file returned %08x\n", Status);
+                ERR("extend_file returned %08lx\n", Status);
                 goto end;
             }
         } else if (!fcb->ads)
@@ -4360,7 +4360,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     Status = read_file(fcb, data + bufhead, start_data, end_data - start_data, NULL, Irp);
 
                 if (!NT_SUCCESS(Status)) {
-                    ERR("read_file returned %08x\n", Status);
+                    ERR("read_file returned %08lx\n", Status);
                     ExFreePool(data);
                     goto end;
                 }
@@ -4372,7 +4372,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (make_inline) {
             Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("error - excise_extents returned %08x\n", Status);
+                ERR("error - excise_extents returned %08lx\n", Status);
                 ExFreePool(data);
                 goto end;
             }
@@ -4387,7 +4387,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
             Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + newlength), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("add_extent_to_fcb returned %08x\n", Status);
+                ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(data);
                 goto end;
             }
@@ -4397,7 +4397,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             Status = write_compressed(fcb, start_data, end_data, data, Irp, rollback);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("write_compressed returned %08x\n", Status);
+                ERR("write_compressed returned %08lx\n", Status);
                 ExFreePool(data);
                 goto end;
             }
@@ -4415,7 +4415,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     }
 
                     if (!NT_SUCCESS(Status)) {
-                        ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                        ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
                         goto end;
                     }
                 }
@@ -4437,7 +4437,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             }
 
             if (!NT_SUCCESS(Status)) {
-                ERR("do_write_file returned %08x\n", Status);
+                ERR("do_write_file returned %08lx\n", Status);
                 if (!no_buf) ExFreePool(data);
                 goto end;
             }
@@ -4579,7 +4579,7 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, bool wait, bool deferred_wr
     if (Status == STATUS_PENDING)
         goto exit;
     else if (!NT_SUCCESS(Status)) {
-        ERR("write_file2 returned %08x\n", Status);
+        ERR("write_file2 returned %08lx\n", Status);
         goto exit;
     }
 
@@ -4716,7 +4716,7 @@ exit:
     if (top_level)
         IoSetTopLevelIrp(NULL);
 
-    TRACE("returning %08x\n", Status);
+    TRACE("returning %08lx\n", Status);
 
     FsRtlExitFileSystem();
 

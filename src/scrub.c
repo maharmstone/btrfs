@@ -88,7 +88,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 
             Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, NULL);
             if (!NT_SUCCESS(Status)) {
-                ERR("find_item returned %08x\n", Status);
+                ERR("find_item returned %08lx\n", Status);
                 goto end;
             }
 
@@ -151,7 +151,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 
             Status = find_item(Vcb, r, &tp, &searchkey, false, NULL);
             if (!NT_SUCCESS(Status)) {
-                ERR("find_item returned %08x\n", Status);
+                ERR("find_item returned %08lx\n", Status);
                 goto end;
             }
 
@@ -280,7 +280,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 
     Status = utf8_to_utf16(NULL, 0, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("utf8_to_utf16 1 returned %08x\n", Status);
+        ERR("utf8_to_utf16 1 returned %08lx\n", Status);
         ExFreePool(fn.Buffer);
         goto end;
     }
@@ -304,7 +304,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 
     Status = utf8_to_utf16(err->data.filename, utf16len, &utf16len, fn.Buffer, fn.Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("utf8_to_utf16 2 returned %08x\n", Status);
+        ERR("utf8_to_utf16 2 returned %08lx\n", Status);
         ExFreePool(fn.Buffer);
         ExFreePool(err);
         goto end;
@@ -341,7 +341,7 @@ static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treea
 
     Status = read_data(Vcb, treeaddr, Vcb->superblock.node_size, NULL, true, (uint8_t*)tree, NULL, NULL, NULL, 0, false, NormalPagePriority);
     if (!NT_SUCCESS(Status)) {
-        ERR("read_data returned %08x\n", Status);
+        ERR("read_data returned %08lx\n", Status);
         goto end;
     }
 
@@ -417,7 +417,7 @@ static void log_tree_checksum_error_shared(device_extension* Vcb, uint64_t offse
 
     Status = read_data(Vcb, offset, Vcb->superblock.node_size, NULL, true, (uint8_t*)tree, NULL, NULL, NULL, 0, false, NormalPagePriority);
     if (!NT_SUCCESS(Status)) {
-        ERR("read_data returned %08x\n", Status);
+        ERR("read_data returned %08lx\n", Status);
         goto end;
     }
 
@@ -457,7 +457,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
+        ERR("find_item returned %08lx\n", Status);
         return;
     }
 
@@ -693,7 +693,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                         csum_error = true;
                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     } else if (!NT_SUCCESS(Status)) {
-                        ERR("check_csum returned %08x\n", Status);
+                        ERR("check_csum returned %08lx\n", Status);
                         return Status;
                     } else
                         good_stripe = i;
@@ -814,7 +814,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                                              context->stripes[good_stripe].buf, context->stripes[i].length);
 
                     if (!NT_SUCCESS(Status)) {
-                        ERR("write_data_phys returned %08x\n", Status);
+                        ERR("write_data_phys returned %08lx\n", Status);
                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_WRITE_ERRORS);
                         return Status;
                     }
@@ -900,7 +900,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                 Status = write_data_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + offset - c->offset,
                                          context->stripes[i].buf, context->stripes[i].length);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("write_data_phys returned %08x\n", Status);
+                    ERR("write_data_phys returned %08lx\n", Status);
                     log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                     return Status;
                 }
@@ -1189,7 +1189,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                                                          context->stripes[j + goodstripe].buf, context->stripes[j + goodstripe].length);
 
                                 if (!NT_SUCCESS(Status)) {
-                                    ERR("write_data_phys returned %08x\n", Status);
+                                    ERR("write_data_phys returned %08lx\n", Status);
                                     log_device_error(Vcb, c->devices[j + k], BTRFS_DEV_STAT_WRITE_ERRORS);
                                     goto end;
                                 }
@@ -1355,7 +1355,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                                                      context->stripes[j + k].buf, context->stripes[j + k].length);
 
                             if (!NT_SUCCESS(Status)) {
-                                ERR("write_data_phys returned %08x\n", Status);
+                                ERR("write_data_phys returned %08lx\n", Status);
                                 log_device_error(Vcb, c->devices[j + k], BTRFS_DEV_STAT_WRITE_ERRORS);
                                 goto end;
                             }
@@ -1535,7 +1535,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
                 }
 
                 if (!NT_SUCCESS(Status)) {
-                    ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                    ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
                     IoFreeMdl(context.stripes[i].Irp->MdlAddress);
                     context.stripes[i].Irp->MdlAddress = NULL;
                     goto end;
@@ -1583,19 +1583,19 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
     if (type == BLOCK_FLAG_DUPLICATE) {
         Status = scrub_extent_dup(Vcb, c, offset, csum, &context);
         if (!NT_SUCCESS(Status)) {
-            ERR("scrub_extent_dup returned %08x\n", Status);
+            ERR("scrub_extent_dup returned %08lx\n", Status);
             goto end;
         }
     } else if (type == BLOCK_FLAG_RAID0) {
         Status = scrub_extent_raid0(Vcb, c, offset, size, startoffstripe, csum, &context);
         if (!NT_SUCCESS(Status)) {
-            ERR("scrub_extent_raid0 returned %08x\n", Status);
+            ERR("scrub_extent_raid0 returned %08lx\n", Status);
             goto end;
         }
     } else if (type == BLOCK_FLAG_RAID10) {
         Status = scrub_extent_raid10(Vcb, c, offset, size, startoffstripe, csum, &context);
         if (!NT_SUCCESS(Status)) {
-            ERR("scrub_extent_raid10 returned %08x\n", Status);
+            ERR("scrub_extent_raid10 returned %08lx\n", Status);
             goto end;
         }
     }
@@ -1652,7 +1652,7 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, uint64_t offs
             Status = scrub_extent(Vcb, c, type, offset + UInt32x32To64(index, Vcb->superblock.sector_size),
                                   rl * Vcb->superblock.sector_size, (uint8_t*)csum + (index * Vcb->csum_size));
             if (!NT_SUCCESS(Status)) {
-                ERR("scrub_data_extent_dup returned %08x\n", Status);
+                ERR("scrub_data_extent_dup returned %08lx\n", Status);
                 return Status;
             }
 
@@ -2447,7 +2447,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
+        ERR("find_item returned %08lx\n", Status);
         return Status;
     }
 
@@ -2565,7 +2565,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
                     Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, false, NULL);
                     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-                        ERR("find_item returned %08x\n", Status);
+                        ERR("find_item returned %08lx\n", Status);
                         goto end;
                     }
 
@@ -2714,7 +2714,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     }
 
                     if (!NT_SUCCESS(Status)) {
-                        ERR("MmProbeAndLockPages threw exception %08x\n", Status);
+                        ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
                         IoFreeMdl(context.stripes[i].Irp->MdlAddress);
                         goto end3;
                     }
@@ -2797,7 +2797,7 @@ end3:
                                              context.stripes[i].buf, (uint32_t)(read_stripes * c->chunk_item->stripe_length));
 
                     if (!NT_SUCCESS(Status)) {
-                        ERR("write_data_phys returned %08x\n", Status);
+                        ERR("write_data_phys returned %08lx\n", Status);
                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_WRITE_ERRORS);
                         goto end2;
                     }
@@ -2853,7 +2853,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
+        ERR("find_item returned %08lx\n", Status);
         return Status;
     }
 
@@ -2881,7 +2881,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
                 if (stripe > stripe_end + 1) {
                     Status = scrub_chunk_raid56_stripe_run(Vcb, c, stripe_start, stripe_end);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("scrub_chunk_raid56_stripe_run returned %08x\n", Status);
+                        ERR("scrub_chunk_raid56_stripe_run returned %08lx\n", Status);
                         return Status;
                     }
 
@@ -2911,7 +2911,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
     if (*changed) {
         Status = scrub_chunk_raid56_stripe_run(Vcb, c, stripe_start, stripe_end);
         if (!NT_SUCCESS(Status)) {
-            ERR("scrub_chunk_raid56_stripe_run returned %08x\n", Status);
+            ERR("scrub_chunk_raid56_stripe_run returned %08lx\n", Status);
             return Status;
         }
 
@@ -2960,7 +2960,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
+        ERR("error - find_item returned %08lx\n", Status);
         goto end;
     }
 
@@ -3032,7 +3032,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
 
                 Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, false, NULL);
                 if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-                    ERR("find_item returned %08x\n", Status);
+                    ERR("find_item returned %08lx\n", Status);
                     ExFreePool(csum);
                     ExFreePool(bmparr);
                     goto end;
@@ -3072,7 +3072,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
                 if (!is_tree || tp.item->key.obj_id > tree_run_end) {
                     Status = scrub_extent(Vcb, c, type, tree_run_start, (uint32_t)(tree_run_end - tree_run_start), NULL);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("scrub_extent returned %08x\n", Status);
+                        ERR("scrub_extent returned %08lx\n", Status);
                         goto end;
                     }
 
@@ -3093,7 +3093,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
             if (!is_tree) {
                 Status = scrub_data_extent(Vcb, c, tp.item->key.obj_id, type, csum, &bmp, bmplen);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("scrub_data_extent returned %08x\n", Status);
+                    ERR("scrub_data_extent returned %08lx\n", Status);
                     ExFreePool(csum);
                     ExFreePool(bmparr);
                     goto end;
@@ -3123,7 +3123,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
     if (tree_run) {
         Status = scrub_extent(Vcb, c, type, tree_run_start, (uint32_t)(tree_run_end - tree_run_start), NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("scrub_extent returned %08x\n", Status);
+            ERR("scrub_extent returned %08lx\n", Status);
             goto end;
         }
     }
@@ -3158,7 +3158,7 @@ static void __stdcall scrub_thread(void* context) {
 
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&Vcb->tree_lock);
-        ERR("do_write returned %08x\n", Status);
+        ERR("do_write returned %08lx\n", Status);
         Vcb->scrub.error = Status;
         goto end;
     }
@@ -3221,7 +3221,7 @@ static void __stdcall scrub_thread(void* context) {
 
                 Status = scrub_chunk(Vcb, c, &offset, &changed);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("scrub_chunk returned %08x\n", Status);
+                    ERR("scrub_chunk returned %08lx\n", Status);
                     Vcb->scrub.stopping = true;
                     Vcb->scrub.error = Status;
                     break;
@@ -3292,7 +3292,7 @@ NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
 
     Status = PsCreateSystemThread(&Vcb->scrub.thread, 0, &oa, NULL, NULL, scrub_thread, Vcb);
     if (!NT_SUCCESS(Status)) {
-        ERR("PsCreateSystemThread returned %08x\n", Status);
+        ERR("PsCreateSystemThread returned %08lx\n", Status);
         return Status;
     }
 

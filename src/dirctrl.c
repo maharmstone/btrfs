@@ -91,7 +91,7 @@ ULONG get_reparse_tag_fcb(fcb* fcb) {
 
         Status = read_file(fcb, (uint8_t*)&tag, 0, sizeof(ULONG), &br, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("read_file returned %08x\n", Status);
+            ERR("read_file returned %08lx\n", Status);
             return 0;
         }
     }
@@ -125,7 +125,7 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8
 
     Status = open_fcb(Vcb, subvol, inode, type, NULL, false, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("open_fcb returned %08x\n", Status);
+        ERR("open_fcb returned %08lx\n", Status);
         return 0;
     }
 
@@ -151,7 +151,7 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, uint64_t inode, PIR
         Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)eadata, len, &offset);
 
         if (!NT_SUCCESS(Status)) {
-            WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+            WARN("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
             ExFreePool(eadata);
             return 0;
         } else {
@@ -247,7 +247,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
 
                         Status = find_item(fcb->Vcb, r, &tp, &searchkey, false, Irp);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("error - find_item returned %08x\n", Status);
+                            ERR("error - find_item returned %08lx\n", Status);
                             return Status;
                         }
 
@@ -907,7 +907,7 @@ static NTSTATUS query_directory(PIRP Irp) {
         if (!ccb->case_sensitive) {
             Status = RtlUpcaseUnicodeString(&us, &ccb->query_string, true);
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
                 goto end;
             }
 
@@ -1069,7 +1069,7 @@ end:
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 
-    TRACE("returning %08x\n", Status);
+    TRACE("returning %08lx\n", Status);
 
     return Status;
 }
@@ -1129,11 +1129,11 @@ static NTSTATUS notify_change_directory(device_extension* Vcb, PIRP Irp) {
 
             Status = fileref_get_filename(fileref, &ccb->filename, NULL, &reqlen);
             if (!NT_SUCCESS(Status)) {
-                ERR("fileref_get_filename returned %08x\n", Status);
+                ERR("fileref_get_filename returned %08lx\n", Status);
                 goto end;
             }
         } else {
-            ERR("fileref_get_filename returned %08x\n", Status);
+            ERR("fileref_get_filename returned %08lx\n", Status);
             goto end;
         }
     }
@@ -1205,7 +1205,7 @@ end:
     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
 
 exit:
-    TRACE("returning %08x\n", Status);
+    TRACE("returning %08lx\n", Status);
 
     if (top_level)
         IoSetTopLevelIrp(NULL);

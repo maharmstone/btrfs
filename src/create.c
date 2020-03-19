@@ -186,7 +186,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
         Status = RtlUpcaseUnicodeString(&fnus, filename, true);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
             return Status;
         }
     } else
@@ -455,7 +455,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
 
     Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
+        ERR("error - find_item returned %08lx\n", Status);
         return Status;
     }
 
@@ -530,7 +530,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
     Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
+        ERR("find_item returned %08lx\n", Status);
         return Status;
     }
 
@@ -558,7 +558,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
         Status = utf8_to_utf16(NULL, 0, &utf16len, di->name, di->n);
         if (!NT_SUCCESS(Status)) {
-            ERR("utf8_to_utf16 1 returned %08x\n", Status);
+            ERR("utf8_to_utf16 1 returned %08lx\n", Status);
             goto cont;
         }
 
@@ -597,7 +597,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
         Status = utf8_to_utf16(dc->name.Buffer, utf16len, &utf16len, di->name, di->n);
         if (!NT_SUCCESS(Status)) {
-            ERR("utf8_to_utf16 2 returned %08x\n", Status);
+            ERR("utf8_to_utf16 2 returned %08lx\n", Status);
             ExFreePool(dc->utf8.Buffer);
             ExFreePool(dc->name.Buffer);
             ExFreePool(dc);
@@ -606,7 +606,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
         Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
         if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
             ExFreePool(dc->utf8.Buffer);
             ExFreePool(dc->name.Buffer);
             ExFreePool(dc);
@@ -675,7 +675,7 @@ cont:
 
             Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
                 ExFreePool(dc->utf8.Buffer);
                 ExFreePool(dc->name.Buffer);
                 ExFreePool(dc);
@@ -779,7 +779,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08x\n", Status);
+        ERR("error - find_item returned %08lx\n", Status);
         reap_fcb(fcb);
         return Status;
     }
@@ -851,7 +851,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 Status = utf8_to_utf16(NULL, 0, &stringlen, ir->name, ir->n);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                    ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                     ExFreePool(hl);
                     reap_fcb(fcb);
                     return Status;
@@ -873,7 +873,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = utf8_to_utf16(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
                         reap_fcb(fcb);
@@ -916,7 +916,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 Status = utf8_to_utf16(NULL, 0, &stringlen, ier->name, ier->n);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                    ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                     ExFreePool(hl);
                     reap_fcb(fcb);
                     return Status;
@@ -938,7 +938,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = utf8_to_utf16(hl->name.Buffer, stringlen, &stringlen, ier->name, ier->n);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                         ExFreePool(hl->name.Buffer);
                         ExFreePool(hl);
                         reap_fcb(fcb);
@@ -990,7 +990,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)&di->name[di->n], di->m, &offset);
 
                         if (!NT_SUCCESS(Status))
-                            WARN("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                            WARN("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
                         else {
                             FILE_FULL_EA_INFORMATION* eainfo;
 
@@ -1084,7 +1084,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = utf8_to_utf16(NULL, 0, &utf16len, &di->name[sizeof(xapref) - 1], di->n + 1 - sizeof(xapref));
                     if (!NT_SUCCESS(Status)) {
-                        ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                         reap_fcb(fcb);
                         return Status;
                     }
@@ -1121,7 +1121,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = utf8_to_utf16(dc->name.Buffer, utf16len, &utf16len, dc->utf8.Buffer, dc->utf8.Length);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                        ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
                         ExFreePool(dc);
@@ -1131,7 +1131,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                        ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
                         ExFreePool(dc->utf8.Buffer);
                         ExFreePool(dc->name.Buffer);
                         ExFreePool(dc);
@@ -1221,7 +1221,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         Status = load_dir_children(Vcb, fcb, false, Irp);
         if (!NT_SUCCESS(Status)) {
-            ERR("load_dir_children returned %08x\n", Status);
+            ERR("load_dir_children returned %08lx\n", Status);
             reap_fcb(fcb);
             return Status;
         }
@@ -1411,7 +1411,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
 
     Status = find_item(Vcb, parent->subvol, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
+        ERR("find_item returned %08lx\n", Status);
         reap_fcb(fcb);
         return Status;
     }
@@ -1468,7 +1468,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         if (!case_sensitive) {
             Status = RtlUpcaseUnicodeString(&name_uc, name, true);
             if (!NT_SUCCESS(Status)) {
-                ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+                ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
                 return Status;
             }
         }
@@ -1525,7 +1525,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
         Status = open_fcb_stream(Vcb, dc, sf->fcb, &fcb, Irp);
         if (!NT_SUCCESS(Status)) {
-            ERR("open_fcb_stream returned %08x\n", Status);
+            ERR("open_fcb_stream returned %08lx\n", Status);
             return Status;
         }
 
@@ -1602,7 +1602,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
             return lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
         } else if (!NT_SUCCESS(Status)) {
-            ERR("find_file_in_dir returned %08x\n", Status);
+            ERR("find_file_in_dir returned %08lx\n", Status);
             return Status;
         } else {
             fcb* fcb;
@@ -1626,7 +1626,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 Status = open_fcb(Vcb, subvol, inode, dc->type, &dc->utf8, false, sf->fcb, &fcb, pooltype, Irp);
 
                 if (!NT_SUCCESS(Status)) {
-                    ERR("open_fcb returned %08x\n", Status);
+                    ERR("open_fcb returned %08lx\n", Status);
                     return Status;
                 }
             }
@@ -1752,7 +1752,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         (fnus->Length != sizeof(datastring) - sizeof(WCHAR) || RtlCompareMemory(fnus->Buffer, datastring, sizeof(datastring) - sizeof(WCHAR)) != sizeof(datastring) - sizeof(WCHAR))) {
         Status = split_path(Vcb, &fnus2, &parts, &has_stream);
         if (!NT_SUCCESS(Status)) {
-            ERR("split_path returned %08x\n", Status);
+            ERR("split_path returned %08lx\n", Status);
             return Status;
         }
     }
@@ -1802,9 +1802,9 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
 
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
-                TRACE("open_fileref_child returned %08x\n", Status);
+                TRACE("open_fileref_child returned %08lx\n", Status);
             else
-                ERR("open_fileref_child returned %08x\n", Status);
+                ERR("open_fileref_child returned %08lx\n", Status);
 
             goto end;
         }
@@ -1851,7 +1851,7 @@ end:
     }
 
 end2:
-    TRACE("returning %08x\n", Status);
+    TRACE("returning %08lx\n", Status);
 
     return Status;
 }
@@ -1896,7 +1896,7 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
 
     Status = RtlUpcaseUnicodeString(&dc->name_uc, name, true);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
         ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc->name.Buffer);
         ExFreePool(dc);
@@ -2190,7 +2190,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     Status = utf16_to_utf8(NULL, 0, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("utf16_to_utf8 returned %08x\n", Status);
+        ERR("utf16_to_utf8 returned %08lx\n", Status);
         return Status;
     }
 
@@ -2202,7 +2202,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     Status = utf16_to_utf8(utf8, utf8len, &utf8len, fpus->Buffer, fpus->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("utf16_to_utf8 returned %08x\n", Status);
+        ERR("utf16_to_utf8 returned %08lx\n", Status);
         ExFreePool(utf8);
         return Status;
     }
@@ -2394,7 +2394,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     Status = fcb_get_new_sd(fcb, parfileref, IrpSp->Parameters.Create.SecurityContext->AccessState);
 
     if (!NT_SUCCESS(Status)) {
-        ERR("fcb_get_new_sd returned %08x\n", Status);
+        ERR("fcb_get_new_sd returned %08lx\n", Status);
         free_fcb(fcb);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
@@ -2411,7 +2411,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     if (ea && ealen > 0) {
         Status = file_create_parse_ea(fcb, ea);
         if (!NT_SUCCESS(Status)) {
-            ERR("file_create_parse_ea returned %08x\n", Status);
+            ERR("file_create_parse_ea returned %08lx\n", Status);
             free_fcb(fcb);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
@@ -2444,7 +2444,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, true, NULL, rollback);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("extend_file returned %08x\n", Status);
+            ERR("extend_file returned %08lx\n", Status);
             reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
@@ -2527,7 +2527,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         Status = RtlUpcaseUnicodeString(&fpusuc, fpus, true);
         if (!NT_SUCCESS(Status)) {
             ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
-            ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+            ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
             reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
@@ -2578,7 +2578,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8as, fpus, fcb->type, &dc);
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
-        ERR("add_dir_child returned %08x\n", Status);
+        ERR("add_dir_child returned %08lx\n", Status);
         reap_fileref(Vcb, fileref);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
@@ -2677,7 +2677,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
         Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, case_sensitive, rollback);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("file_create2 returned %08x\n", Status);
+            ERR("file_create2 returned %08lx\n", Status);
             ExFreePool(fpus2.Buffer);
             return Status;
         } else if (Status != STATUS_OBJECT_NAME_COLLISION) {
@@ -2687,7 +2687,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
         ExFreePool(fpus2.Buffer);
     } else if (!NT_SUCCESS(Status)) {
-        ERR("open_fileref returned %08x\n", Status);
+        ERR("open_fileref returned %08lx\n", Status);
         return Status;
     }
 
@@ -2759,7 +2759,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     Status = utf16_to_utf8(NULL, 0, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("utf16_to_utf8 1 returned %08x\n", Status);
+        ERR("utf16_to_utf8 1 returned %08lx\n", Status);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return Status;
@@ -2779,7 +2779,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     Status = utf16_to_utf8(&fcb->adsxattr.Buffer[sizeof(xapref) - 1], utf8len, &utf8len, stream->Buffer, stream->Length);
     if (!NT_SUCCESS(Status)) {
-        ERR("utf16_to_utf8 2 returned %08x\n", Status);
+        ERR("utf16_to_utf8 2 returned %08lx\n", Status);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return Status;
@@ -2798,7 +2798,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08x\n", Status);
+        ERR("find_item returned %08lx\n", Status);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return Status;
@@ -2877,7 +2877,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     Status = RtlUpcaseUnicodeString(&dc->name_uc, &dc->name, true);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08x\n", Status);
+        ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
         ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc->name.Buffer);
         ExFreePool(dc);
@@ -2963,7 +2963,7 @@ static __inline bool called_from_lxss() {
     Status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessBasicInformation, &pbi, sizeof(pbi), &retlen);
 
     if (!NT_SUCCESS(Status)) {
-        ERR("ZwQueryInformationProcess returned %08x\n", Status);
+        ERR("ZwQueryInformationProcess returned %08lx\n", Status);
         return false;
     }
 
@@ -3106,7 +3106,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     if (stream.Length > 0) {
         Status = create_stream(Vcb, &fileref, &parfileref, &fpus, &stream, Irp, options, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("create_stream returned %08x\n", Status);
+            ERR("create_stream returned %08lx\n", Status);
             goto end;
         }
 
@@ -3137,7 +3137,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
 
             Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength, &offset);
             if (!NT_SUCCESS(Status)) {
-                ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                ERR("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
                 goto end;
             }
         }
@@ -3149,7 +3149,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
             *existing_fileref = fileref;
             goto end;
         } else if (!NT_SUCCESS(Status)) {
-            ERR("file_create2 returned %08x\n", Status);
+            ERR("file_create2 returned %08lx\n", Status);
             goto end;
         }
 
@@ -3220,7 +3220,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         } else {
             Status = set_reparse_point2(fileref->fcb, acec->ReparseBuffer, acec->ReparseBufferLength, NULL, NULL, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("set_reparse_point2 returned %08x\n", Status);
+                ERR("set_reparse_point2 returned %08lx\n", Status);
                 fileref->deleted = true;
                 fileref->fcb->deleted = true;
 
@@ -3414,7 +3414,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
 
         Status = read_file(fcb, *data, 0, size, &bytes_read, NULL);
         if (!NT_SUCCESS(Status)) {
-            ERR("read_file_fcb returned %08x\n", Status);
+            ERR("read_file_fcb returned %08lx\n", Status);
             ExFreePool(*data);
             return Status;
         }
@@ -3426,7 +3426,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
 
             Status = utf8_to_utf16(NULL, 0, &stringlen, (char*)*data, bytes_read);
             if (!NT_SUCCESS(Status)) {
-                ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                 ExFreePool(*data);
                 return Status;
             }
@@ -3457,7 +3457,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
                                     stringlen, &stringlen, (char*)*data, size);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                 ExFreePool(rdb);
                 ExFreePool(*data);
                 return Status;
@@ -3478,7 +3478,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
         } else {
             Status = fFsRtlValidateReparsePointBuffer(bytes_read, (REPARSE_DATA_BUFFER*)*data);
             if (!NT_SUCCESS(Status)) {
-                ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+                ERR("FsRtlValidateReparsePointBuffer returned %08lx\n", Status);
                 ExFreePool(*data);
                 return Status;
             }
@@ -3494,7 +3494,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
 
         Status = fFsRtlValidateReparsePointBuffer(fcb->reparse_xattr.Length, (REPARSE_DATA_BUFFER*)fcb->reparse_xattr.Buffer);
         if (!NT_SUCCESS(Status)) {
-            ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+            ERR("FsRtlValidateReparsePointBuffer returned %08lx\n", Status);
             return Status;
         }
 
@@ -3540,7 +3540,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             Status = load_csum(Vcb, ext->csum, ed2->address + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("load_csum returned %08x\n", Status);
+                ERR("load_csum returned %08lx\n", Status);
                 goto end;
             }
         }
@@ -3592,7 +3592,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
                             IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
                             granted_access, &Status)) {
             SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
-            TRACE("SeAccessCheck failed, returning %08x\n", Status);
+            TRACE("SeAccessCheck failed, returning %08lx\n", Status);
 
             free_fileref(fileref);
 
@@ -3669,7 +3669,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
 
         Status = get_reparse_block(fileref->fcb, (uint8_t**)&data);
         if (!NT_SUCCESS(Status)) {
-            ERR("get_reparse_block returned %08x\n", Status);
+            ERR("get_reparse_block returned %08lx\n", Status);
             Status = STATUS_SUCCESS;
         } else {
             Irp->IoStatus.Information = data->ReparseTag;
@@ -3704,9 +3704,9 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
 
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_SHARING_VIOLATION)
-                TRACE("IoCheckShareAccess failed, returning %08x\n", Status);
+                TRACE("IoCheckShareAccess failed, returning %08lx\n", Status);
             else
-                WARN("IoCheckShareAccess failed, returning %08x\n", Status);
+                WARN("IoCheckShareAccess failed, returning %08lx\n", Status);
 
             free_fileref(fileref);
 
@@ -3731,7 +3731,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
     // FIXME - this can block waiting for network IO, while we're holding fileref_lock and tree_lock
     Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, NULL, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
-        WARN("FsRtlCheckOplock returned %08x\n", Status);
+        WARN("FsRtlCheckOplock returned %08lx\n", Status);
         free_fileref(fileref);
 
         return Status;
@@ -3763,7 +3763,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
         if (fileref->fcb->ads) {
             Status = stream_set_end_of_file_information(Vcb, 0, fileref->fcb, fileref, false);
             if (!NT_SUCCESS(Status)) {
-                ERR("stream_set_end_of_file_information returned %08x\n", Status);
+                ERR("stream_set_end_of_file_information returned %08lx\n", Status);
 
                 IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
@@ -3774,7 +3774,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
         } else {
             Status = truncate_file(fileref->fcb, 0, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("truncate_file returned %08x\n", Status);
+                ERR("truncate_file returned %08lx\n", Status);
 
                 IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
@@ -3788,7 +3788,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
             Status = extend_file(fileref->fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, true, NULL, rollback);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("extend_file returned %08x\n", Status);
+                ERR("extend_file returned %08lx\n", Status);
 
                 IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
@@ -3807,7 +3807,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
 
                 Status = IoCheckEaBufferValidity(Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength, &offset);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("IoCheckEaBufferValidity returned %08x (error at offset %u)\n", Status, offset);
+                    ERR("IoCheckEaBufferValidity returned %08lx (error at offset %u)\n", Status, offset);
 
                     IoRemoveShareAccess(FileObject, &fileref->fcb->share_access);
 
@@ -3875,7 +3875,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
 
                         Status = open_fileref_child(Vcb, fileref, &dc->name, true, true, true, PagedPool, &fr2, NULL);
                         if (!NT_SUCCESS(Status))
-                            WARN("open_fileref_child returned %08x\n", Status);
+                            WARN("open_fileref_child returned %08lx\n", Status);
                     }
 
                     if (dc->fileref) {
@@ -3883,7 +3883,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
 
                         Status = delete_fileref(dc->fileref, NULL, false, NULL, rollback);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("delete_fileref returned %08x\n", Status);
+                            ERR("delete_fileref returned %08lx\n", Status);
 
                             free_fileref(fileref);
 
@@ -4060,7 +4060,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
     Status = open_fcb(Vcb, subvol, inode, 0, NULL, true, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("open_fcb returned %08x\n", Status);
+        ERR("open_fcb returned %08lx\n", Status);
         return Status;
     }
 
@@ -4114,7 +4114,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
             Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
             if (!NT_SUCCESS(Status)) {
-                ERR("find_item returned %08x\n", Status);
+                ERR("find_item returned %08lx\n", Status);
                 free_fcb(fcb);
                 return Status;
             }
@@ -4139,7 +4139,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                         Status = utf8_to_utf16(NULL, 0, &stringlen, ir->name, ir->n);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                            ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                             free_fcb(fcb);
                             return Status;
                         }
@@ -4159,7 +4159,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                             Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
                             if (!NT_SUCCESS(Status)) {
-                                ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                                ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                                 ExFreePool(name.Buffer);
                                 free_fcb(fcb);
                                 return Status;
@@ -4184,7 +4184,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                         Status = utf8_to_utf16(NULL, 0, &stringlen, ier->name, ier->n);
                         if (!NT_SUCCESS(Status)) {
-                            ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                            ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                             free_fcb(fcb);
                             return Status;
                         }
@@ -4204,7 +4204,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                             Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, ier->name, ier->n);
                             if (!NT_SUCCESS(Status)) {
-                                ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                                ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                                 ExFreePool(name.Buffer);
                                 free_fcb(fcb);
                                 return Status;
@@ -4250,7 +4250,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
-            ERR("find_item returned %08x\n", Status);
+            ERR("find_item returned %08lx\n", Status);
             free_fcb(fcb);
             return Status;
         }
@@ -4293,14 +4293,14 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
             Status = open_fileref_by_inode(Vcb, r, rr->dir, &parfr, Irp);
             if (!NT_SUCCESS(Status)) {
-                ERR("open_fileref_by_inode returned %08x\n", Status);
+                ERR("open_fileref_by_inode returned %08lx\n", Status);
                 free_fcb(fcb);
                 return Status;
             }
 
             Status = utf8_to_utf16(NULL, 0, &stringlen, rr->name, rr->n);
             if (!NT_SUCCESS(Status)) {
-                ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                 free_fcb(fcb);
                 return Status;
             }
@@ -4323,7 +4323,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                 Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, rr->name, rr->n);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                    ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                     ExFreePool(name.Buffer);
                     free_fcb(fcb);
                     return Status;
@@ -4335,7 +4335,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             if (!Vcb->options.no_root_dir && subvol->id == BTRFS_ROOT_FSTREE && Vcb->root_fileref->fcb->subvol != subvol) {
                 Status = open_fileref_by_inode(Vcb, Vcb->root_fileref->fcb->subvol, SUBVOL_ROOT_INODE, &parfr, Irp);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("open_fileref_by_inode returned %08x\n", Status);
+                    ERR("open_fileref_by_inode returned %08lx\n", Status);
                     free_fcb(fcb);
                     return Status;
                 }
@@ -4351,7 +4351,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     } else {
         Status = open_fileref_by_inode(Vcb, subvol, parent, &parfr, Irp);
         if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref_by_inode returned %08x\n", Status);
+            ERR("open_fileref_by_inode returned %08lx\n", Status);
             free_fcb(fcb);
             return Status;
         }
@@ -4363,7 +4363,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         ExFreePool(name.Buffer);
 
     if (!NT_SUCCESS(Status)) {
-        ERR("open_fileref_child returned %08x\n", Status);
+        ERR("open_fileref_child returned %08lx\n", Status);
 
         free_fcb(fcb);
         free_fileref(parfr);
@@ -4571,7 +4571,7 @@ loaded:
         ExReleaseResourceLite(fileref->fcb->Header.Resource);
 
         if (!NT_SUCCESS(Status)) {
-            ERR("get_reparse_block returned %08x\n", Status);
+            ERR("get_reparse_block returned %08lx\n", Status);
 
             Status = STATUS_SUCCESS;
         } else {
@@ -4606,10 +4606,10 @@ loaded:
             goto exit;
         }
     } else if (Status == STATUS_OBJECT_PATH_NOT_FOUND) {
-        TRACE("open_fileref returned %08x\n", Status);
+        TRACE("open_fileref returned %08lx\n", Status);
         goto exit;
     } else {
-        ERR("open_fileref returned %08x\n", Status);
+        ERR("open_fileref returned %08lx\n", Status);
         goto exit;
     }
 
@@ -4662,7 +4662,7 @@ exit:
         fcb_load_csums(Vcb, fcb2, Irp);
         ExReleaseResourceLite(fcb2->Header.Resource);
     } else if (Status != STATUS_REPARSE && Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
-        TRACE("returning %08x\n", Status);
+        TRACE("returning %08lx\n", Status);
 
     return Status;
 }
@@ -4685,10 +4685,10 @@ static NTSTATUS verify_vcb(device_extension* Vcb, PIRP Irp) {
             Status = dev_ioctl(dev->devobj, IOCTL_STORAGE_CHECK_VERIFY, NULL, 0, &cc, sizeof(ULONG), true, &iosb);
 
             if (IoIsErrorUserInduced(Status)) {
-                ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x (user-induced)\n", Status);
+                ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08lx (user-induced)\n", Status);
                 need_verify = true;
             } else if (!NT_SUCCESS(Status)) {
-                ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08x\n", Status);
+                ERR("IOCTL_STORAGE_CHECK_VERIFY returned %08lx\n", Status);
                 goto end;
             } else if (iosb.Information < sizeof(ULONG)) {
                 ERR("iosb.Information was too short\n");
@@ -4782,7 +4782,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     Status = verify_vcb(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("verify_vcb returned %08x\n", Status);
+        ERR("verify_vcb returned %08lx\n", Status);
         goto exit;
     }
 
@@ -4937,7 +4937,7 @@ exit:
     Irp->IoStatus.Status = Status;
     IoCompleteRequest( Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT );
 
-    TRACE("create returning %08x\n", Status);
+    TRACE("create returning %08lx\n", Status);
 
     if (locked)
         ExReleaseResourceLite(&Vcb->load_lock);

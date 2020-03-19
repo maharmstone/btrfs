@@ -71,14 +71,14 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             Status = read_file(fcb, (uint8_t*)data, 0, fcb->inode_item.st_size, NULL, NULL);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("read_file returned %08x\n", Status);
+                ERR("read_file returned %08lx\n", Status);
                 ExFreePool(data);
                 goto end;
             }
 
             Status = utf8_to_utf16(NULL, 0, &stringlen, data, (ULONG)fcb->inode_item.st_size);
             if (!NT_SUCCESS(Status)) {
-                ERR("utf8_to_utf16 1 returned %08x\n", Status);
+                ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                 ExFreePool(data);
                 goto end;
             }
@@ -114,7 +114,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                                        stringlen, &stringlen, data, (ULONG)fcb->inode_item.st_size);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("utf8_to_utf16 2 returned %08x\n", Status);
+                ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                 ExFreePool(data);
                 goto end;
             }
@@ -141,7 +141,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             Status = read_file(fcb, buffer, 0, buflen, &len, NULL);
 
             if (!NT_SUCCESS(Status)) {
-                ERR("read_file returned %08x\n", Status);
+                ERR("read_file returned %08lx\n", Status);
             }
 
             *retlen = len;
@@ -209,13 +209,13 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     if (write) {
         Status = truncate_file(fcb, 0, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("truncate_file returned %08x\n", Status);
+            ERR("truncate_file returned %08lx\n", Status);
             return Status;
         }
 
         Status = utf16_to_utf8(NULL, 0, (PULONG)&target.Length, subname.Buffer, subname.Length);
         if (!NT_SUCCESS(Status)) {
-            ERR("utf16_to_utf8 1 failed with error %08x\n", Status);
+            ERR("utf16_to_utf8 1 failed with error %08lx\n", Status);
             return Status;
         }
 
@@ -228,7 +228,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
 
         Status = utf16_to_utf8(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
         if (!NT_SUCCESS(Status)) {
-            ERR("utf16_to_utf8 2 failed with error %08x\n", Status);
+            ERR("utf16_to_utf8 2 failed with error %08lx\n", Status);
             ExFreePool(target.Buffer);
             return Status;
         }
@@ -290,7 +290,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
 
     Status = fFsRtlValidateReparsePointBuffer(buflen, rdb);
     if (!NT_SUCCESS(Status)) {
-        ERR("FsRtlValidateReparsePointBuffer returned %08x\n", Status);
+        ERR("FsRtlValidateReparsePointBuffer returned %08lx\n", Status);
         return Status;
     }
 
@@ -326,7 +326,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
         } else { // otherwise, store as file data
             Status = truncate_file(fcb, 0, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("truncate_file returned %08x\n", Status);
+                ERR("truncate_file returned %08lx\n", Status);
                 return Status;
             }
 
@@ -334,7 +334,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
 
             Status = write_file2(fcb->Vcb, Irp, offset, rdb, &buflen, false, true, true, false, false, rollback);
             if (!NT_SUCCESS(Status)) {
-                ERR("write_file2 returned %08x\n", Status);
+                ERR("write_file2 returned %08lx\n", Status);
                 return Status;
             }
         }
@@ -419,7 +419,7 @@ NTSTATUS set_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     Status = set_reparse_point2(fcb, rdb, buflen, ccb, fileref, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
-        ERR("set_reparse_point2 returned %08x\n", Status);
+        ERR("set_reparse_point2 returned %08lx\n", Status);
         goto end;
     }
 
@@ -550,7 +550,7 @@ NTSTATUS delete_reparse_point(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
         Status = truncate_file(fcb, 0, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
-            ERR("truncate_file returned %08x\n", Status);
+            ERR("truncate_file returned %08lx\n", Status);
             goto end;
         }
 
