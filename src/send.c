@@ -269,7 +269,7 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     }
 
     if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
             tp.item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
         return STATUS_INTERNAL_ERROR;
     }
