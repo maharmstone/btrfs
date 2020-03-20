@@ -279,7 +279,7 @@ NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_
         partlen = *(uint32_t*)&inbuf[inoff];
 
         if (partlen + inoff > inlen) {
-            ERR("overflow: %x + %x > %I64x\n", partlen, inoff, inlen);
+            ERR("overflow: %x + %x > %x\n", partlen, inoff, inlen);
             return STATUS_INTERNAL_ERROR;
         }
 
