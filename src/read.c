@@ -3601,7 +3601,7 @@ end:
     Irp->IoStatus.Status = Status;
 
     TRACE("Irp->IoStatus.Status = %08lx\n", Irp->IoStatus.Status);
-    TRACE("Irp->IoStatus.Information = %lu\n", Irp->IoStatus.Information);
+    TRACE("Irp->IoStatus.Information = %Iu\n", Irp->IoStatus.Information);
     TRACE("returning %08lx\n", Status);
 
     if (Status != STATUS_PENDING)
