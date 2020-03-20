@@ -53,7 +53,7 @@ NTSTATUS do_read_job(PIRP Irp) {
 
     Irp->IoStatus.Status = Status;
 
-    TRACE("read %lu bytes\n", Irp->IoStatus.Information);
+    TRACE("read %Iu bytes\n", Irp->IoStatus.Information);
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
