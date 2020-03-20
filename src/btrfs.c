@@ -1099,7 +1099,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
                     break;
                 }
 
-                TRACE("label = %.*S\n", label_len / sizeof(WCHAR), data->VolumeLabel);
+                TRACE("label = %.*S\n", (int)(label_len / sizeof(WCHAR)), data->VolumeLabel);
             }
 
             ExReleaseResourceLite(&Vcb->tree_lock);
