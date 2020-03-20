@@ -3061,7 +3061,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
-    TRACE("setting new end to %I64x bytes (currently %x)\n", end, fcb->adsdata.Length);
+    TRACE("setting new end to %x bytes (currently %x)\n", end, fcb->adsdata.Length);
 
     if (!fileref || !fileref->parent) {
         ERR("no fileref for stream\n");
@@ -3072,11 +3072,11 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
         if (advance_only)
             return STATUS_SUCCESS;
 
-        TRACE("truncating stream to %I64x bytes\n", end);
+        TRACE("truncating stream to %x bytes\n", end);
 
         fcb->adsdata.Length = end;
     } else if (end > fcb->adsdata.Length) {
-        TRACE("extending stream to %I64x bytes\n", end);
+        TRACE("extending stream to %x bytes\n", end);
 
         if (end > fcb->adsmaxlen) {
             ERR("error - xattr too long (%u > %lu)\n", end, fcb->adsmaxlen);
