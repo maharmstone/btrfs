@@ -466,7 +466,7 @@ static void reset_subkeys(HANDLE h, PUNICODE_STRING reg_path) {
         if (NT_SUCCESS(Status)) {
             key_name* kn;
 
-            TRACE("key: %.*S\n", kbi->NameLength / sizeof(WCHAR), kbi->Name);
+            TRACE("key: %.*S\n", (int)(kbi->NameLength / sizeof(WCHAR)), kbi->Name);
 
             if (is_uuid(kbi->NameLength, kbi->Name)) {
                 kn = ExAllocatePoolWithTag(PagedPool, sizeof(key_name), ALLOC_TAG);
