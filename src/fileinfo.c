@@ -4217,7 +4217,7 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
 
     *length -= (LONG)offsetof(FILE_NAME_INFORMATION, FileName[0]);
 
-    TRACE("maximum length is %u\n", *length);
+    TRACE("maximum length is %li\n", *length);
     fni->FileNameLength = 0;
 
     fni->FileName[0] = 0;
