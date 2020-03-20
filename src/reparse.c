@@ -28,7 +28,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     ccb* ccb = FileObject->FsContext2;
     NTSTATUS Status;
 
-    TRACE("(%p, %p, %p, %x, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
+    TRACE("(%p, %p, %p, %lx, %p)\n", DeviceObject, FileObject, buffer, buflen, retlen);
 
     if (!ccb)
         return STATUS_INVALID_PARAMETER;
@@ -67,7 +67,7 @@ NTSTATUS get_reparse_point(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 goto end;
             }
 
-            TRACE("data = %p, size = %x\n", data, fcb->inode_item.st_size);
+            TRACE("data = %p, size = %I64x\n", data, fcb->inode_item.st_size);
             Status = read_file(fcb, (uint8_t*)data, 0, fcb->inode_item.st_size, NULL, NULL);
 
             if (!NT_SUCCESS(Status)) {
