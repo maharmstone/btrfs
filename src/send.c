@@ -2674,7 +2674,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             ed2 = (EXTENT_DATA2*)ed->data;
         } else if (ed->type == EXTENT_TYPE_INLINE) {
             if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size && ed->compression == BTRFS_COMPRESSION_NONE) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
                     tp->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2733,7 +2733,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             ed2 = (EXTENT_DATA2*)ed->data;
         } else if (ed->type == EXTENT_TYPE_INLINE) {
             if (tp2->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
                     tp2->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
                 return STATUS_INTERNAL_ERROR;
             }
