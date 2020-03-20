@@ -1242,7 +1242,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
     }
 
     if (!r) {
-        ERR("could not find subvol %I64x\n", edr->count);
+        ERR("could not find subvol %I64x\n", edr->root);
         return STATUS_INTERNAL_ERROR;
     }
 
