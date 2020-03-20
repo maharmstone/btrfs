@@ -3299,7 +3299,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
     bool cur_inline;
     NTSTATUS Status;
 
-    TRACE("(%p, %p, %x, %u)\n", fcb, fileref, end, prealloc);
+    TRACE("(%p, %p, %I64x, %u)\n", fcb, fileref, end, prealloc);
 
     if (fcb->ads) {
         if (end > 0xffff)
