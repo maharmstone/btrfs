@@ -685,7 +685,8 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
 
         ExFreePool(kvfi);
     } else if (dispos == REG_CREATED_NEW_KEY) {
-        WCHAR* builtin_users = L"S-1-5-32-545";
+        static const WCHAR builtin_users[] = L"S-1-5-32-545";
+
         UNICODE_STRING us2;
         DWORD val;
 
