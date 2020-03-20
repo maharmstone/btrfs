@@ -1057,7 +1057,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     }
 
     if (!c) {
-        WARN("couldn't find any data chunks with %I64x bytes free\n", buflen);
+        WARN("couldn't find any data chunks with %x bytes free\n", buflen);
         ExFreePool(buf);
         ExFreePool(parts);
         return STATUS_DISK_FULL;
