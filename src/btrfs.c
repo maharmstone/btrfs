@@ -1769,7 +1769,7 @@ void free_fileref(_Inout_ file_ref* fr) {
 
 #ifdef _DEBUG
     if (rc < 0) {
-        ERR("fileref %p: refcount now %i\n", fr, rc);
+        ERR("fileref %p: refcount now %li\n", fr, rc);
         int3;
     }
 #endif
