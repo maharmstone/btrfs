@@ -814,7 +814,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     EXTENT_ITEM_TREE2* eit2;
     traverse_ptr insert_tp;
 
-    TRACE("(%p, %x, %I64x, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, rollback);
+    TRACE("(%p, %x, %I64x, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, Irp, rollback);
 
     if (!find_metadata_address_in_chunk(Vcb, c, &address))
         return false;
