@@ -5534,7 +5534,7 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         default:
-            WARN("unknown control code %lx (DeviceType = %x, Access = %x, Function = %x, Method = %x)\n",
+            WARN("unknown control code %lx (DeviceType = %lx, Access = %lx, Function = %lx, Method = %lx)\n",
                           IrpSp->Parameters.FileSystemControl.FsControlCode, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xff0000) >> 16,
                           (IrpSp->Parameters.FileSystemControl.FsControlCode & 0xc000) >> 14, (IrpSp->Parameters.FileSystemControl.FsControlCode & 0x3ffc) >> 2,
                           IrpSp->Parameters.FileSystemControl.FsControlCode & 0x3);
