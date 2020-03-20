@@ -80,7 +80,7 @@ NTSTATUS do_write_job(device_extension* Vcb, PIRP Irp) {
 
     Irp->IoStatus.Status = Status;
 
-    TRACE("wrote %u bytes\n", Irp->IoStatus.Information);
+    TRACE("wrote %Iu bytes\n", Irp->IoStatus.Information);
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
