@@ -3411,9 +3411,9 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
                 CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
             } else {
                 if (fCcCopyReadEx) {
-                    TRACE("CcCopyReadEx(%p, %I64x, %lx, %u, %p, %p, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart,
+                    TRACE("CcCopyReadEx(%p, %I64x, %lx, %u, %p, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart,
                           length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread);
-                    TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
+                    TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                     if (!fCcCopyReadEx(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread)) {
                         TRACE("CcCopyReadEx could not wait\n");
 
@@ -3423,7 +3423,7 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
                     TRACE("CcCopyReadEx finished\n");
                 } else {
                     TRACE("CcCopyRead(%p, %I64x, %lx, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
-                    TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize, fcb->Header.FileSize, fcb->Header.ValidDataLength);
+                    TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                     if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
                         TRACE("CcCopyRead could not wait\n");
 
