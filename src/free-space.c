@@ -577,7 +577,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) / Vcb->superblock.sector_size) + num_bitmaps);
 
     if (num_valid_sectors > num_sectors) {
-        ERR("free space cache for %I64x was %I64x sectors, expected at least %I64x\n", c->offset, num_sectors, num_valid_sectors);
+        ERR("free space cache for %I64x was %u sectors, expected at least %u\n", c->offset, num_sectors, num_valid_sectors);
         goto clearcache;
     }
 
@@ -592,7 +592,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
             crc32 = ~calc_crc32c(0xffffffff, &data[sizeof(uint32_t) * num_sectors], ((i + 1) * Vcb->superblock.sector_size) - (sizeof(uint32_t) * num_sectors));
 
         if (crc32 != checksums[i]) {
-            WARN("checksum %I64u was %08x, expected %08x\n", i, crc32, checksums[i]);
+            WARN("checksum %u was %08x, expected %08x\n", i, crc32, checksums[i]);
             goto clearcache;
         }
     }
