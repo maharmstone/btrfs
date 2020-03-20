@@ -2812,7 +2812,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
 
     if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
-        WARN("not enough room for new DIR_ITEM (%u + %lu > %lu)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
+        WARN("not enough room for new DIR_ITEM (%lu + %lu > %lu)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return STATUS_DISK_FULL;
