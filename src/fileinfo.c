@@ -4318,7 +4318,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         le = le->Flink;
     }
 
-    TRACE("length = %i, reqsize = %u\n", *length, reqsize);
+    TRACE("length = %li, reqsize = %lu\n", *length, reqsize);
 
     if (reqsize > *length) {
         Status = STATUS_BUFFER_OVERFLOW;
