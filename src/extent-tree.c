@@ -2141,7 +2141,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     }
 
     if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.offset != Vcb->superblock.node_size) {
-        ERR("extent %I64x had size %I64x, not %I64x as expected\n", address, tp.item->key.offset, Vcb->superblock.node_size);
+        ERR("extent %I64x had size %I64x, not %x as expected\n", address, tp.item->key.offset, Vcb->superblock.node_size);
         return 0;
     }
 
