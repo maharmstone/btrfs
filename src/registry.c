@@ -675,7 +675,7 @@ static void read_group_mappings(PUNICODE_STRING regpath) {
 
                 RtlCopyMemory(&val, (uint8_t*)kvfi + kvfi->DataOffset, min(kvfi->DataLength, sizeof(uint32_t)));
 
-                TRACE("entry %lu = %.*S = %u\n", i, kvfi->NameLength / sizeof(WCHAR), kvfi->Name, val);
+                TRACE("entry %lu = %.*S = %u\n", i, (int)(kvfi->NameLength / sizeof(WCHAR)), kvfi->Name, val);
 
                 add_group_mapping(kvfi->Name, kvfi->NameLength / sizeof(WCHAR), val);
             }
