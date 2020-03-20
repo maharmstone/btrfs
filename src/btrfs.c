@@ -3605,7 +3605,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                     for (i = 0; i < c->chunk_item->num_stripes; i++) {
                         c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
-                        TRACE("device %I64u = %p\n", i, c->devices[i]);
+                        TRACE("device %u = %p\n", i, c->devices[i]);
 
                         if (!c->devices[i]) {
                             ERR("missing device\n");
