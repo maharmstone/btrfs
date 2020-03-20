@@ -18,6 +18,7 @@
 #include "crc32c.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <sal.h>
 
 crc_func calc_crc32c = calc_crc32c_sw;
 
