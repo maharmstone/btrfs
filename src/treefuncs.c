@@ -67,7 +67,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         unsigned int i;
 
         if ((t->header.num_items * sizeof(leaf_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
-            ERR("tree at %I64x has more items than expected (%x)\n", t->header.num_items);
+            ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.num_items);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -110,7 +110,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         unsigned int i;
 
         if ((t->header.num_items * sizeof(internal_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
-            ERR("tree at %I64x has more items than expected (%x)\n", t->header.num_items);
+            ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.num_items);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
