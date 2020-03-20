@@ -3322,7 +3322,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     TRACE("flags = %lx\n", flags);
     TRACE("RootDirectory = %p\n", fli->RootDirectory);
     TRACE("FileNameLength = %lx\n", fli->FileNameLength);
-    TRACE("FileName = %.*S\n", fli->FileNameLength / sizeof(WCHAR), fli->FileName);
+    TRACE("FileName = %.*S\n", (int)(fli->FileNameLength / sizeof(WCHAR)), fli->FileName);
 
     fn = fli->FileName;
     fnlen = fli->FileNameLength / sizeof(WCHAR);
