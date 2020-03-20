@@ -991,7 +991,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     }
 
     TRACE("file(0) = %.*S\n", de.name.Length / sizeof(WCHAR), de.name.Buffer);
-    TRACE("offset = %u\n", ccb->query_dir_offset - 1);
+    TRACE("offset = %I64u\n", ccb->query_dir_offset - 1);
 
     Status = query_dir_item(fcb, ccb, buf, &length, Irp, &de, fcb->subvol);
 
@@ -1036,7 +1036,7 @@ static NTSTATUS query_directory(PIRP Irp) {
                         count++;
 
                         TRACE("file(%lu) %u = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
-                        TRACE("offset = %u\n", ccb->query_dir_offset - 1);
+                        TRACE("offset = %I64u\n", ccb->query_dir_offset - 1);
 
                         status2 = query_dir_item(fcb, ccb, curitem, &length, Irp, &de, fcb->subvol);
 
