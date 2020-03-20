@@ -1301,7 +1301,7 @@ static NTSTATUS set_label(_In_ device_extension* Vcb, _In_ FILE_FS_LABEL_INFORMA
     NTSTATUS Status;
     ULONG vollen, i;
 
-    TRACE("label = %.*S\n", ffli->VolumeLabelLength / sizeof(WCHAR), ffli->VolumeLabel);
+    TRACE("label = %.*S\n", (int)(ffli->VolumeLabelLength / sizeof(WCHAR)), ffli->VolumeLabel);
 
     vollen = ffli->VolumeLabelLength;
 
