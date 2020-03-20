@@ -2398,7 +2398,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         fileref = ccb ? ccb->fileref : NULL;
 
         TRACE("cleanup called for FileObject %p\n", FileObject);
-        TRACE("fileref %p, refcount = %u, open_count = %u\n", fileref, fileref ? fileref->refcount : 0, fileref ? fileref->open_count : 0);
+        TRACE("fileref %p, refcount = %li, open_count = %li\n", fileref, fileref ? fileref->refcount : 0, fileref ? fileref->open_count : 0);
 
         ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
 
