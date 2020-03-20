@@ -1381,7 +1381,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
     NTSTATUS Status;
     uint16_t startoffstripe, num_missing, allowed_missing;
 
-    TRACE("(%p, %p, %I64x, %I64x, %p)\n", Vcb, c, offset, size, csum);
+    TRACE("(%p, %p, %lx, %I64x, %x, %p)\n", Vcb, c, type, offset, size, csum);
 
     context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(scrub_context_stripe) * c->chunk_item->num_stripes, ALLOC_TAG);
     if (!context.stripes) {
