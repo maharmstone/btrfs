@@ -324,7 +324,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = sizeof(FILE_BOTH_DIR_INFORMATION) - sizeof(WCHAR) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -364,7 +364,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = sizeof(FILE_DIRECTORY_INFORMATION) - sizeof(WCHAR) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -402,7 +402,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = sizeof(FILE_FULL_DIR_INFORMATION) - sizeof(WCHAR) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -441,7 +441,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = sizeof(FILE_ID_BOTH_DIR_INFORMATION) - sizeof(WCHAR) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -482,7 +482,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = sizeof(FILE_ID_FULL_DIR_INFORMATION) - sizeof(WCHAR) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -526,7 +526,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = offsetof(FILE_ID_EXTD_DIR_INFORMATION, FileName[0]) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -569,7 +569,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = offsetof(FILE_ID_EXTD_BOTH_DIR_INFORMATION, FileName[0]) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
@@ -618,7 +618,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             needed = sizeof(FILE_NAMES_INFORMATION) - sizeof(WCHAR) + de->name.Length;
 
             if (needed > *len) {
-                TRACE("buffer overflow - %u > %u\n", needed, *len);
+                TRACE("buffer overflow - %li > %lu\n", needed, *len);
                 return STATUS_BUFFER_OVERFLOW;
             }
 
