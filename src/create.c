@@ -3020,7 +3020,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
                     else if (RtlCompareMemory(&type, &GUID_ECP_CREATE_REDIRECTION, sizeof(GUID)) == sizeof(GUID))
                         WARN("unhandled ECP GUID_ECP_CREATE_REDIRECTION\n");
                     else {
-                        WARN("unhandled ECP {%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\n", type.Data1, type.Data2,
+                        WARN("unhandled ECP {%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\n", type.Data1, type.Data2,
                              type.Data3, type.Data4[0], type.Data4[1], type.Data4[2], type.Data4[3], type.Data4[4], type.Data4[5],
                              type.Data4[6], type.Data4[7]);
                     }
