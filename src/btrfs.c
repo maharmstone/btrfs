@@ -4498,7 +4498,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         Vcb->options.subvol_id = boot_subvol;
 
     if (pdode && pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
-        ERR("could not mount as %u device(s) missing\n", pdode->num_children - pdode->children_loaded);
+        ERR("could not mount as %I64u device(s) missing\n", pdode->num_children - pdode->children_loaded);
         Status = STATUS_DEVICE_NOT_READY;
         goto exit;
     }
@@ -4649,7 +4649,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     if (Vcb->superblock.num_devices > 1) {
         if (Vcb->devices_loaded < Vcb->superblock.num_devices && (!Vcb->options.allow_degraded || !finished_probing)) {
-            ERR("could not mount as %u device(s) missing\n", Vcb->superblock.num_devices - Vcb->devices_loaded);
+            ERR("could not mount as %I64u device(s) missing\n", Vcb->superblock.num_devices - Vcb->devices_loaded);
 
             IoRaiseInformationalHardError(IO_ERR_INTERNAL_ERROR, NULL, NULL);
 
