@@ -477,7 +477,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
     for (j = 0; j < ci->num_stripes; j++) {
         if (context->stripes[j].status == ReadDataStatus_Error) {
-            WARN("stripe %I64u returned error %08lx\n", j, context->stripes[j].iosb.Status);
+            WARN("stripe %u returned error %08lx\n", j, context->stripes[j].iosb.Status);
             log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
             return context->stripes[j].iosb.Status;
         } else if (context->stripes[j].status == ReadDataStatus_Success)
