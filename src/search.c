@@ -140,7 +140,7 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         }
 
         if (iosb.Information < sizeof(DISK_GEOMETRY)) {
-            ERR("%.*S: IOCTL_DISK_GET_DRIVE_GEOMETRY returned %Iu bytes, expected %u\n",
+            ERR("%.*S: IOCTL_DISK_GET_DRIVE_GEOMETRY returned %Iu bytes, expected %Iu\n",
                 devpath->Length / sizeof(WCHAR), devpath->Buffer, iosb.Information, sizeof(DISK_GEOMETRY));
         }
 

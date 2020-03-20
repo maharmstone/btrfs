@@ -254,7 +254,7 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     }
 
     if (tp.item->size < sizeof(EXTENT_DATA)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
             tp.item->size, sizeof(EXTENT_DATA));
         return STATUS_INTERNAL_ERROR;
     }
@@ -288,7 +288,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
 
         if (tp2->item->size < sizeof(INODE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
                 tp2->item->size, sizeof(INODE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
@@ -307,7 +307,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     ii = (INODE_ITEM*)tp->item->data;
 
     if (tp->item->size < sizeof(INODE_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
@@ -337,7 +337,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         LIST_ENTRY* le;
 
         if (tp2->item->size < sizeof(INODE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
                 tp2->item->size, sizeof(INODE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
@@ -780,7 +780,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
         return STATUS_SUCCESS;
 
     if (tp->item->size < sizeof(INODE_REF)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_REF));
         return STATUS_INTERNAL_ERROR;
     }
@@ -874,7 +874,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
     uint16_t len;
 
     if (tp->item->size < sizeof(INODE_EXTREF)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_EXTREF));
         return STATUS_INTERNAL_ERROR;
     }
@@ -1973,13 +1973,13 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
 
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             if (tp.item->size < sizeof(EXTENT_DATA))
-                ERR("(%I64x,%x,%I64x) has size %u, not at least %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                ERR("(%I64x,%x,%I64x) has size %u, not at least %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
             else {
                 EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
 
                 if (ed->type == EXTENT_TYPE_REGULAR) {
                     if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2))
-                        ERR("(%I64x,%x,%I64x) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                             tp.item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
                     else {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
@@ -2049,7 +2049,7 @@ static bool try_clone(send_context* context, send_ext* se) {
     }
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return false;
     }
 
@@ -2107,7 +2107,7 @@ static bool try_clone(send_context* context, send_ext* se) {
 
         if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
             if (tp.item->size < sizeof(EXTENT_DATA_REF))
-                ERR("(%I64x,%x,%I64x) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+                ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
             else {
                 if (try_clone_edr(context, se, (EXTENT_DATA_REF*)tp.item->data))
                     return true;
@@ -2641,7 +2641,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         EXTENT_DATA2* ed2 = NULL;
 
         if (tp->item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
                 tp->item->size, sizeof(EXTENT_DATA));
             return STATUS_INTERNAL_ERROR;
         }
@@ -2666,7 +2666,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
         if (ed->type == EXTENT_TYPE_REGULAR) {
             if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
                     tp->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2700,7 +2700,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         EXTENT_DATA2* ed2 = NULL;
 
         if (tp2->item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
                 tp2->item->size, sizeof(EXTENT_DATA));
             return STATUS_INTERNAL_ERROR;
         }
@@ -2725,7 +2725,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
         if (ed->type == EXTENT_TYPE_REGULAR) {
             if (tp2->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
                     tp2->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2783,13 +2783,13 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
     }
 
     if (tp && tp->item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
             tp->item->size, sizeof(DIR_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
     if (tp2 && tp2->item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
             tp2->item->size, sizeof(DIR_ITEM));
         return STATUS_INTERNAL_ERROR;
     }

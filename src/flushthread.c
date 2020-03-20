@@ -1875,7 +1875,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                     }
 
                     if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
-                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
                         return STATUS_INTERNAL_ERROR;
                     }
 
@@ -1955,7 +1955,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             }
 
             if (t->size > Vcb->superblock.node_size - sizeof(tree_header)) {
-                ERR("tree %I64x, level %x: tried to write overlarge tree (%x > %x)\n", t->root->id, t->header.level, t->size, Vcb->superblock.node_size - sizeof(tree_header));
+                ERR("tree %I64x, level %x: tried to write overlarge tree (%x > %Ix)\n", t->root->id, t->header.level, t->size, Vcb->superblock.node_size - sizeof(tree_header));
                 crash = true;
             }
 
@@ -2896,7 +2896,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             }
 
             if (tp.item->size < sizeof(BLOCK_GROUP_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
                 Status = STATUS_INTERNAL_ERROR;
                 release_chunk_lock(c, Vcb);
                 goto end;
@@ -3213,7 +3213,7 @@ static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
                 ds = sizeof(internal_node);
 
             if (numitems == 0 && ds > Vcb->superblock.node_size - sizeof(tree_header)) {
-                ERR("(%I64x,%x,%I64x) in tree %I64x is too large (%x > %x)\n",
+                ERR("(%I64x,%x,%I64x) in tree %I64x is too large (%x > %Ix)\n",
                     td->key.obj_id, td->key.obj_type, td->key.offset, t->root->id,
                     ds, Vcb->superblock.node_size - sizeof(tree_header));
                 return STATUS_INTERNAL_ERROR;
@@ -3589,7 +3589,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
         EXTENT_ITEM_TREE* eit;
 
         if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -3724,7 +3724,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                         t->header.level = 0;
                     }
                 } else if (t->size > Vcb->superblock.node_size - sizeof(tree_header)) {
-                    TRACE("splitting overlarge tree (%x > %x)\n", t->size, Vcb->superblock.node_size - sizeof(tree_header));
+                    TRACE("splitting overlarge tree (%x > %Ix)\n", t->size, Vcb->superblock.node_size - sizeof(tree_header));
 
                     if (!t->updated_extents && t->has_address) {
                         Status = update_tree_extents_recursive(Vcb, t, Irp, rollback);
@@ -6143,7 +6143,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
 
     if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(ROOT_REF)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
             return STATUS_INTERNAL_ERROR;
         } else {
             ROOT_REF* rr;

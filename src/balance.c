@@ -2838,7 +2838,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
                 lastoff = tp.item->key.offset + de->length;
             } else {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
                 return;
             }
         }
@@ -3653,7 +3653,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     }
 
     if (tp.item->size < sizeof(BALANCE_ITEM)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
              tp.item->size, sizeof(BALANCE_ITEM));
         return STATUS_INTERNAL_ERROR;
     }

@@ -449,7 +449,7 @@ bool get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
     }
 
     if (tp.item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         return false;
     }
 
@@ -3004,7 +3004,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
             if (tp.item->size < offsetof(ROOT_ITEM, byte_limit)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
             } else {
                 TRACE("root %I64x - address %I64x\n", tp.item->key.obj_id, ri->block_number);
 
@@ -3148,7 +3148,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 lastaddr = tp.item->key.offset + de->length;
             } else {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
             }
         }
 
@@ -3436,7 +3436,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
         if (tp.item->key.obj_id == 1 && tp.item->key.obj_type == TYPE_DEV_ITEM) {
             if (tp.item->size < sizeof(DEV_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
             } else {
                 DEV_ITEM* di = (DEV_ITEM*)tp.item->data;
                 LIST_ENTRY* le;
@@ -3541,7 +3541,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
             }
         } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
             if (tp.item->size < sizeof(CHUNK_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
             } else {
                 c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
 
@@ -3833,7 +3833,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 
                 Vcb->superblock.bytes_used += chunk_estimate_phys_size(Vcb, c, bgi->used);
             } else {
-                ERR("(%I64x;%I64x,%x,%I64x) is %u bytes, expected %u\n",
+                ERR("(%I64x;%I64x,%x,%I64x) is %u bytes, expected %Iu\n",
                     Vcb->extent_root->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
             }
         }
@@ -3944,14 +3944,14 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         }
 
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             goto end;
         }
 
         di = (DIR_ITEM*)tp.item->data;
 
         if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
             goto end;
         }
 

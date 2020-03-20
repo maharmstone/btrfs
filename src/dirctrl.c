@@ -1035,7 +1035,7 @@ static NTSTATUS query_directory(PIRP Irp) {
                         curitem = (uint8_t*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
                         count++;
 
-                        TRACE("file(%lu) %u = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
+                        TRACE("file(%lu) %Iu = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
                         TRACE("offset = %I64u\n", ccb->query_dir_offset - 1);
 
                         status2 = query_dir_item(fcb, ccb, curitem, &length, Irp, &de, fcb->subvol);

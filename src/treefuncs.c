@@ -88,7 +88,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
                 td->data = NULL;
 
             if (ln[i].size + sizeof(tree_header) + sizeof(leaf_node) > Vcb->superblock.node_size) {
-                ERR("overlarge item in tree %I64x: %u > %u\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
+                ERR("overlarge item in tree %I64x: %u > %Iu\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
                 ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
                 ExFreePool(t);
                 return STATUS_INTERNAL_ERROR;
@@ -1274,7 +1274,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
         switch (bi->operation) {
             case Batch_SetXattr: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
                 } else {
                     uint8_t* newdata;
                     ULONG size = td->size;
@@ -1493,7 +1493,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
             case Batch_DeleteDirItem: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("DIR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
+                    ERR("DIR_ITEM was %u bytes, expected at least %Iu\n", td->size, sizeof(DIR_ITEM));
                     return STATUS_INTERNAL_ERROR;
                 } else {
                     DIR_ITEM *di, *deldi;
@@ -1568,7 +1568,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
             case Batch_DeleteInodeRef: {
                 if (td->size < sizeof(INODE_REF)) {
-                    ERR("INODE_REF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_REF));
+                    ERR("INODE_REF was %u bytes, expected at least %Iu\n", td->size, sizeof(INODE_REF));
                     return STATUS_INTERNAL_ERROR;
                 } else {
                     INODE_REF *ir, *delir;
@@ -1665,7 +1665,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
             case Batch_DeleteInodeExtRef: {
                 if (td->size < sizeof(INODE_EXTREF)) {
-                    ERR("INODE_EXTREF was %u bytes, expected at least %u\n", td->size, sizeof(INODE_EXTREF));
+                    ERR("INODE_EXTREF was %u bytes, expected at least %Iu\n", td->size, sizeof(INODE_EXTREF));
                     return STATUS_INTERNAL_ERROR;
                 } else {
                     INODE_EXTREF *ier, *delier;
@@ -1746,7 +1746,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
             case Batch_DeleteXattr: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("XATTR_ITEM was %u bytes, expected at least %u\n", td->size, sizeof(DIR_ITEM));
+                    ERR("XATTR_ITEM was %u bytes, expected at least %Iu\n", td->size, sizeof(DIR_ITEM));
                     return STATUS_INTERNAL_ERROR;
                 } else {
                     DIR_ITEM *di, *deldi;

@@ -547,7 +547,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         ULONG utf16len;
 
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             goto cont;
         }
 
@@ -958,7 +958,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             static const char xapref[] = "user.";
 
             if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
                 continue;
             }
 
@@ -1174,7 +1174,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             ed = (EXTENT_DATA*)tp.item->data;
 
             if (tp.item->size < sizeof(EXTENT_DATA)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
 
                 reap_fcb(fcb);
@@ -1185,7 +1185,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
 
                 if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                         tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
 
                     reap_fcb(fcb);
@@ -2812,7 +2812,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
 
     if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
-        WARN("not enough room for new DIR_ITEM (%lu + %lu > %lu)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
+        WARN("not enough room for new DIR_ITEM (%Iu + %lu > %lu)", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);
         reap_fcb(fcb);
         free_fileref(parfileref);
         return STATUS_DISK_FULL;
@@ -3012,7 +3012,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
                         if (ctxsize >= sizeof(ATOMIC_CREATE_ECP_CONTEXT))
                             acec = ctx;
                         else {
-                            ERR("GUID_ECP_ATOMIC_CREATE context was too short: %lu bytes, expected %u\n", ctxsize,
+                            ERR("GUID_ECP_ATOMIC_CREATE context was too short: %lu bytes, expected %Iu\n", ctxsize,
                                 sizeof(ATOMIC_CREATE_ECP_CONTEXT));
                         }
                     } else if (RtlCompareMemory(&type, &GUID_ECP_QUERY_ON_CREATE, sizeof(GUID)) == sizeof(GUID))
@@ -4262,13 +4262,13 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             ULONG stringlen;
 
             if (tp.item->size < sizeof(ROOT_REF)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }

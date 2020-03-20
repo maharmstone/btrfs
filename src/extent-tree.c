@@ -541,7 +541,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     }
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -552,7 +552,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
     if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -760,7 +760,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
         if (!keycmp(tp2.item->key, searchkey)) {
             if (type == TYPE_SHARED_DATA_REF && tp2.item->size < sizeof(uint32_t)) {
-                ERR("(%I64x,%x,%I64x) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, sizeof(uint32_t));
+                ERR("(%I64x,%x,%I64x) was %x bytes, expecting %Ix\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, sizeof(uint32_t));
                 return STATUS_INTERNAL_ERROR;
             } else if (type != TYPE_SHARED_DATA_REF && tp2.item->size < datalen) {
                 ERR("(%I64x,%x,%I64x) was %x bytes, expecting %x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset, tp2.item->size, datalen);
@@ -962,7 +962,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     }
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -973,7 +973,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
     if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1637,7 +1637,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
 
     if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(EXTENT_DATA_REF))
-            ERR("(%I64x,%x,%I64x) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+            ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
         else {
             EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
 
@@ -1684,8 +1684,8 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
 
         return eiv0->refcount;
     } else if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                       tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %Ix\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                      tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return 0;
     }
 
@@ -1731,7 +1731,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         return false;
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return false;
     }
 
@@ -1742,7 +1742,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
 
     if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
-            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
             return false;
         }
 
@@ -1800,7 +1800,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
             EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
 
             if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
-                WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
                      tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
                 return false;
             }
@@ -1863,8 +1863,8 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
     if (tp.item->size == sizeof(EXTENT_ITEM_V0))
         return 0;
     else if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %Ix\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                      tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return 0;
     }
 
@@ -1904,8 +1904,8 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     if (tp.item->size == sizeof(EXTENT_ITEM_V0))
         return;
     else if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %x\n", tp.item->key.obj_id, tp.item->key.obj_type,
-                                                                   tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %Ix\n", tp.item->key.obj_id, tp.item->key.obj_type,
+                                                                      tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return;
     }
 
@@ -2000,7 +2000,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
             ce->count = ce->old_count = ei->refcount;
         } else {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
             Status = STATUS_INTERNAL_ERROR;
             goto end;
         }
@@ -2146,7 +2146,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     }
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x): size was %u, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x): size was %u, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return 0;
     }
 
@@ -2158,8 +2158,8 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
 
     if (searchkey.obj_type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
         if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
-            ERR("(%I64x,%x,%I64x): size was %u, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
-                                                                       tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+            ERR("(%I64x,%x,%I64x): size was %u, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                                                                          tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
             return 0;
         }
 
@@ -2242,7 +2242,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     }
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x): size was %u, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x): size was %u, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return 0;
     }
 
@@ -2298,7 +2298,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
 
     if (!keycmp(searchkey, tp.item->key)) {
         if (tp.item->size < sizeof(uint32_t))
-            ERR("(%I64x,%x,%I64x) has size %u, not %u as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(uint32_t));
+            ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(uint32_t));
         else {
             uint32_t* count = (uint32_t*)tp.item->data;
             return *count;

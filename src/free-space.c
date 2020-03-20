@@ -112,7 +112,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                     }
                 }
             } else
-                WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+                WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         }
 
         b = find_next_item(Vcb, &tp, &next_tp, false, Irp);
@@ -495,7 +495,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         return STATUS_NOT_FOUND;
     }
 
@@ -755,7 +755,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_INFO)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_INFO));
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_INFO));
         return STATUS_NOT_FOUND;
     }
 
@@ -1247,7 +1247,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         }
 
         if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1341,7 +1341,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             *changed = true;
         } else {
             if (tp.item->size < sizeof(INODE_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -1364,7 +1364,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         }
 
         if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1743,7 +1743,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     }
 
     if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }

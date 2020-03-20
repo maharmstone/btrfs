@@ -3653,7 +3653,7 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
     ULONG filter;
 
     if (IrpSp->Parameters.SetFile.Length < sizeof(FILE_VALID_DATA_LENGTH_INFORMATION)) {
-        ERR("input buffer length was %lu, expected %u\n", IrpSp->Parameters.SetFile.Length, sizeof(FILE_VALID_DATA_LENGTH_INFORMATION));
+        ERR("input buffer length was %lu, expected %Iu\n", IrpSp->Parameters.SetFile.Length, sizeof(FILE_VALID_DATA_LENGTH_INFORMATION));
         return STATUS_INVALID_PARAMETER;
     }
 
