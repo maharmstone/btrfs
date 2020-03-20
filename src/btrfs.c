@@ -2281,7 +2281,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
     // remove dir_child from parent
 
     if (fileref->dc) {
-        TRACE("delete file %.*S\n", fileref->dc->name.Length / sizeof(WCHAR), fileref->dc->name.Buffer);
+        TRACE("delete file %.*S\n", (int)(fileref->dc->name.Length / sizeof(WCHAR)), fileref->dc->name.Buffer);
 
         ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
         RemoveEntryList(&fileref->dc->list_entry_index);

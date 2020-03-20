@@ -196,7 +196,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
         subname.Buffer = &rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)];
         subname.MaximumLength = subname.Length = rdb->SymbolicLinkReparseBuffer.SubstituteNameLength;
 
-        TRACE("substitute name = %.*S\n", subname.Length / sizeof(WCHAR), subname.Buffer);
+        TRACE("substitute name = %.*S\n", (int)(subname.Length / sizeof(WCHAR)), subname.Buffer);
     }
 
     fcb->type = BTRFS_TYPE_SYMLINK;

@@ -173,7 +173,7 @@ static NTSTATUS probe_volume(void* data, ULONG length, KPROCESSOR_MODE processor
     if (length < offsetof(MOUNTDEV_NAME, Name[0]) + mdn->NameLength)
         return STATUS_INVALID_PARAMETER;
 
-    TRACE("%.*S\n", mdn->NameLength / sizeof(WCHAR), mdn->Name);
+    TRACE("%.*S\n", (int)(mdn->NameLength / sizeof(WCHAR)), mdn->Name);
 
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;

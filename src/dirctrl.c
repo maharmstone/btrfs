@@ -824,7 +824,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     initial = !ccb->query_string.Buffer;
 
     if (IrpSp->Parameters.QueryDirectory.FileName && IrpSp->Parameters.QueryDirectory.FileName->Length > 1) {
-        TRACE("QD filename: %.*S\n", IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
+        TRACE("QD filename: %.*S\n", (int)(IrpSp->Parameters.QueryDirectory.FileName->Length / sizeof(WCHAR)), IrpSp->Parameters.QueryDirectory.FileName->Buffer);
 
         if (IrpSp->Parameters.QueryDirectory.FileName->Length > sizeof(WCHAR) || IrpSp->Parameters.QueryDirectory.FileName->Buffer[0] != L'*') {
             specific_file = true;
@@ -866,7 +866,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     }
 
     if (ccb->query_string.Buffer) {
-        TRACE("query string = %.*S\n", ccb->query_string.Length / sizeof(WCHAR), ccb->query_string.Buffer);
+        TRACE("query string = %.*S\n", (int)(ccb->query_string.Length / sizeof(WCHAR)), ccb->query_string.Buffer);
     }
 
     newoffset = ccb->query_dir_offset;
@@ -990,7 +990,7 @@ static NTSTATUS query_directory(PIRP Irp) {
         }
     }
 
-    TRACE("file(0) = %.*S\n", de.name.Length / sizeof(WCHAR), de.name.Buffer);
+    TRACE("file(0) = %.*S\n", (int)(de.name.Length / sizeof(WCHAR)), de.name.Buffer);
     TRACE("offset = %I64u\n", ccb->query_dir_offset - 1);
 
     Status = query_dir_item(fcb, ccb, buf, &length, Irp, &de, fcb->subvol);
@@ -1035,7 +1035,7 @@ static NTSTATUS query_directory(PIRP Irp) {
                         curitem = (uint8_t*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
                         count++;
 
-                        TRACE("file(%lu) %Iu = %.*S\n", count, curitem - (uint8_t*)buf, de.name.Length / sizeof(WCHAR), de.name.Buffer);
+                        TRACE("file(%lu) %Iu = %.*S\n", count, curitem - (uint8_t*)buf, (int)(de.name.Length / sizeof(WCHAR)), de.name.Buffer);
                         TRACE("offset = %I64u\n", ccb->query_dir_offset - 1);
 
                         status2 = query_dir_item(fcb, ccb, curitem, &length, Irp, &de, fcb->subvol);

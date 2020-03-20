@@ -1800,7 +1800,7 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
         return rename_stream_to_file(Vcb, fileref, ccb, flags, Irp, rollback);
 
     if (!is_file_name_valid(&fn, false, true)) {
-        WARN("invalid stream name %.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+        WARN("invalid stream name %.*S\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
         return STATUS_OBJECT_NAME_INVALID;
     }
 
@@ -2039,7 +2039,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     }
 
     if (!is_file_name_valid(&fn, false, true)) {
-        WARN("invalid stream name %.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+        WARN("invalid stream name %.*S\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
         return STATUS_OBJECT_NAME_INVALID;
     }
 
@@ -2510,7 +2510,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fnus.Buffer = fn;
     fnus.Length = fnus.MaximumLength = (uint16_t)(fnlen * sizeof(WCHAR));
 
-    TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
+    TRACE("fnus = %.*S\n", (int)(fnus.Length / sizeof(WCHAR)), fnus.Buffer);
 
     for (unsigned int i = 0 ; i < fnus.Length / sizeof(WCHAR); i++) {
         if (fnus.Buffer[i] == ':') {
@@ -2687,7 +2687,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             RtlCopyMemory(fileref->oldutf8.Buffer, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
         }
 
-        TRACE("renaming %.*S to %.*S\n", fileref->dc->name.Length / sizeof(WCHAR), fileref->dc->name.Buffer, fnus.Length / sizeof(WCHAR), fnus.Buffer);
+        TRACE("renaming %.*S to %.*S\n", (int)(fileref->dc->name.Length / sizeof(WCHAR)), fileref->dc->name.Buffer, (int)(fnus.Length / sizeof(WCHAR)), fnus.Buffer);
 
         mark_fileref_dirty(fileref);
 
@@ -3380,7 +3380,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     fnus.Buffer = fn;
     fnus.Length = fnus.MaximumLength = (uint16_t)(fnlen * sizeof(WCHAR));
 
-    TRACE("fnus = %.*S\n", fnus.Length / sizeof(WCHAR), fnus.Buffer);
+    TRACE("fnus = %.*S\n", (int)(fnus.Length / sizeof(WCHAR)), fnus.Buffer);
 
     Status = utf16_to_utf8(NULL, 0, &utf8len, fn, (ULONG)fnlen * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
@@ -4250,11 +4250,11 @@ static NTSTATUS fill_in_file_name_information(FILE_NAME_INFORMATION* fni, fcb* f
     if (Status == STATUS_BUFFER_OVERFLOW) {
         *length = -1;
         fni->FileNameLength = reqlen;
-        TRACE("%.*S (truncated)\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+        TRACE("%.*S (truncated)\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
     } else {
         *length -= fn.Length;
         fni->FileNameLength = fn.Length;
-        TRACE("%.*S\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+        TRACE("%.*S\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
     }
 
     return Status;
@@ -4486,7 +4486,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                 hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
                 file_ref* parfr;
 
-                TRACE("parent %I64x, index %I64x, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
+                TRACE("parent %I64x, index %I64x, name %.*S\n", hl->parent, hl->index, (int)(hl->name.Length / sizeof(WCHAR)), hl->name.Buffer);
 
                 Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr, Irp);
 
@@ -4518,7 +4518,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                         fn = &hl->name;
 
                     if (!deleted) {
-                        TRACE("fn = %.*S (found = %u)\n", fn->Length / sizeof(WCHAR), fn->Buffer, found);
+                        TRACE("fn = %.*S (found = %u)\n", (int)(fn->Length / sizeof(WCHAR)), fn->Buffer, found);
 
                         if (feli)
                             bytes_needed = (LONG)sector_align(bytes_needed, 8);
@@ -4654,7 +4654,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                 hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
                 file_ref* parfr;
 
-                TRACE("parent %I64x, index %I64x, name %.*S\n", hl->parent, hl->index, hl->name.Length / sizeof(WCHAR), hl->name.Buffer);
+                TRACE("parent %I64x, index %I64x, name %.*S\n", hl->parent, hl->index, (int)(hl->name.Length / sizeof(WCHAR)), hl->name.Buffer);
 
                 Status = open_fileref_by_inode(fcb->Vcb, fcb->subvol, hl->parent, &parfr, Irp);
 
@@ -4686,7 +4686,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                         fn = &hl->name;
 
                     if (!deleted) {
-                        TRACE("fn = %.*S (found = %u)\n", fn->Length / sizeof(WCHAR), fn->Buffer, found);
+                        TRACE("fn = %.*S (found = %u)\n", (int)(fn->Length / sizeof(WCHAR)), fn->Buffer, found);
 
                         if (flefii)
                             bytes_needed = (LONG)sector_align(bytes_needed, 8);

@@ -1598,7 +1598,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
         Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive);
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
-            TRACE("could not find %.*S\n", name->Length / sizeof(WCHAR), name->Buffer);
+            TRACE("could not find %.*S\n", (int)(name->Length / sizeof(WCHAR)), name->Buffer);
 
             return lastpart ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
         } else if (!NT_SUCCESS(Status)) {
@@ -1708,7 +1708,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         dir = related;
     } else {
         if (fnus2.Buffer[0] != '\\') {
-            ERR("error - filename %.*S did not begin with \\\n", fnus2.Length / sizeof(WCHAR), fnus2.Buffer);
+            ERR("error - filename %.*S did not begin with \\\n", (int)(fnus2.Length / sizeof(WCHAR)), fnus2.Buffer);
             return STATUS_OBJECT_PATH_NOT_FOUND;
         }
 
@@ -1742,7 +1742,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
 
     if (dir->fcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
         WARN("passed related fileref which isn't a directory (fnus = %.*S)\n",
-             fnus->Length / sizeof(WCHAR), fnus->Buffer);
+             (int)(fnus->Length / sizeof(WCHAR)), fnus->Buffer);
         return STATUS_OBJECT_PATH_NOT_FOUND;
     }
 
@@ -2212,7 +2212,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
 
-    TRACE("create file %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
+    TRACE("create file %.*S\n", (int)(fpus->Length / sizeof(WCHAR)), fpus->Buffer);
     ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
     TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) was %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
     parfileref->fcb->inode_item.st_size += utf8len * 2;
@@ -2636,8 +2636,8 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     LONG rc;
 #endif
 
-    TRACE("fpus = %.*S\n", fpus->Length / sizeof(WCHAR), fpus->Buffer);
-    TRACE("stream = %.*S\n", stream->Length / sizeof(WCHAR), stream->Buffer);
+    TRACE("fpus = %.*S\n", (int)(fpus->Length / sizeof(WCHAR)), fpus->Buffer);
+    TRACE("stream = %.*S\n", (int)(stream->Length / sizeof(WCHAR)), stream->Buffer);
 
     parfileref = *pparfileref;
 
@@ -2990,7 +2990,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     LONG oc;
 #endif
 
-    TRACE("(%p, %p, %p, %.*S, %lx, %lx)\n", Irp, Vcb, FileObject, fnus->Length / sizeof(WCHAR), fnus->Buffer, disposition, options);
+    TRACE("(%p, %p, %p, %.*S, %lx, %lx)\n", Irp, Vcb, FileObject, (int)(fnus->Length / sizeof(WCHAR)), fnus->Buffer, disposition, options);
 
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
@@ -3077,7 +3077,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         lb.Buffer = &fpus.Buffer[(fpus.Length - dsus.Length)/sizeof(WCHAR)];
         lb.Length = lb.MaximumLength = dsus.Length;
 
-        TRACE("lb = %.*S\n", lb.Length/sizeof(WCHAR), lb.Buffer);
+        TRACE("lb = %.*S\n", (int)(lb.Length/sizeof(WCHAR)), lb.Buffer);
 
         if (FsRtlAreNamesEqual(&dsus, &lb, true, NULL)) {
             TRACE("ignoring :$DATA suffix\n");
@@ -3087,7 +3087,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
             if (fpus.Length > sizeof(WCHAR) && fpus.Buffer[(fpus.Length-1)/sizeof(WCHAR)] == ':')
                 fpus.Length -= sizeof(WCHAR);
 
-            TRACE("fpus = %.*S\n", fpus.Length / sizeof(WCHAR), fpus.Buffer);
+            TRACE("fpus = %.*S\n", (int)(fpus.Length / sizeof(WCHAR)), fpus.Buffer);
         }
     }
 
@@ -4452,7 +4452,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
 
     fn = FileObject->FileName;
 
-    TRACE("(%.*S)\n", fn.Length / sizeof(WCHAR), fn.Buffer);
+    TRACE("(%.*S)\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
     TRACE("FileObject = %p\n", FileObject);
 
     if (Vcb->readonly && (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_CREATE || RequestedDisposition == FILE_OVERWRITE)) {
@@ -4907,7 +4907,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         InitializeListHead(&rollback);
 
-        TRACE("file name: %.*S\n", IrpSp->FileObject->FileName.Length / sizeof(WCHAR), IrpSp->FileObject->FileName.Buffer);
+        TRACE("file name: %.*S\n", (int)(IrpSp->FileObject->FileName.Length / sizeof(WCHAR)), IrpSp->FileObject->FileName.Buffer);
 
         if (IrpSp->FileObject->RelatedFileObject)
             TRACE("related file = %p\n", IrpSp->FileObject->RelatedFileObject);

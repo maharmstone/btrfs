@@ -122,7 +122,7 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
     uint8_t* data = NULL;
     uint32_t sector_size;
 
-    TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+    TRACE("%.*S\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
 
     sector_size = DeviceObject->SectorSize;
 
@@ -135,19 +135,19 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
 
         if (!NT_SUCCESS(Status)) {
             ERR("%.*S had a sector size of 0, and IOCTL_DISK_GET_DRIVE_GEOMETRY returned %08lx\n",
-                devpath->Length / sizeof(WCHAR), devpath->Buffer, Status);
+                (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer, Status);
             goto deref;
         }
 
         if (iosb.Information < sizeof(DISK_GEOMETRY)) {
             ERR("%.*S: IOCTL_DISK_GET_DRIVE_GEOMETRY returned %Iu bytes, expected %Iu\n",
-                devpath->Length / sizeof(WCHAR), devpath->Buffer, iosb.Information, sizeof(DISK_GEOMETRY));
+                (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer, iosb.Information, sizeof(DISK_GEOMETRY));
         }
 
         sector_size = geometry.BytesPerSector;
 
         if (sector_size == 0) {
-            ERR("%.*S had a sector size of 0\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+            ERR("%.*S had a sector size of 0\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
             goto deref;
         }
     }
@@ -496,7 +496,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     GET_LENGTH_INFORMATION gli;
     NTSTATUS Status;
 
-    TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+    TRACE("%.*S\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
 
     ExAcquireResourceSharedLite(&boot_lock, TRUE);
 
@@ -587,7 +587,7 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     LIST_ENTRY* le;
     UNICODE_STRING devpath2;
 
-    TRACE("%.*S\n", devpath->Length / sizeof(WCHAR), devpath->Buffer);
+    TRACE("%.*S\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
 
     UNUSED(DriverObject);
 

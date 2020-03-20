@@ -119,9 +119,9 @@ static void get_system_root(system_root* sr) {
         NtClose(h);
 
         if (second_time) {
-            TRACE("boot device is %.*S\n", target.Length / sizeof(WCHAR), target.Buffer);
+            TRACE("boot device is %.*S\n", (int)(target.Length / sizeof(WCHAR)), target.Buffer);
         } else {
-            TRACE("system root is %.*S\n", target.Length / sizeof(WCHAR), target.Buffer);
+            TRACE("system root is %.*S\n", (int)(target.Length / sizeof(WCHAR)), target.Buffer);
         }
 
         if (!second_time && target.Length >= sizeof(boot_device) - sizeof(WCHAR) &&

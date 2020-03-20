@@ -917,7 +917,7 @@ NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devp
 
     mmdlt->DeviceNameLength = devpath->Length;
     RtlCopyMemory(&mmdlt->DeviceName, devpath->Buffer, devpath->Length);
-    TRACE("mmdlt = %.*S\n", mmdlt->DeviceNameLength / sizeof(WCHAR), mmdlt->DeviceName);
+    TRACE("mmdlt = %.*S\n", (int)(mmdlt->DeviceNameLength / sizeof(WCHAR)), mmdlt->DeviceName);
 
     Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_NEXT_DRIVE_LETTER, mmdlt, mmdltsize, &mmdli, sizeof(MOUNTMGR_DRIVE_LETTER_INFORMATION), false, NULL);
 
