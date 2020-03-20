@@ -1926,7 +1926,7 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
 
     Status = RtlUpcaseUnicodeString(&utf16uc, &fn, true);
     if (!NT_SUCCESS(Status)) {
-        ERR("RtlUpcaseUnicodeString returned %08lx\n");
+        ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
         ExFreePool(utf8.Buffer);
         ExFreePool(utf16.Buffer);
         ExFreePool(adsxattr.Buffer);
