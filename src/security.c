@@ -737,7 +737,7 @@ NTSTATUS __stdcall drv_query_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
         Irp->IoStatus.Information = 0;
 
 end:
-    TRACE("Irp->IoStatus.Information = %u\n", Irp->IoStatus.Information);
+    TRACE("Irp->IoStatus.Information = %Iu\n", Irp->IoStatus.Information);
 
     Irp->IoStatus.Status = Status;
 
