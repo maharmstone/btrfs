@@ -2439,7 +2439,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     TRACE("tfo = %p\n", tfo);
     TRACE("Flags = %lx\n", flags);
     TRACE("RootDirectory = %p\n", fri->RootDirectory);
-    TRACE("FileName = %.*S\n", fri->FileNameLength / sizeof(WCHAR), fri->FileName);
+    TRACE("FileName = %.*S\n", (int)(fri->FileNameLength / sizeof(WCHAR)), fri->FileName);
 
     fn = fri->FileName;
     fnlen = fri->FileNameLength / sizeof(WCHAR);
