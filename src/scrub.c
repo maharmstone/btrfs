@@ -2871,7 +2871,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
             TRACE("%I64x\n", tp.item->key.obj_id);
 
             if (size < Vcb->superblock.sector_size) {
-                ERR("extent %I64x has size less than sector_size (%I64x < %x)\n", tp.item->key.obj_id, Vcb->superblock.sector_size);
+                ERR("extent %I64x has size less than sector_size (%I64x < %x)\n", tp.item->key.obj_id, size, Vcb->superblock.sector_size);
                 return STATUS_INTERNAL_ERROR;
             }
 
