@@ -4476,7 +4476,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 goto exit;
             }
 
-            RtlCopyMemory(&inode, fn.Buffer, sizeof(uint64_t));
+            inode = (*(uint64_t*)fn.Buffer) & 0xffffffffff;
 
             if (related->fcb == Vcb->root_fileref->fcb && inode == 0)
                 inode = Vcb->root_fileref->fcb->inode;
