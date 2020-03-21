@@ -4751,8 +4751,7 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
 static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* fcb, ccb* ccb, LONG* length) {
     INODE_ITEM* ii;
 
-    fsi->FileId.LowPart = (uint32_t)fcb->inode;
-    fsi->FileId.HighPart = (uint32_t)fcb->subvol->id;
+    fsi->FileId.QuadPart = make_file_id(fcb->subvol, fcb->inode);
 
     if (fcb->ads)
         ii = &ccb->fileref->parent->fcb->inode_item;
