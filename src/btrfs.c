@@ -2489,11 +2489,16 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
                     clear_rollback(&rollback);
                 } else if (FileObject->Flags & FO_CACHE_SUPPORTED && FileObject->SectionObjectPointer->DataSectionObject) {
                     IO_STATUS_BLOCK iosb;
+
+                    if (locked) {
+                        ExReleaseResourceLite(fcb->Header.Resource);
+                        locked = false;
+                    }
+
                     CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
 
-                    if (!NT_SUCCESS(iosb.Status)) {
+                    if (!NT_SUCCESS(iosb.Status))
                         ERR("CcFlushCache returned %08lx\n", iosb.Status);
-                    }
 
                     if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
                         ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, true);
