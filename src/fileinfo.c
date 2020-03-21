@@ -4810,8 +4810,7 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
 static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, LONG* length) {
     INODE_ITEM* ii;
 
-    fsli->FileId.LowPart = (uint32_t)fcb->inode;
-    fsli->FileId.HighPart = (uint32_t)fcb->subvol->id;
+    fsli->FileId.QuadPart = make_file_id(fcb->subvol, fcb->inode);
 
     if (fcb->ads)
         ii = &ccb->fileref->parent->fcb->inode_item;
