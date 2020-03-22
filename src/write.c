@@ -4166,6 +4166,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 TRACE("paging IO tried to write beyond end of file (file size = %I64x, offset = %I64x, length = %lx)\n", newlength, off64, *length);
                 TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
                     fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+                Irp->IoStatus.Information = 0;
                 Status = STATUS_SUCCESS;
                 goto end;
             }
@@ -4512,6 +4513,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     fcb->subvol->root_item.ctime = now;
 
     Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = *length;
 
     if (filter != 0)
         queue_notification_fcb(fcb->ads ? fileref->parent : fileref, filter, fcb->ads ? FILE_ACTION_MODIFIED_STREAM : FILE_ACTION_MODIFIED,
@@ -4584,8 +4586,6 @@ NTSTATUS write_file(device_extension* Vcb, PIRP Irp, bool wait, bool deferred_wr
     }
 
     if (NT_SUCCESS(Status)) {
-        Irp->IoStatus.Information = IrpSp->Parameters.Write.Length;
-
         if (diskacc && Status != STATUS_PENDING && Irp->Flags & IRP_NOCACHE) {
             PETHREAD thread = NULL;
 
