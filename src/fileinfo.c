@@ -3217,12 +3217,6 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             goto end;
         }
     } else if ((uint64_t)feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
-        if (Irp->Flags & IRP_PAGING_IO) {
-            TRACE("paging IO tried to extend file size\n");
-            Status = STATUS_SUCCESS;
-            goto end;
-        }
-
         TRACE("extending file to %I64x bytes\n", feofi->EndOfFile.QuadPart);
 
         Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, prealloc, NULL, &rollback);
