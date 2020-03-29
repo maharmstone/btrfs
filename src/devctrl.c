@@ -279,11 +279,6 @@ NTSTATUS __stdcall drv_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Ir
         goto end;
     }
 
-    if (!IrpSp->FileObject || IrpSp->FileObject->FsContext != Vcb->volume_fcb) {
-        Status = STATUS_INVALID_PARAMETER;
-        goto end;
-    }
-
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode) {
         case IOCTL_MOUNTDEV_QUERY_STABLE_GUID:
             Status = mountdev_query_stable_guid(Vcb, Irp);
