@@ -4254,6 +4254,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                     }
                     TRACE("CcCopyWrite finished\n");
                 }
+
+                Irp->IoStatus.Information = *length;
             }
         } except (EXCEPTION_EXECUTE_HANDLER) {
             Status = GetExceptionCode();
