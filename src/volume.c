@@ -876,8 +876,17 @@ NTSTATUS vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         case IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS:
             return vol_get_disk_extents(vde, Irp);
 
-        default: // pass ioctl through if only one child device
-            return vol_ioctl_passthrough(vde, Irp);
+        default: { // pass ioctl through if only one child device
+            ULONG code = IrpSp->Parameters.DeviceIoControl.IoControlCode;
+            NTSTATUS Status = vol_ioctl_passthrough(vde, Irp);
+
+            if (NT_SUCCESS(Status))
+                TRACE("passing through ioctl %lx (returning %08lx)\n", code, Status);
+            else
+                WARN("passing through ioctl %lx (returning %08lx)\n", code, Status);
+
+            return Status;
+        }
     }
 
     return STATUS_INVALID_DEVICE_REQUEST;
