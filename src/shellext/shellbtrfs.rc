@@ -112,8 +112,8 @@ BEGIN
     LTEXT           "Group:",IDC_STATIC,14,141,22,8
     EDITTEXT        IDC_UID,94,123,40,14,ES_AUTOHSCROLL | ES_NUMBER
     EDITTEXT        IDC_GID,94,139,40,14,ES_AUTOHSCROLL | ES_NUMBER
-    LTEXT           "User",IDC_STATIC,14,172,15,8
-    LTEXT           "Group",IDC_STATIC,14,182,20,8
+    LTEXT           "User",IDC_STATIC,14,175,15,8
+    LTEXT           "Group",IDC_STATIC,14,186,20,8
     LTEXT           "Others",IDC_STATIC,14,196,22,8
     LTEXT           "Read",IDC_STATIC,50,162,17,8
     LTEXT           "Write",IDC_STATIC,89,162,18,8
