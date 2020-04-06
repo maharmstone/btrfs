@@ -4499,7 +4499,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && boot_subvol != 0)
+    if (pdode && RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && boot_subvol != 0)
         Vcb->options.subvol_id = boot_subvol;
 
     if (pdode && pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
