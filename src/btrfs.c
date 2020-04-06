@@ -4499,13 +4499,15 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && boot_subvol != 0)
-        Vcb->options.subvol_id = boot_subvol;
+    if (pdode) {
+        if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && boot_subvol != 0)
+            Vcb->options.subvol_id = boot_subvol;
 
-    if (pdode && pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
-        ERR("could not mount as %I64u device(s) missing\n", pdode->num_children - pdode->children_loaded);
-        Status = STATUS_DEVICE_NOT_READY;
-        goto exit;
+        if (pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
+            ERR("could not mount as %I64u device(s) missing\n", pdode->num_children - pdode->children_loaded);
+            Status = STATUS_DEVICE_NOT_READY;
+            goto exit;
+        }
     }
 
     if (Vcb->options.ignore) {
