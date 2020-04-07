@@ -2764,7 +2764,7 @@ NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULON
         readlen = fcb->adsdata.Length - (ULONG)start;
 
     if (readlen > 0)
-        RtlCopyMemory(data + start, fcb->adsdata.Buffer, readlen);
+        RtlCopyMemory(data, fcb->adsdata.Buffer + start, readlen);
 
     if (pbr) *pbr = readlen;
 
