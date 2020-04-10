@@ -1073,8 +1073,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
     if ((address + length - c->offset) % (num_data_stripes * c->chunk_item->stripe_length) > 0) {
         uint64_t delta = (address + length - c->offset) % (num_data_stripes * c->chunk_item->stripe_length);
 
-        delta = min(irp_offset + length, delta);
-        Status = add_partial_stripe(Vcb, c, address + length - delta, (uint32_t)delta, (uint8_t*)data + irp_offset + length - delta);
+        delta = min(length, delta);
+        Status = add_partial_stripe(Vcb, c, address + length - delta, (uint32_t)delta, (uint8_t*)data + length - delta);
         if (!NT_SUCCESS(Status)) {
             ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
@@ -1086,7 +1086,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
     if (length > 0 && (address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length) > 0) {
         uint64_t delta = (num_data_stripes * c->chunk_item->stripe_length) - ((address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length));
 
-        Status = add_partial_stripe(Vcb, c, address, (uint32_t)delta, (uint8_t*)data + irp_offset);
+        Status = add_partial_stripe(Vcb, c, address, (uint32_t)delta, data);
         if (!NT_SUCCESS(Status)) {
             ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
@@ -1095,6 +1095,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
         address += delta;
         length -= (uint32_t)delta;
         irp_offset += delta;
+        data = (uint8_t*)data + delta;
     }
 
     if (length == 0) {
@@ -1254,7 +1255,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
             goto exit;
         }
 
-        RtlCopyMemory(wtc->scratch, (uint8_t*)data + irp_offset, length);
+        RtlCopyMemory(wtc->scratch, data, length);
 
         master_mdl = IoAllocateMdl(wtc->scratch, length, false, false, NULL);
         if (!master_mdl) {
@@ -1267,7 +1268,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
 
         wtc->mdl = master_mdl;
     } else {
-        master_mdl = IoAllocateMdl((uint8_t*)data + irp_offset, length, false, false, NULL);
+        master_mdl = IoAllocateMdl(data, length, false, false, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1470,8 +1471,8 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
     if ((address + length - c->offset) % (num_data_stripes * c->chunk_item->stripe_length) > 0) {
         uint64_t delta = (address + length - c->offset) % (num_data_stripes * c->chunk_item->stripe_length);
 
-        delta = min(irp_offset + length, delta);
-        Status = add_partial_stripe(Vcb, c, address + length - delta, (uint32_t)delta, (uint8_t*)data + irp_offset + length - delta);
+        delta = min(length, delta);
+        Status = add_partial_stripe(Vcb, c, address + length - delta, (uint32_t)delta, (uint8_t*)data + length - delta);
         if (!NT_SUCCESS(Status)) {
             ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
@@ -1483,7 +1484,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
     if (length > 0 && (address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length) > 0) {
         uint64_t delta = (num_data_stripes * c->chunk_item->stripe_length) - ((address - c->offset) % (num_data_stripes * c->chunk_item->stripe_length));
 
-        Status = add_partial_stripe(Vcb, c, address, (uint32_t)delta, (uint8_t*)data + irp_offset);
+        Status = add_partial_stripe(Vcb, c, address, (uint32_t)delta, data);
         if (!NT_SUCCESS(Status)) {
             ERR("add_partial_stripe returned %08lx\n", Status);
             goto exit;
@@ -1492,6 +1493,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
         address += delta;
         length -= (uint32_t)delta;
         irp_offset += delta;
+        data = (uint8_t*)data + delta;
     }
 
     if (length == 0) {
@@ -1669,7 +1671,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
             goto exit;
         }
 
-        RtlCopyMemory(wtc->scratch, (uint8_t*)data + irp_offset, length);
+        RtlCopyMemory(wtc->scratch, data, length);
 
         master_mdl = IoAllocateMdl(wtc->scratch, length, false, false, NULL);
         if (!master_mdl) {
@@ -1682,7 +1684,7 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
 
         wtc->mdl = master_mdl;
     } else {
-        master_mdl = IoAllocateMdl((uint8_t*)data + irp_offset, length, false, false, NULL);
+        master_mdl = IoAllocateMdl(data, length, false, false, NULL);
         if (!master_mdl) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
