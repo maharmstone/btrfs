@@ -107,6 +107,7 @@ bool degraded_wait = true;
 KEVENT mountmgr_thread_event;
 bool shutting_down = false;
 ERESOURCE boot_lock;
+bool is_windows_8;
 extern uint64_t boot_subvol;
 
 #ifdef _DEBUG
@@ -6058,7 +6059,7 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     *anp = ')';
 
     Status = IoCreateDevice(drvobj, sizeof(volume_device_extension), &volname, FILE_DEVICE_DISK,
-                            WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN8) ? FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL : 0, false, &voldev);
+                            is_windows_8 ? FILE_DEVICE_ALLOW_APPCONTAINER_TRAVERSAL : 0, false, &voldev);
     if (!NT_SUCCESS(Status)) {
         ERR("IoCreateDevice returned %08lx\n", Status);
         goto end2;
@@ -6129,6 +6130,17 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
     HANDLE regh;
     OBJECT_ATTRIBUTES oa, system_thread_attributes;
     ULONG dispos;
+    RTL_OSVERSIONINFOW ver;
+
+    ver.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
+
+    Status = RtlGetVersion(&ver);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlGetVersion returned %08lx\n", Status);
+        return Status;
+    }
+
+    is_windows_8 = ver.dwMajorVersion > 6 || (ver.dwMajorVersion == 6 && ver.dwMinorVersion >= 2);
 
     InitializeListHead(&uid_map_list);
     InitializeListHead(&gid_map_list);
@@ -6168,7 +6180,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
     check_cpu();
 #endif
 
-    if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN8)) {
+    if (ver.dwMajorVersion > 6 || (ver.dwMajorVersion == 6 && ver.dwMinorVersion >= 2)) { // Windows 8 or above
         UNICODE_STRING name;
         tPsIsDiskCountersEnabled fPsIsDiskCountersEnabled;
 
@@ -6208,7 +6220,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
         fFsRtlCheckLockForOplockRequest = NULL;
     }
 
-    if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_WIN7)) {
+    if (ver.dwMajorVersion > 6 || (ver.dwMajorVersion == 6 && ver.dwMinorVersion >= 1)) { // Windows 7 or above
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"IoUnregisterPlugPlayNotificationEx");
@@ -6221,7 +6233,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
         fFsRtlAreThereCurrentOrInProgressFileLocks = NULL;
     }
 
-    if (WdmlibRtlIsNtDdiVersionAvailable(NTDDI_VISTA)) {
+    if (ver.dwMajorVersion >= 6) { // Windows Vista or above
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"FsRtlGetEcpListFromIrp");
