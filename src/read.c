@@ -2834,14 +2834,16 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     last_end = start;
 
     while (le != &fcb->extents) {
-        uint64_t len;
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if (!ext->ignore) {
             EXTENT_DATA* ed = &ext->extent_data;
-            EXTENT_DATA2* ed2 = (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) ? (EXTENT_DATA2*)ed->data : NULL;
+            uint64_t len;
 
-            len = ed2 ? ed2->num_bytes : ed->decoded_size;
+            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)
+                len = ((EXTENT_DATA2*)ed->data)->num_bytes;
+            else
+                len = ed->decoded_size;
 
             if (ext->offset + len <= start) {
                 last_end = ext->offset + len;
@@ -2957,6 +2959,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 
                 case EXTENT_TYPE_REGULAR:
                 {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                     read_part* rp;
 
                     rp = ExAllocatePoolWithTag(pool_type, sizeof(read_part), ALLOC_TAG);
