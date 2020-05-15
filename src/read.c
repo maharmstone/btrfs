@@ -3376,26 +3376,53 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
 
     TRACE("FileObject %p fcb %p FileSize = %I64x st_size = %I64x (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
 
-    if (Irp->Flags & IRP_NOCACHE || !(IrpSp->MinorFunction & IRP_MN_MDL)) {
-        data = map_user_buffer(Irp, fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
+    if (!(Irp->Flags & IRP_NOCACHE) && IrpSp->MinorFunction & IRP_MN_MDL) {
+        NTSTATUS Status = STATUS_SUCCESS;
 
-        if (Irp->MdlAddress && !data) {
-            ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+        try {
+            if (!FileObject->PrivateCacheMap) {
+                CC_FILE_SIZES ccfs;
+
+                ccfs.AllocationSize = fcb->Header.AllocationSize;
+                ccfs.FileSize = fcb->Header.FileSize;
+                ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+
+                init_file_cache(FileObject, &ccfs);
+            }
+
+            CcMdlRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
         }
 
-        if (start >= (uint64_t)fcb->Header.ValidDataLength.QuadPart) {
-            length = (ULONG)min(length, min(start + length, (uint64_t)fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
-            RtlZeroMemory(data, length);
-            Irp->IoStatus.Information = *bytes_read = length;
-            return STATUS_SUCCESS;
-        }
+        if (NT_SUCCESS(Status)) {
+            Status = Irp->IoStatus.Status;
+            Irp->IoStatus.Information += addon;
+            *bytes_read = (ULONG)Irp->IoStatus.Information;
+        } else
+            ERR("EXCEPTION - %08lx\n", Status);
 
-        if (length + start > (uint64_t)fcb->Header.ValidDataLength.QuadPart) {
-            addon = (ULONG)(min(start + length, (uint64_t)fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
-            RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), addon);
-            length = (ULONG)(fcb->Header.ValidDataLength.QuadPart - start);
-        }
+        return Status;
+    }
+
+    data = map_user_buffer(Irp, fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
+
+    if (Irp->MdlAddress && !data) {
+        ERR("MmGetSystemAddressForMdlSafe returned NULL\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (start >= (uint64_t)fcb->Header.ValidDataLength.QuadPart) {
+        length = (ULONG)min(length, min(start + length, (uint64_t)fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
+        RtlZeroMemory(data, length);
+        Irp->IoStatus.Information = *bytes_read = length;
+        return STATUS_SUCCESS;
+    }
+
+    if (length + start > (uint64_t)fcb->Header.ValidDataLength.QuadPart) {
+        addon = (ULONG)(min(start + length, (uint64_t)fcb->Header.FileSize.QuadPart) - fcb->Header.ValidDataLength.QuadPart);
+        RtlZeroMemory(data + (fcb->Header.ValidDataLength.QuadPart - start), addon);
+        length = (ULONG)(fcb->Header.ValidDataLength.QuadPart - start);
     }
 
     if (!(Irp->Flags & IRP_NOCACHE)) {
@@ -3412,31 +3439,27 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
                 init_file_cache(FileObject, &ccfs);
             }
 
-            if (IrpSp->MinorFunction & IRP_MN_MDL) {
-                CcMdlRead(FileObject,&IrpSp->Parameters.Read.ByteOffset, length, &Irp->MdlAddress, &Irp->IoStatus);
-            } else {
-                if (fCcCopyReadEx) {
-                    TRACE("CcCopyReadEx(%p, %I64x, %lx, %u, %p, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart,
-                          length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread);
-                    TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
-                    if (!fCcCopyReadEx(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread)) {
-                        TRACE("CcCopyReadEx could not wait\n");
+            if (fCcCopyReadEx) {
+                TRACE("CcCopyReadEx(%p, %I64x, %lx, %u, %p, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart,
+                        length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread);
+                TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+                if (!fCcCopyReadEx(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus, Irp->Tail.Overlay.Thread)) {
+                    TRACE("CcCopyReadEx could not wait\n");
 
-                        IoMarkIrpPending(Irp);
-                        return STATUS_PENDING;
-                    }
-                    TRACE("CcCopyReadEx finished\n");
-                } else {
-                    TRACE("CcCopyRead(%p, %I64x, %lx, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
-                    TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
-                    if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
-                        TRACE("CcCopyRead could not wait\n");
-
-                        IoMarkIrpPending(Irp);
-                        return STATUS_PENDING;
-                    }
-                    TRACE("CcCopyRead finished\n");
+                    IoMarkIrpPending(Irp);
+                    return STATUS_PENDING;
                 }
+                TRACE("CcCopyReadEx finished\n");
+            } else {
+                TRACE("CcCopyRead(%p, %I64x, %lx, %u, %p, %p)\n", FileObject, IrpSp->Parameters.Read.ByteOffset.QuadPart, length, wait, data, &Irp->IoStatus);
+                TRACE("sizes = %I64x, %I64x, %I64x\n", fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+                if (!CcCopyRead(FileObject, &IrpSp->Parameters.Read.ByteOffset, length, wait, data, &Irp->IoStatus)) {
+                    TRACE("CcCopyRead could not wait\n");
+
+                    IoMarkIrpPending(Irp);
+                    return STATUS_PENDING;
+                }
+                TRACE("CcCopyRead finished\n");
             }
         } except (EXCEPTION_EXECUTE_HANDLER) {
             Status = GetExceptionCode();
