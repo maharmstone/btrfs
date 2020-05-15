@@ -3021,6 +3021,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 
                         ExFreePool(rp);
 
+                        Status = STATUS_INTERNAL_ERROR;
                         goto exit;
                     }
 
