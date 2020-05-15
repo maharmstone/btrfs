@@ -3941,10 +3941,12 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
         if (!ext->ignore) {
             EXTENT_DATA* ed = &ext->extent_data;
-            EXTENT_DATA2* ed2 = ed->type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ed->data;
             uint64_t len;
 
-            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+            if (ed->type == EXTENT_TYPE_INLINE)
+                len = ed->decoded_size;
+            else
+                len = ((EXTENT_DATA2*)ed->data)->num_bytes;
 
             if (ext->offset + len <= start)
                 goto nextitem;
@@ -3978,6 +3980,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                 }
 
                 if (ed->type == EXTENT_TYPE_REGULAR) {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
                     uint64_t writeaddr = ed2->address + ed2->offset + start + written - ext->offset;
                     uint64_t write_len = min(len, length);
                     chunk* c;
