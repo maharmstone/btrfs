@@ -1172,7 +1172,6 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
                      _Out_ root** rootptr, _In_ bool no_tree, _In_ uint64_t offset, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     root* r;
-    tree* t = NULL;
     ROOT_ITEM* ri;
     traverse_ptr tp;
 
@@ -1189,28 +1188,9 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (!no_tree) {
-        t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
-        if (!t) {
-            ERR("out of memory\n");
-            ExFreePool(r->nonpaged);
-            ExFreePool(r);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        t->nonpaged = NULL;
-
-        t->is_unique = true;
-        t->uniqueness_determined = true;
-        t->buf = NULL;
-    }
-
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
     if (!ri) {
         ERR("out of memory\n");
-
-        if (t)
-            ExFreePool(t);
 
         ExFreePool(r->nonpaged);
         ExFreePool(r);
@@ -1220,7 +1200,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     r->id = id;
     r->treeholder.address = 0;
     r->treeholder.generation = Vcb->superblock.generation;
-    r->treeholder.tree = t;
+    r->treeholder.tree = NULL;
     r->lastinode = 0;
     r->dirty = false;
     r->received = false;
@@ -1244,10 +1224,6 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(ri);
-
-        if (t)
-            ExFreePool(t);
-
         ExFreePool(r->nonpaged);
         ExFreePool(r);
         return Status;
@@ -1258,6 +1234,26 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     InsertTailList(&Vcb->roots, &r->list_entry);
 
     if (!no_tree) {
+        tree* t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
+        if (!t) {
+            ERR("out of memory\n");
+
+            delete_tree_item(Vcb, &tp);
+
+            ExFreePool(r->nonpaged);
+            ExFreePool(r);
+            ExFreePool(ri);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        t->nonpaged = NULL;
+
+        t->is_unique = true;
+        t->uniqueness_determined = true;
+        t->buf = NULL;
+
+        r->treeholder.tree = t;
+
         RtlZeroMemory(&t->header, sizeof(tree_header));
         t->header.fs_uuid = tp.tree->header.fs_uuid;
         t->header.address = 0;
