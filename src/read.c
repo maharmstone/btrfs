@@ -2741,6 +2741,7 @@ exit:
     return Status;
 }
 
+__attribute__((nonnull(1, 2)))
 NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULONG* pbr) {
     ULONG readlen;
 
