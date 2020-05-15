@@ -1265,25 +1265,30 @@ static const char lxdev[] = "$LXDEV";
 
 // in treefuncs.c
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
-                   _In_ const KEY* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp);
-NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, bool ignore, uint8_t level, PIRP Irp);
-bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* next_tp, bool ignore, PIRP Irp);
-bool find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp, traverse_ptr* prev_tp, PIRP Irp);
-void free_trees(device_extension* Vcb);
+                   _In_ const KEY* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2,3,4)));
+NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, bool ignore,
+                            uint8_t level, PIRP Irp) __attribute__((nonnull(1,2,3,4)));
+bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
+                    traverse_ptr* next_tp, bool ignore, PIRP Irp) __attribute__((nonnull(1,2,3)));
+bool find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
+                    traverse_ptr* prev_tp, PIRP Irp) __attribute__((nonnull(1,2,3)));
+void free_trees(device_extension* Vcb) __attribute__((nonnull(1)));
 NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t obj_id,
                           _In_ uint8_t obj_type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
-                          _In_ uint16_t size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp);
-NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _Inout_ traverse_ptr* tp);
-void free_tree(tree* t);
-NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, tree** pt);
-NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp);
-void clear_rollback(LIST_ENTRY* rollback);
-void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback);
-void free_trees_root(device_extension* Vcb, root* r);
-void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr);
-NTSTATUS commit_batch_list(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
-void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist);
-NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, bool* ended1, bool* ended2);
+                          _In_ uint16_t size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2)));
+NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                          _Inout_ traverse_ptr* tp) __attribute__((nonnull(1,2)));
+void free_tree(tree* t) __attribute__((nonnull(1)));
+NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, tree** pt) __attribute__((nonnull(1,3,4,5)));
+NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, tree_data* td, PIRP Irp) __attribute__((nonnull(1,2,3)));
+void clear_rollback(LIST_ENTRY* rollback) __attribute__((nonnull(1)));
+void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) __attribute__((nonnull(1,2)));
+void free_trees_root(device_extension* Vcb, root* r) __attribute__((nonnull(1,2)));
+void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr) __attribute__((nonnull(1,3)));
+NTSTATUS commit_batch_list(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                           LIST_ENTRY* batchlist, PIRP Irp) __attribute__((nonnull(1,2)));
+void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) __attribute__((nonnull(1,2)));
+NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, bool* ended1, bool* ended2) __attribute__((nonnull(1,2,3,4,5)));
 
 // in search.c
 NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
