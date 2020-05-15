@@ -2806,6 +2806,7 @@ typedef struct {
     size_t length;
 } comp_calc_job;
 
+__attribute__((nonnull(1, 2)))
 NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULONG* pbr, PIRP Irp) {
     NTSTATUS Status;
     uint32_t bytes_read = 0;
@@ -3173,7 +3174,7 @@ nextitem:
         read_part* rp = CONTAINING_RECORD(le, read_part, list_entry);
 
         Status = read_data(fcb->Vcb, rp->addr, rp->to_read, rp->csum, false, rp->buf, rp->c, NULL, Irp, 0, rp->mdl,
-                           fcb && fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
+                           fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data returned %08lx\n", Status);
             goto exit;
