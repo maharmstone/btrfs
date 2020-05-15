@@ -2390,15 +2390,15 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
     while (le != &fcb->extents) {
         LIST_ENTRY* le2 = le->Flink;
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-        EXTENT_DATA* ed = &ext->extent_data;
-        EXTENT_DATA2* ed2 = NULL;
-        uint64_t len;
 
         if (!ext->ignore) {
-            if (ed->type != EXTENT_TYPE_INLINE)
-                ed2 = (EXTENT_DATA2*)ed->data;
+            EXTENT_DATA* ed = &ext->extent_data;
+            uint64_t len;
 
-            len = ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes;
+            if (ed->type == EXTENT_TYPE_INLINE)
+                len = ed->decoded_size;
+            else
+                len = ((EXTENT_DATA2*)ed->data)->num_bytes;
 
             if (ext->offset < end_data && ext->offset + len > start_data) {
                 if (ed->type == EXTENT_TYPE_INLINE) {
@@ -2414,7 +2414,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 #endif
                         return STATUS_INTERNAL_ERROR;
                     }
-                } else if (ed->type != EXTENT_TYPE_INLINE) {
+                } else {
+                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
                         if (ed2->size != 0) {
                             chunk* c;
