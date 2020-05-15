@@ -3888,6 +3888,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
     return STATUS_SUCCESS;
 }
 
+__attribute__((nonnull(1, 4)))
 NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, PIRP Irp, bool file_write, uint32_t irp_offset, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, *le2;
