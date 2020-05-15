@@ -28,13 +28,14 @@ typedef struct {
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 
-static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback);
+static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2, 3)));
 
 extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
 extern tCcCopyWriteEx fCcCopyWriteEx;
 extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
 extern bool diskacc;
 
+__attribute__((nonnull(1, 2, 4)))
 bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length, uint64_t* address) {
     LIST_ENTRY* le;
     space* s;
@@ -86,6 +87,7 @@ bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length
     return false;
 }
 
+__attribute__((nonnull(1)))
 chunk* get_chunk_from_address(device_extension* Vcb, uint64_t address) {
     LIST_ENTRY* le2;
 
@@ -113,6 +115,7 @@ typedef struct {
     device* device;
 } stripe;
 
+__attribute__((nonnull(1)))
 static uint64_t find_new_chunk_address(device_extension* Vcb, uint64_t size) {
     uint64_t lastaddr;
     LIST_ENTRY* le;
@@ -134,6 +137,7 @@ static uint64_t find_new_chunk_address(device_extension* Vcb, uint64_t size) {
     return lastaddr;
 }
 
+__attribute__((nonnull(1,2)))
 static bool find_new_dup_stripes(device_extension* Vcb, stripe* stripes, uint64_t max_stripe_size, bool full_size) {
     uint64_t devusage = 0xffffffffffffffff;
     space *devdh1 = NULL, *devdh2 = NULL;
@@ -245,6 +249,7 @@ static bool find_new_dup_stripes(device_extension* Vcb, stripe* stripes, uint64_
     return true;
 }
 
+__attribute__((nonnull(1,2)))
 static bool find_new_stripe(device_extension* Vcb, stripe* stripes, uint16_t i, uint64_t max_stripe_size, bool allow_missing, bool full_size) {
     uint64_t k, devusage = 0xffffffffffffffff;
     space* devdh = NULL;
@@ -358,6 +363,7 @@ static bool find_new_stripe(device_extension* Vcb, stripe* stripes, uint16_t i, 
     return true;
 }
 
+__attribute__((nonnull(1,3)))
 NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool full_size) {
     NTSTATUS Status;
     uint64_t max_stripe_size, max_chunk_size, stripe_size, stripe_length, factor;
@@ -703,6 +709,7 @@ end:
     return Status;
 }
 
+__attribute__((nonnull(1,3,5,8)))
 static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stripes>0) _In_ chunk* c, _In_ uint64_t address, _In_reads_bytes_(length) void* data,
                                     _In_ uint32_t length, _In_ write_stripe* stripes, _In_ PIRP Irp, _In_ uint64_t irp_offset, _In_ write_data_context* wtc) {
     uint64_t startoff, endoff;
@@ -832,6 +839,7 @@ static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stri
     return STATUS_SUCCESS;
 }
 
+__attribute__((nonnull(1,3,5,8)))
 static NTSTATUS prepare_raid10_write(_Pre_satisfies_(_Curr_->chunk_item->sub_stripes>0&&_Curr_->chunk_item->num_stripes>=_Curr_->chunk_item->sub_stripes) _In_ chunk* c,
                                      _In_ uint64_t address, _In_reads_bytes_(length) void* data, _In_ uint32_t length, _In_ write_stripe* stripes,
                                      _In_ PIRP Irp, _In_ uint64_t irp_offset, _In_ write_data_context* wtc) {
@@ -971,7 +979,8 @@ static NTSTATUS prepare_raid10_write(_Pre_satisfies_(_Curr_->chunk_item->sub_str
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk *c, uint64_t address, uint32_t length, void* data) {
+__attribute__((nonnull(1,2,5)))
+static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk* c, uint64_t address, uint32_t length, void* data) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     partial_stripe* ps;
@@ -1058,6 +1067,7 @@ typedef struct {
     PFN_NUMBER* pfns;
 } log_stripe;
 
+__attribute__((nonnull(1,2,4,6,10)))
 static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t address, void* data, uint32_t length, write_stripe* stripes, PIRP Irp,
                                     uint64_t irp_offset, ULONG priority, write_data_context* wtc) {
     uint64_t startoff, endoff, parity_start, parity_end;
@@ -1456,6 +1466,7 @@ exit:
     return Status;
 }
 
+__attribute__((nonnull(1,2,4,6,10)))
 static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t address, void* data, uint32_t length, write_stripe* stripes, PIRP Irp,
                                     uint64_t irp_offset, ULONG priority, write_data_context* wtc) {
     uint64_t startoff, endoff, parity_start, parity_end;
@@ -1894,6 +1905,7 @@ exit:
     return Status;
 }
 
+__attribute__((nonnull(1,3,5)))
 NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads_bytes_(length) void* data, _In_ uint32_t length, _In_ write_data_context* wtc,
                     _In_opt_ PIRP Irp, _In_opt_ chunk* c, _In_ bool file_write, _In_ uint64_t irp_offset, _In_ ULONG priority) {
     NTSTATUS Status;
@@ -2163,6 +2175,7 @@ prepare_failed:
     return Status;
 }
 
+__attribute__((nonnull(1,4,5)))
 void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t* lockaddr, uint64_t* locklen) {
     uint64_t startoff, endoff;
     uint16_t startoffstripe, endoffstripe, datastripes;
@@ -2179,6 +2192,7 @@ void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t
     *locklen = (endoff - startoff) * datastripes;
 }
 
+__attribute__((nonnull(1,3)))
 NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data, uint32_t length, PIRP Irp, chunk* c, bool file_write, uint64_t irp_offset, ULONG priority) {
     write_data_context wtc;
     NTSTATUS Status;
@@ -2261,6 +2275,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
     return Status;
 }
 
+__attribute__((nonnull(2,3)))
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr) {
     write_data_stripe* stripe = conptr;
@@ -2304,6 +2319,7 @@ end:
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
+__attribute__((nonnull(1)))
 void free_write_data_stripes(write_data_context* wtc) {
     LIST_ENTRY* le;
     PMDL last_mdl = NULL;
@@ -2364,6 +2380,7 @@ void free_write_data_stripes(write_data_context* wtc) {
     }
 }
 
+__attribute__((nonnull(1,2,3)))
 void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem extent* newext) {
     LIST_ENTRY* le = prevextle->Flink;
 
@@ -2381,6 +2398,7 @@ void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem
     InsertTailList(&fcb->extents, &newext->list_entry);
 }
 
+__attribute__((nonnull(1,2,6)))
 NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t end_data, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2716,6 +2734,7 @@ end:
     return Status;
 }
 
+__attribute__((nonnull(1,2,3)))
 void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     rollback_extent* re;
 
@@ -2735,6 +2754,7 @@ void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
+__attribute__((nonnull(1,3,7)))
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) EXTENT_DATA* ed, _In_ uint16_t edsize,
                            _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) {
     extent* ext;
@@ -2778,6 +2798,7 @@ end:
 #pragma warning(pop)
 #endif
 
+__attribute__((nonnull(1, 2, 3)))
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     if (!ext->ignore) {
         rollback_extent* re;
@@ -2799,6 +2820,7 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
 
 _Requires_lock_held_(c->lock)
 _When_(return != 0, _Releases_lock_(c->lock))
+__attribute__((nonnull(1,2,3,9)))
 bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c, _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc, _In_opt_ void* data,
                          _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ uint8_t compression, _In_ uint64_t decoded_size, _In_ bool file_write, _In_ uint64_t irp_offset) {
     uint64_t address;
@@ -2883,6 +2905,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     return true;
 }
 
+__attribute__((nonnull(1,2,5,7,10)))
 static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t length, void* data,
                             PIRP Irp, uint64_t* written, bool file_write, uint64_t irp_offset, LIST_ENTRY* rollback) {
     bool success = false;
@@ -2975,6 +2998,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
     return false;
 }
 
+__attribute__((nonnull(1)))
 static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t length, uint8_t* data, bool prealloc, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     uint64_t flags = fcb->Vcb->data_flags;
@@ -3031,6 +3055,7 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t lengt
     return length == 0 ? STATUS_SUCCESS : STATUS_DISK_FULL;
 }
 
+__attribute__((nonnull(1,4)))
 static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     chunk* c;
@@ -3104,6 +3129,7 @@ end:
     return Status;
 }
 
+__attribute__((nonnull(1,2,5,9)))
 static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t length, void* data,
                               PIRP Irp, bool file_write, uint64_t irp_offset, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -3215,6 +3241,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
     return STATUS_DISK_FULL;
 }
 
+__attribute__((nonnull(1,4)))
 NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
 
@@ -3298,6 +3325,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
     return STATUS_SUCCESS;
 }
 
+__attribute__((nonnull(1,6)))
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, PIRP Irp, LIST_ENTRY* rollback) {
     uint64_t oldalloc, newalloc;
     bool cur_inline;
@@ -3531,6 +3559,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
     return STATUS_SUCCESS;
 }
 
+__attribute__((nonnull(1,2,5,6,11)))
 static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_data, uint64_t end_data, void* data, uint64_t* written,
                                        PIRP Irp, bool file_write, uint64_t irp_offset, ULONG priority, LIST_ENTRY* rollback) {
     EXTENT_DATA* ed = &ext->extent_data;
@@ -4055,6 +4084,7 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
+__attribute__((nonnull(1,2,4,5,11)))
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, bool paging_io, bool no_cache,
                      bool wait, bool deferred_write, bool write_irp, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -4545,6 +4575,7 @@ end:
     return Status;
 }
 
+__attribute__((nonnull(1,2)))
 NTSTATUS write_file(device_extension* Vcb, PIRP Irp, bool wait, bool deferred_write) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     void* buf;
@@ -4619,6 +4650,7 @@ exit:
 
 _Dispatch_type_(IRP_MJ_WRITE)
 _Function_class_(DRIVER_DISPATCH)
+__attribute__((nonnull(1,2)))
 NTSTATUS __stdcall drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     NTSTATUS Status;
     bool top_level;
