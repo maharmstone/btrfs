@@ -661,6 +661,9 @@ bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 
         fi = first_item(t);
 
+        if (!fi)
+            return false;
+
         if (!fi->treeholder.tree) {
             Status = do_load_tree(Vcb, &fi->treeholder, t->parent->root, t, fi, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -674,6 +677,9 @@ bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 
     next_tp->tree = t;
     next_tp->item = first_item(t);
+
+    if (!next_tp->item)
+        return false;
 
     if (!ignore && next_tp->item->ignore) {
         traverse_ptr ntp2;
