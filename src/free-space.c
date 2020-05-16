@@ -286,7 +286,7 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, uint64_t off
         }
 
         addr = offset + (index << Vcb->sector_shift);
-        length = Vcb->superblock.sector_size * runlength;
+        length = runlength << Vcb->sector_shift;
 
         add_space_entry(&c->space, &c->space_size, addr, length);
         index += runlength;
