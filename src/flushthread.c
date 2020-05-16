@@ -166,31 +166,40 @@ static void add_trim_entry(device* dev, uint64_t address, uint64_t size) {
 static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     ULONG type;
 
-    if (Vcb->trim && !Vcb->options.no_trim) {
-        if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
-            type = BLOCK_FLAG_DUPLICATE;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
-            type = BLOCK_FLAG_RAID0;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
-            type = BLOCK_FLAG_DUPLICATE;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
-            type = BLOCK_FLAG_RAID10;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
-            type = BLOCK_FLAG_RAID5;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
-            type = BLOCK_FLAG_RAID6;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
-            type = BLOCK_FLAG_DUPLICATE;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
-            type = BLOCK_FLAG_DUPLICATE;
-        else // SINGLE
-            type = BLOCK_FLAG_DUPLICATE;
+    if (!Vcb->trim || Vcb->options.no_trim) {
+        while (!IsListEmpty(&c->deleting)) {
+            space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
+
+            RemoveEntryList(&s->list_entry);
+            ExFreePool(s);
+        }
+
+        return;
     }
+
+    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
+        type = BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+        type = BLOCK_FLAG_RAID0;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
+        type = BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+        type = BLOCK_FLAG_RAID10;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+        type = BLOCK_FLAG_RAID5;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+        type = BLOCK_FLAG_RAID6;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
+        type = BLOCK_FLAG_DUPLICATE;
+    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
+        type = BLOCK_FLAG_DUPLICATE;
+    else // SINGLE
+        type = BLOCK_FLAG_DUPLICATE;
 
     while (!IsListEmpty(&c->deleting)) {
         space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
 
-        if (Vcb->trim && !Vcb->options.no_trim && (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA))) {
+        if (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA)) {
             CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 
             if (type == BLOCK_FLAG_DUPLICATE) {
