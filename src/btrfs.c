@@ -5114,6 +5114,8 @@ static NTSTATUS verify_volume(_In_ PDEVICE_OBJECT devobj) {
         return STATUS_WRONG_VOLUME;
     }
 
+    Status = STATUS_SUCCESS;
+
     InterlockedIncrement(&Vcb->open_files); // so pnp_surprise_removal doesn't uninit the device while we're still using it
 
     le = Vcb->devices.Flink;
