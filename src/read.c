@@ -2977,8 +2977,8 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                         rp->addr = ed2->address + ed2->offset + rp->extents[0].off;
                         rp->to_read = (uint32_t)sector_align(rp->read, fcb->Vcb->superblock.sector_size);
 
-                        if (rp->addr % fcb->Vcb->superblock.sector_size > 0) {
-                            rp->bumpoff = rp->addr % fcb->Vcb->superblock.sector_size;
+                        if (rp->addr & (fcb->Vcb->superblock.sector_size - 1)) {
+                            rp->bumpoff = rp->addr & (fcb->Vcb->superblock.sector_size - 1);
                             rp->addr -= rp->bumpoff;
                             rp->to_read = (uint32_t)sector_align(rp->read + rp->bumpoff, fcb->Vcb->superblock.sector_size);
                         }
@@ -2987,8 +2987,8 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                         rp->to_read = (uint32_t)sector_align(ed2->size, fcb->Vcb->superblock.sector_size);
                     }
 
-                    if (ed->compression == BTRFS_COMPRESSION_NONE && start % fcb->Vcb->superblock.sector_size == 0 &&
-                        length % fcb->Vcb->superblock.sector_size == 0) {
+                    if (ed->compression == BTRFS_COMPRESSION_NONE && (start & (fcb->Vcb->superblock.sector_size - 1)) == 0 &&
+                        (length & (fcb->Vcb->superblock.sector_size - 1)) == 0) {
                         rp->buf = data + bytes_read;
                         rp->buf_free = false;
                     } else {
@@ -3021,7 +3021,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
 
                     if (ext->csum) {
                         if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                            rp->csum = (uint8_t*)ext->csum + (fcb->Vcb->csum_size * (rp->extents[0].off / fcb->Vcb->superblock.sector_size));
+                            rp->csum = (uint8_t*)ext->csum + (fcb->Vcb->csum_size * (rp->extents[0].off >> fcb->Vcb->sector_shift));
                         } else
                             rp->csum = ext->csum;
                     } else
@@ -3094,7 +3094,7 @@ nextitem:
                 rp2->csum_free = false;
 
                 if (last_rp->csum) {
-                    uint32_t sectors = (last_rp->to_read + rp->to_read) / fcb->Vcb->superblock.sector_size;
+                    uint32_t sectors = (last_rp->to_read + rp->to_read) >> fcb->Vcb->sector_shift;
 
                     rp2->csum = ExAllocatePoolWithTag(pool_type, sectors * fcb->Vcb->csum_size, ALLOC_TAG);
                     if (!rp2->csum) {
@@ -3104,9 +3104,9 @@ nextitem:
                         goto exit;
                     }
 
-                    RtlCopyMemory(rp2->csum, last_rp->csum, last_rp->to_read * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
-                    RtlCopyMemory((uint8_t*)rp2->csum + (last_rp->to_read * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size), rp->csum,
-                                  rp->to_read * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
+                    RtlCopyMemory(rp2->csum, last_rp->csum, (last_rp->to_read * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift);
+                    RtlCopyMemory((uint8_t*)rp2->csum + ((last_rp->to_read * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift), rp->csum,
+                                  (rp->to_read * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift);
 
                     rp2->csum_free = true;
                 } else
