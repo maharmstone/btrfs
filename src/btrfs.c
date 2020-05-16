@@ -5841,17 +5841,24 @@ static void init_serial(bool first_time) {
 
 #if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
-    unsigned int cpuInfo[4];
     bool have_sse42;
 
 #ifndef _MSC_VER
-    __get_cpuid(1, &cpuInfo[0], &cpuInfo[1], &cpuInfo[2], &cpuInfo[3]);
-    have_sse42 = cpuInfo[2] & bit_SSE4_2;
-    have_sse2 = cpuInfo[3] & bit_SSE2;
+    {
+        uint32_t eax, ebx, ecx, edx;
+
+        __cpuid(1, eax, ebx, ecx, edx);
+        have_sse42 = ecx & bit_SSE4_2;
+        have_sse2 = edx & bit_SSE2;
+    }
 #else
-    __cpuid(cpuInfo, 1);
-    have_sse42 = cpuInfo[2] & (1 << 20);
-    have_sse2 = cpuInfo[3] & (1 << 26);
+    {
+        unsigned int cpu_info[4];
+
+        __cpuid(cpu_info, 1);
+        have_sse42 = cpu_info[2] & (1 << 20);
+        have_sse2 = cpu_info[3] & (1 << 26);
+    }
 #endif
 
     if (have_sse42) {
