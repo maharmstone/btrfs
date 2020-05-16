@@ -1647,7 +1647,7 @@ static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, uint64_t offs
             else
                 rl = runlength;
 
-            Status = scrub_extent(Vcb, c, type, offset + UInt32x32To64(index, Vcb->superblock.sector_size),
+            Status = scrub_extent(Vcb, c, type, offset + ((uint64_t)index << Vcb->sector_shift),
                                   rl << Vcb->sector_shift, (uint8_t*)csum + (index * Vcb->csum_size));
             if (!NT_SUCCESS(Status)) {
                 ERR("scrub_data_extent_dup returned %08lx\n", Status);
