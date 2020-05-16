@@ -4672,7 +4672,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
 
     TRACE("(%p, %p, %lu)\n", Vcb, data, len);
 
-    if (!data || len < sizeof(btrfs_resize) || (br->size % Vcb->superblock.sector_size) != 0)
+    if (!data || len < sizeof(btrfs_resize) || (br->size & (Vcb->superblock.sector_size - 1)) != 0)
         return STATUS_INVALID_PARAMETER;
 
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), Irp->RequestorMode))
