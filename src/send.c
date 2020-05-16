@@ -2323,7 +2323,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     }
                 }
 
-                skip_start = addr % context->Vcb->superblock.sector_size;
+                skip_start = addr & (context->Vcb->superblock.sector_size - 1);
                 addr -= skip_start;
 
                 if (context->lastinode.flags & BTRFS_INODE_NODATASUM)
@@ -2331,7 +2331,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 else {
                     uint32_t len;
 
-                    len = (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size) / context->Vcb->superblock.sector_size;
+                    len = (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size) >> context->Vcb->sector_shift;
 
                     csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                     if (!csum) {
@@ -2410,7 +2410,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             else {
                 uint32_t len;
 
-                len = (uint32_t)(ed2->size / context->Vcb->superblock.sector_size);
+                len = (uint32_t)(ed2->size >> context->Vcb->sector_shift);
 
                 csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                 if (!csum) {
