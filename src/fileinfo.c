@@ -1679,7 +1679,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             }
 
             ExFreePool(ed);
-        } else if (adsdata.Length % Vcb->superblock.sector_size) {
+        } else if (adsdata.Length & (Vcb->superblock.sector_size - 1)) {
             char* newbuf = ExAllocatePoolWithTag(PagedPool, (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size), ALLOC_TAG);
             if (!newbuf) {
                 ERR("out of memory\n");
