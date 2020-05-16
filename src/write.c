@@ -3588,7 +3588,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (ULONG)(ed2->num_bytes / fcb->Vcb->superblock.sector_size);
+            ULONG sl = (ULONG)(ed2->num_bytes >> fcb->Vcb->sector_shift);
             void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
@@ -3654,7 +3654,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (ULONG)((end_data - ext->offset) / fcb->Vcb->superblock.sector_size);
+            ULONG sl = (ULONG)((end_data - ext->offset) >> fcb->Vcb->sector_shift);
             void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
@@ -3744,7 +3744,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (ULONG)(ned2->num_bytes / fcb->Vcb->superblock.sector_size);
+            ULONG sl = (ULONG)(ned2->num_bytes >> fcb->Vcb->sector_shift);
             void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
@@ -3848,7 +3848,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (ULONG)((end_data - start_data) / fcb->Vcb->superblock.sector_size);
+            ULONG sl = (ULONG)((end_data - start_data) >> fcb->Vcb->sector_shift);
             void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
