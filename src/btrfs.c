@@ -2382,7 +2382,6 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
     // messages belonging to other devices.
 
     if (FileObject && FileObject->FsContext) {
-        LONG oc;
         ccb* ccb;
         file_ref* fileref;
         bool locked = true;
@@ -2404,13 +2403,6 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         if (ccb)
             FsRtlNotifyCleanup(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, ccb);
 
-        if (fileref) {
-            oc = InterlockedDecrement(&fileref->open_count);
-#ifdef DEBUG_FCB_REFCOUNTS
-            ERR("fileref %p: open_count now %i\n", fileref, oc);
-#endif
-        }
-
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = true;
 
@@ -2429,84 +2421,91 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
             // FIXME - flush all of subvol's fcbs
         }
 
-        if (fileref && (oc == 0 || (fileref->delete_on_close && fileref->posix_delete))) {
-            if (!fcb->Vcb->removing) {
-                if (oc == 0 && fileref->fcb->inode_item.st_nlink == 0 && fileref != fcb->Vcb->root_fileref &&
-                    fcb != fcb->Vcb->volume_fcb && !fcb->ads) { // last handle closed on POSIX-deleted file
-                    LIST_ENTRY rollback;
+        if (fileref) {
+            LONG oc = InterlockedDecrement(&fileref->open_count);
+#ifdef DEBUG_FCB_REFCOUNTS
+            ERR("fileref %p: open_count now %i\n", fileref, oc);
+#endif
 
-                    InitializeListHead(&rollback);
+            if (oc == 0 || (fileref->delete_on_close && fileref->posix_delete)) {
+                if (!fcb->Vcb->removing) {
+                    if (oc == 0 && fileref->fcb->inode_item.st_nlink == 0 && fileref != fcb->Vcb->root_fileref &&
+                        fcb != fcb->Vcb->volume_fcb && !fcb->ads) { // last handle closed on POSIX-deleted file
+                        LIST_ENTRY rollback;
 
-                    Status = delete_fileref_fcb(fileref, FileObject, Irp, &rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_fileref_fcb returned %08lx\n", Status);
-                        do_rollback(fcb->Vcb, &rollback);
-                        ExReleaseResourceLite(fileref->fcb->Header.Resource);
-                        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-                        goto exit;
-                    }
+                        InitializeListHead(&rollback);
 
-                    clear_rollback(&rollback);
+                        Status = delete_fileref_fcb(fileref, FileObject, Irp, &rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_fileref_fcb returned %08lx\n", Status);
+                            do_rollback(fcb->Vcb, &rollback);
+                            ExReleaseResourceLite(fileref->fcb->Header.Resource);
+                            ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                            goto exit;
+                        }
 
-                    mark_fcb_dirty(fileref->fcb);
-                } else if (fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
-                    LIST_ENTRY rollback;
+                        clear_rollback(&rollback);
 
-                    InitializeListHead(&rollback);
+                        mark_fcb_dirty(fileref->fcb);
+                    } else if (fileref->delete_on_close && fileref != fcb->Vcb->root_fileref && fcb != fcb->Vcb->volume_fcb) {
+                        LIST_ENTRY rollback;
 
-                    if (!fileref->fcb->ads || fileref->dc) {
-                        if (fileref->fcb->ads) {
-                            send_notification_fileref(fileref->parent, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
-                                                      FILE_ACTION_REMOVED, &fileref->dc->name);
-                        } else
-                            send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
-                    }
+                        InitializeListHead(&rollback);
 
-                    ExReleaseResourceLite(fcb->Header.Resource);
-                    locked = false;
+                        if (!fileref->fcb->ads || fileref->dc) {
+                            if (fileref->fcb->ads) {
+                                send_notification_fileref(fileref->parent, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
+                                                        FILE_ACTION_REMOVED, &fileref->dc->name);
+                            } else
+                                send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
+                        }
 
-                    // fileref_lock needs to be acquired before fcb->Header.Resource
-                    ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
-
-                    Status = delete_fileref(fileref, FileObject, oc > 0 && fileref->posix_delete, Irp, &rollback);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_fileref returned %08lx\n", Status);
-                        do_rollback(fcb->Vcb, &rollback);
-                        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
-                        ExReleaseResourceLite(&fcb->Vcb->tree_lock);
-                        goto exit;
-                    }
-
-                    ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
-
-                    clear_rollback(&rollback);
-                } else if (FileObject->Flags & FO_CACHE_SUPPORTED && FileObject->SectionObjectPointer->DataSectionObject) {
-                    IO_STATUS_BLOCK iosb;
-
-                    if (locked) {
                         ExReleaseResourceLite(fcb->Header.Resource);
                         locked = false;
+
+                        // fileref_lock needs to be acquired before fcb->Header.Resource
+                        ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
+
+                        Status = delete_fileref(fileref, FileObject, oc > 0 && fileref->posix_delete, Irp, &rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_fileref returned %08lx\n", Status);
+                            do_rollback(fcb->Vcb, &rollback);
+                            ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
+                            ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+                            goto exit;
+                        }
+
+                        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
+
+                        clear_rollback(&rollback);
+                    } else if (FileObject->Flags & FO_CACHE_SUPPORTED && FileObject->SectionObjectPointer->DataSectionObject) {
+                        IO_STATUS_BLOCK iosb;
+
+                        if (locked) {
+                            ExReleaseResourceLite(fcb->Header.Resource);
+                            locked = false;
+                        }
+
+                        CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
+
+                        if (!NT_SUCCESS(iosb.Status))
+                            ERR("CcFlushCache returned %08lx\n", iosb.Status);
+
+                        if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
+                            ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, true);
+                            ExReleaseResourceLite(fcb->Header.PagingIoResource);
+                        }
+
+                        CcPurgeCacheSection(FileObject->SectionObjectPointer, NULL, 0, false);
+
+                        TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x)\n",
+                            FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                     }
-
-                    CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
-
-                    if (!NT_SUCCESS(iosb.Status))
-                        ERR("CcFlushCache returned %08lx\n", iosb.Status);
-
-                    if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
-                        ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, true);
-                        ExReleaseResourceLite(fcb->Header.PagingIoResource);
-                    }
-
-                    CcPurgeCacheSection(FileObject->SectionObjectPointer, NULL, 0, false);
-
-                    TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x)\n",
-                        FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
                 }
-            }
 
-            if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
-                CcUninitializeCacheMap(FileObject, NULL, NULL);
+                if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
+                    CcUninitializeCacheMap(FileObject, NULL, NULL);
+            }
         }
 
         if (locked)
