@@ -786,7 +786,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                     if (csum) {
                         for (j = 0; j < context->stripes[i].length >> Vcb->sector_shift; j++) {
                             if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j + Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
-                                uint64_t addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                                uint64_t addr = offset + ((uint64_t)j << Vcb->sector_shift);
 
                                 log_error(Vcb, addr, c->devices[i]->devitem.dev_id, false, true, false);
                                 log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -832,7 +832,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                     for (ULONG j = 0; j < context->stripes[i].length >> Vcb->sector_shift; j++) {
                         if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j * Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
                             ULONG k;
-                            uint64_t addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                            uint64_t addr = offset + ((uint64_t)j << Vcb->sector_shift);
                             bool recovered = false;
 
                             for (k = 0; k < c->chunk_item->num_stripes; k++) {
@@ -915,7 +915,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
             if (csum) {
                 for (j = 0; j < context->stripes[i].length >> Vcb->sector_shift; j++) {
                     if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j + Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
-                        uint64_t addr = offset + UInt32x32To64(j, Vcb->superblock.sector_size);
+                        uint64_t addr = offset + ((uint64_t)j << Vcb->sector_shift);
 
                         log_error(Vcb, addr, c->devices[i]->devitem.dev_id, false, false, false);
                     }
