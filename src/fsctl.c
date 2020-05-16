@@ -3383,7 +3383,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             dataoff = 0;
             datalen2 = (ULONG)ded->ByteCount.QuadPart;
         } else {
-            dataoff = ded->TargetFileOffset.QuadPart % Vcb->superblock.sector_size;
+            dataoff = ded->TargetFileOffset.QuadPart & (Vcb->superblock.sector_size - 1);
             datalen2 = (ULONG)sector_align(ded->ByteCount.QuadPart + dataoff, Vcb->superblock.sector_size);
         }
 
@@ -3467,7 +3467,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
             fcb->inode_item.st_blocks += datalen2;
         } else {
-            uint64_t start = ded->TargetFileOffset.QuadPart - (ded->TargetFileOffset.QuadPart % Vcb->superblock.sector_size);
+            uint64_t start = ded->TargetFileOffset.QuadPart - (ded->TargetFileOffset.QuadPart & (Vcb->superblock.sector_size - 1));
 
             Status = do_write_file(fcb, start, start + datalen2, data2, Irp, false, 0, &rollback);
             if (!NT_SUCCESS(Status)) {
