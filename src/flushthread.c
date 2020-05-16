@@ -4896,9 +4896,9 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
                 if (ed2->size > 0) { // not sparse
                     if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
-                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, (ULONG)(ed2->num_bytes / fcb->Vcb->superblock.sector_size), ext->csum, Irp);
+                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, (ULONG)(ed2->num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
                     else
-                        add_checksum_entry(fcb->Vcb, ed2->address, (ULONG)(ed2->size / fcb->Vcb->superblock.sector_size), ext->csum, Irp);
+                        add_checksum_entry(fcb->Vcb, ed2->address, (ULONG)(ed2->size >> fcb->Vcb->sector_shift), ext->csum, Irp);
                 }
             }
 
@@ -4927,7 +4927,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                             chunk* c;
 
                             if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->csum) {
-                                ULONG len = (ULONG)((ed2->num_bytes + ned2->num_bytes) / fcb->Vcb->superblock.sector_size);
+                                ULONG len = (ULONG)((ed2->num_bytes + ned2->num_bytes) >> fcb->Vcb->sector_shift);
                                 void* csum;
 
                                 csum = ExAllocatePoolWithTag(NonPagedPool, len * fcb->Vcb->csum_size, ALLOC_TAG);
@@ -4937,9 +4937,9 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                                     goto end;
                                 }
 
-                                RtlCopyMemory(csum, ext->csum, (ULONG)(ed2->num_bytes * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size));
-                                RtlCopyMemory((uint8_t*)csum + (ed2->num_bytes * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size), nextext->csum,
-                                              (ULONG)(ned2->num_bytes * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size));
+                                RtlCopyMemory(csum, ext->csum, (ULONG)((ed2->num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
+                                RtlCopyMemory((uint8_t*)csum + ((ed2->num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift), nextext->csum,
+                                              (ULONG)((ned2->num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
 
                                 ExFreePool(ext->csum);
                                 ext->csum = csum;
