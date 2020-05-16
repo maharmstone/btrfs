@@ -1873,9 +1873,9 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 if (tp.item->key.obj_type == TYPE_EXTENT_CSUM) {
                     if (tp.item->key.offset >= dr->address + dr->size)
                         break;
-                    else if (tp.item->size >= Vcb->csum_size && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / Vcb->csum_size) >= dr->address) {
+                    else if (tp.item->size >= Vcb->csum_size && tp.item->key.offset + (((unsigned int)tp.item->size << Vcb->sector_shift) / Vcb->csum_size) >= dr->address) {
                         uint64_t cs = max(dr->address, tp.item->key.offset);
-                        uint64_t ce = min(dr->address + dr->size, tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / Vcb->csum_size));
+                        uint64_t ce = min(dr->address + dr->size, tp.item->key.offset + (((unsigned int)tp.item->size << Vcb->sector_shift) / Vcb->csum_size));
 
                         RtlCopyMemory((uint8_t*)csum + ((cs - dr->address) * Vcb->csum_size / Vcb->superblock.sector_size),
                                       tp.item->data + ((cs - tp.item->key.offset) * Vcb->csum_size / Vcb->superblock.sector_size),
@@ -1917,12 +1917,12 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 do {
                     ULONG rl;
 
-                    if (size * Vcb->superblock.sector_size > BALANCE_UNIT)
+                    if (size << Vcb->sector_shift > BALANCE_UNIT)
                         rl = BALANCE_UNIT / Vcb->superblock.sector_size;
                     else
                         rl = size;
 
-                    Status = read_data(Vcb, dr->address + (off * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, NULL, false, data,
+                    Status = read_data(Vcb, dr->address + (off << Vcb->sector_shift), rl << Vcb->sector_shift, NULL, false, data,
                                        c, NULL, NULL, 0, false, NormalPagePriority);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_data returned %08lx\n", Status);
@@ -1931,7 +1931,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                         goto end;
                     }
 
-                    Status = write_data_complete(Vcb, dr->new_address + (off * Vcb->superblock.sector_size), data, rl * Vcb->superblock.sector_size,
+                    Status = write_data_complete(Vcb, dr->new_address + (off << Vcb->sector_shift), data, rl << Vcb->sector_shift,
                                                  NULL, newchunk, false, 0, NormalPagePriority);
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_complete returned %08lx\n", Status);
@@ -1945,19 +1945,19 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 } while (size > 0);
             }
 
-            add_checksum_entry(Vcb, dr->new_address + (index * Vcb->superblock.sector_size), runlength, (uint8_t*)csum + (index * Vcb->csum_size), NULL);
-            add_checksum_entry(Vcb, dr->address + (index * Vcb->superblock.sector_size), runlength, NULL, NULL);
+            add_checksum_entry(Vcb, dr->new_address + (index << Vcb->sector_shift), runlength, (uint8_t*)csum + (index * Vcb->csum_size), NULL);
+            add_checksum_entry(Vcb, dr->address + (index << Vcb->sector_shift), runlength, NULL, NULL);
 
             // handle csum run
             do {
                 ULONG rl;
 
-                if (runlength * Vcb->superblock.sector_size > BALANCE_UNIT)
+                if (runlength << Vcb->sector_shift > BALANCE_UNIT)
                     rl = BALANCE_UNIT / Vcb->superblock.sector_size;
                 else
                     rl = runlength;
 
-                Status = read_data(Vcb, dr->address + (index * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size,
+                Status = read_data(Vcb, dr->address + (index << Vcb->sector_shift), rl << Vcb->sector_shift,
                                    (uint8_t*)csum + (index * Vcb->csum_size), false, data, c, NULL, NULL, 0, false, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08lx\n", Status);
@@ -1966,7 +1966,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     goto end;
                 }
 
-                Status = write_data_complete(Vcb, dr->new_address + (index * Vcb->superblock.sector_size), data, rl * Vcb->superblock.sector_size,
+                Status = write_data_complete(Vcb, dr->new_address + (index << Vcb->sector_shift), data, rl << Vcb->sector_shift,
                                              NULL, newchunk, false, 0, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_complete returned %08lx\n", Status);
@@ -1994,19 +1994,19 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
             do {
                 ULONG rl;
 
-                if (size * Vcb->superblock.sector_size > BALANCE_UNIT)
+                if (size << Vcb->sector_shift > BALANCE_UNIT)
                     rl = BALANCE_UNIT / Vcb->superblock.sector_size;
                 else
                     rl = size;
 
-                Status = read_data(Vcb, dr->address + (off * Vcb->superblock.sector_size), rl * Vcb->superblock.sector_size, NULL, false, data,
+                Status = read_data(Vcb, dr->address + (off << Vcb->sector_shift), rl << Vcb->sector_shift, NULL, false, data,
                                    c, NULL, NULL, 0, false, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08lx\n", Status);
                     goto end;
                 }
 
-                Status = write_data_complete(Vcb, dr->new_address + (off * Vcb->superblock.sector_size), data, rl * Vcb->superblock.sector_size,
+                Status = write_data_complete(Vcb, dr->new_address + (off << Vcb->sector_shift), data, rl << Vcb->sector_shift,
                                              NULL, newchunk, false, 0, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_complete returned %08lx\n", Status);

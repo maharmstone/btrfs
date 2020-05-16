@@ -469,8 +469,8 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
             else
                 j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
 
-            if (j * Vcb->csum_size > tp.item->size || tp.item->key.offset > start + (i * Vcb->superblock.sector_size)) {
-                ERR("checksum not found for %I64x\n", start + (i * Vcb->superblock.sector_size));
+            if (j * Vcb->csum_size > tp.item->size || tp.item->key.offset > start + (i << Vcb->sector_shift)) {
+                ERR("checksum not found for %I64x\n", start + (i << Vcb->sector_shift));
                 return STATUS_INTERNAL_ERROR;
             }
 

@@ -2641,7 +2641,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                 length2 -= il;
 
                 if (length2 > 0) {
-                    off += il * Vcb->superblock.sector_size;
+                    off += (uint64_t)il << Vcb->sector_shift;
                     data = (uint8_t*)data + (il * Vcb->csum_size);
                 }
             } while (length2 > 0);
@@ -2655,14 +2655,14 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
         // FIXME - check entry is TYPE_EXTENT_CSUM?
 
-        if (tp.item->key.offset < address && tp.item->key.offset + (tp.item->size * Vcb->superblock.sector_size / Vcb->csum_size) >= address)
+        if (tp.item->key.offset < address && tp.item->key.offset + ((uint64_t)tp.item->size << Vcb->sector_shift / Vcb->csum_size) >= address)
             startaddr = tp.item->key.offset;
         else
             startaddr = address;
 
         searchkey.obj_id = EXTENT_CSUM_ID;
         searchkey.obj_type = TYPE_EXTENT_CSUM;
-        searchkey.offset = address + (length * Vcb->superblock.sector_size);
+        searchkey.offset = address + (length << Vcb->sector_shift);
 
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
@@ -2672,10 +2672,10 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
         tplen = tp.item->size / Vcb->csum_size;
 
-        if (tp.item->key.offset + (tplen * Vcb->superblock.sector_size) >= address + (length * Vcb->superblock.sector_size))
-            endaddr = tp.item->key.offset + (tplen * Vcb->superblock.sector_size);
+        if (tp.item->key.offset + (tplen << Vcb->sector_shift) >= address + (length << Vcb->sector_shift))
+            endaddr = tp.item->key.offset + (tplen << Vcb->sector_shift);
         else
-            endaddr = address + (length * Vcb->superblock.sector_size);
+            endaddr = address + (length << Vcb->sector_shift);
 
         TRACE("cs starts at %I64x (%lx sectors)\n", address, length);
         TRACE("startaddr = %I64x\n", startaddr);
@@ -5735,8 +5735,8 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
         stripe = (parity + (offset / sl) + 1) % c->chunk_item->num_stripes;
 
         if (c->devices[stripe]->devobj) {
-            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
-                                    readlen * Vcb->superblock.sector_size, ps->data + (offset * Vcb->superblock.sector_size), false);
+            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                                    readlen << Vcb->sector_shift, ps->data + (offset << Vcb->sector_shift), false);
             if (!NT_SUCCESS(Status)) {
                 ERR("sync_read_phys returned %08lx\n", Status);
                 return Status;
@@ -5745,7 +5745,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             uint16_t i;
             uint8_t* scratch;
 
-            scratch = ExAllocatePoolWithTag(NonPagedPool, readlen * Vcb->superblock.sector_size, ALLOC_TAG);
+            scratch = ExAllocatePoolWithTag(NonPagedPool, readlen << Vcb->sector_shift, ALLOC_TAG);
             if (!scratch) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -5759,23 +5759,23 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                     }
 
                     if (i == 0 || (stripe == 0 && i == 1)) {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
-                                                readlen * Vcb->superblock.sector_size, ps->data + (offset * Vcb->superblock.sector_size), false);
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                                                readlen << Vcb->sector_shift, ps->data + (offset << Vcb->sector_shift), false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
                             ExFreePool(scratch);
                             return Status;
                         }
                     } else {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
-                                                readlen * Vcb->superblock.sector_size, scratch, false);
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                                                readlen << Vcb->sector_shift, scratch, false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
                             ExFreePool(scratch);
                             return Status;
                         }
 
-                        do_xor(ps->data + (offset * Vcb->superblock.sector_size), scratch, readlen * Vcb->superblock.sector_size);
+                        do_xor(ps->data + (offset << Vcb->sector_shift), scratch, readlen << Vcb->sector_shift);
                     }
                 }
             }
@@ -5785,7 +5785,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             uint8_t* scratch;
             uint16_t k, i, logstripe, error_stripe, num_errors = 0;
 
-            scratch = ExAllocatePoolWithTag(NonPagedPool, (c->chunk_item->num_stripes + 2) * readlen * Vcb->superblock.sector_size, ALLOC_TAG);
+            scratch = ExAllocatePoolWithTag(NonPagedPool, (c->chunk_item->num_stripes + 2) * readlen << Vcb->sector_shift, ALLOC_TAG);
             if (!scratch) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -5795,8 +5795,8 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             for (k = 0; k < c->chunk_item->num_stripes; k++) {
                 if (i != stripe) {
                     if (c->devices[i]->devobj) {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) * Vcb->superblock.sector_size),
-                                                readlen * Vcb->superblock.sector_size, scratch + (k * readlen * Vcb->superblock.sector_size), false);
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                                                readlen << Vcb->sector_shift, scratch + (k * readlen << Vcb->sector_shift), false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
                             num_errors++;
@@ -5821,20 +5821,20 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                 for (k = 0; k < c->chunk_item->num_stripes - 1; k++) {
                     if (k != logstripe) {
                         if (k == 0 || (k == 1 && logstripe == 0)) {
-                            RtlCopyMemory(ps->data + (offset * Vcb->superblock.sector_size), scratch + (k * readlen * Vcb->superblock.sector_size),
-                                          readlen * Vcb->superblock.sector_size);
+                            RtlCopyMemory(ps->data + (offset << Vcb->sector_shift), scratch + (k * readlen << Vcb->sector_shift),
+                                          readlen << Vcb->sector_shift);
                         } else {
-                            do_xor(ps->data + (offset * Vcb->superblock.sector_size), scratch + (k * readlen * Vcb->superblock.sector_size),
-                                   readlen * Vcb->superblock.sector_size);
+                            do_xor(ps->data + (offset << Vcb->sector_shift), scratch + (k * readlen << Vcb->sector_shift),
+                                   readlen << Vcb->sector_shift);
                         }
                     }
                 }
             } else {
-                raid6_recover2(scratch, c->chunk_item->num_stripes, readlen * Vcb->superblock.sector_size, logstripe,
-                               error_stripe, scratch + (c->chunk_item->num_stripes * readlen * Vcb->superblock.sector_size));
+                raid6_recover2(scratch, c->chunk_item->num_stripes, readlen << Vcb->sector_shift, logstripe,
+                               error_stripe, scratch + (c->chunk_item->num_stripes * readlen << Vcb->sector_shift));
 
-                RtlCopyMemory(ps->data + (offset * Vcb->superblock.sector_size), scratch + (c->chunk_item->num_stripes * readlen * Vcb->superblock.sector_size),
-                              readlen * Vcb->superblock.sector_size);
+                RtlCopyMemory(ps->data + (offset << Vcb->sector_shift), scratch + (c->chunk_item->num_stripes * readlen << Vcb->sector_shift),
+                              readlen << Vcb->sector_shift);
             }
 
             ExFreePool(scratch);

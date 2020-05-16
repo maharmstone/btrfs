@@ -235,7 +235,6 @@ bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
 
 static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr, read_data_context* context, CHUNK_ITEM* ci,
                               device** devices, uint64_t generation) {
-    ULONG i;
     bool checksum_error = false;
     uint16_t j, stripe = 0;
     NTSTATUS Status;
@@ -344,8 +343,8 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < sectors; i++) {
-            if (!check_sector_csum(Vcb, buf + (i * Vcb->superblock.sector_size), ptr)) {
+        for (ULONG i = 0; i < sectors; i++) {
+            if (!check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr)) {
                 bool recovered = false;
 
                 for (j = 0; j < ci->num_stripes; j++) {
@@ -358,7 +357,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
                             log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
                         } else {
                             if (check_sector_csum(Vcb, sector, ptr)) {
-                                RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
+                                RtlCopyMemory(buf + (i << Vcb->sector_shift), sector, Vcb->superblock.sector_size);
                                 ERR("recovering from checksum error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
                                 recovered = true;
 
@@ -397,11 +396,9 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
 
 static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t addr, uint32_t length, read_data_context* context,
                                 CHUNK_ITEM* ci, device** devices, uint64_t generation, uint64_t offset) {
-    uint64_t i;
-
-    for (i = 0; i < ci->num_stripes; i++) {
+    for (uint16_t i = 0; i < ci->num_stripes; i++) {
         if (context->stripes[i].status == ReadDataStatus_Error) {
-            WARN("stripe %I64u returned error %08lx\n", i, context->stripes[i].iosb.Status);
+            WARN("stripe %u returned error %08lx\n", i, context->stripes[i].iosb.Status);
             log_device_error(Vcb, devices[i], BTRFS_DEV_STAT_READ_ERRORS);
             return context->stripes[i].iosb.Status;
         }
@@ -440,8 +437,8 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
         if (Status == STATUS_CRC_ERROR) {
             void* ptr = context->csum;
 
-            for (i = 0; i < length / Vcb->superblock.sector_size; i++) {
-                if (!check_sector_csum(Vcb, buf + (i * Vcb->superblock.sector_size), ptr)) {
+            for (uint32_t i = 0; i < length / Vcb->superblock.sector_size; i++) {
+                if (!check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr)) {
                     uint64_t off;
                     uint16_t stripe;
 
@@ -469,13 +466,12 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
 static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t addr, uint32_t length, read_data_context* context,
                                  CHUNK_ITEM* ci, device** devices, uint64_t generation, uint64_t offset) {
-    uint64_t i;
-    uint16_t j, stripe;
+    uint16_t stripe;
     NTSTATUS Status;
     bool checksum_error = false;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
 
-    for (j = 0; j < ci->num_stripes; j++) {
+    for (uint16_t j = 0; j < ci->num_stripes; j++) {
         if (context->stripes[j].status == ReadDataStatus_Error) {
             WARN("stripe %u returned error %08lx\n", j, context->stripes[j].iosb.Status);
             log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
@@ -529,14 +525,14 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
         stripe *= ci->sub_stripes;
 
-        for (j = 0; j < ci->sub_stripes; j++) {
+        for (uint16_t j = 0; j < ci->sub_stripes; j++) {
             if (context->stripes[stripe + j].status == ReadDataStatus_Success) {
                 badsubstripe = j;
                 break;
             }
         }
 
-        for (j = 0; j < ci->sub_stripes; j++) {
+        for (uint16_t j = 0; j < ci->sub_stripes; j++) {
             if (context->stripes[stripe + j].status != ReadDataStatus_Success && devices[stripe + j] && devices[stripe + j]->devobj) {
                 Status = sync_read_phys(devices[stripe + j]->devobj, devices[stripe + j]->fileobj, cis[stripe + j].offset + off,
                                         Vcb->superblock.node_size, (uint8_t*)t2, false);
@@ -587,8 +583,8 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < sectors; i++) {
-            if (!check_sector_csum(Vcb, buf + (i * Vcb->superblock.sector_size), ptr)) {
+        for (ULONG i = 0; i < sectors; i++) {
+            if (!check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr)) {
                 uint64_t off;
                 uint16_t stripe2, badsubstripe = 0;
                 bool recovered = false;
@@ -598,7 +594,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
                 stripe2 *= ci->sub_stripes;
 
-                for (j = 0; j < ci->sub_stripes; j++) {
+                for (uint16_t j = 0; j < ci->sub_stripes; j++) {
                     if (context->stripes[stripe2 + j].status == ReadDataStatus_Success) {
                         badsubstripe = j;
                         break;
@@ -607,7 +603,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
                 log_device_error(Vcb, devices[stripe2 + badsubstripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
-                for (j = 0; j < ci->sub_stripes; j++) {
+                for (uint16_t j = 0; j < ci->sub_stripes; j++) {
                     if (context->stripes[stripe2 + j].status != ReadDataStatus_Success && devices[stripe2 + j] && devices[stripe2 + j]->devobj) {
                         Status = sync_read_phys(devices[stripe2 + j]->devobj, devices[stripe2 + j]->fileobj, cis[stripe2 + j].offset + off,
                                                 Vcb->superblock.sector_size, sector, false);
@@ -616,7 +612,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
                             log_device_error(Vcb, devices[stripe2 + j], BTRFS_DEV_STAT_READ_ERRORS);
                         } else {
                             if (check_sector_csum(Vcb, sector, ptr)) {
-                                RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
+                                RtlCopyMemory(buf + (i << Vcb->sector_shift), sector, Vcb->superblock.sector_size);
                                 ERR("recovering from checksum error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe2 + j]->devitem.dev_id);
                                 recovered = true;
 
@@ -654,7 +650,6 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
 static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t addr, uint32_t length, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, uint64_t offset, uint64_t generation, chunk* c, bool degraded) {
-    ULONG i;
     NTSTATUS Status;
     bool checksum_error = false;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
@@ -698,8 +693,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
                             break;
                     }
 
-                    uint64_t runstart = ps->address + (index * Vcb->superblock.sector_size);
-                    uint64_t runend = runstart + (runlength * Vcb->superblock.sector_size);
+                    uint64_t runstart = ps->address + (index << Vcb->sector_shift);
+                    uint64_t runend = runstart + (runlength << Vcb->sector_shift);
                     uint64_t start = max(runstart, addr);
                     uint64_t end = min(runend, addr + length);
 
@@ -834,7 +829,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < sectors; i++) {
+        for (ULONG i = 0; i < sectors; i++) {
             uint16_t parity;
             uint64_t off;
 
@@ -845,7 +840,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
             stripe = (parity + stripe + 1) % ci->num_stripes;
 
-            if (!devices[stripe] || !devices[stripe]->devobj || (ptr && !check_sector_csum(Vcb, buf + (i * Vcb->superblock.sector_size), ptr))) {
+            if (!devices[stripe] || !devices[stripe]->devobj || (ptr && !check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr))) {
                 bool recovered = false, first = true, failed = false;
 
                 if (devices[stripe] && devices[stripe]->devobj)
@@ -885,7 +880,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                 if (!failed) {
                     if (!ptr || check_sector_csum(Vcb, sector, ptr)) {
-                        RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector, Vcb->superblock.sector_size);
+                        RtlCopyMemory(buf + (i << Vcb->sector_shift), sector, Vcb->superblock.sector_size);
 
                         if (!degraded)
                             ERR("recovering from checksum error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
@@ -1009,7 +1004,6 @@ void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, u
 static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t addr, uint32_t length, read_data_context* context, CHUNK_ITEM* ci,
                                 device** devices, uint64_t offset, uint64_t generation, chunk* c, bool degraded) {
     NTSTATUS Status;
-    ULONG i;
     bool checksum_error = false;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
     uint16_t stripe, j;
@@ -1054,8 +1048,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                             break;
                     }
 
-                    uint64_t runstart = ps->address + (index * Vcb->superblock.sector_size);
-                    uint64_t runend = runstart + (runlength * Vcb->superblock.sector_size);
+                    uint64_t runstart = ps->address + (index << Vcb->sector_shift);
+                    uint64_t runend = runstart + (runlength << Vcb->sector_shift);
                     uint64_t start = max(runstart, addr);
                     uint64_t end = min(runend, addr + length);
 
@@ -1295,7 +1289,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < sectors; i++) {
+        for (ULONG i = 0; i < sectors; i++) {
             uint64_t off;
             uint16_t physstripe, parity1, parity2;
 
@@ -1307,8 +1301,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
             physstripe = (parity2 + stripe + 1) % ci->num_stripes;
 
-            if (!devices[physstripe] || !devices[physstripe]->devobj || (context->csum && !check_sector_csum(Vcb, buf + (i * Vcb->superblock.sector_size), ptr))) {
-                uint16_t k, error_stripe;
+            if (!devices[physstripe] || !devices[physstripe]->devobj || (context->csum && !check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr))) {
+                uint16_t error_stripe;
                 bool recovered = false, failed = false;
                 ULONG num_errors = 0;
 
@@ -1317,11 +1311,11 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                 j = (parity2 + 1) % ci->num_stripes;
 
-                for (k = 0; k < ci->num_stripes - 1; k++) {
+                for (uint16_t k = 0; k < ci->num_stripes - 1; k++) {
                     if (j != physstripe) {
                         if (devices[j] && devices[j]->devobj) {
                             Status = sync_read_phys(devices[j]->devobj, devices[j]->fileobj, cis[j].offset + off, Vcb->superblock.sector_size,
-                                                    sector + (k * Vcb->superblock.sector_size), false);
+                                                    sector + ((ULONG)k << Vcb->sector_shift), false);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("sync_read_phys returned %08lx\n", Status);
                                 log_device_error(Vcb, devices[j], BTRFS_DEV_STAT_READ_ERRORS);
@@ -1349,15 +1343,15 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                 if (!failed) {
                     if (num_errors == 0) {
-                        RtlCopyMemory(sector + (stripe * Vcb->superblock.sector_size), sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                        RtlCopyMemory(sector + ((unsigned int)stripe << Vcb->sector_shift), sector + ((unsigned int)(ci->num_stripes - 2) << Vcb->sector_shift), Vcb->superblock.sector_size);
 
                         for (j = 0; j < ci->num_stripes - 2; j++) {
                             if (j != stripe)
-                                do_xor(sector + (stripe * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                do_xor(sector + ((unsigned int)stripe << Vcb->sector_shift), sector + ((unsigned int)j << Vcb->sector_shift), Vcb->superblock.sector_size);
                         }
 
-                        if (!ptr || check_sector_csum(Vcb, sector + (stripe * Vcb->superblock.sector_size), ptr)) {
-                            RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                        if (!ptr || check_sector_csum(Vcb, sector + ((unsigned int)stripe << Vcb->sector_shift), ptr)) {
+                            RtlCopyMemory(buf + (i << Vcb->sector_shift), sector + ((unsigned int)stripe << Vcb->sector_shift), Vcb->superblock.sector_size);
 
                             if (devices[physstripe] && devices[physstripe]->devobj)
                                 ERR("recovering from checksum error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size),
@@ -1367,7 +1361,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                             if (!Vcb->readonly && devices[physstripe] && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[physstripe]->devobj, devices[physstripe]->fileobj, cis[physstripe].offset + off,
-                                                         sector + (stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                                         sector + ((unsigned int)stripe << Vcb->sector_shift), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status)) {
                                     WARN("write_data_phys returned %08lx\n", Status);
                                     log_device_error(Vcb, devices[physstripe], BTRFS_DEV_STAT_WRITE_ERRORS);
@@ -1381,7 +1375,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                         if (devices[parity2] && devices[parity2]->devobj) {
                             Status = sync_read_phys(devices[parity2]->devobj, devices[parity2]->fileobj, cis[parity2].offset + off,
-                                                    Vcb->superblock.sector_size, sector + ((ci->num_stripes - 1) * Vcb->superblock.sector_size), false);
+                                                    Vcb->superblock.sector_size, sector + ((unsigned int)(ci->num_stripes - 1) << Vcb->sector_shift), false);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("sync_read_phys returned %08lx\n", Status);
                                 log_device_error(Vcb, devices[parity2], BTRFS_DEV_STAT_READ_ERRORS);
@@ -1391,18 +1385,18 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                         if (read_q) {
                             if (num_errors == 1) {
-                                raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, error_stripe, sector + (ci->num_stripes * Vcb->superblock.sector_size));
+                                raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, error_stripe, sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift));
 
                                 if (!devices[physstripe] || !devices[physstripe]->devobj)
                                     recovered = true;
                                 else
-                                    recovered = check_sector_csum(Vcb, sector + (ci->num_stripes * Vcb->superblock.sector_size), ptr);
+                                    recovered = check_sector_csum(Vcb, sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift), ptr);
                             } else {
                                 for (j = 0; j < ci->num_stripes - 1; j++) {
                                     if (j != stripe) {
-                                        raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, j, sector + (ci->num_stripes * Vcb->superblock.sector_size));
+                                        raid6_recover2(sector, ci->num_stripes, Vcb->superblock.sector_size, stripe, j, sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift));
 
-                                        if (check_sector_csum(Vcb, sector + (ci->num_stripes * Vcb->superblock.sector_size), ptr)) {
+                                        if (check_sector_csum(Vcb, sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift), ptr)) {
                                             recovered = true;
                                             error_stripe = j;
                                             break;
@@ -1419,11 +1413,11 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                                 ERR("recovering from checksum error at %I64x, device %I64x\n",
                                     addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[physstripe]->devitem.dev_id);
 
-                            RtlCopyMemory(buf + (i * Vcb->superblock.sector_size), sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                            RtlCopyMemory(buf + (i << Vcb->sector_shift), sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift), Vcb->superblock.sector_size);
 
                             if (!Vcb->readonly && devices[physstripe] && devices[physstripe]->devobj && !devices[physstripe]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[physstripe]->devobj, devices[physstripe]->fileobj, cis[physstripe].offset + off,
-                                                         sector + (ci->num_stripes * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                                         sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status)) {
                                     WARN("write_data_phys returned %08lx\n", Status);
                                     log_device_error(Vcb, devices[physstripe], BTRFS_DEV_STAT_WRITE_ERRORS);
@@ -1437,14 +1431,14 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                                     log_device_error(Vcb, devices[error_stripe_phys], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
-                                    RtlZeroMemory(sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                    RtlZeroMemory(sector + ((unsigned int)(ci->num_stripes - 2) << Vcb->sector_shift), Vcb->superblock.sector_size);
 
                                     for (j = 0; j < ci->num_stripes - 2; j++) {
                                         if (j == stripe) {
-                                            do_xor(sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), sector + (ci->num_stripes * Vcb->superblock.sector_size),
+                                            do_xor(sector + ((unsigned int)(ci->num_stripes - 2) << Vcb->sector_shift), sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift),
                                                    Vcb->superblock.sector_size);
                                         } else {
-                                            do_xor(sector + ((ci->num_stripes - 2) * Vcb->superblock.sector_size), sector + (j * Vcb->superblock.sector_size),
+                                            do_xor(sector + ((unsigned int)(ci->num_stripes - 2) << Vcb->sector_shift), sector + ((unsigned int)j << Vcb->sector_shift),
                                                    Vcb->superblock.sector_size);
                                         }
                                     }
@@ -1455,14 +1449,14 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                                     log_device_error(Vcb, devices[error_stripe_phys], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
-                                    RtlCopyMemory(sector + (error_stripe * Vcb->superblock.sector_size),
-                                                  sector + ((ci->num_stripes + 1) * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                    RtlCopyMemory(sector + ((unsigned int)error_stripe << Vcb->sector_shift),
+                                                  sector + ((unsigned int)(ci->num_stripes + 1) << Vcb->sector_shift), Vcb->superblock.sector_size);
                                 }
                             }
 
                             if (!Vcb->readonly && devices[error_stripe_phys] && devices[error_stripe_phys]->devobj && !devices[error_stripe_phys]->readonly) { // write good data over bad
                                 Status = write_data_phys(devices[error_stripe_phys]->devobj, devices[error_stripe_phys]->fileobj, cis[error_stripe_phys].offset + off,
-                                                         sector + (error_stripe * Vcb->superblock.sector_size), Vcb->superblock.sector_size);
+                                                         sector + ((unsigned int)error_stripe << Vcb->sector_shift), Vcb->superblock.sector_size);
                                 if (!NT_SUCCESS(Status)) {
                                     WARN("write_data_phys returned %08lx\n", Status);
                                     log_device_error(Vcb, devices[error_stripe_phys], BTRFS_DEV_STAT_WRITE_ERRORS);
