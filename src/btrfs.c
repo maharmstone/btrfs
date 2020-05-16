@@ -1461,7 +1461,9 @@ static void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_matc
 
     // no point looking for hardlinks if st_nlink == 1
     if (fileref->fcb->inode_item.st_nlink == 1) {
+        ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
         send_notification_fileref(fileref, filter_match, action, stream);
+        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
         return;
     }
 
