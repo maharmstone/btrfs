@@ -749,6 +749,7 @@ typedef struct _device_extension {
 #endif
     uint64_t devices_loaded;
     superblock superblock;
+    unsigned int sector_shift;
     unsigned int csum_size;
     bool readonly;
     bool removing;

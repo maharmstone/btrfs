@@ -2824,6 +2824,8 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
 
             if (sb->sector_size == 0)
                 WARN("superblock sector size was 0\n");
+            else if (sb->sector_size & (sb->sector_size - 1))
+                WARN("superblock sector size was not power of 2\n");
             else if (sb->node_size < sizeof(tree_header) + sizeof(internal_node) || sb->node_size > 0x10000)
                 WARN("invalid node size %x\n", sb->node_size);
             else if ((sb->node_size % sb->sector_size) != 0)
@@ -4283,6 +4285,17 @@ static bool still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT f
     return true;
 }
 
+static void calculate_sector_shift(device_extension* Vcb) {
+    uint32_t ss = Vcb->superblock.sector_size;
+
+    Vcb->sector_shift = 0;
+
+    while (!(ss & 1)) {
+        Vcb->sector_shift++;
+        ss >>= 1;
+    }
+}
+
 static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -4523,6 +4536,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     if (Vcb->options.readonly)
         Vcb->readonly = true;
+
+    calculate_sector_shift(Vcb);
 
     Vcb->superblock.generation++;
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
