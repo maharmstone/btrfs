@@ -952,7 +952,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
             else if (type == BTRFS_COMPRESSION_ZSTD)
                 fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD;
 
-            if ((parts[i].outlen % fcb->Vcb->superblock.sector_size) != 0) {
+            if ((parts[i].outlen & (fcb->Vcb->superblock.sector_size - 1)) != 0) {
                 unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sector_size);
 
                 RtlZeroMemory(parts[i].buf + parts[i].outlen, newlen - parts[i].outlen);
@@ -1081,7 +1081,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     // calculate csums if necessary
 
     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-        unsigned int sl = buflen / fcb->Vcb->superblock.sector_size;
+        unsigned int sl = buflen >> fcb->Vcb->sector_shift;
 
         csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
         if (!csum) {
@@ -1130,7 +1130,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         ed2->num_bytes = parts[i].inlen;
 
         if (csum) {
-            csum2 = ExAllocatePoolWithTag(PagedPool, parts[i].outlen * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size, ALLOC_TAG);
+            csum2 = ExAllocatePoolWithTag(PagedPool, (parts[i].outlen * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift, ALLOC_TAG);
             if (!csum2) {
                 ERR("out of memory\n");
                 ExFreePool(ed);
@@ -1139,8 +1139,8 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            RtlCopyMemory(csum2, (uint8_t*)csum + ((extaddr - address) * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size),
-                          parts[i].outlen * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size);
+            RtlCopyMemory(csum2, (uint8_t*)csum + (((extaddr - address) * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift),
+                          (parts[i].outlen * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift);
         } else
             csum2 = NULL;
 
