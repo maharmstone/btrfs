@@ -1283,7 +1283,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
         uint8_t* sector;
         void* ptr = context->csum;
 
-        sector = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.sector_size * (ci->num_stripes + 2), ALLOC_TAG);
+        sector = ExAllocatePoolWithTag(NonPagedPool, (ci->num_stripes + 2) << Vcb->sector_shift, ALLOC_TAG);
         if (!sector) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1293,10 +1293,10 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
             uint64_t off;
             uint16_t physstripe, parity1, parity2;
 
-            get_raid0_offset(addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size), ci->stripe_length,
+            get_raid0_offset(addr - offset + ((uint64_t)i << Vcb->sector_shift), ci->stripe_length,
                              ci->num_stripes - 2, &off, &stripe);
 
-            parity1 = (((addr - offset + UInt32x32To64(i, Vcb->superblock.sector_size)) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
+            parity1 = (((addr - offset + ((uint64_t)i << Vcb->sector_shift)) / ((ci->num_stripes - 2) * ci->stripe_length)) + ci->num_stripes - 2) % ci->num_stripes;
             parity2 = (parity1 + 1) % ci->num_stripes;
 
             physstripe = (parity2 + stripe + 1) % ci->num_stripes;
@@ -1354,7 +1354,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                             RtlCopyMemory(buf + (i << Vcb->sector_shift), sector + ((unsigned int)stripe << Vcb->sector_shift), Vcb->superblock.sector_size);
 
                             if (devices[physstripe] && devices[physstripe]->devobj)
-                                ERR("recovering from checksum error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size),
+                                ERR("recovering from checksum error at %I64x, device %I64x\n", addr + ((uint64_t)i << Vcb->sector_shift),
                                     devices[physstripe]->devitem.dev_id);
 
                             recovered = true;
@@ -1411,7 +1411,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                             if (devices[physstripe] && devices[physstripe]->devobj)
                                 ERR("recovering from checksum error at %I64x, device %I64x\n",
-                                    addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[physstripe]->devitem.dev_id);
+                                    addr + ((uint64_t)i << Vcb->sector_shift), devices[physstripe]->devitem.dev_id);
 
                             RtlCopyMemory(buf + (i << Vcb->sector_shift), sector + ((unsigned int)ci->num_stripes << Vcb->sector_shift), Vcb->superblock.sector_size);
 
@@ -1426,7 +1426,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
                             if (devices[error_stripe_phys] && devices[error_stripe_phys]->devobj) {
                                 if (error_stripe == ci->num_stripes - 2) {
-                                    ERR("recovering from parity error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size),
+                                    ERR("recovering from parity error at %I64x, device %I64x\n", addr + ((uint64_t)i << Vcb->sector_shift),
                                         devices[error_stripe_phys]->devitem.dev_id);
 
                                     log_device_error(Vcb, devices[error_stripe_phys], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -1444,7 +1444,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                                     }
                                 } else {
                                     ERR("recovering from checksum error at %I64x, device %I64x\n",
-                                        addr + UInt32x32To64(i, Vcb->superblock.sector_size) + ((error_stripe - stripe) * ci->stripe_length),
+                                        addr + ((uint64_t)i << Vcb->sector_shift) + ((error_stripe - stripe) * ci->stripe_length),
                                         devices[error_stripe_phys]->devitem.dev_id);
 
                                     log_device_error(Vcb, devices[error_stripe_phys], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -1467,7 +1467,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                 }
 
                 if (!recovered) {
-                    ERR("unrecoverable checksum error at %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size));
+                    ERR("unrecoverable checksum error at %I64x\n", addr + ((uint64_t)i << Vcb->sector_shift));
                     ExFreePool(sector);
                     return STATUS_CRC_ERROR;
                 }
