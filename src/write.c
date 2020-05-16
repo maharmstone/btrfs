@@ -3999,8 +3999,8 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
                     // This shouldn't ever get called - nocow files should always also be nosum.
                     if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-                        do_calc_job(fcb->Vcb, (uint8_t*)data + written, (uint32_t)(write_len / fcb->Vcb->superblock.sector_size),
-                                    (uint8_t*)ext->csum + ((start + written - ext->offset) * fcb->Vcb->csum_size / fcb->Vcb->superblock.sector_size));
+                        do_calc_job(fcb->Vcb, (uint8_t*)data + written, (uint32_t)(write_len >> fcb->Vcb->sector_shift),
+                                    (uint8_t*)ext->csum + (((start + written - ext->offset) * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
 
                         ext->inserted = true;
                         extents_changed = true;
