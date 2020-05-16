@@ -4643,7 +4643,7 @@ cont:
                 }
 
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-                    add_checksum_entry(fcb->Vcb, er->address, (ULONG)(er->skip_start / fcb->Vcb->superblock.sector_size), NULL, NULL);
+                    add_checksum_entry(fcb->Vcb, er->address, (ULONG)(er->skip_start >> fcb->Vcb->sector_shift), NULL, NULL);
 
                 acquire_chunk_lock(er->chunk, fcb->Vcb);
 
@@ -4697,7 +4697,7 @@ cont:
                 }
 
                 if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-                    add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, (ULONG)(er->skip_end / fcb->Vcb->superblock.sector_size), NULL, NULL);
+                    add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, (ULONG)(er->skip_end >> fcb->Vcb->sector_shift), NULL, NULL);
 
                 acquire_chunk_lock(er->chunk, fcb->Vcb);
 
