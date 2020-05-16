@@ -1199,7 +1199,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 }
 
 __attribute__((nonnull(1,2,3)))
-static void find_tree_end(tree* t, KEY* tree_end, bool* no_end) {
+static NTSTATUS find_tree_end(tree* t, KEY* tree_end, bool* no_end) {
     tree* p;
 
     p = t;
@@ -1207,8 +1207,11 @@ static void find_tree_end(tree* t, KEY* tree_end, bool* no_end) {
         tree_data* pi;
 
         if (!p->parent) {
+            tree_end->obj_id = 0xffffffffffffffff;
+            tree_end->obj_type = 0xff;
+            tree_end->offset = 0xffffffffffffffff;
             *no_end = true;
-            return;
+            return STATUS_SUCCESS;
         }
 
         pi = p->paritem;
@@ -1218,11 +1221,13 @@ static void find_tree_end(tree* t, KEY* tree_end, bool* no_end) {
 
             *tree_end = td->key;
             *no_end = false;
-            return;
+            return STATUS_SUCCESS;
         }
 
         p = p->parent;
     } while (p);
+
+    return STATUS_INTERNAL_ERROR;
 }
 
 __attribute__((nonnull(1,2)))
@@ -1903,7 +1908,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
             return Status;
         }
 
-        find_tree_end(tp.tree, &tree_end, &no_end);
+        Status = find_tree_end(tp.tree, &tree_end, &no_end);
+        if (!NT_SUCCESS(Status)) {
+            ERR("find_tree_end returned %08lx\n", Status);
+            return Status;
+        }
 
         if (bi->operation == Batch_DeleteInode) {
             if (tp.item->key.obj_id == bi->key.obj_id) {
@@ -1974,7 +1983,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 if (find_next_item(Vcb, &tp, &tp2, false, Irp)) {
                     if (tp2.item->key.obj_id == bi->key.obj_id && tp2.item->key.obj_type == bi->key.obj_type) {
                         tp = tp2;
-                        find_tree_end(tp.tree, &tree_end, &no_end);
+                        Status = find_tree_end(tp.tree, &tree_end, &no_end);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("find_tree_end returned %08lx\n", Status);
+                            return Status;
+                        }
                     }
                 }
             }
