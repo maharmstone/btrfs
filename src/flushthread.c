@@ -2779,7 +2779,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
                 RtlCopyMemory(data, (uint8_t*)checksums + (Vcb->csum_size * index), Vcb->csum_size * rl);
 
-                off = startaddr + UInt32x32To64(index, Vcb->superblock.sector_size);
+                off = startaddr + ((uint64_t)index << Vcb->sector_shift);
 
                 Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, TYPE_EXTENT_CSUM, off, data, Vcb->csum_size * rl, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
