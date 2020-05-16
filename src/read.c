@@ -350,7 +350,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
                 for (j = 0; j < ci->num_stripes; j++) {
                     if (j != stripe && devices[j] && devices[j]->devobj) {
                         Status = sync_read_phys(devices[j]->devobj, devices[j]->fileobj,
-                                                cis[j].offset + context->stripes[stripe].stripestart + UInt32x32To64(i, Vcb->superblock.sector_size),
+                                                cis[j].offset + context->stripes[stripe].stripestart + ((uint64_t)i << Vcb->sector_shift),
                                                 Vcb->superblock.sector_size, sector, false);
                         if (!NT_SUCCESS(Status)) {
                             WARN("sync_read_phys returned %08lx\n", Status);
@@ -358,12 +358,12 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
                         } else {
                             if (check_sector_csum(Vcb, sector, ptr)) {
                                 RtlCopyMemory(buf + (i << Vcb->sector_shift), sector, Vcb->superblock.sector_size);
-                                ERR("recovering from checksum error at %I64x, device %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size), devices[stripe]->devitem.dev_id);
+                                ERR("recovering from checksum error at %I64x, device %I64x\n", addr + ((uint64_t)i << Vcb->sector_shift), devices[stripe]->devitem.dev_id);
                                 recovered = true;
 
                                 if (!Vcb->readonly && !devices[stripe]->readonly) { // write good data over bad
                                     Status = write_data_phys(devices[stripe]->devobj, devices[stripe]->fileobj,
-                                                             cis[stripe].offset + context->stripes[stripe].stripestart + UInt32x32To64(i, Vcb->superblock.sector_size),
+                                                             cis[stripe].offset + context->stripes[stripe].stripestart + ((uint64_t)i << Vcb->sector_shift),
                                                              sector, Vcb->superblock.sector_size);
                                     if (!NT_SUCCESS(Status)) {
                                         WARN("write_data_phys returned %08lx\n", Status);
@@ -379,7 +379,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
                 }
 
                 if (!recovered) {
-                    ERR("unrecoverable checksum error at %I64x\n", addr + UInt32x32To64(i, Vcb->superblock.sector_size));
+                    ERR("unrecoverable checksum error at %I64x\n", addr + ((uint64_t)i << Vcb->sector_shift));
                     ExFreePool(sector);
                     return STATUS_CRC_ERROR;
                 }
