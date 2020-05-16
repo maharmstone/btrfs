@@ -41,6 +41,10 @@ static const WCHAR root_dir_utf16[] = L"$Root";
 #define ATOMIC_CREATE_ECP_IN_OP_FLAG_CASE_SENSITIVE_FLAGS_SPECIFIED       1
 #define ATOMIC_CREATE_ECP_OUT_OP_FLAG_CASE_SENSITIVE_FLAGS_SET            1
 
+#ifndef SL_IGNORE_READONLY_ATTRIBUTE
+#define SL_IGNORE_READONLY_ATTRIBUTE 0x40 // introduced in Windows 10, not in mingw
+#endif
+
 typedef struct _FILE_TIMESTAMPS {
     LARGE_INTEGER CreationTime;
     LARGE_INTEGER LastAccessTime;
@@ -3617,8 +3621,9 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, PO
         sf = sf->parent;
     }
 
-    readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) || (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) ||
-                is_subvol_readonly(fileref->fcb->subvol, Irp) || fileref->fcb == Vcb->dummy_fcb || Vcb->readonly;
+    readonly = (!fileref->fcb->ads && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY && !(IrpSp->Flags & SL_IGNORE_READONLY_ATTRIBUTE)) ||
+               (fileref->fcb->ads && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY && !(IrpSp->Flags & SL_IGNORE_READONLY_ATTRIBUTE)) ||
+               is_subvol_readonly(fileref->fcb->subvol, Irp) || fileref->fcb == Vcb->dummy_fcb || Vcb->readonly;
 
     if (options & FILE_DELETE_ON_CLOSE && (fileref == Vcb->root_fileref || readonly)) {
         free_fileref(fileref);
