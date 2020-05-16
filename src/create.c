@@ -467,7 +467,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
             if (start < tp.item->key.offset)
                 j = 0;
             else
-                j = ((start - tp.item->key.offset) / Vcb->superblock.sector_size) + i;
+                j = ((start - tp.item->key.offset) >> Vcb->sector_shift) + i;
 
             if (j * Vcb->csum_size > tp.item->size || tp.item->key.offset > start + (i << Vcb->sector_shift)) {
                 ERR("checksum not found for %I64x\n", start + (i << Vcb->sector_shift));
@@ -3529,7 +3529,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
             uint64_t len;
 
-            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) / Vcb->superblock.sector_size;
+            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) >> Vcb->sector_shift;
 
             ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * Vcb->csum_size), ALLOC_TAG);
             if (!ext->csum) {

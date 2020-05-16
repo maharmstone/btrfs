@@ -2681,7 +2681,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         TRACE("startaddr = %I64x\n", startaddr);
         TRACE("endaddr = %I64x\n", endaddr);
 
-        len = (ULONG)((endaddr - startaddr) / Vcb->superblock.sector_size);
+        len = (ULONG)((endaddr - startaddr) >> Vcb->sector_shift);
 
         checksums = ExAllocatePoolWithTag(PagedPool, Vcb->csum_size * len, ALLOC_TAG);
         if (!checksums) {
@@ -2716,11 +2716,11 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         while (tp.item->key.offset < endaddr) {
             if (tp.item->key.offset >= startaddr) {
                 if (tp.item->size > 0) {
-                    ULONG itemlen = (ULONG)min((len - (tp.item->key.offset - startaddr) / Vcb->superblock.sector_size) * Vcb->csum_size, tp.item->size);
+                    ULONG itemlen = (ULONG)min((len - ((tp.item->key.offset - startaddr) >> Vcb->sector_shift)) * Vcb->csum_size, tp.item->size);
 
-                    RtlCopyMemory((uint8_t*)checksums + ((tp.item->key.offset - startaddr) * Vcb->csum_size / Vcb->superblock.sector_size),
+                    RtlCopyMemory((uint8_t*)checksums + (((tp.item->key.offset - startaddr) * Vcb->csum_size) >> Vcb->sector_shift),
                                   tp.item->data, itemlen);
-                    RtlClearBits(&bmp, (ULONG)((tp.item->key.offset - startaddr) / Vcb->superblock.sector_size), itemlen / Vcb->csum_size);
+                    RtlClearBits(&bmp, (ULONG)((tp.item->key.offset - startaddr) >> Vcb->sector_shift), itemlen / Vcb->csum_size);
                 }
 
                 Status = delete_tree_item(Vcb, &tp);
@@ -2739,11 +2739,11 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         }
 
         if (!csum) { // deleted
-            RtlSetBits(&bmp, (ULONG)((address - startaddr) / Vcb->superblock.sector_size), length);
+            RtlSetBits(&bmp, (ULONG)((address - startaddr) >> Vcb->sector_shift), length);
         } else {
-            RtlCopyMemory((uint8_t*)checksums + ((address - startaddr) * Vcb->csum_size / Vcb->superblock.sector_size),
+            RtlCopyMemory((uint8_t*)checksums + (((address - startaddr) * Vcb->csum_size) >> Vcb->sector_shift),
                           csum, length * Vcb->csum_size);
-            RtlClearBits(&bmp, (ULONG)((address - startaddr) / Vcb->superblock.sector_size), length);
+            RtlClearBits(&bmp, (ULONG)((address - startaddr) >> Vcb->sector_shift), length);
         }
 
         runlength = RtlFindFirstRunClear(&bmp, &index);
@@ -5725,7 +5725,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
 static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_stripe* ps, uint64_t startoff, uint16_t parity, ULONG offset, ULONG len) {
     NTSTATUS Status;
-    ULONG sl = (ULONG)(c->chunk_item->stripe_length / Vcb->superblock.sector_size);
+    ULONG sl = (ULONG)(c->chunk_item->stripe_length >> Vcb->sector_shift);
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 
     while (len > 0) {
@@ -5894,8 +5894,8 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
         runlength = RtlFindNextForwardRunClear(&ps->bmp, index + runlength, &index);
     }
 
-    if (last1 < ps_length / Vcb->superblock.sector_size) {
-        Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, (ULONG)((ps_length / Vcb->superblock.sector_size) - last1));
+    if (last1 < ps_length >> Vcb->sector_shift) {
+        Status = partial_stripe_read(Vcb, c, ps, startoff, parity2, last1, (ULONG)((ps_length >> Vcb->sector_shift) - last1));
         if (!NT_SUCCESS(Status)) {
             ERR("partial_stripe_read returned %08lx\n", Status);
             return Status;

@@ -333,7 +333,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
 
         ExFreePool(t2);
     } else {
-        ULONG sectors = (ULONG)context->stripes[stripe].Irp->IoStatus.Information / Vcb->superblock.sector_size;
+        ULONG sectors = (ULONG)context->stripes[stripe].Irp->IoStatus.Information >> Vcb->sector_shift;
         uint8_t* sector;
         void* ptr = context->csum;
 
@@ -432,12 +432,12 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
     } else if (context->csum) {
         NTSTATUS Status;
 
-        Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
+        Status = check_csum(Vcb, buf, length >> Vcb->sector_shift, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
             void* ptr = context->csum;
 
-            for (uint32_t i = 0; i < length / Vcb->superblock.sector_size; i++) {
+            for (uint32_t i = 0; i < length >> Vcb->sector_shift; i++) {
                 if (!check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr)) {
                     uint64_t off;
                     uint16_t stripe;
@@ -496,7 +496,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
             log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-        Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
+        Status = check_csum(Vcb, buf, length >> Vcb->sector_shift, context->csum);
 
         if (Status == STATUS_CRC_ERROR)
             checksum_error = true;
@@ -573,7 +573,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
 
         ExFreePool(t2);
     } else {
-        ULONG sectors = length / Vcb->superblock.sector_size;
+        ULONG sectors = length >> Vcb->sector_shift;
         uint8_t* sector;
         void* ptr = context->csum;
 
@@ -725,7 +725,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-        Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
+        Status = check_csum(Vcb, buf, length >> Vcb->sector_shift, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
             if (!degraded)
@@ -819,7 +819,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
         ExFreePool(t2);
     } else {
-        ULONG sectors = length / Vcb->superblock.sector_size;
+        ULONG sectors = length >> Vcb->sector_shift;
         uint8_t* sector;
         void* ptr = context->csum;
 
@@ -1080,7 +1080,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                 log_device_error(Vcb, devices[stripe], BTRFS_DEV_STAT_GENERATION_ERRORS);
         }
     } else if (context->csum) {
-        Status = check_csum(Vcb, buf, length / Vcb->superblock.sector_size, context->csum);
+        Status = check_csum(Vcb, buf, length >> Vcb->sector_shift, context->csum);
 
         if (Status == STATUS_CRC_ERROR) {
             if (!degraded)
@@ -1279,7 +1279,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
         ExFreePool(sector);
     } else {
-        ULONG sectors = length / Vcb->superblock.sector_size;
+        ULONG sectors = length >> Vcb->sector_shift;
         uint8_t* sector;
         void* ptr = context->csum;
 
@@ -1770,9 +1770,9 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         } else
             context.va = buf;
 
-        context.firstoff = (uint16_t)((startoff % ci->stripe_length) / Vcb->superblock.sector_size);
+        context.firstoff = (uint16_t)((startoff % ci->stripe_length) >> Vcb->sector_shift);
         context.startoffstripe = startoffstripe;
-        context.sectors_per_stripe = (uint16_t)(ci->stripe_length / Vcb->superblock.sector_size);
+        context.sectors_per_stripe = (uint16_t)(ci->stripe_length >> Vcb->sector_shift);
 
         startoffstripe *= ci->sub_stripes;
         endoffstripe *= ci->sub_stripes;

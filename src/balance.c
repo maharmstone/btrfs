@@ -1834,7 +1834,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
 
         dr->newchunk = newchunk;
 
-        bmplen = (ULONG)(dr->size / Vcb->superblock.sector_size);
+        bmplen = (ULONG)(dr->size >> Vcb->sector_shift);
 
         bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align(bmplen + 1, sizeof(ULONG)), ALLOC_TAG);
         if (!bmparr) {
@@ -1843,7 +1843,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
             goto end;
         }
 
-        csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(dr->size * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+        csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((dr->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
         if (!csum) {
             ERR("out of memory\n");
             ExFreePool(bmparr);
@@ -1877,11 +1877,11 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                         uint64_t cs = max(dr->address, tp.item->key.offset);
                         uint64_t ce = min(dr->address + dr->size, tp.item->key.offset + (((unsigned int)tp.item->size << Vcb->sector_shift) / Vcb->csum_size));
 
-                        RtlCopyMemory((uint8_t*)csum + ((cs - dr->address) * Vcb->csum_size / Vcb->superblock.sector_size),
-                                      tp.item->data + ((cs - tp.item->key.offset) * Vcb->csum_size / Vcb->superblock.sector_size),
-                                      (ULONG)((ce - cs) * Vcb->csum_size / Vcb->superblock.sector_size));
+                        RtlCopyMemory((uint8_t*)csum + (((cs - dr->address) * Vcb->csum_size) >> Vcb->sector_shift),
+                                      tp.item->data + (((cs - tp.item->key.offset) * Vcb->csum_size) >> Vcb->sector_shift),
+                                      (ULONG)(((ce - cs) * Vcb->csum_size) >> Vcb->sector_shift));
 
-                        RtlClearBits(&bmp, (ULONG)((cs - dr->address) / Vcb->superblock.sector_size), (ULONG)((ce - cs) / Vcb->superblock.sector_size));
+                        RtlClearBits(&bmp, (ULONG)((cs - dr->address) >> Vcb->sector_shift), (ULONG)((ce - cs) >> Vcb->sector_shift));
 
                         if (ce == dr->address + dr->size)
                             break;
@@ -1918,7 +1918,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     ULONG rl;
 
                     if (size << Vcb->sector_shift > BALANCE_UNIT)
-                        rl = BALANCE_UNIT / Vcb->superblock.sector_size;
+                        rl = BALANCE_UNIT >> Vcb->sector_shift;
                     else
                         rl = size;
 
@@ -1953,7 +1953,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 ULONG rl;
 
                 if (runlength << Vcb->sector_shift > BALANCE_UNIT)
-                    rl = BALANCE_UNIT / Vcb->superblock.sector_size;
+                    rl = BALANCE_UNIT >> Vcb->sector_shift;
                 else
                     rl = runlength;
 
@@ -1987,15 +1987,15 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
         ExFreePool(bmparr);
 
         // handle final nocsum run
-        if (lastoff < dr->size / Vcb->superblock.sector_size) {
+        if (lastoff < dr->size >> Vcb->sector_shift) {
             ULONG off = lastoff;
-            ULONG size = (ULONG)((dr->size / Vcb->superblock.sector_size) - lastoff);
+            ULONG size = (ULONG)((dr->size >> Vcb->sector_shift) - lastoff);
 
             do {
                 ULONG rl;
 
                 if (size << Vcb->sector_shift > BALANCE_UNIT)
-                    rl = BALANCE_UNIT / Vcb->superblock.sector_size;
+                    rl = BALANCE_UNIT >> Vcb->sector_shift;
                 else
                     rl = size;
 

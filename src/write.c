@@ -1000,10 +1000,10 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk* c, uint64_t add
             // update existing entry
 
             RtlCopyMemory(ps->data + address - stripe_addr, data, length);
-            RtlClearBits(&ps->bmp, (ULONG)((address - stripe_addr) / Vcb->superblock.sector_size), length / Vcb->superblock.sector_size);
+            RtlClearBits(&ps->bmp, (ULONG)((address - stripe_addr) >> Vcb->sector_shift), length >> Vcb->sector_shift);
 
             // if now filled, flush
-            if (RtlAreBitsClear(&ps->bmp, 0, (ULONG)((num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size))) {
+            if (RtlAreBitsClear(&ps->bmp, 0, (ULONG)((num_data_stripes * c->chunk_item->stripe_length) >> Vcb->sector_shift))) {
                 Status = flush_partial_stripe(Vcb, c, ps);
                 if (!NT_SUCCESS(Status)) {
                     ERR("flush_partial_stripe returned %08lx\n", Status);
@@ -1035,7 +1035,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk* c, uint64_t add
         goto end;
     }
 
-    ps->bmplen = (ULONG)(num_data_stripes * c->chunk_item->stripe_length) / Vcb->superblock.sector_size;
+    ps->bmplen = (ULONG)(num_data_stripes * c->chunk_item->stripe_length) >> Vcb->sector_shift;
 
     ps->address = stripe_addr;
     ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, (size_t)sector_align(((ps->bmplen / 8) + 1), sizeof(ULONG)), ALLOC_TAG);
@@ -1050,7 +1050,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk* c, uint64_t add
     RtlSetAllBits(&ps->bmp);
 
     RtlCopyMemory(ps->data + address - stripe_addr, data, length);
-    RtlClearBits(&ps->bmp, (ULONG)((address - stripe_addr) / Vcb->superblock.sector_size), length / Vcb->superblock.sector_size);
+    RtlClearBits(&ps->bmp, (ULONG)((address - stripe_addr) >> Vcb->sector_shift), length >> Vcb->sector_shift);
 
     InsertHeadList(le->Blink, &ps->list_entry);
 
@@ -2494,7 +2494,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(ned2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2502,10 +2502,10 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, (uint8_t*)ext->csum + ((end_data - ext->offset) * Vcb->csum_size / Vcb->superblock.sector_size),
-                                              (ULONG)(ned2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size));
+                                RtlCopyMemory(newext->csum, (uint8_t*)ext->csum + (((end_data - ext->offset) * Vcb->csum_size) >> Vcb->sector_shift),
+                                              (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             } else {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2513,7 +2513,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size));
+                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
                             }
                         } else
                             newext->csum = NULL;
@@ -2558,7 +2558,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(ned2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2566,9 +2566,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)(ned2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size));
+                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             } else {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2576,7 +2576,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size));
+                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
                             }
                         } else
                             newext->csum = NULL;
@@ -2663,7 +2663,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(neda2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((neda2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext1->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2672,7 +2672,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(nedb2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((nedb2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext2->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2682,11 +2682,11 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)(neda2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size));
-                                RtlCopyMemory(newext2->csum, (uint8_t*)ext->csum + ((end_data - ext->offset) * Vcb->csum_size / Vcb->superblock.sector_size),
-                                              (ULONG)(nedb2->num_bytes * Vcb->csum_size / Vcb->superblock.sector_size));
+                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)((neda2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext2->csum, (uint8_t*)ext->csum + (((end_data - ext->offset) * Vcb->csum_size) >> Vcb->sector_shift),
+                                              (ULONG)((nedb2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             } else {
-                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext1->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2695,7 +2695,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size), ALLOC_TAG);
+                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext2->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2705,8 +2705,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size));
-                                RtlCopyMemory(newext2->csum, ext->csum, (ULONG)(ed2->size * Vcb->csum_size / Vcb->superblock.sector_size));
+                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext2->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
                             }
                         } else {
                             newext1->csum = NULL;
@@ -2856,7 +2856,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     ed2->num_bytes = decoded_size;
 
     if (!prealloc && data && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-        ULONG sl = (ULONG)(length / Vcb->superblock.sector_size);
+        ULONG sl = (ULONG)(length >> Vcb->sector_shift);
 
         csum = ExAllocatePoolWithTag(PagedPool, sl * Vcb->csum_size, ALLOC_TAG);
         if (!csum) {

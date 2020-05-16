@@ -526,7 +526,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
                 else
                     len = (ULONG)ed2->size;
 
-                len = len * sizeof(uint32_t) / Vcb->superblock.sector_size;
+                len = (len * sizeof(uint32_t)) >> Vcb->sector_shift;
 
                 ext2->csum = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
                 if (!ext2->csum) {

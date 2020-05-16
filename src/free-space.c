@@ -563,7 +563,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     if (size > c->cache->inode_item.st_size)
         RtlZeroMemory(&data[c->cache->inode_item.st_size], (ULONG)(size - c->cache->inode_item.st_size));
 
-    num_sectors = size / Vcb->superblock.sector_size;
+    num_sectors = size >> Vcb->sector_shift;
 
     generation = (uint64_t*)(data + (num_sectors * sizeof(uint32_t)));
 
@@ -574,7 +574,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     extent_length = (num_sectors * sizeof(uint32_t)) + sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) / Vcb->superblock.sector_size) + num_bitmaps);
+    num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) >> Vcb->sector_shift) + num_bitmaps);
 
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %I64x was %u sectors, expected at least %u\n", c->offset, num_sectors, num_valid_sectors);
@@ -601,7 +601,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     bmpnum = 0;
     for (uint32_t i = 0; i < num_entries; i++) {
-        if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+        if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
             off = sector_align(off, Vcb->superblock.sector_size);
 
         fse = (FREE_SPACE_ENTRY*)&data[off];
@@ -623,11 +623,11 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     }
 
     if (num_bitmaps > 0) {
-        bmpnum = sector_align(off, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+        bmpnum = sector_align(off, Vcb->superblock.sector_size) >> Vcb->sector_shift;
         off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
         for (uint32_t i = 0; i < num_entries; i++) {
-            if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+            if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
                 off = sector_align(off, Vcb->superblock.sector_size);
 
             fse = (FREE_SPACE_ENTRY*)&data[off];
@@ -803,7 +803,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
             // We copy the bitmap because it supposedly has to be ULONG-aligned
             RtlCopyMemory(bmparr, tp.item->data, tp.item->size);
 
-            bmpl = (ULONG)tp.item->key.offset / Vcb->superblock.sector_size;
+            bmpl = (ULONG)tp.item->key.offset >> Vcb->sector_shift;
 
             RtlInitializeBitMap(&bmp, bmparr, bmpl);
 
@@ -1077,14 +1077,14 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
     new_cache_size = sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_sectors = (uint32_t)sector_align(new_cache_size, Vcb->superblock.sector_size) / Vcb->superblock.sector_size;
+    num_sectors = (uint32_t)sector_align(new_cache_size, Vcb->superblock.sector_size) >> Vcb->sector_shift;
     num_sectors = (uint32_t)sector_align(num_sectors, CACHE_INCREMENTS);
 
     // adjust for padding
     // FIXME - there must be a more efficient way of doing this
     new_cache_size = sizeof(uint64_t) + (sizeof(uint32_t) * num_sectors);
     for (i = 0; i < num_entries; i++) {
-        if ((new_cache_size / Vcb->superblock.sector_size) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size))
+        if ((new_cache_size >> Vcb->sector_shift) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift))
             new_cache_size = sector_align(new_cache_size, Vcb->superblock.sector_size);
 
         new_cache_size += sizeof(FREE_SPACE_ENTRY);
@@ -1687,7 +1687,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     RtlZeroMemory(data, (ULONG)c->cache->inode_item.st_size);
 
     num_entries = 0;
-    num_sectors = (uint32_t)(c->cache->inode_item.st_size / Vcb->superblock.sector_size);
+    num_sectors = (uint32_t)(c->cache->inode_item.st_size >> Vcb->sector_shift);
     off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
     le = c->space.Flink;
@@ -1696,7 +1696,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
-        if ((off + sizeof(FREE_SPACE_ENTRY)) / Vcb->superblock.sector_size != off / Vcb->superblock.sector_size)
+        if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
             off = sector_align(off, Vcb->superblock.sector_size);
 
         fse = (FREE_SPACE_ENTRY*)((uint8_t*)data + off);
