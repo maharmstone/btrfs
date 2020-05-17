@@ -3222,6 +3222,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         if (acec->ReparseBufferLength > sizeof(uint32_t) && *(uint32_t*)acec->ReparseBuffer == IO_REPARSE_TAG_SYMLINK) {
             fileref->fcb->inode_item.st_mode &= ~(__S_IFIFO | __S_IFCHR | __S_IFBLK | __S_IFSOCK);
             fileref->fcb->type = BTRFS_TYPE_FILE;
+            fileref->fcb->atts &= ~FILE_ATTRIBUTE_DIRECTORY;
         }
 
         if (fileref->fcb->type == BTRFS_TYPE_SOCKET || fileref->fcb->type == BTRFS_TYPE_FIFO ||
