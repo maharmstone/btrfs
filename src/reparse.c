@@ -186,7 +186,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
 
     if (rdb->ReparseTag == IO_REPARSE_TAG_SYMLINK) {
         UNICODE_STRING subname;
-        ULONG minlen;
+        ULONG minlen, len;
 
         minlen = offsetof(REPARSE_DATA_BUFFER, SymbolicLinkReparseBuffer.PathBuffer) + sizeof(WCHAR);
         if (buflen < minlen) {
@@ -204,13 +204,13 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
 
         TRACE("substitute name = %.*S\n", (int)(subname.Length / sizeof(WCHAR)), subname.Buffer);
 
-        Status = utf16_to_utf8(NULL, 0, (PULONG)&target.Length, subname.Buffer, subname.Length);
+        Status = utf16_to_utf8(NULL, 0, &len, subname.Buffer, subname.Length);
         if (!NT_SUCCESS(Status)) {
             ERR("utf16_to_utf8 1 failed with error %08lx\n", Status);
             return Status;
         }
 
-        target.MaximumLength = target.Length;
+        target.MaximumLength = target.Length = (USHORT)len;
         target.Buffer = ExAllocatePoolWithTag(PagedPool, target.MaximumLength, ALLOC_TAG);
         if (!target.Buffer) {
             ERR("out of memory\n");
@@ -219,14 +219,14 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
 
         target_alloc = true;
 
-        Status = utf16_to_utf8(target.Buffer, target.Length, (PULONG)&target.Length, subname.Buffer, subname.Length);
+        Status = utf16_to_utf8(target.Buffer, target.Length, &len, subname.Buffer, subname.Length);
         if (!NT_SUCCESS(Status)) {
             ERR("utf16_to_utf8 2 failed with error %08lx\n", Status);
             ExFreePool(target.Buffer);
             return Status;
         }
 
-        for (USHORT i = 0; i < target.MaximumLength; i++) {
+        for (USHORT i = 0; i < target.Length; i++) {
             if (target.Buffer[i] == '\\')
                 target.Buffer[i] = '/';
         }
