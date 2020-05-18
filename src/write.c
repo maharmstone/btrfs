@@ -2735,7 +2735,7 @@ end:
 }
 
 __attribute__((nonnull(1,2,3)))
-void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
+static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     rollback_extent* re;
 
     re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);

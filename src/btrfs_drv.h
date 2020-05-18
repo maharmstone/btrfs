@@ -1342,7 +1342,6 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
 NTSTATUS do_write_file(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, bool file_write, uint32_t irp_offset, LIST_ENTRY* rollback) __attribute__((nonnull(1, 4)));
 bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length, uint64_t* address) __attribute__((nonnull(1, 2, 4)));
 void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t* lockaddr, uint64_t* locklen) __attribute__((nonnull(1,4,5)));
-void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) __attribute__((nonnull(1,2,3)));
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) EXTENT_DATA* ed, _In_ uint16_t edsize,
                            _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) __attribute__((nonnull(1,3,7)));
 void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem extent* newext) __attribute__((nonnull(1,2,3)));
