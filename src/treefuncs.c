@@ -1085,23 +1085,32 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 
                 re->ext->ignore = true;
 
-                if (re->ext->extent_data.type == EXTENT_TYPE_REGULAR || re->ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->extent_data.data;
+                switch (re->ext->extent_data.type) {
+                    case EXTENT_TYPE_REGULAR:
+                    case EXTENT_TYPE_PREALLOC: {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->extent_data.data;
 
-                    if (ed2->size != 0) {
-                        chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                        if (ed2->size != 0) {
+                            chunk* c = get_chunk_from_address(Vcb, ed2->address);
 
-                        if (c) {
-                            Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
-                                                               re->fcb->inode, re->ext->offset - ed2->offset, -1,
-                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, NULL);
+                            if (c) {
+                                Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
+                                                                re->fcb->inode, re->ext->offset - ed2->offset, -1,
+                                                                re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, NULL);
 
-                            if (!NT_SUCCESS(Status))
-                                ERR("update_changed_extent_ref returned %08lx\n", Status);
+                                if (!NT_SUCCESS(Status))
+                                    ERR("update_changed_extent_ref returned %08lx\n", Status);
+                            }
+
+                            re->fcb->inode_item.st_blocks -= ed2->num_bytes;
                         }
 
-                        re->fcb->inode_item.st_blocks -= ed2->num_bytes;
+                        break;
                     }
+
+                    case EXTENT_TYPE_INLINE:
+                        re->fcb->inode_item.st_blocks -= re->ext->extent_data.decoded_size;
+                    break;
                 }
 
                 ExFreePool(re);
@@ -1114,23 +1123,32 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 
                 re->ext->ignore = false;
 
-                if (re->ext->extent_data.type == EXTENT_TYPE_REGULAR || re->ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->extent_data.data;
+                switch (re->ext->extent_data.type) {
+                    case EXTENT_TYPE_REGULAR:
+                    case EXTENT_TYPE_PREALLOC: {
+                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)re->ext->extent_data.data;
 
-                    if (ed2->size != 0) {
-                        chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                        if (ed2->size != 0) {
+                            chunk* c = get_chunk_from_address(Vcb, ed2->address);
 
-                        if (c) {
-                            Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
-                                                               re->fcb->inode, re->ext->offset - ed2->offset, 1,
-                                                               re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, NULL);
+                            if (c) {
+                                Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, re->fcb->subvol->id,
+                                                                re->fcb->inode, re->ext->offset - ed2->offset, 1,
+                                                                re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, NULL);
 
-                            if (!NT_SUCCESS(Status))
-                                ERR("update_changed_extent_ref returned %08lx\n", Status);
+                                if (!NT_SUCCESS(Status))
+                                    ERR("update_changed_extent_ref returned %08lx\n", Status);
+                            }
+
+                            re->fcb->inode_item.st_blocks += ed2->num_bytes;
                         }
 
-                        re->fcb->inode_item.st_blocks += ed2->num_bytes;
+                        break;
                     }
+
+                    case EXTENT_TYPE_INLINE:
+                        re->fcb->inode_item.st_blocks += re->ext->extent_data.decoded_size;
+                    break;
                 }
 
                 ExFreePool(re);
