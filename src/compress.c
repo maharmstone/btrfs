@@ -1015,7 +1015,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
                 if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
                     c = c2;
                     c->used += buflen;
-                    space_list_subtract(c, false, address, buflen, rollback);
+                    space_list_subtract(c, address, buflen, rollback);
                     release_chunk_lock(c2, fcb->Vcb);
                     break;
                 }
@@ -1050,7 +1050,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
             c = c2;
             c->used += buflen;
-            space_list_subtract(c, false, address, buflen, rollback);
+            space_list_subtract(c, address, buflen, rollback);
         }
 
         release_chunk_lock(c2, fcb->Vcb);

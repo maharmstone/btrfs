@@ -1492,7 +1492,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp);
 NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t offset, uint64_t size);
 void space_list_add(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback);
 void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback);
-void space_list_subtract(chunk* c, bool deleting, uint64_t address, uint64_t length, LIST_ENTRY* rollback);
+void space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback);
 void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback);
 NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load_only, PIRP Irp);
 

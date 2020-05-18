@@ -2044,13 +2044,9 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addr
     }
 }
 
-void space_list_subtract(chunk* c, bool deleting, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
-    LIST_ENTRY* list;
-
-    list = deleting ? &c->deleting : &c->space;
-
+void space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
     c->changed = true;
     c->space_changed = true;
 
-    space_list_subtract2(list, deleting ? NULL : &c->space_size, address, length, c, rollback);
+    space_list_subtract2(&c->space, &c->space_size, address, length, c, rollback);
 }

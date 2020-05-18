@@ -750,7 +750,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
 
                     if (newchunk->chunk_item->type == flags && find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                         newchunk->used += Vcb->superblock.node_size;
-                        space_list_subtract(newchunk, false, mr->new_address, Vcb->superblock.node_size, rollback);
+                        space_list_subtract(newchunk, mr->new_address, Vcb->superblock.node_size, rollback);
                         done = true;
                     }
 
@@ -770,7 +770,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.node_size) {
                                 if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
                                     c2->used += Vcb->superblock.node_size;
-                                    space_list_subtract(c2, false, mr->new_address, Vcb->superblock.node_size, rollback);
+                                    space_list_subtract(c2, mr->new_address, Vcb->superblock.node_size, rollback);
                                     release_chunk_lock(c2, Vcb);
                                     newchunk = c2;
                                     done = true;
@@ -806,7 +806,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             goto end;
                         } else {
                             newchunk->used += Vcb->superblock.node_size;
-                            space_list_subtract(newchunk, false, mr->new_address, Vcb->superblock.node_size, rollback);
+                            space_list_subtract(newchunk, mr->new_address, Vcb->superblock.node_size, rollback);
                         }
 
                         release_chunk_lock(newchunk, Vcb);
@@ -1767,7 +1767,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
 
             if (find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                 newchunk->used += dr->size;
-                space_list_subtract(newchunk, false, dr->new_address, dr->size, &rollback);
+                space_list_subtract(newchunk, dr->new_address, dr->size, &rollback);
                 done = true;
             }
 
@@ -1787,7 +1787,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     if ((c2->chunk_item->size - c2->used) >= dr->size) {
                         if (find_data_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
                             c2->used += dr->size;
-                            space_list_subtract(c2, false, dr->new_address, dr->size, &rollback);
+                            space_list_subtract(c2, dr->new_address, dr->size, &rollback);
                             release_chunk_lock(c2, Vcb);
                             newchunk = c2;
                             done = true;
@@ -1823,7 +1823,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     goto end;
                 } else {
                     newchunk->used += dr->size;
-                    space_list_subtract(newchunk, false, dr->new_address, dr->size, &rollback);
+                    space_list_subtract(newchunk, dr->new_address, dr->size, &rollback);
                 }
 
                 release_chunk_lock(newchunk, Vcb);

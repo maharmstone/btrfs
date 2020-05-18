@@ -2879,7 +2879,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     ExFreePool(ed);
 
     c->used += length;
-    space_list_subtract(c, false, address, length, rollback);
+    space_list_subtract(c, address, length, rollback);
 
     fcb->inode_item.st_blocks += decoded_size;
 

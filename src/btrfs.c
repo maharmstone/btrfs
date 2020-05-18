@@ -3683,7 +3683,7 @@ void protect_superblocks(_Inout_ chunk* c) {
     // I realize this confuses physical and logical addresses, but this is what btrfs-progs does -
     // evidently Linux assumes the chunk at 0 is always SINGLE.
     if (c->offset < superblock_addrs[0])
-        space_list_subtract(c, false, c->offset, superblock_addrs[0] - c->offset, NULL);
+        space_list_subtract(c, c->offset, superblock_addrs[0] - c->offset, NULL);
 
     while (superblock_addrs[i] != 0) {
         CHUNK_ITEM* ci = c->chunk_item;
@@ -3714,7 +3714,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     TRACE("startoff = %I64x, superblock = %I64x\n", startoff + cis[j].offset, superblock_addrs[i]);
 #endif
 
-                    space_list_subtract(c, false, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
@@ -3733,7 +3733,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
 
-                    space_list_subtract(c, false, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
@@ -3752,7 +3752,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
 
-                    space_list_subtract(c, false, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
@@ -3765,7 +3765,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
                     off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
 
-                    space_list_subtract(c, false, c->offset + off_start, off_end - off_start, NULL);
+                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         }
