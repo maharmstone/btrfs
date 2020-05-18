@@ -4833,6 +4833,11 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             flags &= ~SL_STOP_ON_SYMLINK;
         }
 
+        if (flags & SL_IGNORE_READONLY_ATTRIBUTE) {
+            TRACE("SL_IGNORE_READONLY_ATTRIBUTE\n");
+            flags &= ~SL_IGNORE_READONLY_ATTRIBUTE;
+        }
+
         if (flags)
             WARN("unknown flags: %x\n", flags);
     } else {
