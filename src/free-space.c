@@ -2049,4 +2049,6 @@ void space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY
     c->space_changed = true;
 
     space_list_subtract2(&c->space, &c->space_size, address, length, c, rollback);
+
+    space_list_subtract2(&c->deleting, NULL, address, length, c, rollback);
 }
