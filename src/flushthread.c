@@ -418,6 +418,12 @@ static void clean_space_cache(device_extension* Vcb) {
                     clean_space_cache_chunk(Vcb, c);
 
                 space_list_merge(&c->space, &c->space_size, &c->deleting);
+
+                while (!IsListEmpty(&c->deleting)) {
+                    space* s = CONTAINING_RECORD(RemoveHeadList(&c->deleting), space, list_entry);
+
+                    ExFreePool(s);
+                }
             }
 
             c->space_changed = false;

@@ -1831,19 +1831,15 @@ end:
     return Status;
 }
 
-static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist) {
+static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
     NTSTATUS Status;
-    LIST_ENTRY space_list, deleting;
+    LIST_ENTRY space_list;
     FREE_SPACE_INFO* fsi;
-
-    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_INFO), ALLOC_TAG);
-    if (!fsi) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
+    KEY searchkey;
+    traverse_ptr tp;
+    uint32_t fsi_count = 0;
 
     InitializeListHead(&space_list);
-    InitializeListHead(&deleting);
 
     Status = copy_space_list(&c->space, &space_list);
     if (!NT_SUCCESS(Status)) {
@@ -1851,9 +1847,17 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_EN
         return Status;
     }
 
-    Status = copy_space_list(&c->deleting, &deleting);
-    if (!NT_SUCCESS(Status)) {
-        ERR("copy_space_list returned %08lx\n", Status);
+    space_list_merge(&space_list, NULL, &c->deleting);
+
+    searchkey.obj_id = c->offset;
+    searchkey.obj_type = TYPE_FREE_SPACE_EXTENT;
+    searchkey.offset = 0xffffffffffffffff;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
+    if (Status == STATUS_NOT_FOUND)
+        goto after_tree_walk;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08lx\n", Status);
 
         while (!IsListEmpty(&space_list)) {
             ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
@@ -1862,23 +1866,101 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_EN
         return Status;
     }
 
-    space_list_merge(&space_list, NULL, &deleting);
+    while (!IsListEmpty(&space_list) && tp.item->key.obj_id < c->offset + c->chunk_item->size) {
+        traverse_ptr next_tp;
 
-    fsi->count = 0;
-    fsi->flags = 0;
+        if (tp.item->key.obj_type == TYPE_FREE_SPACE_EXTENT) {
+            space* s = CONTAINING_RECORD(space_list.Flink, space, list_entry);
+
+            if (s->address < tp.item->key.obj_id || (s->address == tp.item->key.obj_id && s->size < tp.item->key.offset)) {
+                // add entry
+
+                Status = insert_tree_item(Vcb, Vcb->space_root, s->address, TYPE_FREE_SPACE_EXTENT, s->size, NULL, 0,
+                                          NULL, Irp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("insert_tree_item returned %08lx\n", Status);
+
+                    while (!IsListEmpty(&space_list)) {
+                        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+                    }
+
+                    return Status;
+                }
+
+                fsi_count++;
+
+                ExFreePool(s);
+                RemoveHeadList(&space_list);
+                continue;
+            } else if (s->address == tp.item->key.obj_id && s->size == tp.item->key.offset) {
+                // unchanged entry
+
+                fsi_count++;
+
+                ExFreePool(s);
+                RemoveHeadList(&space_list);
+            } else {
+                // remove entry
+
+                Status = delete_tree_item(Vcb, &tp);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("delete_tree_item returned %08lx\n", Status);
+
+                    while (!IsListEmpty(&space_list)) {
+                        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+                    }
+
+                    return Status;
+                }
+            }
+        } else if (tp.item->key.obj_type == TYPE_FREE_SPACE_BITMAP) {
+            Status = delete_tree_item(Vcb, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08lx\n", Status);
+
+                while (!IsListEmpty(&space_list)) {
+                    ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+                }
+
+                return Status;
+            }
+        }
+
+        if (!find_next_item(Vcb, &tp, &next_tp, false, Irp))
+            goto after_tree_walk;
+
+        tp = next_tp;
+    }
+
+    // after loop, delete remaining tree items for this chunk
+
+    while (tp.item->key.obj_id < c->offset + c->chunk_item->size) {
+        traverse_ptr next_tp;
+
+        if (tp.item->key.obj_type == TYPE_FREE_SPACE_EXTENT || tp.item->key.obj_type == TYPE_FREE_SPACE_BITMAP) {
+            Status = delete_tree_item(Vcb, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08lx\n", Status);
+                return Status;
+            }
+        }
+
+        if (!find_next_item(Vcb, &tp, &next_tp, false, NULL))
+            break;
+
+        tp = next_tp;
+    }
+
+after_tree_walk:
+    // after loop, insert remaining space_list entries
 
     while (!IsListEmpty(&space_list)) {
         space* s = CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry);
 
-        fsi->count++;
-
-        Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, s->address, TYPE_FREE_SPACE_EXTENT, s->size,
-                                        NULL, 0, Batch_Insert);
+        Status = insert_tree_item(Vcb, Vcb->space_root, s->address, TYPE_FREE_SPACE_EXTENT, s->size, NULL, 0,
+                                  NULL, Irp);
         if (!NT_SUCCESS(Status)) {
-            ERR("insert_tree_item_batch returned %08lx\n", Status);
-            ExFreePool(fsi);
-
-            ExFreePool(s);
+            ERR("insert_tree_item returned %08lx\n", Status);
 
             while (!IsListEmpty(&space_list)) {
                 ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
@@ -1887,22 +1969,68 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_EN
             return Status;
         }
 
+        fsi_count++;
+
         ExFreePool(s);
     }
 
-    Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
-                                    NULL, 0, Batch_DeleteFreeSpace);
-    if (!NT_SUCCESS(Status)) {
-        ERR("insert_tree_item_batch returned %08lx\n", Status);
-        ExFreePool(fsi);
+    // change TYPE_FREE_SPACE_INFO in place if present, and insert otherwise
+
+    searchkey.obj_id = c->offset;
+    searchkey.obj_type = TYPE_FREE_SPACE_INFO;
+    searchkey.offset = c->chunk_item->size;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+        ERR("find_item returned %08lx\n", Status);
         return Status;
     }
 
-    Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
-                                    fsi, sizeof(FREE_SPACE_INFO), Batch_Insert);
+    if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey)) {
+        if (tp.item->size == sizeof(FREE_SPACE_INFO)) {
+            tree* t;
+
+            // change in place if possible
+
+            fsi = (FREE_SPACE_INFO*)tp.item->data;
+
+            fsi->count = fsi_count;
+            fsi->flags = 0;
+
+            tp.tree->write = true;
+
+            t = tp.tree;
+            while (t) {
+                if (t->paritem && t->paritem->ignore) {
+                    t->paritem->ignore = false;
+                    t->parent->header.num_items++;
+                    t->parent->size += sizeof(internal_node);
+                }
+
+                t->header.generation = Vcb->superblock.generation;
+                t = t->parent;
+            }
+
+            return STATUS_SUCCESS;
+        } else
+            delete_tree_item(Vcb, &tp);
+    }
+
+    // insert FREE_SPACE_INFO
+
+    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_INFO), ALLOC_TAG);
+    if (!fsi) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    fsi->count = fsi_count;
+    fsi->flags = 0;
+
+    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size, fsi, sizeof(fsi),
+                              NULL, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("insert_tree_item_batch returned %08lx\n", Status);
-        ExFreePool(fsi);
+        ERR("insert_tree_item returned %08lx\n", Status);
         return Status;
     }
 
@@ -1980,13 +2108,11 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
 }
 
 NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
-    LIST_ENTRY *le, batchlist;
+    LIST_ENTRY *le;
     NTSTATUS Status;
     chunk* c;
 
     Vcb->superblock.compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID;
-
-    InitializeListHead(&batchlist);
 
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, true);
 
@@ -1996,13 +2122,12 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
 
         if (c->space_changed) {
             acquire_chunk_lock(c, Vcb);
-            Status = update_chunk_cache_tree(Vcb, c, &batchlist);
+            Status = update_chunk_cache_tree(Vcb, c, Irp);
             release_chunk_lock(c, Vcb);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("update_chunk_cache_tree(%I64x) returned %08lx\n", c->offset, Status);
                 ExReleaseResourceLite(&Vcb->chunk_lock);
-                clear_batch_list(Vcb, &batchlist);
                 return Status;
             }
         }
@@ -2011,12 +2136,6 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     }
 
     ExReleaseResourceLite(&Vcb->chunk_lock);
-
-    Status = commit_batch_list(Vcb, &batchlist, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("commit_batch_list returned %08lx\n", Status);
-        return Status;
-    }
 
     return STATUS_SUCCESS;
 }
