@@ -164,18 +164,8 @@ static void add_trim_entry(device* dev, uint64_t address, uint64_t size) {
 }
 
 static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
+    LIST_ENTRY* le;
     ULONG type;
-
-    if (!Vcb->trim || Vcb->options.no_trim) {
-        while (!IsListEmpty(&c->deleting)) {
-            space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
-
-            RemoveEntryList(&s->list_entry);
-            ExFreePool(s);
-        }
-
-        return;
-    }
 
     if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
         type = BLOCK_FLAG_DUPLICATE;
@@ -196,8 +186,9 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     else // SINGLE
         type = BLOCK_FLAG_DUPLICATE;
 
-    while (!IsListEmpty(&c->deleting)) {
-        space* s = CONTAINING_RECORD(c->deleting.Flink, space, list_entry);
+    le = c->deleting.Flink;
+    while (le != &c->deleting) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
 
         if (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA)) {
             CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
@@ -279,8 +270,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
             // FIXME - RAID5(?), RAID6(?)
         }
 
-        RemoveEntryList(&s->list_entry);
-        ExFreePool(s);
+        le = le->Flink;
     }
 }
 
@@ -423,8 +413,12 @@ static void clean_space_cache(device_extension* Vcb) {
         if (c->space_changed) {
             acquire_chunk_lock(c, Vcb);
 
-            if (c->space_changed)
-                clean_space_cache_chunk(Vcb, c);
+            if (c->space_changed) {
+                if (Vcb->trim && !Vcb->options.no_trim)
+                    clean_space_cache_chunk(Vcb, c);
+
+                space_list_merge(&c->space, &c->space_size, &c->deleting);
+            }
 
             c->space_changed = false;
 

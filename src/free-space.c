@@ -1651,19 +1651,41 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
         add_rollback_space(rollback, true, list, list_size, address, length, c);
 }
 
-static void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
+void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
+    LIST_ENTRY* le = deleting->Flink;
+
+    while (le != deleting) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+
+        space_list_add2(spacelist, spacelist_size, s->address, s->size, NULL, NULL);
+
+        le = le->Flink;
+    }
+}
+
+static NTSTATUS copy_space_list(LIST_ENTRY* old_list, LIST_ENTRY* new_list) {
     LIST_ENTRY* le;
 
-    if (!IsListEmpty(deleting)) {
-        le = deleting->Flink;
-        while (le != deleting) {
-            space* s = CONTAINING_RECORD(le, space, list_entry);
+    le = old_list->Flink;
+    while (le != old_list) {
+        space* s = CONTAINING_RECORD(le, space, list_entry);
+        space* s2;
 
-            space_list_add2(spacelist, spacelist_size, s->address, s->size, NULL, NULL);
-
-            le = le->Flink;
+        s2 = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
+        if (!s2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
+
+        s2->address = s->address;
+        s2->size = s->size;
+
+        InsertTailList(new_list, &s2->list_entry);
+
+        le = le->Flink;
     }
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
@@ -1674,9 +1696,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
     void* data;
     uint64_t num_entries, *cachegen, off;
     uint32_t *checksums, num_sectors;
-    LIST_ENTRY* le;
-
-    space_list_merge(&c->space, &c->space_size, &c->deleting);
+    LIST_ENTRY space_list, deleting;
 
     data = ExAllocatePoolWithTag(NonPagedPool, (ULONG)c->cache->inode_item.st_size, ALLOC_TAG);
     if (!data) {
@@ -1686,15 +1706,36 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
     RtlZeroMemory(data, (ULONG)c->cache->inode_item.st_size);
 
+    InitializeListHead(&space_list);
+    InitializeListHead(&deleting);
+
+    Status = copy_space_list(&c->space, &space_list);
+    if (!NT_SUCCESS(Status)) {
+        ERR("copy_space_list returned %08lx\n", Status);
+        goto end;
+    }
+
+    Status = copy_space_list(&c->deleting, &deleting);
+    if (!NT_SUCCESS(Status)) {
+        ERR("copy_space_list returned %08lx\n", Status);
+
+        while (!IsListEmpty(&space_list)) {
+            ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+        }
+
+        goto end;
+    }
+
+    space_list_merge(&space_list, NULL, &deleting);
+
     num_entries = 0;
     num_sectors = (uint32_t)(c->cache->inode_item.st_size >> Vcb->sector_shift);
     off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
-    le = c->space.Flink;
-    while (le != &c->space) {
+    while (!IsListEmpty(&space_list)) {
         FREE_SPACE_ENTRY* fse;
 
-        space* s = CONTAINING_RECORD(le, space, list_entry);
+        space* s = CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry);
 
         if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
             off = sector_align(off, Vcb->superblock.sector_size);
@@ -1707,8 +1748,6 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
         num_entries++;
 
         off += sizeof(FREE_SPACE_ENTRY);
-
-        le = le->Flink;
     }
 
     // update INODE_ITEM
@@ -1794,7 +1833,7 @@ end:
 
 static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist) {
     NTSTATUS Status;
-    LIST_ENTRY* le;
+    LIST_ENTRY space_list, deleting;
     FREE_SPACE_INFO* fsi;
 
     fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_INFO), ALLOC_TAG);
@@ -1803,14 +1842,33 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_EN
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    space_list_merge(&c->space, &c->space_size, &c->deleting);
+    InitializeListHead(&space_list);
+    InitializeListHead(&deleting);
+
+    Status = copy_space_list(&c->space, &space_list);
+    if (!NT_SUCCESS(Status)) {
+        ERR("copy_space_list returned %08lx\n", Status);
+        return Status;
+    }
+
+    Status = copy_space_list(&c->deleting, &deleting);
+    if (!NT_SUCCESS(Status)) {
+        ERR("copy_space_list returned %08lx\n", Status);
+
+        while (!IsListEmpty(&space_list)) {
+            ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+        }
+
+        return Status;
+    }
+
+    space_list_merge(&space_list, NULL, &deleting);
 
     fsi->count = 0;
     fsi->flags = 0;
 
-    le = c->space.Flink;
-    while (le != &c->space) {
-        space* s = CONTAINING_RECORD(le, space, list_entry);
+    while (!IsListEmpty(&space_list)) {
+        space* s = CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry);
 
         fsi->count++;
 
@@ -1819,10 +1877,17 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, LIST_EN
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
             ExFreePool(fsi);
+
+            ExFreePool(s);
+
+            while (!IsListEmpty(&space_list)) {
+                ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+            }
+
             return Status;
         }
 
-        le = le->Flink;
+        ExFreePool(s);
     }
 
     Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
