@@ -165,8 +165,8 @@ options = "metadata"
 mountFsTab = false
 ```
 
-It will then take effect next time you open a new command prompt. Yes, you should
-be able to chroot into an actual Linux installation, if you wish.
+It will then take effect next time you reboot. Yes, you should be able to chroot
+into an actual Linux installation, if you wish.
 
 Commands
 --------
