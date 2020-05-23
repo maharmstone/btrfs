@@ -2575,7 +2575,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
                         if (tp2.item->key.offset >= extent_start) {
                             uint64_t csum_start = max(extent_start, tp2.item->key.offset);
-                            uint64_t csum_end = min(extent_end, tp2.item->key.offset + ((uint64_t)tp2.item->size << Vcb->sector_shift / Vcb->csum_size));
+                            uint64_t csum_end = min(extent_end, tp2.item->key.offset + (((uint64_t)tp2.item->size << Vcb->sector_shift) / Vcb->csum_size));
 
                             RtlSetBits(&context.has_csum, (ULONG)((csum_start - run_start) >> Vcb->sector_shift), (ULONG)((csum_end - csum_start) >> Vcb->sector_shift));
 
