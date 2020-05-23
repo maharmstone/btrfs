@@ -2655,7 +2655,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
         // FIXME - check entry is TYPE_EXTENT_CSUM?
 
-        if (tp.item->key.offset < address && tp.item->key.offset + ((uint64_t)tp.item->size << Vcb->sector_shift / Vcb->csum_size) >= address)
+        if (tp.item->key.offset < address && tp.item->key.offset + (((uint64_t)tp.item->size << Vcb->sector_shift) / Vcb->csum_size) >= address)
             startaddr = tp.item->key.offset;
         else
             startaddr = address;
