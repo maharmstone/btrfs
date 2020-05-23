@@ -3043,9 +3043,9 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
                         if (tp2.item->key.obj_type == TYPE_EXTENT_CSUM) {
                             if (tp2.item->key.offset >= tp.item->key.obj_id + size)
                                 break;
-                            else if (tp2.item->size >= Vcb->csum_size && tp2.item->key.offset + ((uint64_t)tp2.item->size << Vcb->sector_shift / Vcb->csum_size) >= tp.item->key.obj_id) {
+                            else if (tp2.item->size >= Vcb->csum_size && tp2.item->key.offset + (((uint64_t)tp2.item->size << Vcb->sector_shift) / Vcb->csum_size) >= tp.item->key.obj_id) {
                                 uint64_t cs = max(tp.item->key.obj_id, tp2.item->key.offset);
-                                uint64_t ce = min(tp.item->key.obj_id + size, tp2.item->key.offset + ((uint64_t)tp2.item->size << Vcb->sector_shift / Vcb->csum_size));
+                                uint64_t ce = min(tp.item->key.obj_id + size, tp2.item->key.offset + (((uint64_t)tp2.item->size << Vcb->sector_shift) / Vcb->csum_size));
 
                                 RtlCopyMemory((uint8_t*)csum + (((cs - tp.item->key.obj_id) * Vcb->csum_size) >> Vcb->sector_shift),
                                               tp2.item->data + (((cs - tp2.item->key.offset) * Vcb->csum_size) >> Vcb->sector_shift),
