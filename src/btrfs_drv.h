@@ -126,7 +126,7 @@
 #define finally if (1)
 #endif
 
-#ifdef __GNUC__
+#ifndef InterlockedIncrement64
 #define InterlockedIncrement64(a) __sync_add_and_fetch(a, 1)
 #endif
 
