@@ -234,15 +234,16 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
         REPARSE_DATA_BUFFER_LX_SYMLINK* buf;
 
         if (buflen < offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + rdb->ReparseDataLength) {
-            WARN("buffer was less than expected length (%lu < %u)\n", buflen,
-                 offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + rdb->ReparseDataLength);
+            WARN("buffer was less than expected length (%lu < %lu)\n", buflen,
+                 (unsigned long)(offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + rdb->ReparseDataLength));
             return STATUS_INVALID_PARAMETER;
         }
 
         buf = (REPARSE_DATA_BUFFER_LX_SYMLINK*)rdb->GenericReparseBuffer.DataBuffer;
 
         if (buflen < offsetof(REPARSE_DATA_BUFFER_LX_SYMLINK, name)) {
-            WARN("buffer was less than minimum length (%u < %u)\n", rdb->ReparseDataLength, offsetof(REPARSE_DATA_BUFFER_LX_SYMLINK, name));
+            WARN("buffer was less than minimum length (%u < %lu)\n", rdb->ReparseDataLength,
+                 (unsigned long)(offsetof(REPARSE_DATA_BUFFER_LX_SYMLINK, name)));
             return STATUS_INVALID_PARAMETER;
         }
 
