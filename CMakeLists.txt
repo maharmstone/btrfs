@@ -197,4 +197,11 @@ endif()
 
 set_target_properties(ubtrfs PROPERTIES PREFIX "")
 
-# FIXME - mkbtrfs.exe
+# --------------------------------------
+
+# mkbtrfs.exe
+
+set(MKBTRFS_SRC_FILES src/mkbtrfs/mkbtrfs.c
+    src/mkbtrfs/mkbtrfs.rc)
+
+add_executable(mkbtrfs ${MKBTRFS_SRC_FILES})
