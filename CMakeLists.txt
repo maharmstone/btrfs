@@ -59,6 +59,7 @@ set(SRC_FILES src/balance.c
     src/worker-thread.c
     src/write.c
     src/xxhash.c
+    src/btrfs.rc
     ${ZSTD_SRC_FILES}
     ${ZLIB_SRC_FILES})
 
@@ -102,7 +103,6 @@ endif()
 set_target_properties(btrfs PROPERTIES PREFIX "")
 set_target_properties(btrfs PROPERTIES SUFFIX ".sys")
 
-# FIXME - RC file
 # FIXME - get working with x86
 # FIXME - arm and aarch64
 # FIXME - get working with shellext etc.
