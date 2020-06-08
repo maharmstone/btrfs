@@ -17,15 +17,15 @@
 
 .686P
 
-EXTERN _crctable:ABS
+EXTERN crctable:ABS
 
 _TEXT  SEGMENT
 
 ; uint32_t __stdcall calc_crc32c_sw(uint32_t seed, uint8_t* msg, uint32_t msglen);
 
-PUBLIC _calc_crc32c_sw@12
+PUBLIC calc_crc32c_sw@12
 
-_calc_crc32c_sw@12:
+calc_crc32c_sw@12:
 
 push ebp
 mov ebp, esp
@@ -53,7 +53,7 @@ mov cl, byte ptr [edx]
 xor al, cl
 and eax, 255
 shl eax, 2
-mov eax, [_crctable + eax]
+mov eax, [crctable + eax]
 xor eax, esi
 
 inc edx
@@ -73,9 +73,9 @@ ret 12
 
 ; uint32_t __stdcall calc_crc32c_hw(uint32_t seed, uint8_t* msg, uint32_t msglen);
 
-PUBLIC _calc_crc32c_hw@12
+PUBLIC calc_crc32c_hw@12
 
-_calc_crc32c_hw@12:
+calc_crc32c_hw@12:
 
 push ebp
 mov ebp, esp
