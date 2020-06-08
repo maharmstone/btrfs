@@ -165,5 +165,36 @@ target_link_libraries(shellbtrfs comctl32 ntdll setupapi uxtheme shlwapi windows
 
 set_target_properties(shellbtrfs PROPERTIES PREFIX "")
 
-# FIXME - ubtrfs.dll
+# --------------------------------------
+
+# ubtrfs.dll
+
+set(UBTRFS_SRC_FILES src/ubtrfs/ubtrfs.c
+    src/crc32c.c
+    src/xxhash.c
+    src/sha256.c
+    src/blake2b-ref.c
+    src/ubtrfs/ubtrfs.rc)
+
+if(MSVC)
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+        set(UBTRFS_SRC_FILES ${UBTRFS_SRC_FILES} src/crc32c-amd64-masm.asm)
+    elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
+        set(UBTRFS_SRC_FILES ${UBTRFS_SRC_FILES} src/crc32c-x86-masm.asm)
+    endif()
+else()
+    set(UBTRFS_SRC_FILES ${UBTRFS_SRC_FILES} src/crc32c-gas.S)
+endif()
+
+add_library(ubtrfs SHARED ${UBTRFS_SRC_FILES})
+
+target_compile_definitions(ubtrfs PUBLIC _USRDLL)
+target_link_libraries(ubtrfs ntdll)
+
+if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
+    target_compile_options(ubtrfs PUBLIC /Gz) # stdcall
+endif()
+
+set_target_properties(ubtrfs PROPERTIES PREFIX "")
+
 # FIXME - mkbtrfs.exe
