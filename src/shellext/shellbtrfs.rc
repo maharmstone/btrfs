@@ -7,7 +7,11 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-#include "winres.h"
+#include <winresrc.h>
+
+#ifndef IDC_STATIC
+#define IDC_STATIC (-1)
+#endif
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS

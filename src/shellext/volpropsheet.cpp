@@ -1523,18 +1523,20 @@ INT_PTR BtrfsChangeDriveLetter::DlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, 
     return false;
 }
 
+static INT_PTR __stdcall dlg_proc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    BtrfsChangeDriveLetter* bcdl;
+
+    if (uMsg == WM_INITDIALOG) {
+        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        bcdl = (BtrfsChangeDriveLetter*)lParam;
+    } else
+        bcdl = (BtrfsChangeDriveLetter*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+
+    return bcdl->DlgProc(hwndDlg, uMsg, wParam, lParam);
+}
+
 void BtrfsChangeDriveLetter::show() {
-    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DRIVE_LETTER), hwnd, [](HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        BtrfsChangeDriveLetter* bcdl;
-
-        if (uMsg == WM_INITDIALOG) {
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
-            bcdl = (BtrfsChangeDriveLetter*)lParam;
-        } else
-            bcdl = (BtrfsChangeDriveLetter*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
-
-        return bcdl->DlgProc(hwndDlg, uMsg, wParam, lParam);
-    }, (LPARAM)this);
+    DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DRIVE_LETTER), hwnd, dlg_proc, (LPARAM)this);
 }
 
 #ifdef __cplusplus

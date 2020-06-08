@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.13)
 
 project(btrfs)
 
+# btrfs.sys
+
 set(ZSTD_SRC_FILES src/zstd/entropy_common.c
     src/zstd/error_private.c
     src/zstd/fse_compress.c
@@ -129,5 +131,39 @@ set_target_properties(btrfs PROPERTIES PREFIX "")
 set_target_properties(btrfs PROPERTIES SUFFIX ".sys")
 
 # FIXME - arm and aarch64
-# FIXME - get working with shellext etc.
 # FIXME - get version automatically put in RC file
+
+# --------------------------------------
+
+# shellbtrfs.dll
+
+set(SHELLEXT_SRC_FILES src/shellext/balance.cpp
+    src/shellext/contextmenu.cpp
+    src/shellext/devices.cpp
+    src/shellext/factory.cpp
+    src/shellext/iconoverlay.cpp
+    src/shellext/main.cpp
+    src/shellext/mountmgr.cpp
+    src/shellext/propsheet.cpp
+    src/shellext/recv.cpp
+    src/shellext/scrub.cpp
+    src/shellext/send.cpp
+    src/shellext/volpropsheet.cpp
+    src/shellext/shellbtrfs.rc)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+
+add_library(shellbtrfs SHARED ${SHELLEXT_SRC_FILES})
+
+if(NOT MSVC)
+    target_compile_options(shellbtrfs PUBLIC -msse4.2)
+endif()
+
+target_link_libraries(shellbtrfs comctl32 ntdll setupapi uxtheme shlwapi windowscodecs)
+
+set_target_properties(shellbtrfs PROPERTIES PREFIX "")
+
+# FIXME - ubtrfs.dll
+# FIXME - mkbtrfs.exe
