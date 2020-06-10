@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(btrfs)
+project(btrfs VERSION 1.7.3)
 
 # btrfs.sys
 
@@ -61,7 +61,7 @@ set(SRC_FILES src/balance.c
     src/worker-thread.c
     src/write.c
     src/xxhash.c
-    src/btrfs.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/btrfs.rc
     ${ZSTD_SRC_FILES}
     ${ZLIB_SRC_FILES})
 
@@ -95,6 +95,8 @@ else()
     enable_language(ASM)
     set(SRC_FILES ${SRC_FILES} src/crc32c-gas.S)
 endif()
+
+configure_file(src/btrfs.rc.in btrfs.rc)
 
 add_library(btrfs SHARED ${SRC_FILES})
 
@@ -162,8 +164,6 @@ endif()
 set_target_properties(btrfs PROPERTIES PREFIX "")
 set_target_properties(btrfs PROPERTIES SUFFIX ".sys")
 
-# FIXME - get version automatically put in RC file
-
 # --------------------------------------
 
 # shellbtrfs.dll
@@ -180,11 +180,13 @@ set(SHELLEXT_SRC_FILES src/shellext/balance.cpp
     src/shellext/scrub.cpp
     src/shellext/send.cpp
     src/shellext/volpropsheet.cpp
-    src/shellext/shellbtrfs.rc)
+    ${CMAKE_CURRENT_BINARY_DIR}/shellbtrfs.rc)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+
+configure_file(src/shellext/shellbtrfs.rc.in shellbtrfs.rc)
 
 add_library(shellbtrfs SHARED ${SHELLEXT_SRC_FILES})
 
@@ -211,7 +213,7 @@ set(UBTRFS_SRC_FILES src/ubtrfs/ubtrfs.c
     src/xxhash.c
     src/sha256.c
     src/blake2b-ref.c
-    src/ubtrfs/ubtrfs.rc)
+    ${CMAKE_CURRENT_BINARY_DIR}/ubtrfs.rc)
 
 if(MSVC)
     if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
@@ -222,6 +224,8 @@ if(MSVC)
 else()
     set(UBTRFS_SRC_FILES ${UBTRFS_SRC_FILES} src/crc32c-gas.S)
 endif()
+
+configure_file(src/ubtrfs/ubtrfs.rc.in ubtrfs.rc)
 
 add_library(ubtrfs SHARED ${UBTRFS_SRC_FILES})
 
@@ -243,7 +247,9 @@ set_target_properties(ubtrfs PROPERTIES PREFIX "")
 # mkbtrfs.exe
 
 set(MKBTRFS_SRC_FILES src/mkbtrfs/mkbtrfs.c
-    src/mkbtrfs/mkbtrfs.rc)
+    ${CMAKE_CURRENT_BINARY_DIR}/mkbtrfs.rc)
+
+configure_file(src/mkbtrfs/mkbtrfs.rc.in mkbtrfs.rc)
 
 add_executable(mkbtrfs ${MKBTRFS_SRC_FILES})
 
