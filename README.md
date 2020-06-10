@@ -127,13 +127,13 @@ C:\Windows\System32\drivers\btrfs.sys.
 Compilation
 -----------
 
-You will need Microsoft Visual C++ 2019 if you want to compile the driver; you might
-be able to get earlier versions to work with a bit of work.
+To compile with Visual C++ 2019, open the directory and let CMake do its thing.
+If you have the Windows DDK installed correctly, it should just work.
 
-You'll also need a copy of the Windows DDK; I placed mine in C:\WinDDK. If yours
-is somewhere else, you'll need to edit the project settings. You'll also need to
-edit the post-build steps for the 64-bit versions, which are set up to
-self-sign using my own certificate.
+To compile with GCC on Linux, you will need a cross-compiler set up, for either
+`i686-w64-mingw32` or `x86_64-w64-mingw32`. Create a build directory, then use
+either `mingw-x86.cmake` or `mingw-amd64.cmake` as CMake toolchain files to
+generate your Makefile.
 
 Mappings
 --------
