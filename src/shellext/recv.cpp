@@ -1638,7 +1638,7 @@ void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool q
     }
 }
 
-void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     try {
         OPENFILENAMEW ofn;
         WCHAR file[MAX_PATH];
@@ -1710,7 +1710,7 @@ void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
     }
 }
 
-void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     try {
         vector<wstring> args;
 

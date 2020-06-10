@@ -1606,7 +1606,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
     }
 }
 
-void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);

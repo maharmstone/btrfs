@@ -528,7 +528,7 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
         throw last_error(GetLastError());
 }
 
-void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     try {
         win_handle token;
         TOKEN_PRIVILEGES tp;
@@ -670,7 +670,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
     free(buf);
 }
 
-void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
     vector<wstring> args;
     wstring subvol = L"", parent = L"", file = L"";
     vector<wstring> clones;

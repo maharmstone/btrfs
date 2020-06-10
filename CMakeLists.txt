@@ -180,6 +180,7 @@ set(SHELLEXT_SRC_FILES src/shellext/balance.cpp
     src/shellext/scrub.cpp
     src/shellext/send.cpp
     src/shellext/volpropsheet.cpp
+    src/shellext/shellbtrfs.def
     ${CMAKE_CURRENT_BINARY_DIR}/shellbtrfs.rc)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -213,6 +214,7 @@ set(UBTRFS_SRC_FILES src/ubtrfs/ubtrfs.c
     src/xxhash.c
     src/sha256.c
     src/blake2b-ref.c
+    src/ubtrfs/ubtrfs.def
     ${CMAKE_CURRENT_BINARY_DIR}/ubtrfs.rc)
 
 if(MSVC)
