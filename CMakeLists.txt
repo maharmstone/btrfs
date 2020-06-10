@@ -193,6 +193,7 @@ add_library(shellbtrfs SHARED ${SHELLEXT_SRC_FILES})
 
 if(NOT MSVC)
     target_compile_options(shellbtrfs PUBLIC -msse4.2)
+    target_link_options(shellbtrfs PUBLIC -static -static-libgcc)
 else()
     target_compile_options(shellbtrfs PUBLIC /EHsc)
 endif()
@@ -242,6 +243,10 @@ if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
     target_compile_options(ubtrfs PUBLIC /Gz) # stdcall
 endif()
 
+if(NOT MSVC)
+    target_link_options(ubtrfs PUBLIC -static -static-libgcc -static-libstdc++)
+endif()
+
 set_target_properties(ubtrfs PROPERTIES PREFIX "")
 
 # --------------------------------------
@@ -257,4 +262,6 @@ add_executable(mkbtrfs ${MKBTRFS_SRC_FILES})
 
 if(MSVC)
     set_property(TARGET mkbtrfs PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    target_link_options(mkbtrfs PUBLIC -static -static-libgcc)
 endif()
