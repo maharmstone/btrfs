@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.15)
 
 project(btrfs)
 
@@ -65,8 +65,12 @@ set(SRC_FILES src/balance.c
     ${ZSTD_SRC_FILES}
     ${ZLIB_SRC_FILES})
 
-if(MSVC AND MSVC_C_ARCHITECTURE_ID STREQUAL "X86") # cmake bug 15170
-    set(CMAKE_SYSTEM_PROCESSOR "x86")
+if(MSVC)
+    if(MSVC_C_ARCHITECTURE_ID STREQUAL "X86") # cmake bug 15170
+        set(CMAKE_SYSTEM_PROCESSOR "x86")
+    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARMV7")
+        set(CMAKE_SYSTEM_PROCESSOR "arm")
+    endif()
 endif()
 
 if(MSVC)
@@ -96,6 +100,9 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "x
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
     add_definitions(-D_X86_)
     set(MS_ARCH "x86")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+    add_definitions(-D_ARM_)
+    set(MS_ARCH "arm")
 endif()
 
 target_compile_definitions(btrfs PUBLIC _KERNEL_MODE WIN9X_COMPAT_SPINLOCK)
@@ -107,7 +114,14 @@ if(MSVC)
 
     target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\ntoskrnl.lib")
     target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\hal.lib")
-    target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\BufferOverflowK.lib")
+
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\bufferoverflowfastfailk.lib")
+        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}um\\${MS_ARCH}\\armrt.lib")
+    else()
+        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\BufferOverflowK.lib")
+    endif()
+
     target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\rtlver.lib")
     target_link_options(btrfs PUBLIC /SUBSYSTEM:NATIVE /NODEFAULTLIB /MANIFEST:NO /Driver /ENTRY:DriverEntry)
 
@@ -130,7 +144,7 @@ endif()
 set_target_properties(btrfs PROPERTIES PREFIX "")
 set_target_properties(btrfs PROPERTIES SUFFIX ".sys")
 
-# FIXME - arm and aarch64
+# FIXME - aarch64
 # FIXME - get version automatically put in RC file
 
 # --------------------------------------
@@ -159,11 +173,17 @@ add_library(shellbtrfs SHARED ${SHELLEXT_SRC_FILES})
 
 if(NOT MSVC)
     target_compile_options(shellbtrfs PUBLIC -msse4.2)
+else()
+    target_compile_options(shellbtrfs PUBLIC /EHsc)
 endif()
 
-target_link_libraries(shellbtrfs comctl32 ntdll setupapi uxtheme shlwapi windowscodecs)
+target_link_libraries(shellbtrfs comctl32 ntdll setupapi uxtheme shlwapi windowscodecs gdi32 advapi32 shell32 ole32)
 
 set_target_properties(shellbtrfs PROPERTIES PREFIX "")
+
+if(MSVC)
+    set_property(TARGET shellbtrfs PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 # --------------------------------------
 
@@ -188,8 +208,12 @@ endif()
 
 add_library(ubtrfs SHARED ${UBTRFS_SRC_FILES})
 
+if(MSVC)
+    set_property(TARGET ubtrfs PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 target_compile_definitions(ubtrfs PUBLIC _USRDLL)
-target_link_libraries(ubtrfs ntdll)
+target_link_libraries(ubtrfs ntdll advapi32)
 
 if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
     target_compile_options(ubtrfs PUBLIC /Gz) # stdcall
@@ -205,3 +229,7 @@ set(MKBTRFS_SRC_FILES src/mkbtrfs/mkbtrfs.c
     src/mkbtrfs/mkbtrfs.rc)
 
 add_executable(mkbtrfs ${MKBTRFS_SRC_FILES})
+
+if(MSVC)
+    set_property(TARGET mkbtrfs PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
