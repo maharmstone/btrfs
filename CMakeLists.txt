@@ -65,18 +65,28 @@ set(SRC_FILES src/balance.c
     ${ZSTD_SRC_FILES}
     ${ZLIB_SRC_FILES})
 
-if(MSVC)
-    if(MSVC_C_ARCHITECTURE_ID STREQUAL "X86") # cmake bug 15170
+if(MSVC) # cmake bug 15170
+    if(MSVC_C_ARCHITECTURE_ID STREQUAL "X86")
         set(CMAKE_SYSTEM_PROCESSOR "x86")
+    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "x64")
+        set(CMAKE_SYSTEM_PROCESSOR "x86_64")
     elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARMV7")
         set(CMAKE_SYSTEM_PROCESSOR "arm")
+    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARM64")
+        set(CMAKE_SYSTEM_PROCESSOR "aarch64")
     endif()
 endif()
+
+# Work around bug in MSVC version of cmake - see https://gitlab.kitware.com/cmake/cmake/-/merge_requests/4257
+set(CMAKE_ASM_MASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded         "")
+set(CMAKE_ASM_MASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDLL      "")
+set(CMAKE_ASM_MASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDebug    "")
+set(CMAKE_ASM_MASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDebugDLL "")
 
 if(MSVC)
     enable_language(ASM_MASM)
 
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
         set(SRC_FILES ${SRC_FILES} src/crc32c-amd64-masm.asm)
     elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
         set(SRC_FILES ${SRC_FILES} src/crc32c-x86-masm.asm)
@@ -94,7 +104,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
     include_directories("${CMAKE_FIND_ROOT_PATH}/usr/include/ddk")
 endif()
 
-if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     add_definitions(-D_AMD64_)
     set(MS_ARCH "x64")
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
@@ -103,6 +113,9 @@ elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
     add_definitions(-D_ARM_)
     set(MS_ARCH "arm")
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+    add_definitions(-D_ARM64_)
+    set(MS_ARCH "arm64")
 endif()
 
 target_compile_definitions(btrfs PUBLIC _KERNEL_MODE WIN9X_COMPAT_SPINLOCK)
@@ -115,11 +128,16 @@ if(MSVC)
     target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\ntoskrnl.lib")
     target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\hal.lib")
 
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
         target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\bufferoverflowfastfailk.lib")
-        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}um\\${MS_ARCH}\\armrt.lib")
     else()
         target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\BufferOverflowK.lib")
+    endif()
+
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
+        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}um\\${MS_ARCH}\\armrt.lib")
+    elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}um\\${MS_ARCH}\\arm64rt.lib")
     endif()
 
     target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\rtlver.lib")
@@ -144,7 +162,6 @@ endif()
 set_target_properties(btrfs PROPERTIES PREFIX "")
 set_target_properties(btrfs PROPERTIES SUFFIX ".sys")
 
-# FIXME - aarch64
 # FIXME - get version automatically put in RC file
 
 # --------------------------------------
@@ -197,7 +214,7 @@ set(UBTRFS_SRC_FILES src/ubtrfs/ubtrfs.c
     src/ubtrfs/ubtrfs.rc)
 
 if(MSVC)
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "AMD64")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
         set(UBTRFS_SRC_FILES ${UBTRFS_SRC_FILES} src/crc32c-amd64-masm.asm)
     elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
         set(UBTRFS_SRC_FILES ${UBTRFS_SRC_FILES} src/crc32c-x86-masm.asm)
