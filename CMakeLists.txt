@@ -262,3 +262,12 @@ if(MSVC)
 else()
     target_link_options(mkbtrfs PUBLIC -static -static-libgcc)
 endif()
+
+# --------------------------------------
+
+# install
+
+install(TARGETS btrfs DESTINATION bin)
+install(TARGETS shellbtrfs DESTINATION bin)
+install(TARGETS ubtrfs DESTINATION bin)
+install(TARGETS mkbtrfs DESTINATION bin)
