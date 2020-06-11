@@ -4942,6 +4942,15 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
     return Status;
 }
 
+static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileObject, STARTING_VCN_INPUT_BUFFER* in,
+                                       ULONG inlen, RETRIEVAL_POINTERS_BUFFER* out, ULONG outlen, ULONG_PTR* retlen) {
+    FIXME("get_retrieval_pointers(%p, %p, %p, %lx, %p, %lx, %p)\n", Vcb, FileObject, in, inlen,
+                                                                    out, outlen, retlen);
+    // FIXME
+
+    return STATUS_INVALID_DEVICE_REQUEST;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
     PIRP Irp = *Pirp;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -5040,8 +5049,11 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         case FSCTL_GET_RETRIEVAL_POINTERS:
-            WARN("STUB: FSCTL_GET_RETRIEVAL_POINTERS\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            Status = get_retrieval_pointers(DeviceObject->DeviceExtension, IrpSp->FileObject,
+                                            IrpSp->Parameters.FileSystemControl.Type3InputBuffer,
+                                            IrpSp->Parameters.FileSystemControl.InputBufferLength,
+                                            Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength,
+                                            &Irp->IoStatus.Information);
             break;
 
         case FSCTL_MOVE_FILE:
