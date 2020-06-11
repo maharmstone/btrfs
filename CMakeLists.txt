@@ -146,7 +146,7 @@ if(MSVC)
     string(REGEX REPLACE "/RTC(su|[1su])" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
     string(REGEX REPLACE "/RTC(su|[1su])" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 else()
-    target_compile_options(btrfs PUBLIC -msse4.2)
+    target_compile_options(btrfs PUBLIC -msse4.2 -Werror=implicit-function-declaration)
 
     target_link_libraries(btrfs ntoskrnl hal gcc)
     target_link_options(btrfs PUBLIC -nostdlib -Wl,--subsystem,native -Wl,--file-alignment,0x1000 -Wl,--section-alignment,0x1000 -Wl,--exclude-all-symbols)
