@@ -2177,10 +2177,10 @@ end:
     return Status;
 }
 
-static NTSTATUS get_object_id(device_extension* Vcb, PFILE_OBJECT FileObject, FILE_OBJECTID_BUFFER* buf, ULONG buflen, ULONG_PTR* retlen) {
+static NTSTATUS get_object_id(PFILE_OBJECT FileObject, FILE_OBJECTID_BUFFER* buf, ULONG buflen, ULONG_PTR* retlen) {
     fcb* fcb;
 
-    TRACE("(%p, %p, %p, %lx, %p)\n", Vcb, FileObject, buf, buflen, retlen);
+    TRACE("(%p, %p, %lx, %p)\n", FileObject, buf, buflen, retlen);
 
     if (!FileObject) {
         ERR("FileObject was NULL\n");
@@ -5176,8 +5176,8 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         case FSCTL_GET_OBJECT_ID:
-            Status = get_object_id(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->UserBuffer,
-                                   IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
+            Status = get_object_id(IrpSp->FileObject, Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength,
+                                   &Irp->IoStatus.Information);
             break;
 
         case FSCTL_DELETE_OBJECT_ID:
@@ -5219,8 +5219,8 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         case FSCTL_CREATE_OR_GET_OBJECT_ID:
-            Status = get_object_id(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->UserBuffer,
-                                   IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
+            Status = get_object_id(IrpSp->FileObject, Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength,
+                                   &Irp->IoStatus.Information);
             break;
 
         case FSCTL_SET_SPARSE:
