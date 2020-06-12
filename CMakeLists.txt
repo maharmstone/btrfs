@@ -117,6 +117,14 @@ elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
     set(MS_ARCH "arm64")
 endif()
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-D_DEBUG)
+endif()
+
+if(NOT MSVC)
+    target_compile_options(btrfs PUBLIC -U__NO_INLINE__)
+endif()
+
 target_compile_definitions(btrfs PUBLIC _KERNEL_MODE WIN9X_COMPAT_SPINLOCK)
 
 if(MSVC)
