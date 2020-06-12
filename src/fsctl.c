@@ -5047,6 +5047,131 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
     return Status;
 }
 
+static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, btrfs_csum_info* buf, ULONG buflen,
+                              ULONG_PTR* retlen, KPROCESSOR_MODE processor_mode) {
+    NTSTATUS Status;
+    fcb* fcb;
+    ccb* ccb;
+
+    FIXME("get_csum_info(%p, %p, %p, %lx, %p, %x)\n", Vcb, FileObject, buf, buflen, retlen, processor_mode);
+
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb = FileObject->FsContext;
+    ccb = FileObject->FsContext2;
+
+    if (!fcb || !ccb)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!buf)
+        return STATUS_INVALID_PARAMETER;
+
+    if (buflen < offsetof(btrfs_csum_info, data[0]))
+        return STATUS_BUFFER_TOO_SMALL;
+
+
+    if (processor_mode == UserMode && !(ccb->access & (FILE_READ_DATA | FILE_WRITE_DATA))) {
+        WARN("insufficient privileges\n");
+        return STATUS_ACCESS_DENIED;
+    }
+
+    ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+
+    try {
+        LIST_ENTRY* le;
+        bool is_inline = true;
+        uint8_t* ptr;
+
+        if (fcb->ads) {
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            leave;
+        }
+
+        if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+            Status = STATUS_FILE_IS_A_DIRECTORY;
+            leave;
+        }
+
+        if (fcb->inode_item.flags & BTRFS_INODE_NODATASUM) {
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            leave;
+        }
+
+        buf->csum_type = Vcb->superblock.csum_type;
+        buf->csum_length = Vcb->csum_size;
+
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+            if (ext->ignore) {
+                le = le->Flink;
+                continue;
+            }
+
+            if (ext->extent_data.type != EXTENT_TYPE_INLINE) {
+                is_inline = false;
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        if (is_inline) {
+            buf->num_sectors = 0;
+            *retlen = offsetof(btrfs_csum_info, data[0]);
+            Status = STATUS_SUCCESS;
+            leave;
+        }
+
+        buf->num_sectors = (fcb->inode_item.st_size + Vcb->superblock.sector_size - 1) >> Vcb->sector_shift;
+
+        if (buflen < offsetof(btrfs_csum_info, data[0]) + (buf->csum_length * buf->num_sectors)) {
+            Status = STATUS_BUFFER_OVERFLOW;
+            *retlen = offsetof(btrfs_csum_info, data[0]);
+            leave;
+        }
+
+        ptr = buf->data;
+
+        le = fcb->extents.Flink;
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+            EXTENT_DATA2* ed2;
+
+            if (ext->ignore || ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                le = le->Flink;
+                continue;
+            }
+
+            ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+
+            // FIXME - sparse extents
+
+            if (ext->extent_data.compression != BTRFS_COMPRESSION_NONE) {
+                // FIXME
+            } else {
+                if (ext->csum)
+                    memcpy(ptr, ext->csum, (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size);
+                else
+                    memset(ptr, 0, (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size);
+
+                ptr += (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size;
+            }
+
+            le = le->Flink;
+        }
+
+        *retlen = offsetof(btrfs_csum_info, data[0]) + (buf->csum_length * buf->num_sectors);
+        Status = STATUS_SUCCESS;
+    } finally {
+        ExReleaseResourceLite(fcb->Header.Resource);
+    }
+
+    return Status;
+}
+
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
     PIRP Irp = *Pirp;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
@@ -5639,6 +5764,12 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
         case FSCTL_BTRFS_RESIZE:
             Status = resize_device(DeviceObject->DeviceExtension, Irp->AssociatedIrp.SystemBuffer,
                                    IrpSp->Parameters.FileSystemControl.InputBufferLength, Irp);
+            break;
+
+        case FSCTL_BTRFS_GET_CSUM_INFO:
+            Status = get_csum_info(DeviceObject->DeviceExtension, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+                                   IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information,
+                                   Irp->RequestorMode);
             break;
 
         default:
