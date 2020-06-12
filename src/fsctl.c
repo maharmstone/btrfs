@@ -4944,11 +4944,107 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
 
 static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileObject, STARTING_VCN_INPUT_BUFFER* in,
                                        ULONG inlen, RETRIEVAL_POINTERS_BUFFER* out, ULONG outlen, ULONG_PTR* retlen) {
-    FIXME("get_retrieval_pointers(%p, %p, %p, %lx, %p, %lx, %p)\n", Vcb, FileObject, in, inlen,
-                                                                    out, outlen, retlen);
-    // FIXME
+    NTSTATUS Status;
+    fcb* fcb;
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    TRACE("get_retrieval_pointers(%p, %p, %p, %lx, %p, %lx, %p)\n", Vcb, FileObject, in, inlen,
+                                                                    out, outlen, retlen);
+
+    if (!FileObject)
+        return STATUS_INVALID_PARAMETER;
+
+    fcb = FileObject->FsContext;
+
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    if (inlen < sizeof(STARTING_VCN_INPUT_BUFFER) || in->StartingVcn.QuadPart < 0)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!out)
+        return STATUS_INVALID_PARAMETER;
+
+    if (outlen < offsetof(RETRIEVAL_POINTERS_BUFFER, Extents[0]))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+
+    try {
+        LIST_ENTRY* le = fcb->extents.Flink;
+        extent* first_ext = NULL;
+        unsigned int num_extents = 0, first_extent_num, i;
+
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+            if (ext->ignore || ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                le = le->Flink;
+                continue;
+            }
+
+            if ((ext->offset >> Vcb->sector_shift) <= (uint64_t)in->StartingVcn.QuadPart &&
+                (ext->offset + ext->extent_data.decoded_size) >> Vcb->sector_shift > (uint64_t)in->StartingVcn.QuadPart) {
+                first_ext = ext;
+                first_extent_num = num_extents;
+            }
+
+            num_extents++;
+
+            // FIXME - count holes as extents
+
+            le = le->Flink;
+        }
+
+        if (!first_ext) {
+            Status = STATUS_END_OF_FILE;
+            leave;
+        }
+
+        out->ExtentCount = num_extents - first_extent_num;
+        out->StartingVcn.QuadPart = first_ext->offset >> Vcb->sector_shift;
+        outlen -= offsetof(RETRIEVAL_POINTERS_BUFFER, Extents[0]);
+        *retlen = offsetof(RETRIEVAL_POINTERS_BUFFER, Extents[0]);
+
+        le = &first_ext->list_entry;
+        i = 0;
+
+        while (le != &fcb->extents) {
+            extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+            if (ext->ignore || ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                le = le->Flink;
+                continue;
+            }
+
+            if (outlen < sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER)) {
+                Status = STATUS_BUFFER_OVERFLOW;
+                leave;
+            }
+
+            // FIXME - count holes as extents
+
+            out->Extents[i].NextVcn.QuadPart = (ext->offset + ext->extent_data.decoded_size) >> Vcb->sector_shift;
+
+            if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
+                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+
+                out->Extents[i].Lcn.QuadPart = (ed2->address + ed2->offset) >> Vcb->sector_shift;
+            } else
+                out->Extents[i].Lcn.QuadPart = -1; // FIXME - what are we supposed to do with compressed extents?
+
+            outlen -= sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
+            *retlen += sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
+            i++;
+
+            le = le->Flink;
+        }
+
+        Status = STATUS_SUCCESS;
+    } finally {
+        ExReleaseResourceLite(fcb->Header.Resource);
+    }
+
+    return Status;
 }
 
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {

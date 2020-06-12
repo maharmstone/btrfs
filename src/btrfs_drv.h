@@ -120,10 +120,12 @@
 #define try __try
 #define except __except
 #define finally __finally
+#define leave __leave
 #else
 #define try if (1)
 #define except(x) if (0 && (x))
 #define finally if (1)
+#define leave
 #endif
 
 #ifndef InterlockedIncrement64
