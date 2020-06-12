@@ -17,6 +17,7 @@
 
 #include "btrfs_drv.h"
 #include "btrfsioctl.h"
+#include "crc32c.h"
 #include <ntddstor.h>
 #include <ntdddisk.h>
 #include <sys/stat.h>
@@ -5047,13 +5048,60 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
     return Status;
 }
 
+static NTSTATUS add_csum_sparse_extents(device_extension* Vcb, uint64_t sparse_extents, uint8_t** ptr, bool found, void* hash_ptr) {
+    uint32_t sparse_hash;
+
+    switch (Vcb->superblock.csum_type) {
+        case CSUM_TYPE_CRC32C: {
+            uint32_t* csum = (uint32_t*)*ptr;
+
+            if (found)
+                sparse_hash = *(uint32_t*)hash_ptr;
+
+            if (!found) {
+                uint8_t* sector = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.sector_size, ALLOC_TAG);
+
+                if (!sector) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                memset(sector, 0, Vcb->superblock.sector_size);
+
+                sparse_hash = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
+                *(uint32_t*)hash_ptr = sparse_hash;
+
+                ExFreePool(sector);
+            }
+
+            for (uint64_t i = 0; i < sparse_extents; i++) {
+                csum[i] = sparse_hash;
+            }
+
+            *ptr += sparse_extents * sizeof(uint32_t);
+
+            break;
+        }
+
+        // FIXME - XXHASH
+        // FIXME - SHA256
+        // FIXME - BLAKE2
+
+        default:
+            ERR("unrecognized hash type %x\n", Vcb->superblock.csum_type);
+            return STATUS_INTERNAL_ERROR;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, btrfs_csum_info* buf, ULONG buflen,
                               ULONG_PTR* retlen, KPROCESSOR_MODE processor_mode) {
     NTSTATUS Status;
     fcb* fcb;
     ccb* ccb;
 
-    FIXME("get_csum_info(%p, %p, %p, %lx, %p, %x)\n", Vcb, FileObject, buf, buflen, retlen, processor_mode);
+    TRACE("get_csum_info(%p, %p, %p, %lx, %p, %x)\n", Vcb, FileObject, buf, buflen, retlen, processor_mode);
 
     if (!FileObject)
         return STATUS_INVALID_PARAMETER;
@@ -5080,8 +5128,10 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
 
     try {
         LIST_ENTRY* le;
-        bool is_inline = true;
         uint8_t* ptr;
+        uint64_t last_off;
+        uint32_t sparse_hash;
+        bool sparse_hash_found = false;
 
         if (fcb->ads) {
             Status = STATUS_INVALID_DEVICE_REQUEST;
@@ -5110,19 +5160,14 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
                 continue;
             }
 
-            if (ext->extent_data.type != EXTENT_TYPE_INLINE) {
-                is_inline = false;
-                break;
+            if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                buf->num_sectors = 0;
+                *retlen = offsetof(btrfs_csum_info, data[0]);
+                Status = STATUS_SUCCESS;
+                leave;
             }
 
             le = le->Flink;
-        }
-
-        if (is_inline) {
-            buf->num_sectors = 0;
-            *retlen = offsetof(btrfs_csum_info, data[0]);
-            Status = STATUS_SUCCESS;
-            leave;
         }
 
         buf->num_sectors = (fcb->inode_item.st_size + Vcb->superblock.sector_size - 1) >> Vcb->sector_shift;
@@ -5134,6 +5179,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
         }
 
         ptr = buf->data;
+        last_off = 0;
 
         le = fcb->extents.Flink;
         while (le != &fcb->extents) {
@@ -5145,9 +5191,14 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
                 continue;
             }
 
-            ed2 = (EXTENT_DATA2*)ext->extent_data.data;
+            if (ext->offset > last_off) {
+                uint64_t sparse_extents = (ext->offset - last_off) >> Vcb->sector_shift;
 
-            // FIXME - sparse extents
+                add_csum_sparse_extents(Vcb, sparse_extents, &ptr, sparse_hash_found, &sparse_hash);
+                sparse_hash_found = true;
+            }
+
+            ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
             if (ext->extent_data.compression != BTRFS_COMPRESSION_NONE) {
                 // FIXME
@@ -5158,9 +5209,16 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
                     memset(ptr, 0, (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size);
 
                 ptr += (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size;
+                last_off = ext->offset + ed2->num_bytes;
             }
 
             le = le->Flink;
+        }
+
+        if (buf->num_sectors > last_off >> Vcb->sector_shift) {
+            uint64_t sparse_extents = buf->num_sectors - (last_off >> Vcb->sector_shift);
+
+            add_csum_sparse_extents(Vcb, sparse_extents, &ptr, sparse_hash_found, &sparse_hash);
         }
 
         *retlen = offsetof(btrfs_csum_info, data[0]) + (buf->csum_length * buf->num_sectors);
