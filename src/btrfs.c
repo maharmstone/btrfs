@@ -1754,9 +1754,8 @@ void reap_fcbs(device_extension* Vcb) {
 }
 
 void free_fileref(_Inout_ file_ref* fr) {
-    LONG rc;
-
-    rc = InterlockedDecrement(&fr->refcount);
+#if defined(_DEBUG) || defined(DEBUG_FCB_REFCOUNTS)
+    LONG rc = InterlockedDecrement(&fr->refcount);
 
 #ifdef DEBUG_FCB_REFCOUNTS
     ERR("fileref %p: refcount now %i\n", fr, rc);
@@ -1767,6 +1766,9 @@ void free_fileref(_Inout_ file_ref* fr) {
         ERR("fileref %p: refcount now %li\n", fr, rc);
         int3;
     }
+#endif
+#else
+    InterlockedDecrement(&fr->refcount);
 #endif
 }
 
@@ -6017,6 +6019,8 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     WCHAR arc_name[(sizeof(arc_name_prefix) / sizeof(WCHAR)) - 1 + 37];
 
     TRACE("(%p, %p)\n", DriverObject, PhysicalDeviceObject);
+
+    UNUSED(DriverObject);
 
     ExAcquireResourceSharedLite(&pdo_list_lock, true);
 
