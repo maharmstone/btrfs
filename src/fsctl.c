@@ -5049,48 +5049,62 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
 }
 
 static NTSTATUS add_csum_sparse_extents(device_extension* Vcb, uint64_t sparse_extents, uint8_t** ptr, bool found, void* hash_ptr) {
-    uint32_t sparse_hash;
+    if (!found) {
+        uint8_t* sector = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.sector_size, ALLOC_TAG);
+
+        if (!sector) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memset(sector, 0, Vcb->superblock.sector_size);
+
+        get_sector_csum(Vcb, sector, hash_ptr);
+
+        ExFreePool(sector);
+    }
 
     switch (Vcb->superblock.csum_type) {
         case CSUM_TYPE_CRC32C: {
             uint32_t* csum = (uint32_t*)*ptr;
-
-            if (found)
-                sparse_hash = *(uint32_t*)hash_ptr;
-
-            if (!found) {
-                uint8_t* sector = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.sector_size, ALLOC_TAG);
-
-                if (!sector) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                memset(sector, 0, Vcb->superblock.sector_size);
-
-                sparse_hash = ~calc_crc32c(0xffffffff, sector, Vcb->superblock.sector_size);
-                *(uint32_t*)hash_ptr = sparse_hash;
-
-                ExFreePool(sector);
-            }
+            uint32_t sparse_hash = *(uint32_t*)hash_ptr;
 
             for (uint64_t i = 0; i < sparse_extents; i++) {
                 csum[i] = sparse_hash;
             }
 
-            *ptr += sparse_extents * sizeof(uint32_t);
+            break;
+        }
+
+        case CSUM_TYPE_XXHASH: {
+            uint64_t* csum = (uint64_t*)*ptr;
+            uint64_t sparse_hash = *(uint64_t*)hash_ptr;
+
+            for (uint64_t i = 0; i < sparse_extents; i++) {
+                csum[i] = sparse_hash;
+            }
 
             break;
         }
 
-        // FIXME - XXHASH
-        // FIXME - SHA256
-        // FIXME - BLAKE2
+        case CSUM_TYPE_SHA256:
+        case CSUM_TYPE_BLAKE2: {
+            uint8_t* csum = (uint8_t*)*ptr;
+
+            for (uint64_t i = 0; i < sparse_extents; i++) {
+                memcpy(csum, hash_ptr, 32);
+                csum += 32;
+            }
+
+            break;
+        }
 
         default:
             ERR("unrecognized hash type %x\n", Vcb->superblock.csum_type);
             return STATUS_INTERNAL_ERROR;
     }
+
+    *ptr += sparse_extents * Vcb->csum_size;
 
     return STATUS_SUCCESS;
 }
@@ -5130,7 +5144,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
         LIST_ENTRY* le;
         uint8_t* ptr;
         uint64_t last_off;
-        uint32_t sparse_hash;
+        uint8_t sparse_hash[MAX_HASH_SIZE];
         bool sparse_hash_found = false;
 
         if (fcb->ads) {
@@ -5194,7 +5208,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
             if (ext->offset > last_off) {
                 uint64_t sparse_extents = (ext->offset - last_off) >> Vcb->sector_shift;
 
-                add_csum_sparse_extents(Vcb, sparse_extents, &ptr, sparse_hash_found, &sparse_hash);
+                add_csum_sparse_extents(Vcb, sparse_extents, &ptr, sparse_hash_found, sparse_hash);
                 sparse_hash_found = true;
             }
 
@@ -5218,7 +5232,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
         if (buf->num_sectors > last_off >> Vcb->sector_shift) {
             uint64_t sparse_extents = buf->num_sectors - (last_off >> Vcb->sector_shift);
 
-            add_csum_sparse_extents(Vcb, sparse_extents, &ptr, sparse_hash_found, &sparse_hash);
+            add_csum_sparse_extents(Vcb, sparse_extents, &ptr, sparse_hash_found, sparse_hash);
         }
 
         *retlen = offsetof(btrfs_csum_info, data[0]) + (buf->csum_length * buf->num_sectors);
