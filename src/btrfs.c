@@ -518,7 +518,7 @@ static NTSTATUS __stdcall drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _I
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_flush_buffers(DeviceObject, Irp);
+        Status = STATUS_SUCCESS;
         goto end;
     } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
         Status = STATUS_SUCCESS;
@@ -918,7 +918,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_query_volume_information(DeviceObject, Irp);
+        Status = STATUS_INVALID_DEVICE_REQUEST;
         goto end;
     } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
         Status = STATUS_INVALID_PARAMETER;
@@ -1359,7 +1359,7 @@ static NTSTATUS __stdcall drv_set_volume_information(_In_ PDEVICE_OBJECT DeviceO
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_set_volume_information(DeviceObject, Irp);
+        Status = STATUS_INVALID_DEVICE_REQUEST;
         goto end;
     } else if (!Vcb || Vcb->type != VCB_TYPE_FS) {
         Status = STATUS_INVALID_PARAMETER;
@@ -2357,7 +2357,8 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_cleanup(DeviceObject, Irp);
+        Irp->IoStatus.Information = 0;
+        Status = STATUS_SUCCESS;
         goto exit;
     } else if (DeviceObject == master_devobj) {
         TRACE("closing file system\n");
@@ -5188,7 +5189,7 @@ static NTSTATUS __stdcall drv_file_system_control(_In_ PDEVICE_OBJECT DeviceObje
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_file_system_control(DeviceObject, Irp);
+        Status = STATUS_INVALID_DEVICE_REQUEST;
         goto end;
     } else if (!Vcb || (Vcb->type != VCB_TYPE_FS && Vcb->type != VCB_TYPE_CONTROL)) {
         Status = STATUS_INVALID_PARAMETER;
@@ -5268,7 +5269,7 @@ static NTSTATUS __stdcall drv_lock_control(_In_ PDEVICE_OBJECT DeviceObject, _In
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_lock_control(DeviceObject, Irp);
+        Status = STATUS_INVALID_DEVICE_REQUEST;
 
         Irp->IoStatus.Status = Status;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -5433,7 +5434,7 @@ static NTSTATUS __stdcall drv_shutdown(_In_ PDEVICE_OBJECT DeviceObject, _In_ PI
     top_level = is_top_level(Irp);
 
     if (Vcb && Vcb->type == VCB_TYPE_VOLUME) {
-        Status = vol_shutdown(DeviceObject, Irp);
+        Status = STATUS_INVALID_DEVICE_REQUEST;
         goto end;
     }
 
