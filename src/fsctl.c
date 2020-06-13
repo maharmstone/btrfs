@@ -5419,16 +5419,16 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         case FSCTL_SET_REPARSE_POINT:
-            Status = set_reparse_point(DeviceObject, Irp);
+            Status = set_reparse_point(Irp);
             break;
 
         case FSCTL_GET_REPARSE_POINT:
-            Status = get_reparse_point(DeviceObject, IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
+            Status = get_reparse_point(IrpSp->FileObject, Irp->AssociatedIrp.SystemBuffer,
                                        IrpSp->Parameters.FileSystemControl.OutputBufferLength, &Irp->IoStatus.Information);
             break;
 
         case FSCTL_DELETE_REPARSE_POINT:
-            Status = delete_reparse_point(DeviceObject, Irp);
+            Status = delete_reparse_point(Irp);
             break;
 
         case FSCTL_ENUM_USN_DATA:
