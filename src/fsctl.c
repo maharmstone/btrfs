@@ -4974,6 +4974,9 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
         LIST_ENTRY* le = fcb->extents.Flink;
         extent* first_ext = NULL;
         unsigned int num_extents = 0, first_extent_num, i;
+        uint64_t num_sectors, last_off = 0;
+
+        num_sectors = (fcb->inode_item.st_size + Vcb->superblock.sector_size - 1) >> Vcb->sector_shift;
 
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
@@ -4983,6 +4986,9 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
                 continue;
             }
 
+            if (ext->offset > last_off)
+                num_extents++;
+
             if ((ext->offset >> Vcb->sector_shift) <= (uint64_t)in->StartingVcn.QuadPart &&
                 (ext->offset + ext->extent_data.decoded_size) >> Vcb->sector_shift > (uint64_t)in->StartingVcn.QuadPart) {
                 first_ext = ext;
@@ -4991,10 +4997,13 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
 
             num_extents++;
 
-            // FIXME - count holes as extents
+            last_off = ext->offset + ext->extent_data.decoded_size;
 
             le = le->Flink;
         }
+
+        if (num_sectors > last_off >> Vcb->sector_shift)
+            num_extents++;
 
         if (!first_ext) {
             Status = STATUS_END_OF_FILE;
@@ -5008,6 +5017,7 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
 
         le = &first_ext->list_entry;
         i = 0;
+        last_off = 0;
 
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
@@ -5017,12 +5027,24 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
                 continue;
             }
 
+            if (ext->offset > last_off) {
+                if (outlen < sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER)) {
+                    Status = STATUS_BUFFER_OVERFLOW;
+                    leave;
+                }
+
+                out->Extents[i].NextVcn.QuadPart = ext->offset >> Vcb->sector_shift;
+                out->Extents[i].Lcn.QuadPart = -1;
+
+                outlen -= sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
+                *retlen += sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
+                i++;
+            }
+
             if (outlen < sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER)) {
                 Status = STATUS_BUFFER_OVERFLOW;
                 leave;
             }
-
-            // FIXME - count holes as extents
 
             out->Extents[i].NextVcn.QuadPart = (ext->offset + ext->extent_data.decoded_size) >> Vcb->sector_shift;
 
@@ -5031,13 +5053,26 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
 
                 out->Extents[i].Lcn.QuadPart = (ed2->address + ed2->offset) >> Vcb->sector_shift;
             } else
-                out->Extents[i].Lcn.QuadPart = -1; // FIXME - what are we supposed to do with compressed extents?
+                out->Extents[i].Lcn.QuadPart = -1;
 
             outlen -= sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
             *retlen += sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
             i++;
 
             le = le->Flink;
+        }
+
+        if (num_sectors << Vcb->sector_shift > last_off) {
+            if (outlen < sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER)) {
+                Status = STATUS_BUFFER_OVERFLOW;
+                leave;
+            }
+
+            out->Extents[i].NextVcn.QuadPart = num_sectors;
+            out->Extents[i].Lcn.QuadPart = -1;
+
+            outlen -= sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
+            *retlen += sizeof(LARGE_INTEGER) + sizeof(LARGE_INTEGER);
         }
 
         Status = STATUS_SUCCESS;
