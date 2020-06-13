@@ -1685,7 +1685,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     LIST_ENTRY parts;
-    bool has_stream;
+    bool has_stream = false;
     NTSTATUS Status;
     LIST_ENTRY* le;
 
