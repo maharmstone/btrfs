@@ -5214,17 +5214,18 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
 
             ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
-            if (ext->extent_data.compression != BTRFS_COMPRESSION_NONE) {
-                // FIXME
-            } else {
+            if (ext->extent_data.compression != BTRFS_COMPRESSION_NONE)
+                memset(ptr, 0, (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size); // dummy value for compressed extents
+            else {
                 if (ext->csum)
                     memcpy(ptr, ext->csum, (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size);
                 else
                     memset(ptr, 0, (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size);
 
                 ptr += (ed2->num_bytes >> Vcb->sector_shift) * Vcb->csum_size;
-                last_off = ext->offset + ed2->num_bytes;
             }
+
+            last_off = ext->offset + ed2->num_bytes;
 
             le = le->Flink;
         }
