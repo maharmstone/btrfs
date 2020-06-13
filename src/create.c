@@ -4632,7 +4632,7 @@ loaded:
         if (!NT_SUCCESS(Status))
             goto exit;
     } else {
-        file_ref* existing_file;
+        file_ref* existing_file = NULL;
 
         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, &existing_file, rollback);
 
