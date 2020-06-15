@@ -2925,7 +2925,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
     traverse_ptr tp;
     bool b = false, tree_run = false;
     ULONG type, num_extents = 0;
-    uint64_t total_data = 0, tree_run_start, tree_run_end;
+    uint64_t total_data = 0, tree_run_start = 0, tree_run_end = 0;
 
     TRACE("chunk %I64x\n", c->offset);
 
