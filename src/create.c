@@ -707,7 +707,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     bool atts_set = false, sd_set = false, no_data;
     LIST_ENTRY* lastle = NULL;
     EXTENT_DATA* ed = NULL;
-    uint64_t fcbs_version;
+    uint64_t fcbs_version = 0;
     uint32_t hash;
 
     hash = calc_crc32c(0xffffffff, (uint8_t*)&inode, sizeof(uint64_t));
