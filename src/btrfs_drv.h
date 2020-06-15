@@ -1714,6 +1714,22 @@ static __inline void do_xor(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     }
 #endif
 
+#if defined(_AMD64_) || defined(_ARM64_)
+    while (len > 8) {
+        *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
+        buf1 += 8;
+        buf2 += 8;
+        len -= 8;
+    }
+#endif
+
+    while (len > 4) {
+        *(uint32_t*)buf1 ^= *(uint32_t*)buf2;
+        buf1 += 4;
+        buf2 += 4;
+        len -= 4;
+    }
+
     for (j = 0; j < len; j++) {
         *buf1 ^= *buf2;
         buf1++;
