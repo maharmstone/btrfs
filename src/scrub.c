@@ -2837,7 +2837,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
     KEY searchkey;
     traverse_ptr tp;
     bool b;
-    uint64_t full_stripe_len, stripe, stripe_start, stripe_end, total_data = 0;
+    uint64_t full_stripe_len, stripe, stripe_start = 0, stripe_end = 0, total_data = 0;
     ULONG num_extents = 0, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
 
     full_stripe_len = (c->chunk_item->num_stripes - num_parity_stripes) * c->chunk_item->stripe_length;
