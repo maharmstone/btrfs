@@ -2006,8 +2006,8 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
 
     for (ULONG i = 0; i < sectors_per_stripe; i++) {
         ULONG num_errors = 0;
-        uint64_t bad_stripe1, bad_stripe2;
-        ULONG bad_off1, bad_off2;
+        uint64_t bad_stripe1 = 0, bad_stripe2 = 0;
+        ULONG bad_off1 = 0, bad_off2 = 0;
         bool alloc = false;
 
         stripe = (parity1 + 2) % c->chunk_item->num_stripes;
@@ -2071,7 +2071,6 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             }
         } else if (num_errors == 1) {
             uint32_t len;
-            uint16_t stripe_num, bad_stripe_num;
             uint64_t addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 << Vcb->sector_shift);
             uint8_t* scratch;
 
@@ -2091,6 +2090,8 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             stripe = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
 
             if (c->devices[parity2]->devobj) {
+                uint16_t stripe_num, bad_stripe_num = 0;
+
                 stripe_num = c->chunk_item->num_stripes - 3;
                 while (stripe != parity2) {
                     galois_double(scratch, len);
@@ -2275,7 +2276,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
 
             ExFreePool(scratch);
         } else if (num_errors == 2 && missing_devices == 0) {
-            uint16_t x, y, k;
+            uint16_t x = 0, y = 0, k;
             uint64_t addr;
             uint32_t len = (RtlCheckBit(&context->is_tree, bad_off1) || RtlCheckBit(&context->is_tree, bad_off2)) ? Vcb->superblock.node_size : Vcb->superblock.sector_size;
             uint8_t gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
