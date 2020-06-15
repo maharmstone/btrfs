@@ -65,9 +65,6 @@ DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x6
 
 PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT master_devobj, busobj;
-#if defined(_X86_) || defined(_AMD64_)
-bool have_sse2 = false;
-#endif
 uint64_t num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
 LIST_ENTRY VcbList;
@@ -112,7 +109,6 @@ KEVENT mountmgr_thread_event;
 bool shutting_down = false;
 ERESOURCE boot_lock;
 bool is_windows_8;
-xor_func do_xor = do_xor_basic;
 extern uint64_t boot_subvol;
 
 #ifdef _DEBUG
@@ -126,6 +122,9 @@ static void init_serial(bool first_time);
 #endif
 
 static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp);
+static void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+
+xor_func do_xor = do_xor_basic;
 
 typedef struct {
     KEVENT Event;
@@ -285,11 +284,11 @@ bool is_top_level(_In_ PIRP Irp) {
     return false;
 }
 
-void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
+#if defined(_X86_) || defined(_AMD64_)
+static void do_xor_sse2(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     uint32_t j;
 
-#if defined(_X86_) || defined(_AMD64_)
-    if (have_sse2 && ((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
+    if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
         while (len >= 16) {
             __m128i x1, x2;
 
@@ -303,7 +302,35 @@ void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
             len -= 16;
         }
     }
-#elif defined(_ARM_) || defined(_ARM64_)
+
+#ifdef _AMD64_
+    while (len > 8) {
+        *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
+        buf1 += 8;
+        buf2 += 8;
+        len -= 8;
+    }
+#endif
+
+    while (len > 4) {
+        *(uint32_t*)buf1 ^= *(uint32_t*)buf2;
+        buf1 += 4;
+        buf2 += 4;
+        len -= 4;
+    }
+
+    for (j = 0; j < len; j++) {
+        *buf1 ^= *buf2;
+        buf1++;
+        buf2++;
+    }
+}
+#endif
+
+static void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
+    uint32_t j;
+
+#if defined(_ARM_) || defined(_ARM64_)
     uint64x2_t x1, x2;
 
     if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
@@ -5925,7 +5952,7 @@ static void init_serial(bool first_time) {
 
 #if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
-    bool have_sse42;
+    bool have_sse2, have_sse42;
 
 #ifndef _MSC_VER
     {
@@ -5951,9 +5978,10 @@ static void check_cpu() {
     } else
         TRACE("SSE4.2 not supported\n");
 
-    if (have_sse2)
+    if (have_sse2) {
         TRACE("SSE2 is supported\n");
-    else
+        do_xor = do_xor_sse2;
+    } else
         TRACE("SSE2 is not supported\n");
 }
 #endif

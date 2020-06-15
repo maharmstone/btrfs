@@ -1102,7 +1102,6 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
 bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bool stream);
 void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
 void queue_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
-void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len);
 
 typedef void (__stdcall *xor_func)(uint8_t* buf1, uint8_t* buf2, uint32_t len);
 
@@ -1152,8 +1151,6 @@ bool check_superblock_checksum(superblock* sb);
 #else
 #define funcname __func__
 #endif
-
-extern bool have_sse2;
 
 extern uint32_t mount_compress;
 extern uint32_t mount_compress_force;
