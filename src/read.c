@@ -466,7 +466,7 @@ static NTSTATUS read_data_raid0(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
 static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t addr, uint32_t length, read_data_context* context,
                                  CHUNK_ITEM* ci, device** devices, uint64_t generation, uint64_t offset) {
-    uint16_t stripe;
+    uint16_t stripe = 0;
     NTSTATUS Status;
     bool checksum_error = false;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
