@@ -1788,8 +1788,8 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         return;
 
     for (ULONG i = 0; i < sectors_per_stripe; i++) {
-        ULONG num_errors = 0, bad_off;
-        uint64_t bad_stripe;
+        ULONG num_errors = 0, bad_off = 0;
+        uint64_t bad_stripe = 0;
         bool alloc = false;
 
         stripe = (parity + 1) % c->chunk_item->num_stripes;
