@@ -653,7 +653,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
     NTSTATUS Status;
     bool checksum_error = false;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-    uint16_t j, stripe;
+    uint16_t j, stripe = 0;
     bool no_success = true;
 
     for (j = 0; j < ci->num_stripes; j++) {
