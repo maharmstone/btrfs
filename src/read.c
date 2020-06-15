@@ -941,7 +941,7 @@ void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, u
         if (missing != 0)
             galois_divpower(out, (uint8_t)missing, sector_size);
     } else { // reconstruct from p and q
-        uint16_t x, y, stripe;
+        uint16_t x = missing1, y = missing2, stripe;
         uint8_t gyx, gx, denom, a, b, *p, *q, *pxy, *qxy;
         uint32_t j;
 
@@ -953,11 +953,6 @@ void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, u
         if (stripe == missing1 || stripe == missing2) {
             RtlZeroMemory(qxy, sector_size);
             RtlZeroMemory(pxy, sector_size);
-
-            if (stripe == missing1)
-                x = stripe;
-            else
-                y = stripe;
         } else {
             RtlCopyMemory(qxy, sectors + (stripe * sector_size), sector_size);
             RtlCopyMemory(pxy, sectors + (stripe * sector_size), sector_size);
@@ -971,10 +966,7 @@ void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, u
             if (stripe != missing1 && stripe != missing2) {
                 do_xor(qxy, sectors + (stripe * sector_size), sector_size);
                 do_xor(pxy, sectors + (stripe * sector_size), sector_size);
-            } else if (stripe == missing1)
-                x = stripe;
-            else if (stripe == missing2)
-                y = stripe;
+            }
         } while (stripe > 0);
 
         gyx = gpow2(y > x ? (y-x) : (255-x+y));
