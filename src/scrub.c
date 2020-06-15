@@ -1377,7 +1377,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
     scrub_context context;
     CHUNK_ITEM_STRIPE* cis;
     NTSTATUS Status;
-    uint16_t startoffstripe, num_missing, allowed_missing;
+    uint16_t startoffstripe = 0, num_missing, allowed_missing;
 
     TRACE("(%p, %p, %lx, %I64x, %x, %p)\n", Vcb, c, type, offset, size, csum);
 
