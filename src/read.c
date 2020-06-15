@@ -998,7 +998,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
     NTSTATUS Status;
     bool checksum_error = false;
     CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
-    uint16_t stripe, j;
+    uint16_t stripe = 0, j;
     bool no_success = true;
 
     for (j = 0; j < ci->num_stripes; j++) {
@@ -1090,7 +1090,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
 
     if (context->tree) {
         uint8_t* sector;
-        uint16_t k, physstripe, parity1, parity2, error_stripe;
+        uint16_t k, physstripe, parity1, parity2, error_stripe = 0;
         uint64_t off;
         bool recovered = false, failed = false;
         ULONG num_errors = 0;
@@ -1294,7 +1294,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
             physstripe = (parity2 + stripe + 1) % ci->num_stripes;
 
             if (!devices[physstripe] || !devices[physstripe]->devobj || (context->csum && !check_sector_csum(Vcb, buf + (i << Vcb->sector_shift), ptr))) {
-                uint16_t error_stripe;
+                uint16_t error_stripe = 0;
                 bool recovered = false, failed = false;
                 ULONG num_errors = 0;
 
@@ -1991,7 +1991,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         uint16_t endoffstripe, parity;
         uint32_t *stripeoff, pos;
         PMDL master_mdl;
-        PFN_NUMBER *pfns, dummy;
+        PFN_NUMBER *pfns, dummy = 0;
         bool need_dummy = false;
 
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 1, &startoff, &startoffstripe);
@@ -2250,7 +2250,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         uint16_t endoffstripe, parity1;
         uint32_t *stripeoff, pos;
         PMDL master_mdl;
-        PFN_NUMBER *pfns, dummy;
+        PFN_NUMBER *pfns, dummy = 0;
         bool need_dummy = false;
 
         get_raid0_offset(addr - offset, ci->stripe_length, ci->num_stripes - 2, &startoff, &startoffstripe);
