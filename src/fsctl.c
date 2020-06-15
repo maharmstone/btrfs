@@ -4973,7 +4973,7 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
     try {
         LIST_ENTRY* le = fcb->extents.Flink;
         extent* first_ext = NULL;
-        unsigned int num_extents = 0, first_extent_num, i;
+        unsigned int num_extents = 0, first_extent_num = 0, i;
         uint64_t num_sectors, last_off = 0;
 
         num_sectors = (fcb->inode_item.st_size + Vcb->superblock.sector_size - 1) >> Vcb->sector_shift;
