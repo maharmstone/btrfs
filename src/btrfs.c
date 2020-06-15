@@ -48,6 +48,10 @@
 
 #include <ntstrsafe.h>
 
+#if defined(_X86_) || defined(_AMD64_)
+#include <immintrin.h>
+#endif
+
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES | \
@@ -108,6 +112,7 @@ KEVENT mountmgr_thread_event;
 bool shutting_down = false;
 ERESOURCE boot_lock;
 bool is_windows_8;
+xor_func do_xor = do_xor_basic;
 extern uint64_t boot_subvol;
 
 #ifdef _DEBUG
@@ -278,6 +283,64 @@ bool is_top_level(_In_ PIRP Irp) {
     }
 
     return false;
+}
+
+void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
+    uint32_t j;
+
+#if defined(_X86_) || defined(_AMD64_)
+    if (have_sse2 && ((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
+        while (len >= 16) {
+            __m128i x1, x2;
+
+            x1 = _mm_load_si128((__m128i*)buf1);
+            x2 = _mm_load_si128((__m128i*)buf2);
+            x1 = _mm_xor_si128(x1, x2);
+            _mm_store_si128((__m128i*)buf1, x1);
+
+            buf1 += 16;
+            buf2 += 16;
+            len -= 16;
+        }
+    }
+#elif defined(_ARM_) || defined(_ARM64_)
+    uint64x2_t x1, x2;
+
+    if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
+        while (len >= 16) {
+            x1 = vld1q_u64((const uint64_t*)buf1);
+            x2 = vld1q_u64((const uint64_t*)buf2);
+            x1 = veorq_u64(x1, x2);
+            vst1q_u64((uint64_t*)buf1, x1);
+
+            buf1 += 16;
+            buf2 += 16;
+            len -= 16;
+        }
+    }
+#endif
+
+#if defined(_AMD64_) || defined(_ARM64_)
+    while (len > 8) {
+        *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
+        buf1 += 8;
+        buf2 += 8;
+        len -= 8;
+    }
+#endif
+
+    while (len > 4) {
+        *(uint32_t*)buf1 ^= *(uint32_t*)buf2;
+        buf1 += 4;
+        buf2 += 4;
+        len -= 4;
+    }
+
+    for (j = 0; j < len; j++) {
+        *buf1 ^= *buf2;
+        buf1++;
+        buf2++;
+    }
 }
 
 _Function_class_(DRIVER_UNLOAD)

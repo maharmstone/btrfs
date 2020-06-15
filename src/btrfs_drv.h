@@ -56,10 +56,6 @@
 #include "btrfs.h"
 #include "btrfsioctl.h"
 
-#if defined(_X86_) || defined(_AMD64_)
-#include <emmintrin.h>
-#endif
-
 #ifdef _DEBUG
 // #define DEBUG_FCB_REFCOUNTS
 // #define DEBUG_LONG_MESSAGES
@@ -1106,6 +1102,11 @@ NTSTATUS dev_ioctl(_In_ PDEVICE_OBJECT DeviceObject, _In_ ULONG ControlCode, _In
 bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bool stream);
 void send_notification_fileref(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
 void queue_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In_ ULONG action, _In_opt_ PUNICODE_STRING stream);
+void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+
+typedef void (__stdcall *xor_func)(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+
+extern xor_func do_xor;
 
 #ifdef DEBUG_CHUNK_LOCKS
 #define acquire_chunk_lock(c, Vcb) { ExAcquireResourceExclusiveLite(&c->lock, true); InterlockedIncrement(&Vcb->chunk_locks_held); }
@@ -1677,64 +1678,6 @@ static __inline bool write_fcb_compressed(fcb* fcb) {
         return true;
 
     return false;
-}
-
-static __inline void do_xor(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
-    uint32_t j;
-
-#if defined(_X86_) || defined(_AMD64_)
-    __m128i x1, x2;
-
-    if (have_sse2 && ((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
-        while (len >= 16) {
-            x1 = _mm_load_si128((__m128i*)buf1);
-            x2 = _mm_load_si128((__m128i*)buf2);
-            x1 = _mm_xor_si128(x1, x2);
-            _mm_store_si128((__m128i*)buf1, x1);
-
-            buf1 += 16;
-            buf2 += 16;
-            len -= 16;
-        }
-    }
-#elif defined(_ARM_) || defined(_ARM64_)
-    uint64x2_t x1, x2;
-
-    if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
-        while (len >= 16) {
-            x1 = vld1q_u64((const uint64_t*)buf1);
-            x2 = vld1q_u64((const uint64_t*)buf2);
-            x1 = veorq_u64(x1, x2);
-            vst1q_u64((uint64_t*)buf1, x1);
-
-            buf1 += 16;
-            buf2 += 16;
-            len -= 16;
-        }
-    }
-#endif
-
-#if defined(_AMD64_) || defined(_ARM64_)
-    while (len > 8) {
-        *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
-        buf1 += 8;
-        buf2 += 8;
-        len -= 8;
-    }
-#endif
-
-    while (len > 4) {
-        *(uint32_t*)buf1 ^= *(uint32_t*)buf2;
-        buf1 += 4;
-        buf2 += 4;
-        len -= 4;
-    }
-
-    for (j = 0; j < len; j++) {
-        *buf1 ^= *buf2;
-        buf1++;
-        buf2++;
-    }
 }
 
 #ifdef DEBUG_FCB_REFCOUNTS
