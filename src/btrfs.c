@@ -5909,7 +5909,7 @@ static void check_cpu() {
 
 #ifndef _MSC_VER
     {
-        uint32_t eax, ebx, ecx, edx;
+        uint32_t eax, ebx, ecx, edx, xcr0;
 
         __cpuid(1, eax, ebx, ecx, edx);
 
@@ -5921,7 +5921,12 @@ static void check_cpu() {
         if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx))
             have_avx2 = ebx & bit_AVX2;
 
-        // FIXME - check AVX2 supported by OS?
+        if (have_avx2) { // check if supported by OS
+            __asm__("xgetbv" : "=a" (xcr0) : "c" (0) : "edx" );
+
+            if ((xcr0 & 6) != 6)
+                have_avx2 = false;
+        }
     }
 #else
     {
@@ -5933,6 +5938,13 @@ static void check_cpu() {
 
         __cpuidex(cpu_info, 7, 0);
         have_avx2 = cpu_info[1] & (1 << 5);
+
+        if (have_avx2) {
+            uint32_t xcr0 = (uint32_t)_xgetbv(0);
+
+            if ((xcr0 & 6) != 6)
+                have_avx2 = false;
+        }
     }
 #endif
 
