@@ -97,6 +97,78 @@ stragglers:
 do_xor_sse2_end:
     ret
 
+PUBLIC do_xor_avx2
+
+; void do_xor_avx2(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+do_xor_avx2:
+    ; rcx = buf1
+    ; rdx = buf2
+    ; r8d = len
+    ; rax = tmp1
+    ; r9 = tmp2
+    ; xmm0 = tmp3
+    ; xmm1 = tmp4
+
+    mov rax, rcx
+    and rax, 31
+    cmp rax, 0
+    jne stragglers4
+
+    mov rax, rdx
+    and rax, 31
+    cmp rax, 0
+    jne stragglers4
+
+do_xor_avx2_loop:
+    cmp r8d, 32
+    jl stragglers4
+
+    vmovdqa ymm0, YMMWORD PTR[rcx]
+    vmovdqa ymm1, YMMWORD PTR[rdx]
+    vpxor ymm0, ymm0, ymm1
+    vmovdqa YMMWORD PTR[rcx], ymm0
+
+    add rcx, 32
+    add rdx, 32
+    sub r8d, 32
+
+    jmp do_xor_avx2_loop
+
+stragglers4:
+
+    cmp r8d, 8
+    jl stragglers3
+
+    mov rax, [rcx]
+    mov r9, [rdx]
+    xor rax, r9
+    mov [rcx], rax
+
+    add rcx, 8
+    add rdx, 8
+    sub r8d, 8
+
+    jmp stragglers4
+
+stragglers3:
+
+    cmp r8d, 0
+    je do_xor_avx2_end
+
+    mov al, [rcx]
+    mov r9b, [rdx]
+    xor al, r9b
+    mov [rcx], al
+
+    inc rcx
+    inc rdx
+    dec r8d
+
+    jmp stragglers3
+
+do_xor_avx2_end:
+    ret
+
 ELSE
 
 PUBLIC do_xor_sse2@12
@@ -179,6 +251,92 @@ stragglers:
     jmp stragglers
 
 do_xor_sse2_end:
+    pop edi
+    pop esi
+    pop ebp
+
+    ret 12
+
+PUBLIC do_xor_avx2@12
+
+; void __stdcall do_xor_avx2(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+do_xor_avx2@12:
+    ; edi = buf1
+    ; edx = buf2
+    ; esi = len
+    ; eax = tmp1
+    ; ecx = tmp2
+    ; xmm0 = tmp3
+    ; xmm1 = tmp4
+
+    push ebp
+    mov ebp, esp
+
+    push esi
+    push edi
+
+    mov edi, [ebp+8]
+    mov edx, [ebp+12]
+    mov esi, [ebp+16]
+
+    mov eax, edi
+    and eax, 31
+    cmp eax, 0
+    jne stragglers4
+
+    mov eax, edx
+    and eax, 31
+    cmp eax, 0
+    jne stragglers4
+
+do_xor_avx2_loop:
+    cmp esi, 32
+    jl stragglers4
+
+    vmovdqa ymm0, YMMWORD PTR[edi]
+    vmovdqa ymm1, YMMWORD PTR[edx]
+    vpxor ymm0, ymm0, ymm1
+    vmovdqa YMMWORD PTR[edi], ymm0
+
+    add edi, 32
+    add edx, 32
+    sub esi, 32
+
+    jmp do_xor_avx2_loop
+
+stragglers4:
+
+    cmp esi, 4
+    jl stragglers3
+
+    mov eax, [edi]
+    mov ecx, [edx]
+    xor eax, ecx
+    mov [edi], eax
+
+    add edi, 4
+    add edx, 4
+    sub esi, 4
+
+    jmp stragglers4
+
+stragglers3:
+
+    cmp esi, 0
+    je do_xor_avx2_end
+
+    mov al, [edi]
+    mov cl, [edx]
+    xor al, cl
+    mov [edi], al
+
+    inc edi
+    inc edx
+    dec esi
+
+    jmp stragglers3
+
+do_xor_avx2_end:
     pop edi
     pop esi
     pop ebp

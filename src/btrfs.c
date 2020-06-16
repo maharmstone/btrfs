@@ -5905,15 +5905,23 @@ static void init_serial(bool first_time) {
 
 #if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
-    bool have_sse2, have_sse42;
+    bool have_sse2 = false, have_sse42 = false, have_avx2 = false;
 
 #ifndef _MSC_VER
     {
         uint32_t eax, ebx, ecx, edx;
 
         __cpuid(1, eax, ebx, ecx, edx);
-        have_sse42 = ecx & bit_SSE4_2;
-        have_sse2 = edx & bit_SSE2;
+
+        if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+            have_sse42 = ecx & bit_SSE4_2;
+            have_sse2 = edx & bit_SSE2;
+        }
+
+        if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx))
+            have_avx2 = ebx & bit_AVX2;
+
+        // FIXME - check AVX2 supported by OS?
     }
 #else
     {
@@ -5922,6 +5930,9 @@ static void check_cpu() {
         __cpuid(cpu_info, 1);
         have_sse42 = cpu_info[2] & (1 << 20);
         have_sse2 = cpu_info[3] & (1 << 26);
+
+        __cpuidex(cpu_info, 7, 0);
+        have_avx2 = cpu_info[1] & (1 << 5);
     }
 #endif
 
@@ -5933,9 +5944,17 @@ static void check_cpu() {
 
     if (have_sse2) {
         TRACE("SSE2 is supported\n");
-        do_xor = do_xor_sse2;
+
+        if (!have_avx2)
+            do_xor = do_xor_sse2;
     } else
         TRACE("SSE2 is not supported\n");
+
+    if (have_avx2) {
+        TRACE("AVX2 is supported\n");
+        do_xor = do_xor_avx2;
+    } else
+        TRACE("AVX2 is not supported\n");
 }
 #endif
 
