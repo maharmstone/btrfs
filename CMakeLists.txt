@@ -189,8 +189,19 @@ set(SHELLEXT_SRC_FILES src/shellext/balance.cpp
     src/shellext/scrub.cpp
     src/shellext/send.cpp
     src/shellext/volpropsheet.cpp
+    src/crc32c.c
     src/shellext/shellbtrfs.def
     ${CMAKE_CURRENT_BINARY_DIR}/shellbtrfs.rc)
+
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
+    if(MSVC)
+        enable_language(ASM_MASM)
+        set(SHELLEXT_SRC_FILES ${SHELLEXT_SRC_FILES} src/crc32c-masm.asm)
+    else()
+        enable_language(ASM)
+        set(SHELLEXT_SRC_FILES ${SHELLEXT_SRC_FILES} src/crc32c-gas.S)
+    endif()
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -201,13 +212,16 @@ configure_file(src/shellext/shellbtrfs.rc.in shellbtrfs.rc)
 add_library(shellbtrfs SHARED ${SHELLEXT_SRC_FILES})
 
 if(NOT MSVC)
-    target_compile_options(shellbtrfs PUBLIC -msse4.2)
     target_link_options(shellbtrfs PUBLIC -static -static-libgcc)
 else()
     target_compile_options(shellbtrfs PUBLIC /EHsc)
 endif()
 
 target_link_libraries(shellbtrfs comctl32 ntdll setupapi uxtheme shlwapi windowscodecs gdi32 advapi32 shell32 ole32)
+
+if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
+    target_compile_options(shellbtrfs PUBLIC /Gz) # stdcall
+endif()
 
 set_target_properties(shellbtrfs PROPERTIES PREFIX "")
 
