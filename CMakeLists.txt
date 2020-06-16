@@ -86,10 +86,14 @@ set(CMAKE_ASM_MASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDebugDLL ""
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
     if(MSVC)
         enable_language(ASM_MASM)
-        set(SRC_FILES ${SRC_FILES} src/crc32c-masm.asm)
+        set(SRC_FILES ${SRC_FILES}
+            src/crc32c-masm.asm
+            src/xor-masm.asm)
     else()
         enable_language(ASM)
-        set(SRC_FILES ${SRC_FILES} src/crc32c-gas.S)
+        set(SRC_FILES ${SRC_FILES}
+            src/crc32c-gas.S
+            src/xor-gas.S)
     endif()
 endif()
 

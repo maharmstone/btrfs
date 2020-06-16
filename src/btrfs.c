@@ -48,10 +48,6 @@
 
 #include <ntstrsafe.h>
 
-#if defined(_X86_) || defined(_AMD64_)
-#include <immintrin.h>
-#endif
-
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
                             BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
                             BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES | \
@@ -122,7 +118,7 @@ static void init_serial(bool first_time);
 #endif
 
 static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp);
-static void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+static void __stdcall do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len);
 
 xor_func do_xor = do_xor_basic;
 
@@ -284,50 +280,7 @@ bool is_top_level(_In_ PIRP Irp) {
     return false;
 }
 
-#if defined(_X86_) || defined(_AMD64_)
-static void do_xor_sse2(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
-    uint32_t j;
-
-    if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
-        while (len >= 16) {
-            __m128i x1, x2;
-
-            x1 = _mm_load_si128((__m128i*)buf1);
-            x2 = _mm_load_si128((__m128i*)buf2);
-            x1 = _mm_xor_si128(x1, x2);
-            _mm_store_si128((__m128i*)buf1, x1);
-
-            buf1 += 16;
-            buf2 += 16;
-            len -= 16;
-        }
-    }
-
-#ifdef _AMD64_
-    while (len > 8) {
-        *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
-        buf1 += 8;
-        buf2 += 8;
-        len -= 8;
-    }
-#endif
-
-    while (len > 4) {
-        *(uint32_t*)buf1 ^= *(uint32_t*)buf2;
-        buf1 += 4;
-        buf2 += 4;
-        len -= 4;
-    }
-
-    for (j = 0; j < len; j++) {
-        *buf1 ^= *buf2;
-        buf1++;
-        buf2++;
-    }
-}
-#endif
-
-static void do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
+static void __stdcall do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     uint32_t j;
 
 #if defined(_ARM_) || defined(_ARM64_)

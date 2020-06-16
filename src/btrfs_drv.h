@@ -1074,6 +1074,11 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
     }
 }
 
+// in xor-gas.S
+#if defined(_X86_) || defined(_AMD64_)
+void __stdcall do_xor_sse2(uint8_t* buf1, uint8_t* buf2, uint32_t len);
+#endif
+
 // in btrfs.c
 _Ret_maybenull_
 device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid);
