@@ -301,14 +301,13 @@ static void write_reg_key(HKEY root, const wstring& keyname, const WCHAR* val, c
 
 static void register_clsid(const GUID clsid, const WCHAR* description) {
     WCHAR* clsidstring;
-    wstring inproc, progid, clsidkeyname;
+    wstring inproc, clsidkeyname;
     WCHAR dllpath[MAX_PATH];
 
     StringFromCLSID(clsid, &clsidstring);
 
     try {
         inproc = L"CLSID\\"s + clsidstring + L"\\InprocServer32"s;
-        progid = L"CLSID\\"s + clsidstring + L"\\ProgId"s;
         clsidkeyname = L"CLSID\\"s + clsidstring;
 
         write_reg_key(HKEY_CLASSES_ROOT, clsidkeyname, nullptr, description);
