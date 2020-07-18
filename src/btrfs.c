@@ -1122,10 +1122,10 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
 
             TRACE("label_len = %lu\n", label_len);
 
-            ffvi.VolumeCreationTime.QuadPart = 0; // FIXME
+            RtlZeroMemory(&ffvi, offsetof(FILE_FS_VOLUME_INFORMATION, VolumeLabel));
+
             ffvi.VolumeSerialNumber = Vcb->superblock.uuid.uuid[12] << 24 | Vcb->superblock.uuid.uuid[13] << 16 | Vcb->superblock.uuid.uuid[14] << 8 | Vcb->superblock.uuid.uuid[15];
             ffvi.VolumeLabelLength = orig_label_len;
-            ffvi.SupportsObjects = false;
 
             RtlCopyMemory(data, &ffvi, min(offsetof(FILE_FS_VOLUME_INFORMATION, VolumeLabel), IrpSp->Parameters.QueryVolume.Length));
 
