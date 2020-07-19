@@ -156,6 +156,8 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     bool inode_item_changed = false;
     NTSTATUS Status;
 
+    RtlZeroMemory(fbi, sizeof(FILE_BASIC_INFORMATION));
+
     if (fcb->ads) {
         if (fileref && fileref->parent)
             fcb = fileref->parent->fcb;
