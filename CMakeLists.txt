@@ -13,7 +13,12 @@ set(ZSTD_SRC_FILES src/zstd/entropy_common.c
     src/zstd/huf_decompress.c
     src/zstd/zstd_common.c
     src/zstd/zstd_compress.c
+    src/zstd/zstd_compress_literals.c
+    src/zstd/zstd_compress_sequences.c
+    src/zstd/zstd_compress_superblock.c
+    src/zstd/zstd_ddict.c
     src/zstd/zstd_decompress.c
+    src/zstd/zstd_decompress_block.c
     src/zstd/zstd_double_fast.c
     src/zstd/zstd_fast.c
     src/zstd/zstd_lazy.c
