@@ -3212,39 +3212,29 @@ nextitem:
                     inpageoff = inoff % LZO_PAGE_SIZE;
                 }
 
-                if (off2 != 0) {
-                    outlen = off2 + min(rp->read, (uint32_t)(rp->extents[i].ed_num_bytes - rp->extents[i].off));
+                /* Previous versions of this code decompressed directly into the destination buffer,
+                 * but unfortunately that can't be relied on - Windows likes to use dummy pages sometimes
+                 * when mmap-ing, which breaks the backtracking used by e.g. zstd. */
 
-                    decomp = ExAllocatePoolWithTag(pool_type, outlen, ALLOC_TAG);
-                    if (!decomp) {
-                        ERR("out of memory\n");
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto exit;
-                    }
-                } else
+                if (off2 != 0)
+                    outlen = off2 + min(rp->read, (uint32_t)(rp->extents[i].ed_num_bytes - rp->extents[i].off));
+                else
                     outlen = min(rp->read, (uint32_t)(rp->extents[i].ed_num_bytes - rp->extents[i].off));
+
+                decomp = ExAllocatePoolWithTag(pool_type, outlen, ALLOC_TAG);
+                if (!decomp) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
 
                 ccj = (comp_calc_job*)ExAllocatePoolWithTag(pool_type, sizeof(comp_calc_job), ALLOC_TAG);
                 if (!ccj) {
                     ERR("out of memory\n");
 
-                    if (decomp)
-                        ExFreePool(decomp);
+                    ExFreePool(decomp);
 
                     Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto exit;
-                }
-
-                Status = add_calc_job_decomp(fcb->Vcb, rp->compression, buf2, inlen, decomp ? decomp : rp->data, outlen,
-                                             inpageoff, &ccj->cj);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("add_calc_job_decomp returned %08lx\n", Status);
-
-                    if (decomp)
-                        ExFreePool(decomp);
-
-                    ExFreePool(ccj);
-
                     goto exit;
                 }
 
@@ -3253,6 +3243,17 @@ nextitem:
 
                 ccj->offset = off2;
                 ccj->length = (size_t)min(rp->read, rp->extents[i].ed_num_bytes - rp->extents[i].off);
+
+                Status = add_calc_job_decomp(fcb->Vcb, rp->compression, buf2, inlen, decomp, outlen,
+                                             inpageoff, &ccj->cj);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_calc_job_decomp returned %08lx\n", Status);
+
+                    ExFreePool(decomp);
+                    ExFreePool(ccj);
+
+                    goto exit;
+                }
 
                 InsertTailList(&calc_jobs, &ccj->list_entry);
 
@@ -3286,10 +3287,8 @@ nextitem:
         if (!NT_SUCCESS(ccj->cj->Status))
             Status = ccj->cj->Status;
 
-        if (ccj->decomp) {
-            RtlCopyMemory(ccj->data, (uint8_t*)ccj->decomp + ccj->offset, ccj->length);
-            ExFreePool(ccj->decomp);
-        }
+        RtlCopyMemory(ccj->data, (uint8_t*)ccj->decomp + ccj->offset, ccj->length);
+        ExFreePool(ccj->decomp);
 
         ExFreePool(ccj);
     }
