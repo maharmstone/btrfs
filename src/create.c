@@ -385,7 +385,7 @@ static NTSTATUS split_path(device_extension* Vcb, PUNICODE_STRING path, LIST_ENT
             if (nb->us.Buffer[i] == ':') {
                 name_bit* nb2;
 
-                if (nb->us.Buffer[i+1] == 0) {
+                if (i + 1 == nb->us.Length / sizeof(WCHAR)) {
                     WARN("zero-length stream name\n");
                     Status = STATUS_OBJECT_NAME_INVALID;
                     goto cleanup;
