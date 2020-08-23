@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(btrfs VERSION 1.7.3)
+project(btrfs VERSION 1.7.4)
 
 # btrfs.sys
 
