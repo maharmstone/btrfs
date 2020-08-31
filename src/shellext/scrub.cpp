@@ -458,10 +458,10 @@ static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     BtrfsScrub* bs;
 
     if (uMsg == WM_INITDIALOG) {
-        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
         bs = (BtrfsScrub*)lParam;
     } else {
-        bs = (BtrfsScrub*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+        bs = (BtrfsScrub*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
     }
 
     if (bs)

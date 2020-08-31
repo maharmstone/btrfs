@@ -532,10 +532,10 @@ static INT_PTR CALLBACK stub_UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     BtrfsVolPropSheet* bvps;
 
     if (uMsg == WM_INITDIALOG) {
-        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
         bvps = (BtrfsVolPropSheet*)lParam;
     } else {
-        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
     }
 
     if (bvps)
@@ -904,10 +904,10 @@ static INT_PTR CALLBACK stub_StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
     BtrfsVolPropSheet* bvps;
 
     if (uMsg == WM_INITDIALOG) {
-        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
         bvps = (BtrfsVolPropSheet*)lParam;
     } else {
-        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
     }
 
     if (bvps)
@@ -1199,10 +1199,10 @@ static INT_PTR CALLBACK stub_DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
     BtrfsVolPropSheet* bvps;
 
     if (uMsg == WM_INITDIALOG) {
-        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
         bvps = (BtrfsVolPropSheet*)lParam;
     } else {
-        bvps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+        bvps = (BtrfsVolPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
     }
 
     if (bvps)
@@ -1278,7 +1278,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
                 EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-                SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+                SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
                 bps->readonly = true;
                 bd = bps->devices;
@@ -1327,7 +1327,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
             case WM_COMMAND:
             {
-                BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+                BtrfsVolPropSheet* bps = (BtrfsVolPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
 
                 if (bps) {
                     switch (HIWORD(wParam)) {
@@ -1527,10 +1527,10 @@ static INT_PTR __stdcall dlg_proc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM
     BtrfsChangeDriveLetter* bcdl;
 
     if (uMsg == WM_INITDIALOG) {
-        SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
+        SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)lParam);
         bcdl = (BtrfsChangeDriveLetter*)lParam;
     } else
-        bcdl = (BtrfsChangeDriveLetter*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+        bcdl = (BtrfsChangeDriveLetter*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
 
     return bcdl->DlgProc(hwndDlg, uMsg, wParam, lParam);
 }

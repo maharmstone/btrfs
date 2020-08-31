@@ -794,7 +794,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
             {
                 BtrfsPropSheet* bps = (BtrfsPropSheet*)lParam;
 
-                SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+                SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
                 bps->update_size_details_dialog(hwndDlg);
 
@@ -813,7 +813,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
 
             case WM_TIMER:
             {
-                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
 
                 if (bps) {
                     bps->update_size_details_dialog(hwndDlg);
@@ -834,18 +834,18 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
 
 static void set_check_box(HWND hwndDlg, ULONG id, uint64_t min, uint64_t max) {
     if (min && max) {
-        SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_CHECKED, 0);
+        SendDlgItemMessageW(hwndDlg, id, BM_SETCHECK, BST_CHECKED, 0);
     } else if (!min && !max) {
-        SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_UNCHECKED, 0);
+        SendDlgItemMessageW(hwndDlg, id, BM_SETCHECK, BST_UNCHECKED, 0);
     } else {
         LONG_PTR style;
 
-        style = GetWindowLongPtr(GetDlgItem(hwndDlg, id), GWL_STYLE);
+        style = GetWindowLongPtrW(GetDlgItem(hwndDlg, id), GWL_STYLE);
         style &= ~BS_AUTOCHECKBOX;
         style |= BS_AUTO3STATE;
-        SetWindowLongPtr(GetDlgItem(hwndDlg, id), GWL_STYLE, style);
+        SetWindowLongPtrW(GetDlgItem(hwndDlg, id), GWL_STYLE, style);
 
-        SendDlgItemMessage(hwndDlg, id, BM_SETCHECK, BST_INDETERMINATE, 0);
+        SendDlgItemMessageW(hwndDlg, id, BM_SETCHECK, BST_INDETERMINATE, 0);
     }
 }
 
@@ -972,13 +972,13 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 
     comptype = GetDlgItem(hwndDlg, IDC_COMPRESS_TYPE);
 
-    while (SendMessage(comptype, CB_GETCOUNT, 0, 0) > 0) {
-        SendMessage(comptype, CB_DELETESTRING, 0, 0);
+    while (SendMessageW(comptype, CB_GETCOUNT, 0, 0) > 0) {
+        SendMessageW(comptype, CB_DELETESTRING, 0, 0);
     }
 
     if (min_compression_type != max_compression_type) {
-        SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)L"");
-        SendMessage(comptype, CB_SETCURSEL, 0, 0);
+        SendMessageW(comptype, CB_ADDSTRING, 0, (LPARAM)L"");
+        SendMessageW(comptype, CB_SETCURSEL, 0, 0);
     }
 
     i = 0;
@@ -988,13 +988,13 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
         if (!load_string(module, comp_types[i], t))
             throw last_error(GetLastError());
 
-        SendMessage(comptype, CB_ADDSTRING, 0, (LPARAM)t.c_str());
+        SendMessageW(comptype, CB_ADDSTRING, 0, (LPARAM)t.c_str());
 
         i++;
     }
 
     if (min_compression_type == max_compression_type) {
-        SendMessage(comptype, CB_SETCURSEL, min_compression_type, 0);
+        SendMessageW(comptype, CB_SETCURSEL, min_compression_type, 0);
         compress_type = min_compression_type;
     }
 
@@ -1069,7 +1069,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
                 EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
 
-                SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
+                SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (LONG_PTR)bps);
 
                 bps->init_propsheet(hwndDlg);
 
@@ -1078,7 +1078,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
             case WM_COMMAND:
             {
-                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
 
                 if (bps && !bps->readonly) {
                     switch (HIWORD(wParam)) {
@@ -1233,7 +1233,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                     break;
 
                     case PSN_APPLY: {
-                        BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+                        BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
 
                         bps->apply_changes(hwndDlg);
                         SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
@@ -1246,7 +1246,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                             PNMLINK pNMLink = (PNMLINK)lParam;
 
                             if (pNMLink->item.iLink == 0)
-                                DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SIZE_DETAILS), hwndDlg, SizeDetailsDlgProc, GetWindowLongPtr(hwndDlg, GWLP_USERDATA));
+                                DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_SIZE_DETAILS), hwndDlg, SizeDetailsDlgProc, GetWindowLongPtrW(hwndDlg, GWLP_USERDATA));
                         }
                         break;
                     }
@@ -1255,7 +1255,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
             case WM_TIMER:
             {
-                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtr(hwndDlg, GWLP_USERDATA);
+                BtrfsPropSheet* bps = (BtrfsPropSheet*)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
 
                 if (bps) {
                     bps->set_size_on_disk(hwndDlg);
