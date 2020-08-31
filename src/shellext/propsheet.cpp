@@ -1333,6 +1333,7 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         BtrfsPropSheet bps;
         PROPSHEETPAGEW psp;
         PROPSHEETHEADERW psh;
+        INITCOMMONCONTROLSEX icex;
         wstring title;
 
         set_dpi_aware();
@@ -1340,6 +1341,12 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         load_string(module, IDS_STANDALONE_PROPSHEET_TITLE, title);
 
         bps.set_cmdline(lpszCmdLine);
+
+        icex.dwSize = sizeof(icex);
+        icex.dwICC = ICC_LINK_CLASS;
+
+        if (!InitCommonControlsEx(&icex))
+            throw string_error(IDS_INITCOMMONCONTROLSEX_FAILED);
 
         psp.dwSize = sizeof(psp);
         psp.dwFlags = PSP_USETITLE;
