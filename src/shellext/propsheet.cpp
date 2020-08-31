@@ -1067,7 +1067,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
         switch (uMsg) {
             case WM_INITDIALOG:
             {
-                PROPSHEETPAGE* psp = (PROPSHEETPAGE*)lParam;
+                PROPSHEETPAGEW* psp = (PROPSHEETPAGEW*)lParam;
                 BtrfsPropSheet* bps = (BtrfsPropSheet*)psp->lParam;
 
                 EnableThemeDialogTexture(hwndDlg, ETDT_ENABLETAB);
@@ -1279,7 +1279,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
 HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPARAM lParam) {
     try {
-        PROPSHEETPAGE psp;
+        PROPSHEETPAGEW psp;
         HPROPSHEETPAGE hPage;
         INITCOMMONCONTROLSEX icex;
 
@@ -1295,15 +1295,15 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
         psp.dwSize = sizeof(psp);
         psp.dwFlags = PSP_USEREFPARENT | PSP_USETITLE;
         psp.hInstance = module;
-        psp.pszTemplate = MAKEINTRESOURCE(IDD_PROP_SHEET);
+        psp.pszTemplate = MAKEINTRESOURCEW(IDD_PROP_SHEET);
         psp.hIcon = 0;
-        psp.pszTitle = MAKEINTRESOURCE(IDS_PROP_SHEET_TITLE);
+        psp.pszTitle = MAKEINTRESOURCEW(IDS_PROP_SHEET_TITLE);
         psp.pfnDlgProc = (DLGPROC)PropSheetDlgProc;
         psp.pcRefParent = (UINT*)&objs_loaded;
         psp.pfnCallback = nullptr;
         psp.lParam = (LPARAM)this;
 
-        hPage = CreatePropertySheetPage(&psp);
+        hPage = CreatePropertySheetPageW(&psp);
 
         if (hPage) {
             if (pfnAddPage(hPage, lParam)) {
