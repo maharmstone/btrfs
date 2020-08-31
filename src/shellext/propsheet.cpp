@@ -416,11 +416,11 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
                     OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
     if (h == INVALID_HANDLE_VALUE)
-        return;
+        throw last_error(GetLastError());
 
     Status = NtQueryInformationFile(h, &iosb, &fai, sizeof(FILE_ACCESS_INFORMATION), FileAccessInformation);
     if (!NT_SUCCESS(Status))
-        return;
+        throw ntstatus_error(Status);
 
     if (fai.AccessFlags & FILE_READ_ATTRIBUTES)
         can_change_perms = fai.AccessFlags & WRITE_DAC;
@@ -434,7 +434,10 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_INODE_INFO, nullptr, 0, &bii2, sizeof(btrfs_inode_info));
 
-    if (NT_SUCCESS(Status) && !bii2.top) {
+    if (!NT_SUCCESS(Status))
+        throw ntstatus_error(Status);
+
+    if (!bii2.top) {
         LARGE_INTEGER filesize;
 
         subvol = bii2.subvol;
@@ -1358,7 +1361,8 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int
         psh.nPages = 1;
         psh.ppsp = &psp;
 
-        PropertySheetW(&psh);
+        if (PropertySheetW(&psh) < 0)
+            throw last_error(GetLastError());
     } catch (const exception& e) {
         error_message(hwnd, e.what());
     }
