@@ -220,6 +220,7 @@ if(NOT MSVC)
     target_link_options(shellbtrfs PUBLIC -static -static-libgcc)
 else()
     target_compile_options(shellbtrfs PUBLIC /EHsc)
+    target_link_options(shellbtrfs PUBLIC /MANIFEST:NO)
 endif()
 
 target_link_libraries(shellbtrfs comctl32 ntdll setupapi uxtheme shlwapi windowscodecs gdi32 advapi32 shell32 ole32)
