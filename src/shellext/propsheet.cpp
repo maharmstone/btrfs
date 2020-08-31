@@ -724,7 +724,7 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     if (cr != old_text)
         SetDlgItemTextW(hwndDlg, IDC_COMPRESSION_RATIO, cr.c_str());
 
-    uint64_t extent_size = (allocsize - sparsesize - sizes[0]) / sector_size;
+    uint64_t extent_size = (allocsize - sparsesize - sizes[0]) / (sector_size == 0 ? 4096 : sector_size);
 
     if (num_extents == 0 || extent_size <= 1)
         ratio = 0.0f;
@@ -734,7 +734,6 @@ void BtrfsPropSheet::set_size_on_disk(HWND hwndDlg) {
     wstring_sprintf(frag, frag_format, ratio);
 
     GetDlgItemTextW(hwndDlg, IDC_FRAGMENTATION, old_text, sizeof(old_text) / sizeof(WCHAR));
-
 
     if (frag != old_text)
         SetDlgItemTextW(hwndDlg, IDC_FRAGMENTATION, frag.c_str());
