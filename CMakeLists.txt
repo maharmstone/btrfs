@@ -132,6 +132,7 @@ endif()
 
 if(NOT MSVC)
     target_compile_options(btrfs PUBLIC -U__NO_INLINE__)
+    add_definitions(-D__USE_MINGW_ANSI_STDIO=0)
 endif()
 
 target_compile_definitions(btrfs PUBLIC _KERNEL_MODE WIN9X_COMPAT_SPINLOCK)
