@@ -498,7 +498,7 @@ subkey, which will take effect on reboot. If a value is set in the key above thi
 by default.
 
 * `Ignore` (DWORD): set this to 1 to tell the driver not to attempt loading this filesystem. With the
-`Readonly flag, this is probably redundant.
+`Readonly` flag, this is probably redundant.
 
 * `Readonly` (DWORD): set this to 1 to tell the driver not to allow writing to this volume. This is
 the equivalent of the `ro` flag on Linux.
