@@ -1,4 +1,4 @@
-WinBtrfs v1.7.4
+WinBtrfs v1.7.5
 ---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -249,6 +249,13 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7.5 (2020-10-31):
+* Fixed text display issue in shell extension
+* Added support for mingw 8
+* Fixed LXSS permissions not working in new versions of Windows
+* Fixed issue where truncating an inline file wouldn't change its size
+* Fixed crash with Quibble where driver would try to use AVX2 before Windows had enabled it
 
 v1.7.4 (2020-08-23):
 * Fixed issue when running compressed EXEs
