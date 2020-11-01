@@ -578,6 +578,20 @@ void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULO
             if (RtlCompareMemory(&pdode->uuid, &sr.uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 if (!pdode->vde)
                     pdo_to_add = pdode->pdo;
+                else if (pdode->vde->device && !(pdode->vde->device->Flags & DO_SYSTEM_BOOT_PARTITION)) { // AddDevice has beaten us to it
+                    NTSTATUS Status;
+
+                    pdode->vde->device->Flags |= DO_SYSTEM_BOOT_PARTITION;
+                    pdode->pdo->Flags |= DO_SYSTEM_BOOT_PARTITION;
+
+                    Status = IoSetDeviceInterfaceState(&pdode->vde->bus_name, false);
+                    if (!NT_SUCCESS(Status))
+                        ERR("IoSetDeviceInterfaceState returned %08lx\n", Status);
+
+                    Status = IoSetDeviceInterfaceState(&pdode->vde->bus_name, true);
+                    if (!NT_SUCCESS(Status))
+                        ERR("IoSetDeviceInterfaceState returned %08lx\n", Status);
+                }
 
                 break;
             }
