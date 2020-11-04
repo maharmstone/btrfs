@@ -329,25 +329,11 @@ void boot_add_device(DEVICE_OBJECT* pdo) {
     mountmgr_notification(&pdode->uuid);
 }
 
-/* If booting from Btrfs, Windows will pass the device object for the raw partition to
- * mount_vol - which is no good to us, as we only use the \Device\Btrfs{} devices we
- * create so that RAID works correctly.
- * At the time check_system_root gets called, \SystemRoot is a symlink to the ARC device,
- * e.g. \ArcName\multi(0)disk(0)rdisk(0)partition(1)\Windows. We can't change the symlink,
- * as it gets clobbered by IopReassignSystemRoot shortly afterwards, and we can't touch
- * the \ArcName symlinks as they haven't been created yet. Instead, we need to change the
- * symlink \Device\HarddiskX\PartitionY, which is what the ArcName symlink will shortly
- * point to.
- */
-void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count) {
+void check_system_root() {
     LIST_ENTRY* le;
     PDEVICE_OBJECT pdo_to_add = NULL;
 
-    TRACE("(%p, %p, %lu)\n", DriverObject, Context, Count);
-
-    UNUSED(DriverObject);
-    UNUSED(Context);
-    UNUSED(Count);
+    TRACE("()\n");
 
     // wait for any PNP notifications in progress to finish
     ExAcquireResourceExclusiveLite(&boot_lock, TRUE);
