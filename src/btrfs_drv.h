@@ -1600,7 +1600,7 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
 NTSTATUS __stdcall compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength, IN PREPARSE_DATA_BUFFER ReparseBuffer);
 
 // in boot.c
-void __stdcall check_system_root(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count);
+void check_system_root();
 void boot_add_device(DEVICE_OBJECT* pdo);
 extern BTRFS_UUID boot_uuid;
 
