@@ -1799,9 +1799,10 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
     if (fn.Length == 0)
         return rename_stream_to_file(Vcb, fileref, ccb, flags, Irp, rollback);
 
-    if (!is_file_name_valid(&fn, false, true)) {
+    Status = check_file_name_valid(&fn, false, true);
+    if (!NT_SUCCESS(Status)) {
         WARN("invalid stream name %.*S\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
-        return STATUS_OBJECT_NAME_INVALID;
+        return Status;
     }
 
     if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) {
@@ -2038,9 +2039,10 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (!is_file_name_valid(&fn, false, true)) {
+    Status = check_file_name_valid(&fn, false, true);
+    if (!NT_SUCCESS(Status)) {
         WARN("invalid stream name %.*S\n", (int)(fn.Length / sizeof(WCHAR)), fn.Buffer);
-        return STATUS_OBJECT_NAME_INVALID;
+        return Status;
     }
 
     if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && fileref->fcb->atts & FILE_ATTRIBUTE_READONLY) {

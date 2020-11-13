@@ -5750,27 +5750,27 @@ exit:
     return Status;
 }
 
-bool is_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bool stream) {
+NTSTATUS check_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bool stream) {
     ULONG i;
 
     if (us->Length < sizeof(WCHAR))
-        return false;
+        return STATUS_OBJECT_NAME_INVALID;
 
     if (us->Length > 255 * sizeof(WCHAR))
-        return false;
+        return STATUS_OBJECT_NAME_INVALID;
 
     for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
         if (us->Buffer[i] == '/' || us->Buffer[i] == 0 ||
             (!posix && (us->Buffer[i] == '/' || us->Buffer[i] == ':')) ||
             (!posix && !stream && (us->Buffer[i] == '<' || us->Buffer[i] == '>' || us->Buffer[i] == '"' ||
             us->Buffer[i] == '|' || us->Buffer[i] == '?' || us->Buffer[i] == '*' || (us->Buffer[i] >= 1 && us->Buffer[i] <= 31))))
-            return false;
+            return STATUS_OBJECT_NAME_INVALID;
     }
 
     if (us->Buffer[0] == '.' && (us->Length == sizeof(WCHAR) || (us->Length == 2 * sizeof(WCHAR) && us->Buffer[1] == '.')))
-        return false;
+        return STATUS_OBJECT_NAME_INVALID;
 
-    return true;
+    return STATUS_SUCCESS;
 }
 
 void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length) {
