@@ -5782,6 +5782,8 @@ NTSTATUS check_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bo
 
         if (utf8len > 255)
             return STATUS_OBJECT_NAME_INVALID;
+        else if (stream && utf8len > 250) // minus five bytes for "user."
+            return STATUS_OBJECT_NAME_INVALID;
     }
 
     return STATUS_SUCCESS;
