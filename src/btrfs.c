@@ -5770,6 +5770,20 @@ NTSTATUS check_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bo
     if (us->Buffer[0] == '.' && (us->Length == sizeof(WCHAR) || (us->Length == 2 * sizeof(WCHAR) && us->Buffer[1] == '.')))
         return STATUS_OBJECT_NAME_INVALID;
 
+    /* The Linux driver expects filenames with a maximum length of 255 bytes - make sure
+     * that our UTF-8 length won't be longer than that. */
+    if (us->Length >= 85 * sizeof(WCHAR)) {
+        NTSTATUS Status;
+        ULONG utf8len;
+
+        Status = utf16_to_utf8(NULL, 0, &utf8len, us->Buffer, us->Length);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        if (utf8len > 255)
+            return STATUS_OBJECT_NAME_INVALID;
+    }
+
     return STATUS_SUCCESS;
 }
 
