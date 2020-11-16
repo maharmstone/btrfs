@@ -94,6 +94,7 @@ tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 tFsRtlAreThereCurrentOrInProgressFileLocks fFsRtlAreThereCurrentOrInProgressFileLocks;
+tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 bool diskacc = false;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -1005,7 +1006,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
                                          FILE_UNICODE_ON_DISK | FILE_NAMED_STREAMS | FILE_SUPPORTS_HARD_LINKS | FILE_PERSISTENT_ACLS |
                                          FILE_SUPPORTS_REPARSE_POINTS | FILE_SUPPORTS_SPARSE_FILES | FILE_SUPPORTS_OBJECT_IDS |
                                          FILE_SUPPORTS_OPEN_BY_FILE_ID | FILE_SUPPORTS_EXTENDED_ATTRIBUTES | FILE_SUPPORTS_BLOCK_REFCOUNTING |
-                                         FILE_SUPPORTS_POSIX_UNLINK_RENAME;
+                                         FILE_SUPPORTS_POSIX_UNLINK_RENAME | FILE_SUPPORTS_TRANSACTIONS;
             if (Vcb->readonly)
                 data->FileSystemAttributes |= FILE_READ_ONLY_VOLUME;
 
@@ -4502,6 +4503,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     NewDeviceObject->Flags |= DO_DIRECT_IO;
+    NewDeviceObject->Flags |= DO_SUPPORTS_TRANSACTIONS;
 
     // Some programs seem to expect that the sector size will be 512, for
     // FILE_NO_INTERMEDIATE_BUFFERING and the like.
@@ -6373,10 +6375,14 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"FsRtlValidateReparsePointBuffer");
         fFsRtlValidateReparsePointBuffer = (tFsRtlValidateReparsePointBuffer)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"IoGetTransactionParameterBlock");
+        fIoGetTransactionParameterBlock = (tIoGetTransactionParameterBlock)MmGetSystemRoutineAddress(&name);
     } else {
         fFsRtlGetEcpListFromIrp = NULL;
         fFsRtlGetNextExtraCreateParameter = NULL;
         fFsRtlValidateReparsePointBuffer = compat_FsRtlValidateReparsePointBuffer;
+        fIoGetTransactionParameterBlock = NULL;
     }
 
     drvobj = DriverObject;

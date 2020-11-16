@@ -24,6 +24,7 @@ extern PDEVICE_OBJECT master_devobj;
 extern tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
 extern tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 extern tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
+extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 
 static const WCHAR datastring[] = L"::$DATA";
 
@@ -4797,6 +4798,12 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (!IrpSp->FileObject) {
         ERR("FileObject was NULL\n");
         Status = STATUS_INVALID_PARAMETER;
+        goto exit;
+    }
+
+    if (fIoGetTransactionParameterBlock && fIoGetTransactionParameterBlock(IrpSp->FileObject)) {
+        FIXME("FIXME - transactions\n");
+        Status = STATUS_NOT_SUPPORTED;
         goto exit;
     }
 

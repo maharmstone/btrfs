@@ -1808,6 +1808,8 @@ typedef BOOLEAN (__stdcall *tFsRtlCheckLockForOplockRequest)(PFILE_LOCK FileLock
 
 typedef BOOLEAN (__stdcall *tFsRtlAreThereCurrentOrInProgressFileLocks)(PFILE_LOCK FileLock);
 
+typedef PTXN_PARAMETER_BLOCK (__stdcall *tIoGetTransactionParameterBlock)(PFILE_OBJECT FileObject);
+
 #ifndef _MSC_VER
 PEPROCESS __stdcall PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
 #endif
