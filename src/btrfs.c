@@ -95,6 +95,8 @@ tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 tFsRtlAreThereCurrentOrInProgressFileLocks fFsRtlAreThereCurrentOrInProgressFileLocks;
 tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
+tNtCreateTransactionManager fNtCreateTransactionManager;
+tNtCreateResourceManager fNtCreateResourceManager;
 bool diskacc = false;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -2156,6 +2158,12 @@ void uninit(_In_ device_extension* Vcb) {
 
     if (Vcb->devobj->AttachedDevice)
         IoDetachDevice(Vcb->devobj);
+
+    if (Vcb->rm_handle)
+        NtClose(Vcb->rm_handle);
+
+    if (Vcb->tm_handle)
+        NtClose(Vcb->tm_handle);
 
     IoDeleteDevice(Vcb->devobj);
 }
@@ -4345,6 +4353,45 @@ static void calculate_sector_shift(device_extension* Vcb) {
     }
 }
 
+static NTSTATUS init_trans_man(device_extension* Vcb) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    UUID rm_uuid;
+
+    if (!fNtCreateTransactionManager)
+        return STATUS_SUCCESS;
+
+    memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
+    oa.Length = sizeof(OBJECT_ATTRIBUTES);
+    oa.Attributes = OBJ_KERNEL_HANDLE;
+
+    Status = fNtCreateTransactionManager(&Vcb->tm_handle, TRANSACTIONMANAGER_CREATE_RM, &oa,
+                                         NULL, TRANSACTION_MANAGER_VOLATILE, 0);
+    if (!NT_SUCCESS(Status)) {
+        ERR("NtCreateTransactionManager returned %08lx\n", Status);
+        return Status;
+    }
+
+    Status = ExUuidCreate(&rm_uuid);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ExUuidCreate returned %08lx\n", Status);
+        return Status;
+    }
+
+    // MSDN says that RmGuid is an optional parameter, but we get a BSOD if it's NULL!
+
+    Status = fNtCreateResourceManager(&Vcb->rm_handle, RESOURCEMANAGER_ENLIST | RESOURCEMANAGER_GET_NOTIFICATION,
+                                      Vcb->tm_handle, &rm_uuid, &oa, RESOURCE_MANAGER_VOLATILE, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("NtCreateResourceManager returned %08lx\n", Status);
+        return Status;
+    }
+
+    // FIXME - TmEnableCallbacks
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
@@ -4985,6 +5032,12 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Status = look_for_balance_item(Vcb);
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
         WARN("look_for_balance_item returned %08lx\n", Status);
+
+    Status = init_trans_man(Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("init_trans_man returned %08lx\n", Status);
+        goto exit;
+    }
 
     Status = STATUS_SUCCESS;
 
@@ -6378,11 +6431,19 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"IoGetTransactionParameterBlock");
         fIoGetTransactionParameterBlock = (tIoGetTransactionParameterBlock)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"NtCreateTransactionManager");
+        fNtCreateTransactionManager = (tNtCreateTransactionManager)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"NtCreateResourceManager");
+        fNtCreateResourceManager = (tNtCreateResourceManager)MmGetSystemRoutineAddress(&name);
     } else {
         fFsRtlGetEcpListFromIrp = NULL;
         fFsRtlGetNextExtraCreateParameter = NULL;
         fFsRtlValidateReparsePointBuffer = compat_FsRtlValidateReparsePointBuffer;
         fIoGetTransactionParameterBlock = NULL;
+        fNtCreateTransactionManager = NULL;
+        fNtCreateResourceManager = NULL;
     }
 
     drvobj = DriverObject;

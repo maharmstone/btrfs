@@ -808,6 +808,8 @@ typedef struct _device_extension {
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     NPAGED_LOOKASIDE_LIST fileref_np_lookaside;
     NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
+    HANDLE tm_handle;
+    HANDLE rm_handle;
     LIST_ENTRY list_entry;
 } device_extension;
 
@@ -1809,6 +1811,14 @@ typedef BOOLEAN (__stdcall *tFsRtlCheckLockForOplockRequest)(PFILE_LOCK FileLock
 typedef BOOLEAN (__stdcall *tFsRtlAreThereCurrentOrInProgressFileLocks)(PFILE_LOCK FileLock);
 
 typedef PTXN_PARAMETER_BLOCK (__stdcall *tIoGetTransactionParameterBlock)(PFILE_OBJECT FileObject);
+
+typedef NTSTATUS (__stdcall *tNtCreateTransactionManager)(PHANDLE TmHandle, ACCESS_MASK DesiredAccess,
+                                                          POBJECT_ATTRIBUTES ObjectAttributes, PUNICODE_STRING LogFileName,
+                                                          ULONG CreateOptions, ULONG CommitStrength);
+
+typedef NTSTATUS (__stdcall *tNtCreateResourceManager)(PHANDLE ResourceManagerHandle, ACCESS_MASK DesiredAccess,
+                                                       HANDLE TmHandle, LPGUID RmGuid, POBJECT_ATTRIBUTES ObjectAttributes,
+                                                       ULONG CreateOptions, PUNICODE_STRING Description);
 
 #ifndef _MSC_VER
 PEPROCESS __stdcall PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
