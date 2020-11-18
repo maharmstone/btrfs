@@ -94,9 +94,6 @@ tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 tFsRtlAreThereCurrentOrInProgressFileLocks fFsRtlAreThereCurrentOrInProgressFileLocks;
-tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
-tNtCreateTransactionManager fNtCreateTransactionManager;
-tNtCreateResourceManager fNtCreateResourceManager;
 bool diskacc = false;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -109,6 +106,9 @@ bool shutting_down = false;
 ERESOURCE boot_lock;
 bool is_windows_8;
 extern uint64_t boot_subvol;
+extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
+extern tNtCreateTransactionManager fNtCreateTransactionManager;
+extern tNtCreateResourceManager fNtCreateResourceManager;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -4351,45 +4351,6 @@ static void calculate_sector_shift(device_extension* Vcb) {
         Vcb->sector_shift++;
         ss >>= 1;
     }
-}
-
-static NTSTATUS init_trans_man(device_extension* Vcb) {
-    NTSTATUS Status;
-    OBJECT_ATTRIBUTES oa;
-    UUID rm_uuid;
-
-    if (!fNtCreateTransactionManager)
-        return STATUS_SUCCESS;
-
-    memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
-    oa.Length = sizeof(OBJECT_ATTRIBUTES);
-    oa.Attributes = OBJ_KERNEL_HANDLE;
-
-    Status = fNtCreateTransactionManager(&Vcb->tm_handle, TRANSACTIONMANAGER_CREATE_RM, &oa,
-                                         NULL, TRANSACTION_MANAGER_VOLATILE, 0);
-    if (!NT_SUCCESS(Status)) {
-        ERR("NtCreateTransactionManager returned %08lx\n", Status);
-        return Status;
-    }
-
-    Status = ExUuidCreate(&rm_uuid);
-    if (!NT_SUCCESS(Status)) {
-        ERR("ExUuidCreate returned %08lx\n", Status);
-        return Status;
-    }
-
-    // MSDN says that RmGuid is an optional parameter, but we get a BSOD if it's NULL!
-
-    Status = fNtCreateResourceManager(&Vcb->rm_handle, RESOURCEMANAGER_ENLIST | RESOURCEMANAGER_GET_NOTIFICATION,
-                                      Vcb->tm_handle, &rm_uuid, &oa, RESOURCE_MANAGER_VOLATILE, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("NtCreateResourceManager returned %08lx\n", Status);
-        return Status;
-    }
-
-    // FIXME - TmEnableCallbacks
-
-    return STATUS_SUCCESS;
 }
 
 static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {

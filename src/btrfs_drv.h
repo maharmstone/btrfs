@@ -1606,6 +1606,9 @@ void check_system_root();
 void boot_add_device(DEVICE_OBJECT* pdo);
 extern BTRFS_UUID boot_uuid;
 
+// in trans.c
+NTSTATUS init_trans_man(device_extension* Vcb);
+
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
 
