@@ -4,6 +4,7 @@ tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 tNtCreateTransactionManager fNtCreateTransactionManager;
 tNtCreateResourceManager fNtCreateResourceManager;
 tTmCreateEnlistment fTmCreateEnlistment;
+tTmEnableCallbacks fTmEnableCallbacks;
 
 typedef struct _trans_ref {
     LIST_ENTRY list_entry;
@@ -12,6 +13,18 @@ typedef struct _trans_ref {
     ERESOURCE lock;
     HANDLE enlistment;
 } trans_ref;
+
+static NTSTATUS rm_notification(PKENLISTMENT EnlistmentObject, PVOID RMContext, PVOID TransactionContext,
+                                ULONG TransactionNotification, PLARGE_INTEGER TmVirtualClock, ULONG ArgumentLength,
+                                PVOID Argument) {
+    FIXME("FIXME - rm_notification\n");
+
+    // FIXME - handle commit or rollback
+
+    // FIXME - free trans_ref object(?)
+
+    return STATUS_SUCCESS;
+}
 
 NTSTATUS init_trans_man(device_extension* Vcb) {
     NTSTATUS Status;
@@ -35,6 +48,7 @@ NTSTATUS init_trans_man(device_extension* Vcb) {
     Status = ExUuidCreate(&rm_uuid);
     if (!NT_SUCCESS(Status)) {
         ERR("ExUuidCreate returned %08lx\n", Status);
+        NtClose(Vcb->tm_handle);
         return Status;
     }
 
@@ -44,10 +58,27 @@ NTSTATUS init_trans_man(device_extension* Vcb) {
                                       Vcb->tm_handle, &rm_uuid, &oa, RESOURCE_MANAGER_VOLATILE, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("NtCreateResourceManager returned %08lx\n", Status);
+        NtClose(Vcb->tm_handle);
         return Status;
     }
 
-    // FIXME - TmEnableCallbacks
+    Status = ObReferenceObjectByHandle(Vcb->rm_handle, RESOURCEMANAGER_ENLIST, NULL, KernelMode,
+                                       (void**)&Vcb->rm, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08lx\n", Status);
+        NtClose(Vcb->rm_handle);
+        NtClose(Vcb->tm_handle);
+        return Status;
+    }
+
+    Status = fTmEnableCallbacks(Vcb->rm, rm_notification, Vcb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("TmEnableCallbacks returned %08lx\n", Status);
+        ObDereferenceObject(Vcb->rm);
+        NtClose(Vcb->rm_handle);
+        NtClose(Vcb->tm_handle);
+        return Status;
+    }
 
     return STATUS_SUCCESS;
 }
@@ -58,7 +89,6 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     LIST_ENTRY* le;
     trans_ref* new_tr;
     OBJECT_ATTRIBUTES oa;
-    PRKRESOURCEMANAGER rm;
 
     if (block->Length < sizeof(TXN_PARAMETER_BLOCK))
         return STATUS_INVALID_PARAMETER;
@@ -106,34 +136,23 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
 
     TRACE("created new transaction\n");
 
-    Status = ObReferenceObjectByHandle(Vcb->rm_handle, RESOURCEMANAGER_ENLIST, NULL, KernelMode,
-                                       (void**)&rm, NULL);
-    if (!NT_SUCCESS(Status)) {
-        ERR("ObReferenceObjectByHandle returned %08lx\n", Status);
-        *t = new_tr;
-        return Status;
-    }
-
     memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
     oa.Length = sizeof(OBJECT_ATTRIBUTES);
     oa.Attributes = OBJ_KERNEL_HANDLE;
 
     ExAcquireResourceExclusiveLite(&new_tr->lock, true);
 
-    Status = fTmCreateEnlistment(&new_tr->enlistment, KernelMode, 0, &oa, rm, new_tr->trans_object,
+    Status = fTmCreateEnlistment(&new_tr->enlistment, KernelMode, 0, &oa, Vcb->rm, new_tr->trans_object,
                                  0, TRANSACTION_NOTIFY_COMMIT | TRANSACTION_NOTIFY_ROLLBACK, new_tr);
 
     if (!NT_SUCCESS(Status)) {
         ERR("TmCreateEnlistment returned %08lx\n", Status);
         ExReleaseResourceLite(&new_tr->lock);
-        ObDereferenceObject(rm);
         *t = new_tr;
         return Status;
     }
 
     ExReleaseResourceLite(&new_tr->lock);
-
-    ObDereferenceObject(rm);
 
     *t = new_tr;
 

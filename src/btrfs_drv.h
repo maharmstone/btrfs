@@ -729,6 +729,8 @@ typedef struct {
 
 struct _volume_device_extension;
 
+typedef struct _KRESOURCEMANAGER KRESOURCEMANAGER, *PKRESOURCEMANAGER, *PRKRESOURCEMANAGER;
+
 typedef struct _device_extension {
     uint32_t type;
     mount_options options;
@@ -812,6 +814,7 @@ typedef struct _device_extension {
     NPAGED_LOOKASIDE_LIST fileref_np_lookaside;
     NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
     HANDLE tm_handle;
+    PRKRESOURCEMANAGER rm;
     HANDLE rm_handle;
     LIST_ENTRY trans_list;
     KSPIN_LOCK trans_list_lock;
@@ -1831,12 +1834,20 @@ typedef NTSTATUS (__stdcall *tNtCreateResourceManager)(PHANDLE ResourceManagerHa
                                                        ULONG CreateOptions, PUNICODE_STRING Description);
 
 typedef struct _KTRANSACTION KTRANSACTION, *PKTRANSACTION;
-typedef struct _KRESOURCEMANAGER KRESOURCEMANAGER, *PRKRESOURCEMANAGER;
 
 typedef NTSTATUS (__stdcall *tTmCreateEnlistment)(PHANDLE EnlistmentHandle, KPROCESSOR_MODE PreviousMode, ACCESS_MASK DesiredAccess,
                                                   POBJECT_ATTRIBUTES ObjectAttributes, PRKRESOURCEMANAGER ResourceManager,
                                                   PKTRANSACTION Transaction, ULONG CreateOptions, NOTIFICATION_MASK NotificationMask,
                                                   PVOID EnlistmentKey);
+
+typedef struct _KENLISTMENT KENLISTMENT, *PKENLISTMENT;
+
+typedef NTSTATUS (__stdcall *PTM_RM_NOTIFICATION)(PKENLISTMENT EnlistmentObject, PVOID RMContext,PVOID TransactionContext,
+                                                  ULONG TransactionNotification, PLARGE_INTEGER TmVirtualClock,
+                                                  ULONG ArgumentLength, PVOID Argument);
+
+typedef NTSTATUS (__stdcall *tTmEnableCallbacks)(PKRESOURCEMANAGER ResourceManager, PTM_RM_NOTIFICATION CallbackRoutine,
+                                                  PVOID RMKey);
 
 #ifndef _MSC_VER
 PEPROCESS __stdcall PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw

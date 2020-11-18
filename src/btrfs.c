@@ -110,6 +110,7 @@ extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 extern tNtCreateTransactionManager fNtCreateTransactionManager;
 extern tNtCreateResourceManager fNtCreateResourceManager;
 extern tTmCreateEnlistment fTmCreateEnlistment;
+extern tTmEnableCallbacks fTmEnableCallbacks;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -2159,6 +2160,9 @@ void uninit(_In_ device_extension* Vcb) {
 
     if (Vcb->devobj->AttachedDevice)
         IoDetachDevice(Vcb->devobj);
+
+    if (Vcb->rm)
+        ObDereferenceObject(Vcb->rm);
 
     if (Vcb->rm_handle)
         NtClose(Vcb->rm_handle);
@@ -6405,6 +6409,9 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"TmCreateEnlistment");
         fTmCreateEnlistment = (tTmCreateEnlistment)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"TmEnableCallbacks");
+        fTmEnableCallbacks = (tTmEnableCallbacks)MmGetSystemRoutineAddress(&name);
     } else {
         fFsRtlGetEcpListFromIrp = NULL;
         fFsRtlGetNextExtraCreateParameter = NULL;
@@ -6412,6 +6419,8 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
         fIoGetTransactionParameterBlock = NULL;
         fNtCreateTransactionManager = NULL;
         fNtCreateResourceManager = NULL;
+        fTmCreateEnlistment = NULL;
+        fTmEnableCallbacks = NULL;
     }
 
     drvobj = DriverObject;
