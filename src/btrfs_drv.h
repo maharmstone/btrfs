@@ -1830,6 +1830,14 @@ typedef NTSTATUS (__stdcall *tNtCreateResourceManager)(PHANDLE ResourceManagerHa
                                                        HANDLE TmHandle, LPGUID RmGuid, POBJECT_ATTRIBUTES ObjectAttributes,
                                                        ULONG CreateOptions, PUNICODE_STRING Description);
 
+typedef struct _KTRANSACTION KTRANSACTION, *PKTRANSACTION;
+typedef struct _KRESOURCEMANAGER KRESOURCEMANAGER, *PRKRESOURCEMANAGER;
+
+typedef NTSTATUS (__stdcall *tTmCreateEnlistment)(PHANDLE EnlistmentHandle, KPROCESSOR_MODE PreviousMode, ACCESS_MASK DesiredAccess,
+                                                  POBJECT_ATTRIBUTES ObjectAttributes, PRKRESOURCEMANAGER ResourceManager,
+                                                  PKTRANSACTION Transaction, ULONG CreateOptions, NOTIFICATION_MASK NotificationMask,
+                                                  PVOID EnlistmentKey);
+
 #ifndef _MSC_VER
 PEPROCESS __stdcall PsGetThreadProcess(_In_ PETHREAD Thread); // not in mingw
 #endif

@@ -109,6 +109,7 @@ extern uint64_t boot_subvol;
 extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 extern tNtCreateTransactionManager fNtCreateTransactionManager;
 extern tNtCreateResourceManager fNtCreateResourceManager;
+extern tTmCreateEnlistment fTmCreateEnlistment;
 
 #ifdef _DEBUG
 PFILE_OBJECT comfo = NULL;
@@ -6401,6 +6402,9 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"NtCreateResourceManager");
         fNtCreateResourceManager = (tNtCreateResourceManager)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"TmCreateEnlistment");
+        fTmCreateEnlistment = (tTmCreateEnlistment)MmGetSystemRoutineAddress(&name);
     } else {
         fFsRtlGetEcpListFromIrp = NULL;
         fFsRtlGetNextExtraCreateParameter = NULL;

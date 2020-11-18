@@ -3,11 +3,14 @@
 tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 tNtCreateTransactionManager fNtCreateTransactionManager;
 tNtCreateResourceManager fNtCreateResourceManager;
+tTmCreateEnlistment fTmCreateEnlistment;
 
 typedef struct _trans_ref {
     LIST_ENTRY list_entry;
     void* trans_object;
     LONG refcount;
+    ERESOURCE lock;
+    HANDLE enlistment;
 } trans_ref;
 
 NTSTATUS init_trans_man(device_extension* Vcb) {
@@ -50,9 +53,12 @@ NTSTATUS init_trans_man(device_extension* Vcb) {
 }
 
 NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref** t) {
+    NTSTATUS Status;
     KIRQL irql;
     LIST_ENTRY* le;
     trans_ref* new_tr;
+    OBJECT_ATTRIBUTES oa;
+    PRKRESOURCEMANAGER rm;
 
     if (block->Length < sizeof(TXN_PARAMETER_BLOCK))
         return STATUS_INVALID_PARAMETER;
@@ -69,6 +75,8 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     ObReferenceObject(block->TransactionObject);
     new_tr->trans_object = block->TransactionObject;
     new_tr->refcount = 1;
+    new_tr->enlistment = NULL;
+    ExInitializeResourceLite(&new_tr->lock);
 
     KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
 
@@ -81,6 +89,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
             KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
             ObDereferenceObject(block->TransactionObject);
+            ExDeleteResourceLite(&new_tr->lock);
             ExFreePool(new_tr);
 
             *t = tr;
@@ -96,6 +105,35 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
     TRACE("created new transaction\n");
+
+    Status = ObReferenceObjectByHandle(Vcb->rm_handle, RESOURCEMANAGER_ENLIST, NULL, KernelMode,
+                                       (void**)&rm, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08lx\n", Status);
+        *t = new_tr;
+        return Status;
+    }
+
+    memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
+    oa.Length = sizeof(OBJECT_ATTRIBUTES);
+    oa.Attributes = OBJ_KERNEL_HANDLE;
+
+    ExAcquireResourceExclusiveLite(&new_tr->lock, true);
+
+    Status = fTmCreateEnlistment(&new_tr->enlistment, KernelMode, 0, &oa, rm, new_tr->trans_object,
+                                 0, TRANSACTION_NOTIFY_COMMIT | TRANSACTION_NOTIFY_ROLLBACK, new_tr);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("TmCreateEnlistment returned %08lx\n", Status);
+        ExReleaseResourceLite(&new_tr->lock);
+        ObDereferenceObject(rm);
+        *t = new_tr;
+        return Status;
+    }
+
+    ExReleaseResourceLite(&new_tr->lock);
+
+    ObDereferenceObject(rm);
 
     *t = new_tr;
 
@@ -116,6 +154,10 @@ void free_trans(device_extension* Vcb, trans_ref* t) {
 
     KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
+    if (t->enlistment)
+        NtClose(t->enlistment);
+
     ObDereferenceObject(&t->trans_object);
+    ExDeleteResourceLite(&t->lock);
     ExFreePool(t);
 }
