@@ -4,6 +4,12 @@ tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 tNtCreateTransactionManager fNtCreateTransactionManager;
 tNtCreateResourceManager fNtCreateResourceManager;
 
+typedef struct _trans_ref {
+    LIST_ENTRY list_entry;
+    void* trans_object;
+    LONG refcount;
+} trans_ref;
+
 NTSTATUS init_trans_man(device_extension* Vcb) {
     NTSTATUS Status;
     OBJECT_ATTRIBUTES oa;
@@ -41,4 +47,75 @@ NTSTATUS init_trans_man(device_extension* Vcb) {
     // FIXME - TmEnableCallbacks
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref** t) {
+    KIRQL irql;
+    LIST_ENTRY* le;
+    trans_ref* new_tr;
+
+    if (block->Length < sizeof(TXN_PARAMETER_BLOCK))
+        return STATUS_INVALID_PARAMETER;
+
+    if (block->TxFsContext != TXF_MINIVERSION_DEFAULT_VIEW)
+        return STATUS_INVALID_PARAMETER;
+
+    new_tr = ExAllocatePoolWithTag(NonPagedPool, sizeof(trans_ref), ALLOC_TAG);
+    if (!new_tr) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ObReferenceObject(block->TransactionObject);
+    new_tr->trans_object = block->TransactionObject;
+    new_tr->refcount = 1;
+
+    KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
+
+    le = Vcb->trans_list.Flink;
+    while (le != &Vcb->trans_list) {
+        trans_ref* tr = CONTAINING_RECORD(le, trans_ref, list_entry);
+
+        if (tr->trans_object == block->TransactionObject) {
+            InterlockedIncrement(&tr->refcount);
+            KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+            ObDereferenceObject(block->TransactionObject);
+            ExFreePool(new_tr);
+
+            *t = tr;
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
+    }
+
+    InsertTailList(&Vcb->trans_list, &new_tr->list_entry);
+
+    KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+    TRACE("created new transaction\n");
+
+    *t = new_tr;
+
+    return STATUS_SUCCESS;
+}
+
+void free_trans(device_extension* Vcb, trans_ref* t) {
+    KIRQL irql;
+
+    KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
+
+    if (InterlockedDecrement(&t->refcount) > 0) {
+        KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+        return;
+    }
+
+    RemoveEntryList(&t->list_entry);
+
+    KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+    ObDereferenceObject(&t->trans_object);
+    ExFreePool(t);
 }

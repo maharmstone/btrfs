@@ -4994,6 +4994,9 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND)
         WARN("look_for_balance_item returned %08lx\n", Status);
 
+    InitializeListHead(&Vcb->trans_list);
+    KeInitializeSpinLock(&Vcb->trans_list_lock);
+
     Status = init_trans_man(Vcb);
     if (!NT_SUCCESS(Status)) {
         ERR("init_trans_man returned %08lx\n", Status);

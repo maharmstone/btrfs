@@ -4342,7 +4342,8 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp,
+                          trans_ref* trans, LIST_ENTRY* rollback) {
     PFILE_OBJECT FileObject = NULL;
     ULONG RequestedDisposition;
     ULONG options;
@@ -4801,12 +4802,6 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto exit;
     }
 
-    if (fIoGetTransactionParameterBlock && fIoGetTransactionParameterBlock(IrpSp->FileObject)) {
-        FIXME("FIXME - transactions\n");
-        Status = STATUS_NOT_SUPPORTED;
-        goto exit;
-    }
-
     if (IrpSp->FileObject->RelatedFileObject) {
         fcb* relatedfcb = IrpSp->FileObject->RelatedFileObject->FsContext;
 
@@ -4827,6 +4822,11 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         ccb* ccb;
 
         TRACE("open operation for volume\n");
+
+        if (fIoGetTransactionParameterBlock && fIoGetTransactionParameterBlock(IrpSp->FileObject)) {
+            Status = STATUS_TRANSACTIONAL_OPEN_NOT_ALLOWED;
+            goto exit;
+        }
 
         if (RequestedDisposition != FILE_OPEN && RequestedDisposition != FILE_OPEN_IF) {
             Status = STATUS_ACCESS_DENIED;
@@ -4878,6 +4878,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     } else {
         LIST_ENTRY rollback;
         bool skip_lock;
+        trans_ref* trans = NULL;
 
         InitializeListHead(&rollback);
 
@@ -4885,6 +4886,14 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         if (IrpSp->FileObject->RelatedFileObject)
             TRACE("related file = %p\n", IrpSp->FileObject->RelatedFileObject);
+
+        if (fIoGetTransactionParameterBlock && fIoGetTransactionParameterBlock(IrpSp->FileObject)) {
+            Status = get_trans(Vcb, fIoGetTransactionParameterBlock(IrpSp->FileObject), &trans);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_trans returned %08lx\n", Status);
+                goto exit;
+            }
+        }
 
         // Don't lock again if we're being called from within CcCopyRead etc.
         skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
@@ -4894,7 +4903,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
 
-        Status = open_file(DeviceObject, Vcb, Irp, &rollback);
+        Status = open_file(DeviceObject, Vcb, Irp, trans, &rollback);
 
         if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);
@@ -4905,6 +4914,9 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         if (!skip_lock)
             ExReleaseResourceLite(&Vcb->tree_lock);
+
+        if (!NT_SUCCESS(Status) && trans)
+            free_trans(Vcb, trans);
     }
 
 exit:

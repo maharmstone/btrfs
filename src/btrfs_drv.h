@@ -346,6 +346,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } send_info;
 
+typedef struct _trans_ref trans_ref;
+
 typedef struct _ccb {
     USHORT NodeType;
     CSHORT NodeSize;
@@ -370,6 +372,7 @@ typedef struct _ccb {
     bool lxss;
     send_info* send;
     NTSTATUS send_status;
+    trans_ref* trans;
 } ccb;
 
 struct _device_extension;
@@ -810,6 +813,8 @@ typedef struct _device_extension {
     NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
     HANDLE tm_handle;
     HANDLE rm_handle;
+    LIST_ENTRY trans_list;
+    KSPIN_LOCK trans_list_lock;
     LIST_ENTRY list_entry;
 } device_extension;
 
@@ -1608,6 +1613,8 @@ extern BTRFS_UUID boot_uuid;
 
 // in trans.c
 NTSTATUS init_trans_man(device_extension* Vcb);
+NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref** t);
+void free_trans(device_extension* Vcb, trans_ref* t);
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
