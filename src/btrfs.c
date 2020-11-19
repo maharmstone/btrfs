@@ -664,6 +664,9 @@ static bool lie_about_fs_type() {
     INIT_UNICODE_STRING(fsutil, L"FSUTIL.EXE");
     INIT_UNICODE_STRING(storsvc, L"STORSVC.DLL");
 
+    /* Not doing a Volkswagen, honest! Some IFS tests won't run if not recognized FS. */
+    INIT_UNICODE_STRING(ifstest, L"IFSTEST.EXE");
+
     if (!PsGetCurrentProcess())
         return false;
 
@@ -728,6 +731,15 @@ static bool lie_about_fs_type() {
             name.Length = name.MaximumLength = usstorsvc.Length;
 
             blacklist = FsRtlAreNamesEqual(&name, &usstorsvc, true, NULL);
+        }
+
+        if (!blacklist && entry->FullDllName.Length >= usifstest.Length) {
+            UNICODE_STRING name;
+
+            name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usifstest.Length) / sizeof(WCHAR)];
+            name.Length = name.MaximumLength = usifstest.Length;
+
+            blacklist = FsRtlAreNamesEqual(&name, &usifstest, true, NULL);
         }
 
         if (blacklist) {
