@@ -3476,7 +3476,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                         Status = insert_prealloc_extent(fcb, oldalloc, newalloc - oldalloc, rollback);
 
-                        if (!NT_SUCCESS(Status)) {
+                        if (!NT_SUCCESS(Status) && Status != STATUS_DISK_FULL) {
                             ERR("insert_prealloc_extent returned %08lx\n", Status);
                             return Status;
                         }
@@ -3503,7 +3503,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 if (prealloc) {
                     Status = insert_prealloc_extent(fcb, 0, newalloc, rollback);
 
-                    if (!NT_SUCCESS(Status)) {
+                    if (!NT_SUCCESS(Status) && Status != STATUS_DISK_FULL) {
                         ERR("insert_prealloc_extent returned %08lx\n", Status);
                         return Status;
                     }
