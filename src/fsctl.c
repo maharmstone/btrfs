@@ -4907,10 +4907,10 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
+
     if (fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_1 || fsctl == FSCTL_REQUEST_BATCH_OPLOCK || fsctl == FSCTL_REQUEST_FILTER_OPLOCK ||
         fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_2 || oplock_request) {
-        ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
-
         if (shared_request) {
             if (fcb->type == BTRFS_TYPE_FILE) {
                 if (fFsRtlCheckLockForOplockRequest)
@@ -4922,8 +4922,7 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
             }
         } else
             oplock_count = fileref->open_count;
-    } else
-        ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+    }
 
     if ((fsctl == FSCTL_REQUEST_FILTER_OPLOCK || fsctl == FSCTL_REQUEST_BATCH_OPLOCK ||
         (fsctl == FSCTL_REQUEST_OPLOCK && buf->RequestedOplockLevel & OPLOCK_LEVEL_CACHE_HANDLE)) &&

@@ -78,6 +78,12 @@ static const GUID GUID_ECP_ATOMIC_CREATE = { 0x4720bd83, 0x52ac, 0x4104, { 0xa1,
 static const GUID GUID_ECP_QUERY_ON_CREATE = { 0x1aca62e9, 0xabb4, 0x4ff2, { 0xbb, 0x5c, 0x1c, 0x79, 0x02, 0x5e, 0x41, 0x7f } };
 static const GUID GUID_ECP_CREATE_REDIRECTION = { 0x188d6bd6, 0xa126, 0x4fa8, { 0xbd, 0xf2, 0x1c, 0xcd, 0xf8, 0x96, 0xf3, 0xe0 } };
 
+typedef struct {
+    device_extension* Vcb;
+    ACCESS_MASK granted_access;
+    file_ref* fileref;
+} oplock_context;
+
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb* fcb;
 
@@ -3840,6 +3846,77 @@ static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_
     return STATUS_SUCCESS;
 }
 
+static void oplock_complete(PVOID Context, PIRP Irp) {
+    NTSTATUS Status;
+    LIST_ENTRY rollback;
+    bool skip_lock;
+    oplock_context* ctx = Context;
+    device_extension* Vcb = ctx->Vcb;
+
+    TRACE("(%p, %p)\n", Context, Irp);
+
+    InitializeListHead(&rollback);
+
+    skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
+
+    if (!skip_lock)
+        ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
+
+    ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
+
+    // FIXME - trans
+    Status = open_file3(Vcb, Irp, ctx->granted_access, ctx->fileref, &rollback);
+
+    if (!NT_SUCCESS(Status)) {
+        free_fileref(ctx->fileref);
+        do_rollback(ctx->Vcb, &rollback);
+    } else
+        clear_rollback(&rollback);
+
+    ExReleaseResourceLite(&Vcb->fileref_lock);
+
+    if (Status == STATUS_SUCCESS) {
+        fcb* fcb2;
+        PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+        PFILE_OBJECT FileObject = IrpSp->FileObject;
+        bool skip_fcb_lock;
+
+        IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess |= ctx->granted_access;
+        IrpSp->Parameters.Create.SecurityContext->AccessState->RemainingDesiredAccess &= ~(ctx->granted_access | MAXIMUM_ALLOWED);
+
+        if (!FileObject->Vpb)
+            FileObject->Vpb = Vcb->devobj->Vpb;
+
+        fcb2 = FileObject->FsContext;
+
+        if (fcb2->ads) {
+            struct _ccb* ccb2 = FileObject->FsContext2;
+
+            fcb2 = ccb2->fileref->parent->fcb;
+        }
+
+        skip_fcb_lock = ExIsResourceAcquiredExclusiveLite(fcb2->Header.Resource);
+
+        if (!skip_fcb_lock)
+            ExAcquireResourceExclusiveLite(fcb2->Header.Resource, true);
+
+        fcb_load_csums(Vcb, fcb2, Irp);
+
+        if (!skip_fcb_lock)
+            ExReleaseResourceLite(fcb2->Header.Resource);
+    }
+
+    if (!skip_lock)
+        ExReleaseResourceLite(&Vcb->tree_lock);
+
+    // FIXME - call free_trans if failed and within transaction
+
+    Irp->IoStatus.Status = Status;
+    IoCompleteRequest(Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT);
+
+    ExFreePool(ctx);
+}
+
 static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, file_ref* fileref, ACCESS_MASK* granted_access,
                            PFILE_OBJECT FileObject, UNICODE_STRING* fn, ULONG options, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
@@ -3980,6 +4057,8 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
     }
 
     if (fileref->open_count > 0) {
+        oplock_context* ctx;
+
         Status = IoCheckShareAccess(*granted_access, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, false);
 
         if (!NT_SUCCESS(Status)) {
@@ -3991,8 +4070,23 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
             goto end;
         }
 
-        // FIXME - this can block waiting for network IO, while we're holding fileref_lock and tree_lock
-        Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, NULL, NULL, NULL);
+        ctx = ExAllocatePoolWithTag(NonPagedPool, sizeof(oplock_context), ALLOC_TAG);
+        if (!ctx) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        ctx->Vcb = Vcb;
+        ctx->granted_access = *granted_access;
+        ctx->fileref = fileref;
+
+        Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, ctx, oplock_complete, NULL);
+        if (Status == STATUS_PENDING)
+            return Status;
+
+        ExFreePool(ctx);
+
         if (!NT_SUCCESS(Status)) {
             WARN("FsRtlCheckOplock returned %08lx\n", Status);
             goto end;
@@ -4578,11 +4672,9 @@ loaded:
         goto exit;
     }
 
-    if (NT_SUCCESS(Status)) { // file already exists
+    if (NT_SUCCESS(Status)) // file already exists
         Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
-        if (!NT_SUCCESS(Status))
-            goto exit;
-    } else {
+    else {
         file_ref* existing_file = NULL;
 
         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, &existing_file, rollback);
@@ -4591,8 +4683,6 @@ loaded:
             fileref = existing_file;
 
             Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
-            if (!NT_SUCCESS(Status))
-                goto exit;
         } else {
             Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
             granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
@@ -4905,7 +4995,11 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
 exit:
     Irp->IoStatus.Status = Status;
-    IoCompleteRequest( Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT );
+
+    if (Status == STATUS_PENDING)
+        IoMarkIrpPending(Irp);
+    else
+        IoCompleteRequest(Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT);
 
     TRACE("create returning %08lx\n", Status);
 
