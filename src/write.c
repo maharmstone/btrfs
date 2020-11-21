@@ -4285,16 +4285,19 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 Status = Irp->IoStatus.Status;
                 goto end;
             } else {
+                /* We have to wait in CcCopyWrite - if we return STATUS_PENDING and add this to the work queue,
+                 * it can result in CcFlushCache being called before the job has run. See ifstest ReadWriteTest. */
+
                 if (fCcCopyWriteEx) {
-                    TRACE("CcCopyWriteEx(%p, %I64x, %lx, %u, %p, %p)\n", FileObject, off64, *length, wait, buf, Irp->Tail.Overlay.Thread);
-                    if (!fCcCopyWriteEx(FileObject, &offset, *length, wait, buf, Irp->Tail.Overlay.Thread)) {
+                    TRACE("CcCopyWriteEx(%p, %I64x, %lx, %u, %p, %p)\n", FileObject, off64, *length, true, buf, Irp->Tail.Overlay.Thread);
+                    if (!fCcCopyWriteEx(FileObject, &offset, *length, true, buf, Irp->Tail.Overlay.Thread)) {
                         Status = STATUS_PENDING;
                         goto end;
                     }
                     TRACE("CcCopyWriteEx finished\n");
                 } else {
-                    TRACE("CcCopyWrite(%p, %I64x, %lx, %u, %p)\n", FileObject, off64, *length, wait, buf);
-                    if (!CcCopyWrite(FileObject, &offset, *length, wait, buf)) {
+                    TRACE("CcCopyWrite(%p, %I64x, %lx, %u, %p)\n", FileObject, off64, *length, true, buf);
+                    if (!CcCopyWrite(FileObject, &offset, *length, true, buf)) {
                         Status = STATUS_PENDING;
                         goto end;
                     }
