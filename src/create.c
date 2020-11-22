@@ -1867,7 +1867,8 @@ end2:
     return Status;
 }
 
-NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, dir_child** pdc) {
+NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type,
+                       trans_ref* trans, dir_child** pdc) {
     NTSTATUS Status;
     dir_child* dc;
     bool locked;
@@ -1898,6 +1899,7 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
     dc->key.offset = subvol ? 0xffffffffffffffff : 0;
     dc->type = type;
     dc->fileref = NULL;
+    dc->trans = trans;
 
     dc->utf8.Length = dc->utf8.MaximumLength = utf8->Length;
     RtlCopyMemory(dc->utf8.Buffer, utf8->Buffer, utf8->Length);
@@ -2178,7 +2180,7 @@ end:
 
 static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _In_ PUNICODE_STRING fpus,
                              _In_ file_ref* parfileref, _In_ ULONG options, _In_reads_bytes_opt_(ealen) FILE_FULL_EA_INFORMATION* ea, _In_ ULONG ealen,
-                             _Out_ file_ref** pfr, bool case_sensitive, _In_ LIST_ENTRY* rollback) {
+                             _Out_ file_ref** pfr, bool case_sensitive, trans_ref* trans, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
     ULONG utf8len;
@@ -2230,15 +2232,18 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     win_time_to_unix(time, &now);
 
     TRACE("create file %.*S\n", (int)(fpus->Length / sizeof(WCHAR)), fpus->Buffer);
-    ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-    TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) was %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
-    parfileref->fcb->inode_item.st_size += utf8len * 2;
-    TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) now %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
-    parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
-    parfileref->fcb->inode_item.sequence++;
-    parfileref->fcb->inode_item.st_ctime = now;
-    parfileref->fcb->inode_item.st_mtime = now;
-    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+
+    if (!trans) {
+        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
+        TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) was %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
+        parfileref->fcb->inode_item.st_size += utf8len * 2;
+        TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) now %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
+        parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
+        parfileref->fcb->inode_item.sequence++;
+        parfileref->fcb->inode_item.st_ctime = now;
+        parfileref->fcb->inode_item.st_mtime = now;
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+    }
 
     parfileref->fcb->inode_item_changed = true;
     mark_fcb_dirty(parfileref->fcb);
@@ -2294,7 +2299,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->inode_item.st_size = 0;
     fcb->inode_item.st_blocks = 0;
     fcb->inode_item.block_group = 0;
-    fcb->inode_item.st_nlink = 1;
+    fcb->inode_item.st_nlink = trans ? 0 : 1;
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     fcb->inode_item.st_mode = inherit_mode(parfileref->fcb, type == BTRFS_TYPE_DIRECTORY); // use parent's permissions by default
     fcb->inode_item.st_rdev = 0;
@@ -2456,6 +2461,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     }
 
     fileref->fcb = fcb;
+    fileref->trans = trans;
 
     if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb)) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, true, NULL, rollback);
@@ -2592,15 +2598,17 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         return STATUS_OBJECT_NAME_COLLISION;
     }
 
-    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8as, fpus, fcb->type, &dc);
+    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8as, fpus, fcb->type, trans, &dc);
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
         ERR("add_dir_child returned %08lx\n", Status);
         reap_fileref(Vcb, fileref);
 
-        ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-        parfileref->fcb->inode_item.st_size -= utf8len * 2;
-        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+        if (!trans) {
+            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
+            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
+        }
 
         ExFreePool(utf8);
 
@@ -2692,7 +2700,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
         SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
-        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, case_sensitive, rollback);
+        Status = file_create2(Irp, Vcb, &fpus2, parfileref, options, NULL, 0, &newpar, case_sensitive, NULL, rollback);
 
         if (!NT_SUCCESS(Status)) {
             ERR("file_create2 returned %08lx\n", Status);
@@ -2993,7 +3001,7 @@ static __inline bool called_from_lxss() {
 
 static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
                             PFILE_OBJECT FileObject, file_ref* related, bool loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options,
-                            file_ref** existing_fileref, LIST_ENTRY* rollback) {
+                            file_ref** existing_fileref, trans_ref* trans, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref *fileref, *parfileref = NULL;
     ULONG i, j;
@@ -3162,7 +3170,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
         }
 
         Status = file_create2(Irp, Vcb, &fpus, parfileref, options, Irp->AssociatedIrp.SystemBuffer, IrpSp->Parameters.Create.EaLength,
-                              &fileref, IrpSp->Flags & SL_CASE_SENSITIVE, rollback);
+                              &fileref, IrpSp->Flags & SL_CASE_SENSITIVE, trans, rollback);
 
         if (Status == STATUS_OBJECT_NAME_COLLISION) {
             *existing_fileref = fileref;
@@ -4679,7 +4687,8 @@ loaded:
     else {
         file_ref* existing_file = NULL;
 
-        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, &existing_file, rollback);
+        Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options,
+                             &existing_file, trans, rollback);
 
         if (Status == STATUS_OBJECT_NAME_COLLISION) { // already exists
             fileref = existing_file;

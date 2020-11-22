@@ -7399,8 +7399,16 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
     ExAcquireResourceExclusiveLite(&Vcb->dirty_filerefs_lock, true);
 
-    while (!IsListEmpty(&Vcb->dirty_filerefs)) {
-        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&Vcb->dirty_filerefs), file_ref, list_entry_dirty);
+    le = Vcb->dirty_filerefs.Flink;
+    while (le != &Vcb->dirty_filerefs) {
+        file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry_dirty);
+
+        if (fr->trans) {
+            le = le->Flink;
+            continue;
+        }
+
+        RemoveEntryList(&fr->list_entry_dirty);
 
         flush_fileref(fr, &batchlist, Irp);
         free_fileref(fr);
@@ -7408,6 +7416,8 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 #ifdef DEBUG_FLUSH_TIMES
         filerefs++;
 #endif
+
+        le = le->Flink;
     }
 
     ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);

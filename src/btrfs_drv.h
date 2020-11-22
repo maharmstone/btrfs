@@ -221,6 +221,8 @@ typedef struct {
 
 struct _file_ref;
 
+typedef struct _trans_ref trans_ref;
+
 typedef struct {
     KEY key;
     uint64_t index;
@@ -233,6 +235,7 @@ typedef struct {
     ULONG size;
     struct _file_ref* fileref;
     bool root_dir;
+    trans_ref* trans;
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
     LIST_ENTRY list_entry_hash_uc;
@@ -330,6 +333,7 @@ typedef struct _file_ref {
     LONG open_count;
     struct _file_ref* parent;
     dir_child* dc;
+    trans_ref* trans;
 
     bool dirty;
 
@@ -345,8 +349,6 @@ typedef struct {
     bool cancelling;
     LIST_ENTRY list_entry;
 } send_info;
-
-typedef struct _trans_ref trans_ref;
 
 typedef struct _ccb {
     USHORT NodeType;
@@ -1423,7 +1425,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                   root* subvol, uint64_t inode, uint8_t type, PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp);
 NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp);
-NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, dir_child** pdc);
+NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, trans_ref* trans, dir_child** pdc);
 NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
                             _In_ file_ref* sf, _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
                             _In_ POOL_TYPE pooltype, _Out_ file_ref** psf2, _In_opt_ PIRP Irp);
