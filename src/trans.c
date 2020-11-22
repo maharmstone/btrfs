@@ -176,7 +176,7 @@ void free_trans(device_extension* Vcb, trans_ref* t) {
     if (t->enlistment)
         NtClose(t->enlistment);
 
-    ObDereferenceObject(&t->trans_object);
+    ObDereferenceObject(t->trans_object);
     ExDeleteResourceLite(&t->lock);
     ExFreePool(t);
 }
