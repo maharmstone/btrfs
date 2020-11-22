@@ -638,7 +638,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool, ccb->case_sensitive || posix, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool, ccb->case_sensitive || posix, NULL, Irp);
 
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
@@ -721,7 +721,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (NT_SUCCESS(Status)) {
         file_ref* fr;
 
-        Status = open_fileref(Vcb, &fr, &nameus, fileref, false, NULL, NULL, PagedPool, false, Irp);
+        Status = open_fileref(Vcb, &fr, &nameus, fileref, false, NULL, NULL, PagedPool, false, NULL, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08lx\n", Status);
@@ -864,7 +864,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     win_time_to_unix(time, &now);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool, ccb->case_sensitive || bcs->posix, Irp);
+    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool, ccb->case_sensitive || bcs->posix, NULL, Irp);
 
     if (NT_SUCCESS(Status)) {
         if (!fr2->deleted) {
@@ -3801,7 +3801,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     name.Length = name.MaximumLength = bmn->namelen;
     name.Buffer = bmn->name;
 
-    Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, true);
+    Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, true, NULL);
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("find_file_in_dir returned %08lx\n", Status);
         goto end;

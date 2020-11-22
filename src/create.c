@@ -185,13 +185,16 @@ file_ref* create_fileref(device_extension* Vcb) {
     return fr;
 }
 
-NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc, bool case_sensitive) {
+NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
+                          bool case_sensitive, trans_ref* trans) {
     NTSTATUS Status;
     UNICODE_STRING fnus;
     uint32_t hash;
     LIST_ENTRY* le;
     uint8_t c;
     bool locked = false;
+    dir_child* dc_found = NULL;
+    dir_child* non_trans_dc = NULL;
 
     if (!case_sensitive) {
         Status = RtlUpcaseUnicodeString(&fnus, filename, true);
@@ -224,38 +227,14 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
 
             if (dc->hash == hash) {
                 if (dc->name.Length == fnus.Length && RtlCompareMemory(dc->name.Buffer, fnus.Buffer, fnus.Length) == fnus.Length) {
-                    if (dc->key.obj_type == TYPE_ROOT_ITEM) {
-                        LIST_ENTRY* le2;
-
-                        *subvol = NULL;
-
-                        le2 = fcb->Vcb->roots.Flink;
-                        while (le2 != &fcb->Vcb->roots) {
-                            root* r2 = CONTAINING_RECORD(le2, root, list_entry);
-
-                            if (r2->id == dc->key.obj_id) {
-                                *subvol = r2;
-                                break;
-                            }
-
-                            le2 = le2->Flink;
-                        }
-
-                        *inode = SUBVOL_ROOT_INODE;
-                    } else {
-                        *subvol = fcb->subvol;
-                        *inode = dc->key.obj_id;
-                    }
-
-                    *pdc = dc;
-
-                    Status = STATUS_SUCCESS;
-                    goto end;
+                    if (dc->trans == trans) {
+                        dc_found = dc;
+                        break;
+                    } else if (trans && !dc->trans)
+                        non_trans_dc = dc;
                 }
-            } else if (dc->hash > hash) {
-                Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                goto end;
-            }
+            } else if (dc->hash > hash)
+                break;
 
             le = le->Flink;
         }
@@ -271,44 +250,51 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
 
             if (dc->hash_uc == hash) {
                 if (dc->name_uc.Length == fnus.Length && RtlCompareMemory(dc->name_uc.Buffer, fnus.Buffer, fnus.Length) == fnus.Length) {
-                    if (dc->key.obj_type == TYPE_ROOT_ITEM) {
-                        LIST_ENTRY* le2;
-
-                        *subvol = NULL;
-
-                        le2 = fcb->Vcb->roots.Flink;
-                        while (le2 != &fcb->Vcb->roots) {
-                            root* r2 = CONTAINING_RECORD(le2, root, list_entry);
-
-                            if (r2->id == dc->key.obj_id) {
-                                *subvol = r2;
-                                break;
-                            }
-
-                            le2 = le2->Flink;
-                        }
-
-                        *inode = SUBVOL_ROOT_INODE;
-                    } else {
-                        *subvol = fcb->subvol;
-                        *inode = dc->key.obj_id;
-                    }
-
-                    *pdc = dc;
-
-                    Status = STATUS_SUCCESS;
-                    goto end;
+                    if (dc->trans == trans) {
+                        dc_found = dc;
+                        break;
+                    } else if (trans && !dc->trans)
+                        non_trans_dc = dc;
                 }
-            } else if (dc->hash_uc > hash) {
-                Status = STATUS_OBJECT_NAME_NOT_FOUND;
-                goto end;
-            }
+            } else if (dc->hash_uc > hash)
+                break;
 
             le = le->Flink;
         }
     }
 
-    Status = STATUS_OBJECT_NAME_NOT_FOUND;
+    if (!dc_found && non_trans_dc)
+        dc_found = non_trans_dc;
+
+    if (dc_found) {
+        if (dc_found->key.obj_type == TYPE_ROOT_ITEM) {
+            LIST_ENTRY* le2;
+
+            *subvol = NULL;
+
+            le2 = fcb->Vcb->roots.Flink;
+            while (le2 != &fcb->Vcb->roots) {
+                root* r2 = CONTAINING_RECORD(le2, root, list_entry);
+
+                if (r2->id == dc_found->key.obj_id) {
+                    *subvol = r2;
+                    break;
+                }
+
+                le2 = le2->Flink;
+            }
+
+            *inode = SUBVOL_ROOT_INODE;
+        } else {
+            *subvol = fcb->subvol;
+            *inode = dc_found->key.obj_id;
+        }
+
+        *pdc = dc_found;
+
+        Status = STATUS_SUCCESS;
+    } else
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
 
 end:
     if (locked)
@@ -584,6 +570,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         dc->type = di->type;
         dc->fileref = NULL;
         dc->root_dir = false;
+        dc->trans = NULL;
 
         max_index = dc->index;
 
@@ -662,6 +649,7 @@ cont:
             dc->type = BTRFS_TYPE_DIRECTORY;
             dc->fileref = NULL;
             dc->root_dir = true;
+            dc->trans = NULL;
 
             dc->utf8.MaximumLength = dc->utf8.Length = sizeof(root_dir) - sizeof(char);
             dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir) - sizeof(char), ALLOC_TAG);
@@ -1460,7 +1448,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
 
 NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
                             _In_ file_ref* sf, _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
-                            _In_ POOL_TYPE pooltype, _Out_ file_ref** psf2, _In_opt_ PIRP Irp) {
+                            _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _Out_ file_ref** psf2, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
 
@@ -1607,7 +1595,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         uint64_t inode;
         dir_child* dc;
 
-        Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive);
+        Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive, trans);
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             TRACE("could not find %.*S\n", (int)(name->Length / sizeof(WCHAR)), name->Buffer);
 
@@ -1656,6 +1644,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             }
 
             sf2->fcb = fcb;
+            sf2->trans = trans;
 
             if (dc->type == BTRFS_TYPE_DIRECTORY)
                 fcb->fileref = sf2;
@@ -1688,7 +1677,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
 NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr,
                       _In_ PUNICODE_STRING fnus, _In_opt_ file_ref* related, _In_ bool parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
-                      _In_ bool case_sensitive, _In_opt_ PIRP Irp) {
+                      _In_ bool case_sensitive, _In_opt_ trans_ref* trans, _In_opt_ PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
     LIST_ENTRY parts;
@@ -1809,7 +1798,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
                 cs = sf->fcb->case_sensitive;
         }
 
-        Status = open_fileref_child(Vcb, sf, &nb->us, cs, lastpart, streampart, pooltype, &sf2, Irp);
+        Status = open_fileref_child(Vcb, sf, &nb->us, cs, lastpart, streampart, pooltype, trans, &sf2, Irp);
 
         if (!NT_SUCCESS(Status)) {
             if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
@@ -2669,7 +2658,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     if (parfileref->fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
-    Status = open_fileref(Vcb, &newpar, fpus, parfileref, false, NULL, NULL, PagedPool, case_sensitive, Irp);
+    Status = open_fileref(Vcb, &newpar, fpus, parfileref, false, NULL, NULL, PagedPool, case_sensitive, NULL, Irp);
 
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         UNICODE_STRING fpus2;
@@ -3062,7 +3051,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     fpus.Buffer = NULL;
 
     if (!loaded_related) {
-        Status = open_fileref(Vcb, &parfileref, fnus, related, true, NULL, NULL, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+        Status = open_fileref(Vcb, &parfileref, fnus, related, true, NULL, NULL, pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, trans, Irp);
 
         if (!NT_SUCCESS(Status))
             goto end;
@@ -3690,7 +3679,7 @@ static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_
                     if (!dc->fileref) {
                         file_ref* fr2;
 
-                        Status = open_fileref_child(Vcb, fileref, &dc->name, true, true, true, PagedPool, &fr2, NULL);
+                        Status = open_fileref_child(Vcb, fileref, &dc->name, true, true, true, PagedPool, fileref->trans, &fr2, NULL);
                         if (!NT_SUCCESS(Status))
                             WARN("open_fileref_child returned %08lx\n", Status);
                     }
@@ -4425,7 +4414,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         }
     }
 
-    Status = open_fileref_child(Vcb, parfr, &name, true, true, false, PagedPool, &fr, Irp);
+    Status = open_fileref_child(Vcb, parfr, &name, true, true, false, PagedPool, NULL, &fr, Irp);
 
     if (hl_alloc)
         ExFreePool(name.Buffer);
@@ -4601,8 +4590,8 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     if (!related && RequestedDisposition != FILE_OPEN && !(IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY)) {
         ULONG fnoff;
 
-        Status = open_fileref(Vcb, &related, &fn, NULL, true, &parsed, &fnoff,
-                              pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+        Status = open_fileref(Vcb, &related, &fn, NULL, true, &parsed, &fnoff, pool_type,
+                              IrpSp->Flags & SL_CASE_SENSITIVE, trans, Irp);
 
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
             Status = STATUS_OBJECT_PATH_NOT_FOUND;
@@ -4621,14 +4610,14 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
                 fn.Length -= (USHORT)fnoff;
 
                 Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                                      pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+                                      pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, trans, Irp);
 
                 loaded_related = true;
             }
         }
     } else {
         Status = open_fileref(Vcb, &fileref, &fn, related, IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY, &parsed, &fn_offset,
-                              pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, Irp);
+                              pool_type, IrpSp->Flags & SL_CASE_SENSITIVE, trans, Irp);
     }
 
 loaded:
