@@ -1644,7 +1644,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             }
 
             sf2->fcb = fcb;
-            sf2->trans = trans;
+            sf2->trans = dc->trans;
 
             if (dc->type == BTRFS_TYPE_DIRECTORY)
                 fcb->fileref = sf2;
@@ -3916,7 +3916,8 @@ static void oplock_complete(PVOID Context, PIRP Irp) {
 }
 
 static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, file_ref* fileref, ACCESS_MASK* granted_access,
-                           PFILE_OBJECT FileObject, UNICODE_STRING* fn, ULONG options, PIRP Irp, LIST_ENTRY* rollback) {
+                           PFILE_OBJECT FileObject, UNICODE_STRING* fn, ULONG options, trans_ref* trans, PIRP Irp,
+                           LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref* sf;
     bool readonly;
@@ -4013,6 +4014,19 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
             WARN("cannot overwrite readonly file\n");
             Status = STATUS_ACCESS_DENIED;
             goto end;
+        }
+    }
+
+    if (trans && !fileref->trans) {
+        bool need_fork;
+
+        need_fork = RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE ||
+                    RequestedDisposition == FILE_OVERWRITE_IF;
+
+        need_fork = need_fork || *granted_access & (FILE_GENERIC_WRITE & ~FILE_GENERIC_READ);
+
+        if (need_fork) {
+            FIXME("FIXME - do fcb and fileref fork\n"); // FIXME
         }
     }
 
@@ -4671,9 +4685,10 @@ loaded:
         goto exit;
     }
 
-    if (NT_SUCCESS(Status)) // file already exists
-        Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
-    else {
+    if (NT_SUCCESS(Status)) { // file already exists
+        Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options,
+                            trans, Irp, rollback);
+    } else {
         file_ref* existing_file = NULL;
 
         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options,
@@ -4682,7 +4697,8 @@ loaded:
         if (Status == STATUS_OBJECT_NAME_COLLISION) { // already exists
             fileref = existing_file;
 
-            Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
+            Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options,
+                                trans, Irp, rollback);
         } else {
             Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
             granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
