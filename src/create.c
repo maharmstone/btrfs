@@ -1705,20 +1705,99 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 LIST_ENTRY* lastle = NULL;
                 ULONG defda;
 
+                ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
+
                 Status = duplicate_fcb(fcb, &new_fcb, false);
                 if (!NT_SUCCESS(Status)) {
                     ERR("duplicate_fcb returned %08lx\n", Status);
+                    ExReleaseResourceLite(fcb->Header.Resource);
                     free_fcb(fcb);
                     return Status;
                 }
 
-                // FIXME - need to update fcbs and filerefs of any RO FileObjects for this transaction(?)
-
                 new_fcb->subvol = fcb->subvol;
-                new_fcb->inode = InterlockedIncrement64(&fcb->subvol->lastinode);
+
+                // mark extents of old inode as not unique
+
+                {
+                    LIST_ENTRY* le = fcb->extents.Flink;
+
+                    while (le != &fcb->extents) {
+                        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+                        if (!ext->ignore)
+                            ext->unique = false;
+
+                        le = le->Flink;
+                    }
+                }
+
+                ExReleaseResourceLite(fcb->Header.Resource);
+
+                new_fcb->inode = InterlockedIncrement64(&new_fcb->subvol->lastinode);
                 new_fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&new_fcb->inode, sizeof(uint64_t));
 
                 new_fcb->created = true;
+
+                free_fcb(fcb);
+
+                fcb = new_fcb;
+
+                fcb->inode_item.st_nlink = 0;
+
+                defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, dc->name.Buffer[0] == '.',
+                                            true, NULL);
+
+                fcb->sd_dirty = fcb->sd ? true : false;
+                fcb->atts_changed = fcb->atts != defda;
+                fcb->extents_changed = true;
+                fcb->reparse_xattr_changed = fcb->reparse_xattr.Length > 0;
+                fcb->ea_changed = fcb->ea_xattr.Length > 0;
+                fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
+
+                {
+                    LIST_ENTRY* le = fcb->xattrs.Flink;
+                    while (le != &fcb->xattrs) {
+                        xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
+
+                        xa->dirty = true;
+                        fcb->xattrs_changed = true;
+
+                        le = le->Flink;
+                    }
+                }
+
+                {
+                    LIST_ENTRY* le = fcb->extents.Flink;
+
+                    while (le != &fcb->extents) {
+                        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+                        if (!ext->ignore && ext->extent_data.type != EXTENT_TYPE_INLINE) {
+                            EXTENT_DATA* ed = &ext->extent_data;
+                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+
+                            if (ed2->size != 0) {
+                                chunk* c = get_chunk_from_address(Vcb, ed2->address);
+
+                                if (!c)
+                                    ERR("get_chunk_from_address failed for %I64x\n", ed2->address);
+                                else {
+                                    Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode,
+                                                                    ext->offset - ed2->offset, 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                                    false, Irp);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("update_changed_extent_ref returned %08lx\n", Status);
+                                        free_fcb(fcb);
+                                        return Status;
+                                    }
+                                }
+                            }
+                        }
+
+                        le = le->Flink;
+                    }
+                }
 
                 acquire_fcb_lock_exclusive(Vcb);
 
@@ -1769,37 +1848,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 InsertTailList(&Vcb->all_fcbs, &new_fcb->list_entry_all);
                 new_fcb->subvol->fcbs_version++;
                 release_fcb_lock(Vcb);
-
-                free_fcb(fcb);
-
-                fcb = new_fcb;
-
-                fcb->inode_item.st_nlink = 0;
-
-                defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, dc->name.Buffer[0] == '.',
-                                            true, NULL);
-
-                fcb->sd_dirty = fcb->sd ? true : false;
-                fcb->atts_changed = fcb->atts != defda;
-//                 fcb->extents_changed = true;
-                fcb->reparse_xattr_changed = fcb->reparse_xattr.Length > 0;
-                fcb->ea_changed = fcb->ea_xattr.Length > 0;
-                fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
-
-                {
-                    LIST_ENTRY* le = fcb->xattrs.Flink;
-                    while (le != &fcb->xattrs) {
-                        xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
-
-                        xa->dirty = true;
-                        fcb->xattrs_changed = true;
-
-                        le = le->Flink;
-                    }
-                }
-
-                // FIXME - mark extents of old inode as not unique
-                // FIXME - update_changed_extent_ref
             }
 
             if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
