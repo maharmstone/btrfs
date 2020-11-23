@@ -671,7 +671,8 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
         file_ref* fr;
         move_entry* me2;
 
-        Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false, PagedPool, NULL, &fr, Irp);
+        Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false,
+                                    PagedPool, NULL, false, &fr, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref_child returned %08lx\n", Status);
@@ -1810,7 +1811,8 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
         return STATUS_ACCESS_DENIED;
     }
 
-    Status = open_fileref_child(Vcb, fileref->parent, &fn, fileref->parent->fcb->case_sensitive, true, true, PagedPool, NULL, &sf, Irp);
+    Status = open_fileref_child(Vcb, fileref->parent, &fn, fileref->parent->fcb->case_sensitive, true, true,
+                                PagedPool, NULL, false, &sf, Irp);
     if (Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         if (Status == STATUS_SUCCESS) {
             if (fileref == sf || sf->deleted) {
@@ -2050,7 +2052,8 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         return STATUS_ACCESS_DENIED;
     }
 
-    Status = open_fileref_child(Vcb, fileref, &fn, fileref->fcb->case_sensitive, true, true, PagedPool, NULL, &sf, Irp);
+    Status = open_fileref_child(Vcb, fileref, &fn, fileref->fcb->case_sensitive, true, true, PagedPool, NULL,
+                                false, &sf, Irp);
     if (Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         if (Status == STATUS_SUCCESS) {
             if (fileref == sf || sf->deleted) {
@@ -2550,7 +2553,8 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         increase_fileref_refcount(related);
     }
 
-    Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive, NULL, Irp);
+    Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive,
+                          NULL, false, Irp);
 
     if (NT_SUCCESS(Status)) {
         TRACE("destination file already exists\n");
@@ -2584,7 +2588,8 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     if (!related) {
-        Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive, NULL, Irp);
+        Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive,
+                              NULL, false, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08lx\n", Status);
@@ -3401,7 +3406,8 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
         increase_fileref_refcount(related);
     }
 
-    Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive, NULL, Irp);
+    Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive,
+                          NULL, false, Irp);
 
     if (NT_SUCCESS(Status)) {
         if (!oldfileref->deleted) {
@@ -3433,7 +3439,8 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     }
 
     if (!related) {
-        Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive, NULL, Irp);
+        Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive,
+                              NULL, false, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08lx\n", Status);
