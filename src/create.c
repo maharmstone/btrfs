@@ -333,10 +333,6 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                 ERR("duplicate_dir_child returned %08lx\n", Status);
                 goto end;
             }
-
-            FIXME("FIXME - duplicate fileref and fcb\n");
-
-            // FIXME - need to update fcbs and filerefs of any RO FileObjects for this transaction(?)
         }
     }
 
@@ -1704,6 +1700,108 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 }
             }
 
+            if (trans && do_fork) {
+                struct _fcb* new_fcb;
+                LIST_ENTRY* lastle = NULL;
+                ULONG defda;
+
+                Status = duplicate_fcb(fcb, &new_fcb, false);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("duplicate_fcb returned %08lx\n", Status);
+                    free_fcb(fcb);
+                    return Status;
+                }
+
+                // FIXME - need to update fcbs and filerefs of any RO FileObjects for this transaction(?)
+
+                new_fcb->subvol = fcb->subvol;
+                new_fcb->inode = InterlockedIncrement64(&fcb->subvol->lastinode);
+                new_fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&new_fcb->inode, sizeof(uint64_t));
+
+                new_fcb->created = true;
+
+                acquire_fcb_lock_exclusive(Vcb);
+
+                if (new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24]) {
+                    LIST_ENTRY* le = new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24];
+
+                    while (le != &new_fcb->subvol->fcbs) {
+                        struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+                        if (fcb2->hash > new_fcb->hash) {
+                            lastle = le->Blink;
+                            break;
+                        }
+
+                        le = le->Flink;
+                    }
+                }
+
+                if (!lastle) {
+                    uint8_t c = new_fcb->hash >> 24;
+
+                    if (c != 0xff) {
+                        uint8_t d = c + 1;
+
+                        do {
+                            if (new_fcb->subvol->fcbs_ptrs[d]) {
+                                lastle = new_fcb->subvol->fcbs_ptrs[d]->Blink;
+                                break;
+                            }
+
+                            d++;
+                        } while (d != 0);
+                    }
+                }
+
+                if (lastle) {
+                    InsertHeadList(lastle, &new_fcb->list_entry);
+
+                    if (lastle == &new_fcb->subvol->fcbs || (CONTAINING_RECORD(lastle, struct _fcb, list_entry)->hash >> 24) != (new_fcb->hash >> 24))
+                        new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24] = &new_fcb->list_entry;
+                } else {
+                    InsertTailList(&new_fcb->subvol->fcbs, &new_fcb->list_entry);
+
+                    if (new_fcb->list_entry.Blink == &new_fcb->subvol->fcbs || (CONTAINING_RECORD(new_fcb->list_entry.Blink, struct _fcb, list_entry)->hash >> 24) != (new_fcb->hash >> 24))
+                        new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24] = &new_fcb->list_entry;
+                }
+
+                InsertTailList(&Vcb->all_fcbs, &new_fcb->list_entry_all);
+                new_fcb->subvol->fcbs_version++;
+                release_fcb_lock(Vcb);
+
+                free_fcb(fcb);
+
+                fcb = new_fcb;
+
+                fcb->inode_item.st_nlink = 0;
+
+                defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, dc->name.Buffer[0] == '.',
+                                            true, NULL);
+
+                fcb->sd_dirty = fcb->sd ? true : false;
+                fcb->atts_changed = fcb->atts != defda;
+//                 fcb->extents_changed = true;
+                fcb->reparse_xattr_changed = fcb->reparse_xattr.Length > 0;
+                fcb->ea_changed = fcb->ea_xattr.Length > 0;
+                fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
+
+                {
+                    LIST_ENTRY* le = fcb->xattrs.Flink;
+                    while (le != &fcb->xattrs) {
+                        xattr* xa = CONTAINING_RECORD(le, xattr, list_entry);
+
+                        xa->dirty = true;
+                        fcb->xattrs_changed = true;
+
+                        le = le->Flink;
+                    }
+                }
+
+                // FIXME - mark extents of old inode as not unique
+                // FIXME - update_changed_extent_ref
+            }
+
             if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
                 TRACE("passed path including file as subdirectory\n");
                 free_fcb(fcb);
@@ -1741,6 +1839,12 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
             if (duff_fr)
                 reap_fileref(Vcb, duff_fr);
+            else {
+                if (trans && do_fork) {
+                    mark_fcb_dirty(fcb);
+                    mark_fileref_dirty(dc->fileref);
+                }
+            }
         }
     }
 
