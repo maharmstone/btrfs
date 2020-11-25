@@ -236,6 +236,7 @@ typedef struct {
     struct _file_ref* fileref;
     bool root_dir;
     trans_ref* trans;
+    bool forked;
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
     LIST_ENTRY list_entry_hash_uc;

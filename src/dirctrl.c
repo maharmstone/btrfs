@@ -75,6 +75,8 @@ typedef struct {
     dir_child* dc;
 } dir_entry;
 
+extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
+
 ULONG get_reparse_tag_fcb(fcb* fcb) {
     ULONG tag;
 
@@ -653,19 +655,24 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* de, dir_child** pdc) {
+static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* de, trans_ref* trans, dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
 
     if (*pdc) {
-        dir_child* dc2 = *pdc;
+        dc = *pdc;
 
-        if (dc2->list_entry_index.Flink != &fileref->fcb->dir_children_index)
-            dc = CONTAINING_RECORD(dc2->list_entry_index.Flink, dir_child, list_entry_index);
-        else
-            dc = NULL;
+        while (true) {
+            if (dc->list_entry_index.Flink == &fileref->fcb->dir_children_index) {
+                dc = NULL;
+                goto next;
+            }
 
-        goto next;
+            dc = CONTAINING_RECORD(dc->list_entry_index.Flink, dir_child, list_entry_index);
+
+            if (dc->trans == trans || (trans && !dc->forked))
+                goto next;
+        }
     }
 
     if (fileref->parent) { // don't return . and .. if root directory
@@ -709,8 +716,10 @@ static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* d
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
         if (dc2->index >= *offset) {
-            dc = dc2;
-            break;
+            if (dc2->trans == trans || (trans && !dc2->forked)) {
+                dc = dc2;
+                break;
+            }
         }
 
         le = le->Flink;
@@ -747,6 +756,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     dir_entry de;
     uint64_t newoffset;
     dir_child* dc = NULL;
+    trans_ref* trans = NULL;
 
     TRACE("query directory\n");
 
@@ -821,6 +831,14 @@ static NTSTATUS query_directory(PIRP Irp) {
         ccb->specific_file = false;
     }
 
+    if (fIoGetTransactionParameterBlock && fIoGetTransactionParameterBlock(IrpSp->FileObject)) {
+        Status = get_trans(Vcb, fIoGetTransactionParameterBlock(IrpSp->FileObject), &trans);
+        if (!NT_SUCCESS(Status)) {
+            ERR("get_trans returned %08lx\n", Status);
+            return Status;
+        }
+    }
+
     initial = !ccb->query_string.Buffer;
 
     if (IrpSp->Parameters.QueryDirectory.FileName && IrpSp->Parameters.QueryDirectory.FileName->Length > 1) {
@@ -844,6 +862,10 @@ static NTSTATUS query_directory(PIRP Irp) {
             ccb->query_string.Buffer = ExAllocatePoolWithTag(PagedPool, IrpSp->Parameters.QueryDirectory.FileName->Length, ALLOC_TAG);
             if (!ccb->query_string.Buffer) {
                 ERR("out of memory\n");
+
+                if (trans)
+                    free_trans(Vcb, trans);
+
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -860,8 +882,12 @@ static NTSTATUS query_directory(PIRP Irp) {
         if (!(IrpSp->Flags & SL_RESTART_SCAN)) {
             initial = false;
 
-            if (specific_file)
+            if (specific_file) {
+                if (trans)
+                    free_trans(Vcb, trans);
+
                 return STATUS_NO_MORE_FILES;
+            }
         }
     }
 
@@ -875,7 +901,7 @@ static NTSTATUS query_directory(PIRP Irp) {
 
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, true);
 
-    Status = next_dir_entry(fileref, &newoffset, &de, &dc);
+    Status = next_dir_entry(fileref, &newoffset, &de, trans, &dc);
 
     if (!NT_SUCCESS(Status)) {
         if (Status == STATUS_NO_MORE_FILES && initial)
@@ -977,7 +1003,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     } else if (has_wildcard) {
         while (!FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
             newoffset = ccb->query_dir_offset;
-            Status = next_dir_entry(fileref, &newoffset, &de, &dc);
+            Status = next_dir_entry(fileref, &newoffset, &de, trans, &dc);
 
             if (NT_SUCCESS(Status))
                 ccb->query_dir_offset = newoffset;
@@ -1029,7 +1055,7 @@ static NTSTATUS query_directory(PIRP Irp) {
 
             if (length > 0) {
                 newoffset = ccb->query_dir_offset;
-                Status = next_dir_entry(fileref, &newoffset, &de, &dc);
+                Status = next_dir_entry(fileref, &newoffset, &de, trans, &dc);
                 if (NT_SUCCESS(Status)) {
                     if (!has_wildcard || FsRtlIsNameInExpression(&ccb->query_string, &de.name, !ccb->case_sensitive, NULL)) {
                         curitem = (uint8_t*)buf + IrpSp->Parameters.QueryDirectory.Length - length;
@@ -1068,6 +1094,9 @@ end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
+
+    if (trans)
+        free_trans(Vcb, trans);
 
     TRACE("returning %08lx\n", Status);
 

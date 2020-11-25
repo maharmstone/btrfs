@@ -203,6 +203,7 @@ static NTSTATUS duplicate_dir_child(dir_child* src, dir_child** dest, trans_ref*
     dc->fileref = NULL;
     dc->root_dir = src->root_dir;
     dc->trans = trans;
+    dc->forked = false;
 
     dc->utf8.Length = dc->utf8.MaximumLength = src->utf8.Length;
     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
@@ -333,6 +334,8 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                 ERR("duplicate_dir_child returned %08lx\n", Status);
                 goto end;
             }
+
+            non_trans_dc->forked = true;
         }
     }
 
@@ -641,6 +644,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         dc->fileref = NULL;
         dc->root_dir = false;
         dc->trans = NULL;
+        dc->forked = false;
 
         max_index = dc->index;
 
@@ -720,6 +724,7 @@ cont:
             dc->fileref = NULL;
             dc->root_dir = true;
             dc->trans = NULL;
+            dc->forked = false;
 
             dc->utf8.MaximumLength = dc->utf8.Length = sizeof(root_dir) - sizeof(char);
             dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir) - sizeof(char), ALLOC_TAG);
@@ -2116,6 +2121,7 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
     dc->type = type;
     dc->fileref = NULL;
     dc->trans = trans;
+    dc->forked = false;
 
     dc->utf8.Length = dc->utf8.MaximumLength = utf8->Length;
     RtlCopyMemory(dc->utf8.Buffer, utf8->Buffer, utf8->Length);
