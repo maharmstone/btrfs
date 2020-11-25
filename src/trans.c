@@ -10,20 +10,79 @@ typedef struct _trans_ref {
     LIST_ENTRY list_entry;
     void* trans_object;
     LONG refcount;
-    ERESOURCE lock;
     HANDLE enlistment;
+    PKENLISTMENT enlistment_object;
 } trans_ref;
+
+static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
+    FIXME("(%p, %p)\n", Vcb, trans);
+
+    // FIXME
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
+    FIXME("(%p, %p)\n", Vcb, trans);
+
+    // FIXME
+
+    return STATUS_SUCCESS;
+}
 
 static NTSTATUS rm_notification(PKENLISTMENT EnlistmentObject, PVOID RMContext, PVOID TransactionContext,
                                 ULONG TransactionNotification, PLARGE_INTEGER TmVirtualClock, ULONG ArgumentLength,
                                 PVOID Argument) {
-    FIXME("FIXME - rm_notification\n");
+    NTSTATUS Status;
+    device_extension* Vcb = RMContext;
+    KIRQL irql;
+    LIST_ENTRY* le;
+    trans_ref* tr = NULL;
 
-    // FIXME - handle commit or rollback
+    UNUSED(TransactionContext);
+    UNUSED(TmVirtualClock);
+    UNUSED(ArgumentLength);
+    UNUSED(Argument);
 
-    // FIXME - free trans_ref object(?)
+    KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
 
-    return STATUS_SUCCESS;
+    le = Vcb->trans_list.Flink;
+    while (le != &Vcb->trans_list) {
+        trans_ref* tr2 = CONTAINING_RECORD(le, trans_ref, list_entry);
+
+        if (tr2->enlistment_object == EnlistmentObject) {
+            InterlockedIncrement(&tr2->refcount);
+            tr = tr2;
+            break;
+        }
+
+        le = le->Flink;
+    }
+
+    KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+    if (!tr) {
+        TRACE("rm_notification message for unrecognized transaction\n");
+        return STATUS_SUCCESS;
+    }
+
+    switch (TransactionNotification) {
+        case TRANSACTION_NOTIFY_COMMIT:
+            Status = trans_commit(Vcb, tr);
+        break;
+
+        case TRANSACTION_NOTIFY_ROLLBACK:
+            Status = trans_rollback(Vcb, tr);
+        break;
+
+        default:
+            WARN("unhandle rm_notification message %lx\n", TransactionNotification);
+            Status = STATUS_SUCCESS;
+    }
+
+    free_trans(Vcb, tr);
+
+    return Status;
 }
 
 NTSTATUS init_trans_man(device_extension* Vcb) {
@@ -96,18 +155,6 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     if (block->TxFsContext != TXF_MINIVERSION_DEFAULT_VIEW)
         return STATUS_INVALID_PARAMETER;
 
-    new_tr = ExAllocatePoolWithTag(NonPagedPool, sizeof(trans_ref), ALLOC_TAG);
-    if (!new_tr) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    ObReferenceObject(block->TransactionObject);
-    new_tr->trans_object = block->TransactionObject;
-    new_tr->refcount = 1;
-    new_tr->enlistment = NULL;
-    ExInitializeResourceLite(&new_tr->lock);
-
     KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
 
     le = Vcb->trans_list.Flink;
@@ -118,8 +165,69 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
             InterlockedIncrement(&tr->refcount);
             KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
+            *t = tr;
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
+    }
+
+    KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+    new_tr = ExAllocatePoolWithTag(NonPagedPool, sizeof(trans_ref), ALLOC_TAG);
+    if (!new_tr) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ObReferenceObject(block->TransactionObject);
+    new_tr->trans_object = block->TransactionObject;
+    new_tr->refcount = 1;
+    new_tr->enlistment = NULL;
+    new_tr->enlistment_object = NULL;
+
+    TRACE("created new transaction\n");
+
+    memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
+    oa.Length = sizeof(OBJECT_ATTRIBUTES);
+    oa.Attributes = OBJ_KERNEL_HANDLE;
+
+    Status = fTmCreateEnlistment(&new_tr->enlistment, KernelMode, 0, &oa, Vcb->rm, new_tr->trans_object,
+                                 0, TRANSACTION_NOTIFY_COMMIT | TRANSACTION_NOTIFY_ROLLBACK, new_tr);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("TmCreateEnlistment returned %08lx\n", Status);
+        ObDereferenceObject(block->TransactionObject);
+        ExFreePool(new_tr);
+        return Status;
+    }
+
+    Status = ObReferenceObjectByHandle(new_tr->enlistment, 0, NULL, KernelMode,
+                                       (void**)&new_tr->enlistment_object, NULL);
+    if (!NT_SUCCESS(Status)) {
+        ERR("ObReferenceObjectByHandle returned %08lx\n", Status);
+        NtClose(new_tr->enlistment);
+        ObDereferenceObject(block->TransactionObject);
+        ExFreePool(new_tr);
+        return Status;
+    }
+
+    // open handle guarantees refcount > 0
+    ObDereferenceObject(new_tr->enlistment_object);
+
+    KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
+
+    le = Vcb->trans_list.Flink;
+    while (le != &Vcb->trans_list) {
+        trans_ref* tr = CONTAINING_RECORD(le, trans_ref, list_entry);
+
+        if (tr->trans_object == block->TransactionObject) { // already created
+            InterlockedIncrement(&tr->refcount);
+            KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+            NtClose(new_tr->enlistment);
             ObDereferenceObject(block->TransactionObject);
-            ExDeleteResourceLite(&new_tr->lock);
             ExFreePool(new_tr);
 
             *t = tr;
@@ -133,26 +241,6 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     InsertTailList(&Vcb->trans_list, &new_tr->list_entry);
 
     KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
-
-    TRACE("created new transaction\n");
-
-    memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
-    oa.Length = sizeof(OBJECT_ATTRIBUTES);
-    oa.Attributes = OBJ_KERNEL_HANDLE;
-
-    ExAcquireResourceExclusiveLite(&new_tr->lock, true);
-
-    Status = fTmCreateEnlistment(&new_tr->enlistment, KernelMode, 0, &oa, Vcb->rm, new_tr->trans_object,
-                                 0, TRANSACTION_NOTIFY_COMMIT | TRANSACTION_NOTIFY_ROLLBACK, new_tr);
-
-    if (!NT_SUCCESS(Status)) {
-        ERR("TmCreateEnlistment returned %08lx\n", Status);
-        ExReleaseResourceLite(&new_tr->lock);
-        *t = new_tr;
-        return Status;
-    }
-
-    ExReleaseResourceLite(&new_tr->lock);
 
     *t = new_tr;
 
@@ -177,6 +265,5 @@ void free_trans(device_extension* Vcb, trans_ref* t) {
         NtClose(t->enlistment);
 
     ObDereferenceObject(t->trans_object);
-    ExDeleteResourceLite(&t->lock);
     ExFreePool(t);
 }
