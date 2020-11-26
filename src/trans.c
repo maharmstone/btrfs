@@ -12,6 +12,7 @@ typedef struct _trans_ref {
     LONG refcount;
     HANDLE enlistment;
     PKENLISTMENT enlistment_object;
+    bool finished;
 } trans_ref;
 
 static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
@@ -38,6 +39,7 @@ static NTSTATUS rm_notification(PKENLISTMENT EnlistmentObject, PVOID RMContext, 
     KIRQL irql;
     LIST_ENTRY* le;
     trans_ref* tr = NULL;
+    bool already_finished = false;
 
     UNUSED(TransactionContext);
     UNUSED(TmVirtualClock);
@@ -59,10 +61,23 @@ static NTSTATUS rm_notification(PKENLISTMENT EnlistmentObject, PVOID RMContext, 
         le = le->Flink;
     }
 
+    if (tr && (TransactionNotification == TRANSACTION_NOTIFY_COMMIT || TransactionNotification == TRANSACTION_NOTIFY_ROLLBACK)) {
+        if (tr->finished)
+            already_finished = true;
+
+        tr->finished = true;
+    }
+
     KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
     if (!tr) {
         TRACE("rm_notification message for unrecognized transaction\n");
+        return STATUS_SUCCESS;
+    }
+
+    if (already_finished) {
+        TRACE("ignoring rm_notification message for finished transaction\n");
+        free_trans(Vcb, tr);
         return STATUS_SUCCESS;
     }
 
@@ -162,6 +177,11 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
         trans_ref* tr = CONTAINING_RECORD(le, trans_ref, list_entry);
 
         if (tr->trans_object == block->TransactionObject) {
+            if (tr->finished) {
+                KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+                return STATUS_TRANSACTION_NOT_ACTIVE;
+            }
+
             InterlockedIncrement(&tr->refcount);
             KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
@@ -186,6 +206,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     new_tr->refcount = 1;
     new_tr->enlistment = NULL;
     new_tr->enlistment_object = NULL;
+    new_tr->finished = false;
 
     TRACE("created new transaction\n");
 
@@ -223,6 +244,16 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
         trans_ref* tr = CONTAINING_RECORD(le, trans_ref, list_entry);
 
         if (tr->trans_object == block->TransactionObject) { // already created
+            if (tr->finished) {
+                KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
+
+                NtClose(new_tr->enlistment);
+                ObDereferenceObject(block->TransactionObject);
+                ExFreePool(new_tr);
+
+                return STATUS_TRANSACTION_NOT_ACTIVE;
+            }
+
             InterlockedIncrement(&tr->refcount);
             KeReleaseSpinLock(&Vcb->trans_list_lock, irql);
 
