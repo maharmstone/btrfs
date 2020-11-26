@@ -15,6 +15,7 @@ typedef struct _trans_ref {
     bool finished;
     ERESOURCE lock;
     LIST_ENTRY old_dir_children;
+    LIST_ENTRY filerefs;
 } trans_ref;
 
 static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
@@ -26,7 +27,14 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
 }
 
 static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
-    FIXME("(%p, %p)\n", Vcb, trans);
+    bool skip_lock;
+
+    TRACE("(%p, %p)\n", Vcb, trans);
+
+    skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
+
+    if (!skip_lock)
+        ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
     ExAcquireResourceExclusiveLite(&trans->lock, true);
 
@@ -38,13 +46,39 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
         dc->forked = false;
     }
 
+    // loop through fileref list
+
+    while (!IsListEmpty(&trans->filerefs)) {
+        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&trans->filerefs), file_ref, list_entry_trans);
+
+        if (fr->dc) { // delete dir_child
+            ExAcquireResourceExclusiveLite(&fr->parent->fcb->nonpaged->dir_children_lock, true);
+
+            RemoveEntryList(&fr->dc->list_entry_index);
+            RemoveEntryList(&fr->dc->list_entry_hash);
+            RemoveEntryList(&fr->dc->list_entry_hash_uc);
+
+            ExReleaseResourceLite(&fr->parent->fcb->nonpaged->dir_children_lock);
+
+            ExFreePool(fr->dc->utf8.Buffer);
+            ExFreePool(fr->dc->name.Buffer);
+            ExFreePool(fr->dc->name_uc.Buffer);
+            ExFreePool(fr->dc);
+
+            fr->dc = NULL;
+        }
+
+        fr->created = true;
+        fr->deleted = true;
+        fr->trans = NULL;
+    }
+
     ExReleaseResourceLite(&trans->lock);
 
-    // FIXME - loop through fileref list
-    // FIXME - for new filerefs, delete dir_children and clear trans
-    // FIXME - for new filerefs, clear fcb->trans
-
     // FIXME - make sure trans->refcount decreased correctly
+
+    if (!skip_lock)
+        ExReleaseResourceLite(&Vcb->tree_lock);
 
     return STATUS_SUCCESS;
 }
@@ -227,6 +261,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     new_tr->finished = false;
 
     InitializeListHead(&new_tr->old_dir_children);
+    InitializeListHead(&new_tr->filerefs);
     ExInitializeResourceLite(&new_tr->lock);
 
     TRACE("created new transaction\n");
@@ -330,5 +365,11 @@ void mark_dc_forked(dir_child* dc, trans_ref* trans) {
 
     ExAcquireResourceExclusiveLite(&trans->lock, true);
     InsertTailList(&trans->old_dir_children, &dc->list_entry_trans);
+    ExReleaseResourceLite(&trans->lock);
+}
+
+void add_fileref_to_trans(file_ref* fr, trans_ref* trans) {
+    ExAcquireResourceExclusiveLite(&trans->lock, true);
+    InsertTailList(&trans->filerefs, &fr->list_entry_trans);
     ExReleaseResourceLite(&trans->lock);
 }

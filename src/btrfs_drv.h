@@ -1626,6 +1626,7 @@ NTSTATUS init_trans_man(device_extension* Vcb);
 NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref** t);
 void free_trans(device_extension* Vcb, trans_ref* t);
 void mark_dc_forked(dir_child* dc, trans_ref* trans);
+void add_fileref_to_trans(file_ref* fr, trans_ref* trans);
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
