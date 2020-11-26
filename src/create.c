@@ -340,7 +340,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                 goto end;
             }
 
-            non_trans_dc->forked = true;
+            mark_dc_forked(non_trans_dc, trans);
         }
     }
 

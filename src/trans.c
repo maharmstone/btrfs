@@ -13,6 +13,8 @@ typedef struct _trans_ref {
     HANDLE enlistment;
     PKENLISTMENT enlistment_object;
     bool finished;
+    ERESOURCE lock;
+    LIST_ENTRY old_dir_children;
 } trans_ref;
 
 static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
@@ -26,7 +28,23 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
 static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
     FIXME("(%p, %p)\n", Vcb, trans);
 
-    // FIXME
+    ExAcquireResourceExclusiveLite(&trans->lock, true);
+
+    // mark old dir_children as not forked, and remove from list
+
+    while (!IsListEmpty(&trans->old_dir_children)) {
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&trans->old_dir_children), dir_child, list_entry_trans);
+
+        dc->forked = false;
+    }
+
+    ExReleaseResourceLite(&trans->lock);
+
+    // FIXME - loop through fileref list
+    // FIXME - for new filerefs, delete dir_children and clear trans
+    // FIXME - for new filerefs, clear fcb->trans
+
+    // FIXME - make sure trans->refcount decreased correctly
 
     return STATUS_SUCCESS;
 }
@@ -208,6 +226,9 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     new_tr->enlistment_object = NULL;
     new_tr->finished = false;
 
+    InitializeListHead(&new_tr->old_dir_children);
+    ExInitializeResourceLite(&new_tr->lock);
+
     TRACE("created new transaction\n");
 
     memset(&oa, 0, sizeof(OBJECT_ATTRIBUTES));
@@ -220,6 +241,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     if (!NT_SUCCESS(Status)) {
         ERR("TmCreateEnlistment returned %08lx\n", Status);
         ObDereferenceObject(block->TransactionObject);
+        ExDeleteResourceLite(&new_tr->lock);
         ExFreePool(new_tr);
         return Status;
     }
@@ -230,6 +252,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
         ERR("ObReferenceObjectByHandle returned %08lx\n", Status);
         NtClose(new_tr->enlistment);
         ObDereferenceObject(block->TransactionObject);
+        ExDeleteResourceLite(&new_tr->lock);
         ExFreePool(new_tr);
         return Status;
     }
@@ -249,6 +272,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
 
                 NtClose(new_tr->enlistment);
                 ObDereferenceObject(block->TransactionObject);
+                ExDeleteResourceLite(&new_tr->lock);
                 ExFreePool(new_tr);
 
                 return STATUS_TRANSACTION_NOT_ACTIVE;
@@ -260,6 +284,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
             NtClose(new_tr->enlistment);
             ObDereferenceObject(block->TransactionObject);
             ExFreePool(new_tr);
+            ExDeleteResourceLite(&new_tr->lock);
 
             *t = tr;
 
@@ -296,5 +321,14 @@ void free_trans(device_extension* Vcb, trans_ref* t) {
         NtClose(t->enlistment);
 
     ObDereferenceObject(t->trans_object);
+    ExDeleteResourceLite(&t->lock);
     ExFreePool(t);
+}
+
+void mark_dc_forked(dir_child* dc, trans_ref* trans) {
+    dc->forked = true;
+
+    ExAcquireResourceExclusiveLite(&trans->lock, true);
+    InsertTailList(&trans->old_dir_children, &dc->list_entry_trans);
+    ExReleaseResourceLite(&trans->lock);
 }

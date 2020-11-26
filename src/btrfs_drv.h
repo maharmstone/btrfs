@@ -240,6 +240,7 @@ typedef struct {
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
     LIST_ENTRY list_entry_hash_uc;
+    LIST_ENTRY list_entry_trans;
 } dir_child;
 
 enum prop_compression_type {
@@ -340,6 +341,7 @@ typedef struct _file_ref {
 
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
+    LIST_ENTRY list_entry_trans;
 } file_ref;
 
 typedef struct {
@@ -1623,6 +1625,7 @@ extern BTRFS_UUID boot_uuid;
 NTSTATUS init_trans_man(device_extension* Vcb);
 NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref** t);
 void free_trans(device_extension* Vcb, trans_ref* t);
+void mark_dc_forked(dir_child* dc, trans_ref* trans);
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))
