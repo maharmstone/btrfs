@@ -329,6 +329,11 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
         if (!do_fork || non_trans_dc->type == BTRFS_TYPE_DIRECTORY)
             dc_found = non_trans_dc;
         else {
+            if (non_trans_dc->forked) { // already forked by another transaction
+                Status = STATUS_TRANSACTIONAL_CONFLICT;
+                goto end;
+            }
+
             Status = duplicate_dir_child(non_trans_dc, &dc_found, trans);
             if (!NT_SUCCESS(Status)) {
                 ERR("duplicate_dir_child returned %08lx\n", Status);
