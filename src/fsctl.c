@@ -5638,8 +5638,8 @@ NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type) {
             break;
 
         case FSCTL_TXFS_GET_TRANSACTED_VERSION:
-            WARN("STUB: FSCTL_TXFS_GET_TRANSACTED_VERSION\n");
-            Status = STATUS_INVALID_DEVICE_REQUEST;
+            Status = get_transacted_version(IrpSp->FileObject, Irp->UserBuffer, IrpSp->Parameters.FileSystemControl.OutputBufferLength,
+                                            &Irp->IoStatus.Information);
             break;
 
         case FSCTL_TXFS_SAVEPOINT_INFORMATION:

@@ -467,3 +467,11 @@ void add_fileref_to_trans(file_ref* fr, trans_ref* trans) {
     InsertTailList(&trans->filerefs, &fr->list_entry_trans);
     ExReleaseResourceLite(&trans->lock);
 }
+
+NTSTATUS get_transacted_version(PFILE_OBJECT FileObject, TXFS_GET_TRANSACTED_VERSION* buf, ULONG buflen, ULONG_PTR* retlen) {
+    FIXME("(%p, %p, %lu, %p): stub\n", FileObject, buf, buflen, retlen);
+
+    // FIXME
+
+    return STATUS_INVALID_DEVICE_REQUEST;
+}
