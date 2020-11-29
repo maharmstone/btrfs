@@ -469,9 +469,28 @@ void add_fileref_to_trans(file_ref* fr, trans_ref* trans) {
 }
 
 NTSTATUS get_transacted_version(PFILE_OBJECT FileObject, TXFS_GET_TRANSACTED_VERSION* buf, ULONG buflen, ULONG_PTR* retlen) {
-    FIXME("(%p, %p, %lu, %p): stub\n", FileObject, buf, buflen, retlen);
+    ccb* ccb;
+    file_ref* fileref;
 
-    // FIXME
+    TRACE("(%p, %p, %lu, %p)\n", FileObject, buf, buflen, retlen);
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    if (buflen < sizeof(TXFS_GET_TRANSACTED_VERSION))
+        return STATUS_INVALID_PARAMETER;
+
+    ccb = FileObject->FsContext2;
+
+    if (!ccb)
+        return STATUS_INVALID_PARAMETER;
+
+    fileref = ccb->fileref;
+
+    buf->ThisBaseVersion = fileref->trans ? TXFS_TRANSACTED_VERSION_UNCOMMITTED : TXFS_TRANSACTED_VERSION_NONTRANSACTED;
+    buf->LatestVersion = 0; // FIXME?
+    buf->ThisMiniVersion = 0;
+    buf->FirstMiniVersion = 0;
+    buf->LatestMiniVersion = 0;
+
+    *retlen = sizeof(TXFS_GET_TRANSACTED_VERSION);
+
+    return STATUS_SUCCESS;
 }
