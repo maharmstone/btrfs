@@ -19,9 +19,104 @@ typedef struct _trans_ref {
 } trans_ref;
 
 static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
-    FIXME("(%p, %p)\n", Vcb, trans);
+    bool skip_lock;
+    LIST_ENTRY rollback;
 
-    // FIXME
+    TRACE("(%p, %p)\n", Vcb, trans);
+
+    InitializeListHead(&rollback);
+
+    skip_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->tree_lock);
+
+    if (!skip_lock)
+        ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
+
+    ExAcquireResourceExclusiveLite(&trans->lock, true);
+
+    // remove old dir_children and mark fcbs as orphaned
+
+    while (!IsListEmpty(&trans->old_dir_children)) {
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&trans->old_dir_children), dir_child, list_entry_trans);
+        NTSTATUS Status;
+
+        ExAcquireResourceExclusiveLite(&dc->fileref->parent->fcb->nonpaged->dir_children_lock, true);
+
+        RemoveEntryList(&dc->list_entry_index);
+        remove_dir_child_from_hash_lists(dc->fileref->parent->fcb, dc);
+
+        ExReleaseResourceLite(&dc->fileref->parent->fcb->nonpaged->dir_children_lock);
+
+        ExAcquireResourceExclusiveLite(dc->fileref->fcb->Header.Resource, true);
+
+        dc->fileref->fcb->inode_item.st_nlink = 0;
+        dc->fileref->fcb->inode_item_changed = true;
+        dc->fileref->fcb->deleted = true;
+
+        // FIXME - should be doing POSIX-style deletion?
+
+        if (dc->fileref->fcb->type != BTRFS_TYPE_DIRECTORY && dc->fileref->fcb->inode_item.st_size > 0) {
+            Status = excise_extents(Vcb, dc->fileref->fcb, 0, sector_align(dc->fileref->fcb->inode_item.st_size, dc->fileref->fcb->Vcb->superblock.sector_size),
+                                    NULL, &rollback);
+            if (!NT_SUCCESS(Status))
+                ERR("excise_extents returned %08lx\n", Status);
+        }
+
+        dc->fileref->fcb->Header.AllocationSize.QuadPart = 0;
+        dc->fileref->fcb->Header.FileSize.QuadPart = 0;
+        dc->fileref->fcb->Header.ValidDataLength.QuadPart = 0;
+
+        ExReleaseResourceLite(dc->fileref->fcb->Header.Resource);
+
+        mark_fcb_dirty(dc->fileref->fcb);
+
+        dc->fileref->deleted = true;
+        mark_fileref_dirty(dc->fileref);
+
+        dc->fileref->oldindex = dc->index;
+
+        if (!dc->fileref->oldutf8.Buffer)
+            dc->fileref->oldutf8 = dc->utf8;
+        else
+            ExFreePool(dc->utf8.Buffer);
+
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc->name_uc.Buffer);
+
+        dc->fileref->dc = NULL;
+        ExFreePool(dc);
+    }
+
+    // loop through fileref list
+
+    while (!IsListEmpty(&trans->filerefs)) {
+        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&trans->filerefs), file_ref, list_entry_trans);
+
+        if (fr->dc) {
+            fr->dc->trans = NULL;
+            fr->dc->key.obj_id = fr->fcb->inode;
+        }
+
+        fr->trans = NULL;
+        fr->fcb->inode_item.st_nlink = 1;
+        fr->fcb->inode_item_changed = true;
+        mark_fcb_dirty(fr->fcb);
+
+        fr->created = true;
+        mark_fileref_dirty(fr);
+
+        // FIXME - unmark as orphan
+    }
+
+    // FIXME - hardlinks
+
+    ExReleaseResourceLite(&trans->lock);
+
+    Vcb->need_write = true;
+
+    if (!skip_lock)
+        ExReleaseResourceLite(&Vcb->tree_lock);
+
+    clear_rollback(&rollback);
 
     return STATUS_SUCCESS;
 }
@@ -55,8 +150,7 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
             ExAcquireResourceExclusiveLite(&fr->parent->fcb->nonpaged->dir_children_lock, true);
 
             RemoveEntryList(&fr->dc->list_entry_index);
-            RemoveEntryList(&fr->dc->list_entry_hash);
-            RemoveEntryList(&fr->dc->list_entry_hash_uc);
+            remove_dir_child_from_hash_lists(fr->parent->fcb, fr->dc);
 
             ExReleaseResourceLite(&fr->parent->fcb->nonpaged->dir_children_lock);
 

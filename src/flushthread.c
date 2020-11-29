@@ -7403,7 +7403,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     while (le != &Vcb->dirty_filerefs) {
         file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry_dirty);
 
-        if (fr->trans) {
+        if (fr->trans || (fr->dc && fr->dc->forked)) {
             le = le->Flink;
             continue;
         }

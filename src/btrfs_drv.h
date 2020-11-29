@@ -1435,7 +1435,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                             _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2, _In_opt_ PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
-                          bool case_sensitive, trans_ref* trans, bool do_fork);
+                          bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc);
 uint32_t inherit_mode(fcb* parfcb, bool is_dir);
 file_ref* create_fileref(device_extension* Vcb);
 NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp);

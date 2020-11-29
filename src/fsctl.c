@@ -3804,7 +3804,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     name.Length = name.MaximumLength = bmn->namelen;
     name.Buffer = bmn->name;
 
-    Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, true, NULL, false);
+    Status = find_file_in_dir(&name, parfcb, &subvol, &inode, &dc, true, NULL, false, NULL);
     if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("find_file_in_dir returned %08lx\n", Status);
         goto end;

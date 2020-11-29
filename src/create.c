@@ -248,7 +248,7 @@ static NTSTATUS duplicate_dir_child(dir_child* src, dir_child** dest, trans_ref*
 }
 
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
-                          bool case_sensitive, trans_ref* trans, bool do_fork) {
+                          bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc) {
     NTSTATUS Status;
     UNICODE_STRING fnus;
     uint32_t hash;
@@ -257,6 +257,9 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
     bool locked = false;
     dir_child* dc_found = NULL;
     dir_child* non_trans_dc = NULL;
+
+    if (old_dc)
+        *old_dc = NULL;
 
     if (!case_sensitive) {
         Status = RtlUpcaseUnicodeString(&fnus, filename, true);
@@ -341,6 +344,9 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
             }
 
             mark_dc_forked(non_trans_dc, trans);
+
+            if (old_dc)
+                *old_dc = non_trans_dc;
         }
     }
 
@@ -1674,10 +1680,11 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         root* subvol;
         uint64_t inode;
         dir_child* dc;
+        dir_child* old_dc;
         fcb* fcb;
         file_ref* duff_fr = NULL;
 
-        Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive, trans, do_fork);
+        Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive, trans, do_fork, &old_dc);
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             TRACE("could not find %.*S\n", (int)(name->Length / sizeof(WCHAR)), name->Buffer);
 
@@ -1714,6 +1721,36 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             struct _fcb* new_fcb;
             LIST_ENTRY* lastle = NULL;
             ULONG defda;
+
+            if (old_dc) {
+                ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, true);
+
+                if (!old_dc->fileref) {
+                    file_ref* old_fr;
+
+                    old_fr = create_fileref(Vcb);
+                    if (!old_fr) {
+                        ERR("out of memory\n");
+                        ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+                        free_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    old_fr->fcb = fcb;
+                    InterlockedIncrement(&fcb->refcount);
+
+                    old_fr->parent = (struct _file_ref*)sf;
+                    old_fr->dc = old_dc;
+                    old_dc->fileref = old_fr;
+                    InsertTailList(&sf->children, &old_fr->list_entry);
+                    increase_fileref_refcount(sf);
+
+                    mark_fileref_dirty(old_fr);
+                    free_fileref(old_fr);
+                }
+
+                ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+            }
 
             ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
