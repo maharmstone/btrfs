@@ -104,7 +104,7 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         fr->created = true;
         mark_fileref_dirty(fr);
 
-        // FIXME - unmark as orphan
+        fr->fcb->marked_as_orphan = true;
     }
 
     // FIXME - hardlinks

@@ -4862,6 +4862,17 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         goto end;
     }
 
+    if (fcb->marked_as_orphan && fcb->inode_item.st_nlink > 0) {
+        Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
+                                        fcb->inode, NULL, 0, Batch_Delete);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item_batch returned %08lx\n", Status);
+            goto end;
+        }
+
+        fcb->marked_as_orphan = false;
+    }
+
 #ifdef DEBUG_PARANOID
     extents_changed = fcb->extents_changed;
 #endif
