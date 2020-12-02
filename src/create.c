@@ -4867,12 +4867,16 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
     }
 
     if (trans) {
+        ACCESS_MASK ro_access = READ_CONTROL | SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
+                                FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
+                                FILE_TRAVERSE;
+
         // FIXME - asking for write flags on readonly volumes (should quit here rather than in open_file2?)
         // FIXME - MAXIMUM_ALLOWED
 
         do_fork = RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE ||
                   RequestedDisposition == FILE_OVERWRITE_IF ||
-                  IrpSp->Parameters.Create.SecurityContext->DesiredAccess & (FILE_GENERIC_WRITE & ~FILE_GENERIC_READ);
+                  IrpSp->Parameters.Create.SecurityContext->DesiredAccess & ~ro_access;
     }
 
     if (!related && RequestedDisposition != FILE_OPEN && !(IrpSp->Flags & SL_OPEN_TARGET_DIRECTORY)) {
