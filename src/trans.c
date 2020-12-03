@@ -94,6 +94,16 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         if (fr->dc) {
             fr->dc->trans = NULL;
             fr->dc->key.obj_id = fr->fcb->inode;
+        } else if (fr->deleted && fr->oldutf8.Length > 0) {
+            ExAcquireResourceExclusiveLite(fr->parent->fcb->Header.Resource, true);
+            fr->parent->fcb->inode_item.st_size -= fr->oldutf8.Length * 2;
+            fr->parent->fcb->inode_item.sequence++;
+            fr->parent->fcb->inode_item_changed = true;
+            ExReleaseResourceLite(fr->parent->fcb->Header.Resource);
+
+            // FIXME - update parent st_ctime? To now, or when operation performed?
+
+            mark_fcb_dirty(fr->parent->fcb);
         }
 
         fr->trans = NULL;
