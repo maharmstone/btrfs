@@ -1133,7 +1133,6 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
         return false;
 
     bfssize = 0;
-
     do {
         bfssize += 1024;
 
@@ -1148,11 +1147,9 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
 
     if (bfs->num_devices != 0) {
         bfs2 = bfs;
-        while (true) {
+        do {
             if (RtlCompareMemory(&bfs2->uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                if (bfs2->num_devices == 1)
-                    ret = false;
-                else
+                if (bfs2->num_devices != 1)
                     ret = look_for_device(bfs2, &devuuid);
 
                 goto end;
@@ -1160,16 +1157,15 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
 
             if (bfs2->next_entry == 0)
                 break;
-            else
-                bfs2 = (btrfs_filesystem*)((uint8_t*)bfs2 + bfs2->next_entry);
-        }
+
+            bfs2 = (btrfs_filesystem*)((uint8_t*)bfs2 + bfs2->next_entry);
+        } while (true);
     }
 
 end:
-    NtClose(h2);
+    free(bfs);
 
-    if (bfs)
-        free(bfs);
+    NtClose(h2);
 
     return ret;
 }
