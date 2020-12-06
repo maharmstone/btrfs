@@ -1408,7 +1408,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
 NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen);
 void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
 void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc);
-NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb, bool duplicate_hardlinks);
+NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb);
 
 // in reparse.c
 NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, ULONG_PTR* retlen);

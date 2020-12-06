@@ -420,7 +420,7 @@ bool has_open_children(file_ref* fileref) {
     return false;
 }
 
-NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb, bool duplicate_hardlinks) {
+NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
     device_extension* Vcb = oldfcb->Vcb;
     fcb* fcb;
     LIST_ENTRY* le;
@@ -545,51 +545,49 @@ NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb, bool duplicate_hardlinks) {
         le = le->Flink;
     }
 
-    if (duplicate_hardlinks) {
-        le = oldfcb->hardlinks.Flink;
-        while (le != &oldfcb->hardlinks) {
-            hardlink *hl = CONTAINING_RECORD(le, hardlink, list_entry), *hl2;
+    le = oldfcb->hardlinks.Flink;
+    while (le != &oldfcb->hardlinks) {
+        hardlink *hl = CONTAINING_RECORD(le, hardlink, list_entry), *hl2;
 
-            hl2 = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
+        hl2 = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
 
-            if (!hl2) {
-                ERR("out of memory\n");
-                free_fcb(fcb);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            hl2->parent = hl->parent;
-            hl2->index = hl->index;
-
-            hl2->name.Length = hl2->name.MaximumLength = hl->name.Length;
-            hl2->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl2->name.MaximumLength, ALLOC_TAG);
-
-            if (!hl2->name.Buffer) {
-                ERR("out of memory\n");
-                ExFreePool(hl2);
-                free_fcb(fcb);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(hl2->name.Buffer, hl->name.Buffer, hl->name.Length);
-
-            hl2->utf8.Length = hl2->utf8.MaximumLength = hl->utf8.Length;
-            hl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl2->utf8.MaximumLength, ALLOC_TAG);
-
-            if (!hl2->utf8.Buffer) {
-                ERR("out of memory\n");
-                ExFreePool(hl2->name.Buffer);
-                ExFreePool(hl2);
-                free_fcb(fcb);
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(hl2->utf8.Buffer, hl->utf8.Buffer, hl->utf8.Length);
-
-            InsertTailList(&fcb->hardlinks, &hl2->list_entry);
-
-            le = le->Flink;
+        if (!hl2) {
+            ERR("out of memory\n");
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
+
+        hl2->parent = hl->parent;
+        hl2->index = hl->index;
+
+        hl2->name.Length = hl2->name.MaximumLength = hl->name.Length;
+        hl2->name.Buffer = ExAllocatePoolWithTag(PagedPool, hl2->name.MaximumLength, ALLOC_TAG);
+
+        if (!hl2->name.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(hl2);
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(hl2->name.Buffer, hl->name.Buffer, hl->name.Length);
+
+        hl2->utf8.Length = hl2->utf8.MaximumLength = hl->utf8.Length;
+        hl2->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, hl2->utf8.MaximumLength, ALLOC_TAG);
+
+        if (!hl2->utf8.Buffer) {
+            ERR("out of memory\n");
+            ExFreePool(hl2->name.Buffer);
+            ExFreePool(hl2);
+            free_fcb(fcb);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(hl2->utf8.Buffer, hl->utf8.Buffer, hl->utf8.Length);
+
+        InsertTailList(&fcb->hardlinks, &hl2->list_entry);
+
+        le = le->Flink;
     }
 
     if (oldfcb->reparse_xattr.Buffer && oldfcb->reparse_xattr.Length > 0) {
@@ -918,7 +916,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, true);
 
-                Status = duplicate_fcb(me->fileref->fcb, &me->dummyfcb, true);
+                Status = duplicate_fcb(me->fileref->fcb, &me->dummyfcb);
                 if (!NT_SUCCESS(Status)) {
                     ERR("duplicate_fcb returned %08lx\n", Status);
                     ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
@@ -2239,7 +2237,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     // add dummy deleted fcb with old name
 
-    Status = duplicate_fcb(fileref->fcb, &dummyfcb, true);
+    Status = duplicate_fcb(fileref->fcb, &dummyfcb);
     if (!NT_SUCCESS(Status)) {
         ERR("duplicate_fcb returned %08lx\n", Status);
         ExFreePool(utf8.Buffer);

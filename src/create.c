@@ -1759,7 +1759,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
             ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-            Status = duplicate_fcb(fcb, &new_fcb, false);
+            Status = duplicate_fcb(fcb, &new_fcb);
             if (!NT_SUCCESS(Status)) {
                 ERR("duplicate_fcb returned %08lx\n", Status);
                 ExReleaseResourceLite(fcb->Header.Resource);
@@ -1793,8 +1793,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
             old_fcb = fcb;
             fcb = new_fcb;
-
-            fcb->inode_item.st_nlink = 0;
 
             defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, dc->name.Buffer[0] == '.',
                                         true, NULL);
@@ -1900,13 +1898,11 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             new_fcb->subvol->fcbs_version++;
             release_fcb_lock(Vcb);
 
-            if (old_fcb->inode_item.st_nlink > 1) {
+            if (fcb->inode_item.st_nlink > 1) {
                 LIST_ENTRY* le;
 
-                ExAcquireResourceSharedLite(old_fcb->Header.Resource, true);
-
-                le = old_fcb->hardlinks.Flink;
-                while (le != &old_fcb->hardlinks) {
+                le = fcb->hardlinks.Flink;
+                while (le != &fcb->hardlinks) {
                     hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
                     file_ref* parfr;
 
@@ -1917,7 +1913,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
                     TRACE("hardlink: parent = %I64x, index = %I64x, utf8 = %.*s\n", hl->parent, hl->index, hl->utf8.Length, hl->utf8.Buffer);
 
-                    Status = open_fileref_by_inode(old_fcb->Vcb, old_fcb->subvol, hl->parent, &parfr, NULL);
+                    Status = open_fileref_by_inode(Vcb, fcb->subvol, hl->parent, &parfr, NULL);
 
                     if (!NT_SUCCESS(Status))
                         ERR("open_fileref_by_inode returned %08lx\n", Status);
@@ -1932,7 +1928,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
                         if (!NT_SUCCESS(Status)) {
                             ERR("find_file_in_dir returned %08lx\n", Status);
-                            ExReleaseResourceLite(old_fcb->Header.Resource);
                             free_fileref(parfr);
                             free_fcb(old_fcb);
                             free_fcb(new_fcb);
@@ -1945,7 +1940,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                             old_fr = create_fileref(Vcb);
                             if (!old_fr) {
                                 ERR("out of memory\n");
-                                ExReleaseResourceLite(old_fcb->Header.Resource);
                                 free_fileref(parfr);
                                 free_fcb(old_fcb);
                                 free_fcb(new_fcb);
@@ -1994,9 +1988,9 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
                     le = le->Flink;
                 }
-
-                ExReleaseResourceLite(old_fcb->Header.Resource);
             }
+
+            fcb->inode_item.st_nlink = 0;
 
             free_fcb(old_fcb);
         }

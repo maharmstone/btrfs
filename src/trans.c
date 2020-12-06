@@ -107,8 +107,27 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         }
 
         fr->trans = NULL;
-        fr->fcb->inode_item.st_nlink = 1;
+
+        ExAcquireResourceExclusiveLite(fr->fcb->Header.Resource, true);
+
+        if (IsListEmpty(&fr->fcb->hardlinks))
+            fr->fcb->inode_item.st_nlink = 1;
+        else {
+            LIST_ENTRY* le;
+
+            fr->fcb->inode_item.st_nlink = 0;
+
+            le = fr->fcb->hardlinks.Flink;
+            while (le != &fr->fcb->hardlinks) {
+                fr->fcb->inode_item.st_nlink++;
+                le = le->Flink;
+            }
+        }
+
         fr->fcb->inode_item_changed = true;
+
+        ExReleaseResourceLite(fr->fcb->Header.Resource);
+
         mark_fcb_dirty(fr->fcb);
 
         fr->created = true;
