@@ -354,24 +354,30 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
         if (dc_found->key.obj_type == TYPE_ROOT_ITEM) {
             LIST_ENTRY* le2;
 
-            *subvol = NULL;
+            if (subvol) {
+                *subvol = NULL;
 
-            le2 = fcb->Vcb->roots.Flink;
-            while (le2 != &fcb->Vcb->roots) {
-                root* r2 = CONTAINING_RECORD(le2, root, list_entry);
+                le2 = fcb->Vcb->roots.Flink;
+                while (le2 != &fcb->Vcb->roots) {
+                    root* r2 = CONTAINING_RECORD(le2, root, list_entry);
 
-                if (r2->id == dc_found->key.obj_id) {
-                    *subvol = r2;
-                    break;
+                    if (r2->id == dc_found->key.obj_id) {
+                        *subvol = r2;
+                        break;
+                    }
+
+                    le2 = le2->Flink;
                 }
-
-                le2 = le2->Flink;
             }
 
-            *inode = SUBVOL_ROOT_INODE;
+            if (inode)
+                *inode = SUBVOL_ROOT_INODE;
         } else {
-            *subvol = fcb->subvol;
-            *inode = dc_found->key.obj_id;
+            if (subvol)
+                *subvol = fcb->subvol;
+
+            if (inode)
+                *inode = dc_found->key.obj_id;
         }
 
         *pdc = dc_found;
@@ -1717,40 +1723,39 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             }
         }
 
-        if (trans && do_fork) {
+        if (trans && do_fork && old_dc) {
             struct _fcb* new_fcb;
+            struct _fcb* old_fcb;
             LIST_ENTRY* lastle = NULL;
             ULONG defda;
 
-            if (old_dc) {
-                ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, true);
+            ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, true);
 
-                if (!old_dc->fileref) {
-                    file_ref* old_fr;
+            if (!old_dc->fileref) {
+                file_ref* old_fr;
 
-                    old_fr = create_fileref(Vcb);
-                    if (!old_fr) {
-                        ERR("out of memory\n");
-                        ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
-                        free_fcb(fcb);
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    old_fr->fcb = fcb;
-                    InterlockedIncrement(&fcb->refcount);
-
-                    old_fr->parent = (struct _file_ref*)sf;
-                    old_fr->dc = old_dc;
-                    old_dc->fileref = old_fr;
-                    InsertTailList(&sf->children, &old_fr->list_entry);
-                    increase_fileref_refcount(sf);
-
-                    mark_fileref_dirty(old_fr);
-                    free_fileref(old_fr);
+                old_fr = create_fileref(Vcb);
+                if (!old_fr) {
+                    ERR("out of memory\n");
+                    ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+                    free_fcb(fcb);
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+                old_fr->fcb = fcb;
+                InterlockedIncrement(&fcb->refcount);
+
+                old_fr->parent = (struct _file_ref*)sf;
+                old_fr->dc = old_dc;
+                old_dc->fileref = old_fr;
+                InsertTailList(&sf->children, &old_fr->list_entry);
+                increase_fileref_refcount(sf);
+
+                mark_fileref_dirty(old_fr);
+                free_fileref(old_fr);
             }
+
+            ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
 
             ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
@@ -1786,8 +1791,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
 
             new_fcb->created = true;
 
-            free_fcb(fcb);
-
+            old_fcb = fcb;
             fcb = new_fcb;
 
             fcb->inode_item.st_nlink = 0;
@@ -1895,6 +1899,106 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             InsertTailList(&Vcb->all_fcbs, &new_fcb->list_entry_all);
             new_fcb->subvol->fcbs_version++;
             release_fcb_lock(Vcb);
+
+            if (old_fcb->inode_item.st_nlink > 1) {
+                LIST_ENTRY* le;
+
+                ExAcquireResourceSharedLite(old_fcb->Header.Resource, true);
+
+                le = old_fcb->hardlinks.Flink;
+                while (le != &old_fcb->hardlinks) {
+                    hardlink* hl = CONTAINING_RECORD(le, hardlink, list_entry);
+                    file_ref* parfr;
+
+                    if (hl->parent == sf->fcb->inode && hl->index == old_dc->index) {
+                        le = le->Flink;
+                        continue;
+                    }
+
+                    TRACE("hardlink: parent = %I64x, index = %I64x, utf8 = %.*s\n", hl->parent, hl->index, hl->utf8.Length, hl->utf8.Buffer);
+
+                    Status = open_fileref_by_inode(old_fcb->Vcb, old_fcb->subvol, hl->parent, &parfr, NULL);
+
+                    if (!NT_SUCCESS(Status))
+                        ERR("open_fileref_by_inode returned %08lx\n", Status);
+                    else {
+                        dir_child* old_dc2;
+                        dir_child* forked_dc;
+                        file_ref* forked_fileref;
+
+                        Status = find_file_in_dir(&hl->name, parfr->fcb, NULL, NULL, &forked_dc,
+                                                  true, trans, true, &old_dc2);
+                        // FIXME - die if DC already forked by something else(?)
+
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("find_file_in_dir returned %08lx\n", Status);
+                            ExReleaseResourceLite(old_fcb->Header.Resource);
+                            free_fileref(parfr);
+                            free_fcb(old_fcb);
+                            free_fcb(new_fcb);
+                            return Status;
+                        }
+
+                        if (!old_dc2->fileref) {
+                            file_ref* old_fr;
+
+                            old_fr = create_fileref(Vcb);
+                            if (!old_fr) {
+                                ERR("out of memory\n");
+                                ExReleaseResourceLite(old_fcb->Header.Resource);
+                                free_fileref(parfr);
+                                free_fcb(old_fcb);
+                                free_fcb(new_fcb);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            old_fr->fcb = old_fcb;
+                            InterlockedIncrement(&old_fcb->refcount);
+
+                            old_fr->parent = (struct _file_ref*)parfr;
+                            old_fr->dc = old_dc2;
+                            old_dc2->fileref = old_fr;
+                            InsertTailList(&parfr->children, &old_fr->list_entry);
+                            increase_fileref_refcount(parfr);
+
+                            mark_fileref_dirty(old_fr);
+                            free_fileref(old_fr);
+                        }
+
+                        // create new fileref and add to list
+
+                        forked_fileref = create_fileref(Vcb);
+                        if (!forked_fileref) {
+                            ERR("out of memory\n");
+                            ExReleaseResourceLite(old_fcb->Header.Resource);
+                            free_fileref(parfr);
+                            free_fcb(old_fcb);
+                            free_fcb(new_fcb);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+
+                        forked_fileref->fcb = new_fcb;
+                        InterlockedIncrement(&new_fcb->refcount);
+                        forked_fileref->trans = trans;
+
+                        forked_fileref->parent = (struct _file_ref*)sf;
+                        forked_fileref->dc = forked_dc;
+                        forked_dc->fileref = forked_fileref;
+                        InsertTailList(&parfr->children, &forked_fileref->list_entry);
+
+                        add_fileref_to_trans(forked_fileref, trans);
+                        mark_fileref_dirty(forked_fileref);
+
+                        free_fileref(forked_fileref);
+                    }
+
+                    le = le->Flink;
+                }
+
+                ExReleaseResourceLite(old_fcb->Header.Resource);
+            }
+
+            free_fcb(old_fcb);
         }
 
         if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -5262,7 +5366,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = STATUS_SUCCESS;
     } else {
         LIST_ENTRY rollback;
-        bool skip_lock;
+        bool skip_lock, skip_fileref_lock;
         trans_ref* trans = NULL;
 
         InitializeListHead(&rollback);
@@ -5286,7 +5390,29 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (!skip_lock)
             ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
-        ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
+        skip_fileref_lock = ExIsResourceAcquiredExclusiveLite(&Vcb->fileref_lock);
+
+        if (!skip_fileref_lock) {
+            bool exclusive = false;
+
+            if (trans) { // acquire fileref_lock exclusively if we might fork
+                ULONG RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
+                ACCESS_MASK ro_access = READ_CONTROL | SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
+                                        FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
+                                        FILE_TRAVERSE;
+
+                // FIXME - MAXIMUM_ALLOWED
+
+                exclusive = RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE ||
+                            RequestedDisposition == FILE_OVERWRITE_IF ||
+                            IrpSp->Parameters.Create.SecurityContext->DesiredAccess & ~ro_access;
+            }
+
+            if (exclusive)
+                ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
+            else
+                ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
+        }
 
         Status = open_file(DeviceObject, Vcb, Irp, trans, &rollback);
 
@@ -5295,7 +5421,8 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         else
             clear_rollback(&rollback);
 
-        ExReleaseResourceLite(&Vcb->fileref_lock);
+        if (!skip_fileref_lock)
+            ExReleaseResourceLite(&Vcb->fileref_lock);
 
         if (!skip_lock)
             ExReleaseResourceLite(&Vcb->tree_lock);
