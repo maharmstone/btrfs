@@ -192,6 +192,21 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
         }
 
         fr->fcb->deleted = true;
+
+        if (fr->fcb->type != BTRFS_TYPE_DIRECTORY && fr->fcb->inode_item.st_size > 0) {
+            NTSTATUS Status;
+            LIST_ENTRY rollback;
+
+            InitializeListHead(&rollback);
+
+            Status = excise_extents(Vcb, fr->fcb, 0, sector_align(fr->fcb->inode_item.st_size, fr->fcb->Vcb->superblock.sector_size),
+                                    NULL, &rollback);
+            if (!NT_SUCCESS(Status))
+                ERR("excise_extents returned %08lx\n", Status);
+
+            clear_rollback(&rollback);
+        }
+
         mark_fcb_dirty(fr->fcb);
 
         fr->created = true;
