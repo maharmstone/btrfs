@@ -191,6 +191,9 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
             fr->dc = NULL;
         }
 
+        fr->fcb->deleted = true;
+        mark_fcb_dirty(fr->fcb);
+
         fr->created = true;
         fr->deleted = true;
         fr->trans = NULL;

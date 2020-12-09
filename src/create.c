@@ -2992,6 +2992,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     mark_fileref_dirty(fileref);
     increase_fileref_refcount(parfileref);
 
+    if (trans)
+        add_fileref_to_trans(fileref, trans);
+
     *pfr = fileref;
 
     TRACE("created new file in subvol %I64x, inode %I64x\n", fcb->subvol->id, fcb->inode);
