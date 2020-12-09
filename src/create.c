@@ -5390,16 +5390,16 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             bool exclusive = false;
 
             if (trans) { // acquire fileref_lock exclusively if we might fork
-                ULONG RequestedDisposition = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
+                ULONG dispos = ((IrpSp->Parameters.Create.Options >> 24) & 0xff);
                 ACCESS_MASK ro_access = READ_CONTROL | SYNCHRONIZE | ACCESS_SYSTEM_SECURITY | FILE_READ_DATA |
                                         FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
                                         FILE_TRAVERSE;
 
                 // FIXME - MAXIMUM_ALLOWED
 
-                exclusive = RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE ||
-                            RequestedDisposition == FILE_OVERWRITE_IF ||
-                            IrpSp->Parameters.Create.SecurityContext->DesiredAccess & ~ro_access;
+                exclusive = dispos == FILE_SUPERSEDE || dispos == FILE_OVERWRITE ||
+                            dispos == FILE_OVERWRITE_IF ||
+                            (dispos != FILE_CREATE && IrpSp->Parameters.Create.SecurityContext->DesiredAccess & ~ro_access);
             }
 
             if (exclusive)
