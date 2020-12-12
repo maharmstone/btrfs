@@ -4862,7 +4862,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         goto end;
     }
 
-    if (fcb->marked_as_orphan && fcb->inode_item.st_nlink > 0) {
+    if (fcb->marked_as_orphan && fcb->inode_item.st_nlink > 0 && !fcb->transacted) {
         Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
                                         fcb->inode, NULL, 0, Batch_Delete);
         if (!NT_SUCCESS(Status)) {
@@ -5165,6 +5165,9 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
         RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
 
+        if (fcb->transacted)
+            ii->st_nlink = 0;
+
         Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM),
                                         Batch_Insert);
         if (!NT_SUCCESS(Status)) {
@@ -5372,7 +5375,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->case_sensitive_set = true;
     }
 
-    if (fcb->inode_item.st_nlink == 0 && !fcb->marked_as_orphan) { // mark as orphan
+    if ((fcb->inode_item.st_nlink == 0 || fcb->transacted) && !fcb->marked_as_orphan) { // mark as orphan
         Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
                                         fcb->inode, NULL, 0, Batch_Insert);
         if (!NT_SUCCESS(Status)) {

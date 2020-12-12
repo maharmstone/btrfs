@@ -289,6 +289,7 @@ typedef struct _fcb {
     bool case_sensitive;
     bool case_sensitive_set;
     OPLOCK oplock;
+    bool transacted;
 
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;

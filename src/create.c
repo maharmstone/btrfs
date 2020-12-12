@@ -1790,6 +1790,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             new_fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&new_fcb->inode, sizeof(uint64_t));
 
             new_fcb->created = true;
+            new_fcb->transacted = true;
 
             old_fcb = fcb;
             fcb = new_fcb;
@@ -1989,8 +1990,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                     le = le->Flink;
                 }
             }
-
-            fcb->inode_item.st_nlink = 0;
 
             free_fcb(old_fcb);
         }
@@ -2661,7 +2660,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->inode_item.st_size = 0;
     fcb->inode_item.st_blocks = 0;
     fcb->inode_item.block_group = 0;
-    fcb->inode_item.st_nlink = trans ? 0 : 1;
+    fcb->inode_item.st_nlink = 1;
     fcb->inode_item.st_gid = GID_NOBODY; // FIXME?
     fcb->inode_item.st_mode = inherit_mode(parfileref->fcb, type == BTRFS_TYPE_DIRECTORY); // use parent's permissions by default
     fcb->inode_item.st_rdev = 0;
@@ -2824,6 +2823,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     fileref->fcb = fcb;
     fileref->trans = trans;
+
+    if (trans)
+        fcb->transacted = true;
 
     if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb)) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, true, NULL, rollback);

@@ -120,25 +120,8 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
 
         fr->trans = NULL;
 
-        ExAcquireResourceExclusiveLite(fr->fcb->Header.Resource, true);
-
-        if (IsListEmpty(&fr->fcb->hardlinks))
-            fr->fcb->inode_item.st_nlink = 1;
-        else {
-            LIST_ENTRY* le;
-
-            fr->fcb->inode_item.st_nlink = 0;
-
-            le = fr->fcb->hardlinks.Flink;
-            while (le != &fr->fcb->hardlinks) {
-                fr->fcb->inode_item.st_nlink++;
-                le = le->Flink;
-            }
-        }
-
+        fr->fcb->transacted = false;
         fr->fcb->inode_item_changed = true;
-
-        ExReleaseResourceLite(fr->fcb->Header.Resource);
 
         mark_fcb_dirty(fr->fcb);
 
@@ -224,6 +207,7 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
         fr->created = true;
         fr->deleted = true;
         fr->trans = NULL;
+        fr->fcb->transacted = false;
     }
 
     ExReleaseResourceLite(&trans->lock);
