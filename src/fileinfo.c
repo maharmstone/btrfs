@@ -3435,7 +3435,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     }
 
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive,
-                          NULL, false, Irp);
+                          fileref->trans, true, Irp);
 
     if (NT_SUCCESS(Status)) {
         if (!oldfileref->deleted) {
@@ -3468,7 +3468,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     if (!related) {
         Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive,
-                              NULL, false, Irp);
+                              fileref->trans, false, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08lx\n", Status);
@@ -3524,8 +3524,9 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     fr2->created = true;
     fr2->parent = related;
+    fr2->trans = fileref->trans;
 
-    Status = add_dir_child(related->fcb, fcb->inode, false, &utf8, &fnus, fcb->type, NULL, &dc);
+    Status = add_dir_child(related->fcb, fcb->inode, false, &utf8, &fnus, fcb->type, fileref->trans, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08lx\n", Status);
 
@@ -3635,14 +3636,21 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     // update parent's INODE_ITEM
 
     parfcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("parfcb->inode_item.st_size (inode %I64x) was %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
-    parfcb->inode_item.st_size += 2 * utf8len;
-    TRACE("parfcb->inode_item.st_size (inode %I64x) now %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
+
+    if (!fileref->trans) {
+        TRACE("parfcb->inode_item.st_size (inode %I64x) was %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
+        parfcb->inode_item.st_size += 2 * utf8len;
+        TRACE("parfcb->inode_item.st_size (inode %I64x) now %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
+    }
+
     parfcb->inode_item.sequence++;
     parfcb->inode_item.st_ctime = now;
 
     parfcb->inode_item_changed = true;
     mark_fcb_dirty(parfcb);
+
+    if (fileref->trans)
+        add_fileref_to_trans(fr2, fileref->trans);
 
     send_notification_fileref(fr2, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
 
