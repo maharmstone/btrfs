@@ -147,6 +147,8 @@ typedef struct _FILE_LINKS_FULL_ID_INFORMATION {
 
 #endif
 
+extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
+
 static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
@@ -3355,6 +3357,32 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
                 break;
             }
         }
+    }
+
+    /* If within a transaction, return STATUS_ACCESS_DENIED if file is not forked. This is
+     * undocumented, but is what NTFS does, and saves us having to do the fork here. This
+     * isn't a problem for CreateHardLinkTransactedW as it opens the file for writing, which
+     * forces a fork anyway. */
+
+    if (fIoGetTransactionParameterBlock) {
+        trans_ref* trans = NULL;
+
+        if (fIoGetTransactionParameterBlock(FileObject)) {
+            Status = get_trans(Vcb, fIoGetTransactionParameterBlock(FileObject), &trans);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_trans returned %08lx\n", Status);
+                return Status;
+            }
+        }
+
+        if (!fileref || trans != fileref->trans) {
+            if (trans)
+                free_trans(Vcb, trans);
+
+            return STATUS_ACCESS_DENIED;
+        }
+
+        free_trans(Vcb, trans);
     }
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
