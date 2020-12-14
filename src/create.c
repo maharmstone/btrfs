@@ -2032,7 +2032,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         if (duff_fr)
             reap_fileref(Vcb, duff_fr);
         else {
-            if (trans && do_fork) {
+            if (trans && do_fork && fcb->type != BTRFS_TYPE_DIRECTORY) {
                 add_fileref_to_trans(dc->fileref, trans);
                 mark_fcb_dirty(fcb);
                 mark_fileref_dirty(dc->fileref);
