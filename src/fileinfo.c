@@ -2556,7 +2556,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     Status = open_fileref(Vcb, &oldfileref, &fnus, related, false, NULL, NULL, PagedPool, ccb->case_sensitive,
-                          NULL, false, Irp);
+                          fileref->trans, true, Irp);
 
     if (NT_SUCCESS(Status)) {
         TRACE("destination file already exists\n");
@@ -2591,7 +2591,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     if (!related) {
         Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive,
-                              NULL, false, Irp);
+                              fileref->trans, false, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08lx\n", Status);
@@ -2833,6 +2833,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fr2->created = fileref->created;
     fr2->parent = fileref->parent;
     fr2->dc = NULL;
+    fr2->trans = fileref->trans;
 
     if (!fr2->oldutf8.Buffer) {
         fr2->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->dc->utf8.Length, ALLOC_TAG);
@@ -3013,9 +3014,13 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // update new parent's INODE_ITEM
 
     related->fcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
-    related->fcb->inode_item.st_size += 2 * utf8len;
-    TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+
+    if (!fileref->trans) {
+        TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+        related->fcb->inode_item.st_size += 2 * utf8len;
+        TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+    }
+
     related->fcb->inode_item.sequence++;
     related->fcb->inode_item.st_ctime = now;
     related->fcb->inode_item.st_mtime = now;
@@ -3026,9 +3031,13 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // update old parent's INODE_ITEM
 
     fr2->parent->fcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
-    fr2->parent->fcb->inode_item.st_size -= 2 * origutf8len;
-    TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
+
+    if (!fileref->trans) {
+        TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
+        fr2->parent->fcb->inode_item.st_size -= 2 * origutf8len;
+        TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
+    }
+
     fr2->parent->fcb->inode_item.sequence++;
     fr2->parent->fcb->inode_item.st_ctime = now;
     fr2->parent->fcb->inode_item.st_mtime = now;
@@ -3037,6 +3046,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     fr2->parent->fcb->inode_item_changed = true;
     mark_fcb_dirty(fr2->parent->fcb);
+
+    if (fileref->trans)
+        add_fileref_to_trans(fr2, fileref->trans);
 
     send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
     send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
