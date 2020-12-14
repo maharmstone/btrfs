@@ -131,8 +131,6 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         fr->fcb->marked_as_orphan = true;
     }
 
-    // FIXME - hardlinks
-
     ExReleaseResourceLite(&trans->lock);
 
     Vcb->need_write = true;
