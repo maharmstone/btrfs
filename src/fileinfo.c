@@ -2793,9 +2793,13 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         // update parent's INODE_ITEM
 
         related->fcb->inode_item.transid = Vcb->superblock.generation;
-        TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
-        related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2* oldutf8len);
-        TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+
+        if (!fileref->trans) {
+            TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+            related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2 * oldutf8len);
+            TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+        }
+
         related->fcb->inode_item.sequence++;
         related->fcb->inode_item.st_ctime = now;
         related->fcb->inode_item.st_mtime = now;
