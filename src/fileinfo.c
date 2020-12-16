@@ -939,6 +939,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 me->dummyfcb->created = me->fileref->fcb->created;
                 me->dummyfcb->deleted = me->fileref->fcb->deleted;
+                me->dummyfcb->transacted = me->fileref->fcb->transacted;
+
                 mark_fcb_dirty(me->dummyfcb);
 
                 if (!me->fileref->fcb->ads) {
@@ -1163,7 +1165,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
                 ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
-                me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
+                if (!fileref->trans)
+                    me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
+
                 me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
                 me->fileref->parent->fcb->inode_item.sequence++;
                 me->fileref->parent->fcb->inode_item.st_ctime = now;
@@ -1233,9 +1237,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
             ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
-            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
-            me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
-            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
+            if (!fileref->trans) {
+                TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
+                me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
+                TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
+            }
+
             me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
             me->fileref->parent->fcb->inode_item.sequence++;
             me->fileref->parent->fcb->inode_item.st_ctime = now;
@@ -1319,6 +1326,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             RtlCopyMemory(hl->name.Buffer, me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
 
             InsertTailList(&me->fileref->fcb->hardlinks, &hl->list_entry);
+        }
+
+        if (fileref->trans) {
+            me->dummyfileref->trans = fileref->trans;
+            add_fileref_to_trans(me->dummyfileref, fileref->trans);
+            mark_fileref_dirty(me->dummyfileref);
         }
 
         mark_fileref_dirty(me->fileref);
