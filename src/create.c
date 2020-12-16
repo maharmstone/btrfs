@@ -1980,6 +1980,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                         forked_fileref->dc = forked_dc;
                         forked_dc->fileref = forked_fileref;
                         InsertTailList(&parfr->children, &forked_fileref->list_entry);
+                        increase_fileref_refcount(sf);
 
                         add_fileref_to_trans(forked_fileref, trans);
                         mark_fileref_dirty(forked_fileref);
