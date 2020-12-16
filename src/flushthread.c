@@ -4822,6 +4822,11 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
     bool extents_changed;
 #endif
 
+    if (fcb->transacted && fcb->type == BTRFS_TYPE_DIRECTORY) {
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+
     if (fcb->ads) {
         if (fcb->deleted) {
             Status = delete_xattr(fcb->Vcb, batchlist, fcb->subvol, fcb->inode, fcb->adsxattr.Buffer, fcb->adsxattr.Length, fcb->adshash);
