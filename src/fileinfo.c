@@ -664,8 +664,6 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
     NTSTATUS Status;
     LIST_ENTRY* le;
 
-    ExAcquireResourceSharedLite(&me->fileref->fcb->nonpaged->dir_children_lock, true);
-
     le = me->fileref->fcb->dir_children_index.Flink;
 
     while (le != &me->fileref->fcb->dir_children_index) {
@@ -678,14 +676,12 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
 
         if (!NT_SUCCESS(Status)) {
             ERR("open_fileref_child returned %08lx\n", Status);
-            ExReleaseResourceLite(&me->fileref->fcb->nonpaged->dir_children_lock);
             return Status;
         }
 
         me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
         if (!me2) {
             ERR("out of memory\n");
-            ExReleaseResourceLite(&me->fileref->fcb->nonpaged->dir_children_lock);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -698,8 +694,6 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
 
         le = le->Flink;
     }
-
-    ExReleaseResourceLite(&me->fileref->fcb->nonpaged->dir_children_lock);
 
     return STATUS_SUCCESS;
 }
@@ -1146,9 +1140,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
         increase_fileref_refcount(me->dummyfileref->parent);
 
-        ExAcquireResourceExclusiveLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock, true);
         InsertTailList(&me->dummyfileref->parent->children, &me->dummyfileref->list_entry);
-        ExReleaseResourceLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock);
 
         if (me->dummyfileref->fcb->type == BTRFS_TYPE_DIRECTORY)
             me->dummyfileref->fcb->fileref = me->dummyfileref;
@@ -1160,10 +1152,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
             if (me->fileref->dc) {
                 // remove from old parent
-                ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, true);
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
                 remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
-                ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
                 if (!fileref->trans)
                     me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
@@ -1215,8 +1205,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 // add to new parent
 
-                ExAcquireResourceExclusiveLite(&destdir->fcb->nonpaged->dir_children_lock, true);
-
                 if (IsListEmpty(&destdir->fcb->dir_children_index))
                     me->fileref->dc->index = 2;
                 else {
@@ -1227,15 +1215,12 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 InsertTailList(&destdir->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
                 insert_dir_child_into_hash_lists(destdir->fcb, me->fileref->dc);
-                ExReleaseResourceLite(&destdir->fcb->nonpaged->dir_children_lock);
             }
 
             free_fileref(me->fileref->parent);
             me->fileref->parent = destdir;
 
-            ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, true);
             InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
-            ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
             if (!fileref->trans) {
                 TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
@@ -1251,15 +1236,10 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             mark_fcb_dirty(me->fileref->parent->fcb);
         } else {
             if (me->fileref->dc) {
-                ExAcquireResourceExclusiveLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock, true);
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
 
                 if (!me->fileref->fcb->ads)
                     remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
-
-                ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
-
-                ExAcquireResourceExclusiveLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock, true);
 
                 if (me->fileref->fcb->ads)
                     InsertHeadList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
@@ -1278,8 +1258,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     InsertTailList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
                     insert_dir_child_into_hash_lists(me->parent->fileref->fcb, me->fileref->dc);
                 }
-
-                ExReleaseResourceLite(&me->parent->fileref->fcb->nonpaged->dir_children_lock);
             }
         }
 
