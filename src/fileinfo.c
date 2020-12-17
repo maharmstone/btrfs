@@ -660,39 +660,120 @@ typedef struct _move_entry {
     LIST_ENTRY list_entry;
 } move_entry;
 
-static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me, PIRP Irp) {
+static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me, trans_ref* trans, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
 
-    le = me->fileref->fcb->dir_children_index.Flink;
+    if (IsListEmpty(&me->fileref->fcb->dir_children_index))
+        return STATUS_SUCCESS;
 
-    while (le != &me->fileref->fcb->dir_children_index) {
-        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
-        file_ref* fr;
-        move_entry* me2;
+    if (trans) {
+        unsigned int count = 0, i;
+        dir_child** list;
 
-        Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false,
-                                    PagedPool, NULL, false, &fr, Irp);
+        // We have to take a temporary copy of the dir_child pointers of the directory, as
+        // open_fileref_child will create new entries if it forks.
 
-        if (!NT_SUCCESS(Status)) {
-            ERR("open_fileref_child returned %08lx\n", Status);
-            return Status;
+        le = me->fileref->fcb->dir_children_index.Flink;
+
+        while (le != &me->fileref->fcb->dir_children_index) {
+            dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+
+            if (dc->trans == trans || (!dc->trans && !dc->forked))
+                count++;
+
+            le = le->Flink;
         }
 
-        me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
-        if (!me2) {
+        if (count == 0)
+            return STATUS_SUCCESS;
+
+        list = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child*) * count, ALLOC_TAG);
+        if (!list) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        me2->fileref = fr;
-        me2->dummyfcb = NULL;
-        me2->dummyfileref = NULL;
-        me2->parent = me;
+        le = me->fileref->fcb->dir_children_index.Flink;
+        i = 0;
 
-        InsertHeadList(&me->list_entry, &me2->list_entry);
+        while (le != &me->fileref->fcb->dir_children_index) {
+            dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
-        le = le->Flink;
+            if (dc->trans == trans || (!dc->trans && !dc->forked)) {
+                list[i] = dc;
+                i++;
+            }
+
+            le = le->Flink;
+        }
+
+        for (i = 0; i < count; i++) {
+            dir_child* dc = list[i];
+            file_ref* fr;
+            move_entry* me2;
+
+            Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false,
+                                        PagedPool, trans, dc->type != BTRFS_TYPE_DIRECTORY, &fr, Irp);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("open_fileref_child returned %08lx\n", Status);
+                ExFreePool(list);
+                return Status;
+            }
+
+            me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
+            if (!me2) {
+                ERR("out of memory\n");
+                ExFreePool(list);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            me2->fileref = fr;
+            me2->dummyfcb = NULL;
+            me2->dummyfileref = NULL;
+            me2->parent = me;
+
+            InsertHeadList(&me->list_entry, &me2->list_entry);
+        }
+
+        ExFreePool(list);
+    } else {
+        le = me->fileref->fcb->dir_children_index.Flink;
+
+        while (le != &me->fileref->fcb->dir_children_index) {
+            dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+            file_ref* fr;
+            move_entry* me2;
+
+            if (dc->trans) {
+                le = le->Flink;
+                continue;
+            }
+
+            Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false,
+                                        PagedPool, NULL, false, &fr, Irp);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("open_fileref_child returned %08lx\n", Status);
+                return Status;
+            }
+
+            me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
+            if (!me2) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            me2->fileref = fr;
+            me2->dummyfcb = NULL;
+            me2->dummyfileref = NULL;
+            me2->parent = me;
+
+            InsertHeadList(&me->list_entry, &me2->list_entry);
+
+            le = le->Flink;
+        }
     }
 
     return STATUS_SUCCESS;
@@ -841,7 +922,8 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus,
+                                    trans_ref* trans, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
     move_entry* me;
@@ -883,7 +965,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         ExAcquireResourceSharedLite(me->fileref->fcb->Header.Resource, true);
 
         if (!me->fileref->fcb->ads && me->fileref->fcb->subvol == origparent->fcb->subvol) {
-            Status = add_children_to_move_list(fileref->fcb->Vcb, me, Irp);
+            Status = add_children_to_move_list(fileref->fcb->Vcb, me, trans, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("add_children_to_move_list returned %08lx\n", Status);
@@ -2637,10 +2719,24 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     if (fileref->parent->fcb->subvol != related->fcb->subvol && (fileref->fcb->subvol == fileref->parent->fcb->subvol || fileref->fcb == Vcb->dummy_fcb)) {
-        Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp, &rollback);
+        trans_ref* trans = NULL;
+
+        if (fIoGetTransactionParameterBlock && fIoGetTransactionParameterBlock(FileObject)) {
+            Status = get_trans(Vcb, fIoGetTransactionParameterBlock(FileObject), &trans);
+            if (!NT_SUCCESS(Status)) {
+                ERR("get_trans returned %08lx\n", Status);
+                goto end;
+            }
+        }
+
+        Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, trans, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("move_across_subvols returned %08lx\n", Status);
         }
+
+        if (trans)
+            free_trans(Vcb, trans);
+
         goto end;
     }
 
