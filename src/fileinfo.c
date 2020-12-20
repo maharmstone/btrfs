@@ -1089,6 +1089,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 }
 
                 me->fileref->fcb->created = true;
+                me->fileref->fcb->transacted = !!trans;
 
                 InsertHeadList(&me->fileref->fcb->list_entry, &me->dummyfcb->list_entry);
                 RemoveEntryList(&me->fileref->fcb->list_entry);
@@ -1237,7 +1238,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
                 remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
 
-                if (!fileref->trans)
+                if (!trans)
                     me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
 
                 me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
@@ -1304,7 +1305,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
             InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
 
-            if (!fileref->trans) {
+            if (!trans) {
                 TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
                 me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
                 TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
@@ -1388,10 +1389,15 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             InsertTailList(&me->fileref->fcb->hardlinks, &hl->list_entry);
         }
 
-        if (fileref->trans) {
-            me->dummyfileref->trans = fileref->trans;
-            add_fileref_to_trans(me->dummyfileref, fileref->trans);
+        if (trans) {
+            me->dummyfileref->trans = trans;
+            add_fileref_to_trans(me->dummyfileref, trans);
             mark_fileref_dirty(me->dummyfileref);
+
+            if (!me->fileref->trans) {
+                me->fileref->trans = trans;
+                add_fileref_to_trans(me->fileref, trans);
+            }
         }
 
         mark_fileref_dirty(me->fileref);
