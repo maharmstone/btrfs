@@ -1854,9 +1854,10 @@ typedef NTSTATUS (__stdcall *tTmCreateEnlistment)(PHANDLE EnlistmentHandle, KPRO
 
 typedef struct _KENLISTMENT KENLISTMENT, *PKENLISTMENT;
 
-typedef NTSTATUS (__stdcall *PTM_RM_NOTIFICATION)(PKENLISTMENT EnlistmentObject, PVOID RMContext,PVOID TransactionContext,
-                                                  ULONG TransactionNotification, PLARGE_INTEGER TmVirtualClock,
-                                                  ULONG ArgumentLength, PVOID Argument);
+typedef NTSTATUS (__stdcall *PTM_RM_NOTIFICATION)(_In_ PKENLISTMENT EnlistmentObject, _In_ PVOID RMContext,
+                                                  _In_ PVOID TransactionContext, _In_ ULONG TransactionNotification,
+                                                  _Inout_ PLARGE_INTEGER TmVirtualClock, _In_ ULONG ArgumentLength,
+                                                  _In_ PVOID Argument);
 
 typedef NTSTATUS (__stdcall *tTmEnableCallbacks)(PKRESOURCEMANAGER ResourceManager, PTM_RM_NOTIFICATION CallbackRoutine,
                                                   PVOID RMKey);
