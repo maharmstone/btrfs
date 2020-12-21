@@ -786,8 +786,8 @@ cont:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                  root* subvol, uint64_t inode, uint8_t type, PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
+NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type,
+                  PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -1446,8 +1446,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                                dir_child* dc, fcb* parent, fcb** pfcb, PIRP Irp) {
+static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, dir_child* dc, fcb* parent,
+                                fcb** pfcb, PIRP Irp) {
     fcb* fcb;
     uint8_t* xattrdata;
     uint16_t xattrlen, overhead;
@@ -1539,9 +1539,10 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
-                            _In_ file_ref* sf, _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
-                            _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2, _In_opt_ PIRP Irp) {
+NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _In_ file_ref* sf,
+                            _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
+                            _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2,
+                            _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     file_ref* sf2;
 
@@ -2044,8 +2045,8 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
     return STATUS_SUCCESS;
 }
 
-NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr,
-                      _In_ PUNICODE_STRING fnus, _In_opt_ file_ref* related, _In_ bool parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
+NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr, _In_ PUNICODE_STRING fnus,
+                      _In_opt_ file_ref* related, _In_ bool parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
                       _In_ bool case_sensitive, _In_opt_ trans_ref* trans, _In_ bool do_fork, _In_opt_ PIRP Irp) {
     UNICODE_STRING fnus2;
     file_ref *dir, *sf, *sf2;
@@ -2538,8 +2539,8 @@ end:
     return Status;
 }
 
-static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _In_ PUNICODE_STRING fpus,
-                             _In_ file_ref* parfileref, _In_ ULONG options, _In_reads_bytes_opt_(ealen) FILE_FULL_EA_INFORMATION* ea, _In_ ULONG ealen,
+static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUNICODE_STRING fpus, _In_ file_ref* parfileref,
+                             _In_ ULONG options, _In_reads_bytes_opt_(ealen) FILE_FULL_EA_INFORMATION* ea, _In_ ULONG ealen,
                              _Out_ file_ref** pfr, bool case_sensitive, trans_ref* trans, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
@@ -3003,8 +3004,8 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                              file_ref** pfileref, file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream, PIRP Irp,
+static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, file_ref** pfileref,
+                              file_ref** pparfileref, PUNICODE_STRING fpus, PUNICODE_STRING stream, PIRP Irp,
                               ULONG options, POOL_TYPE pool_type, bool case_sensitive, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     file_ref *fileref, *newpar, *parfileref;
@@ -3363,8 +3364,8 @@ static __inline bool called_from_lxss() {
 #define called_from_lxss() false
 #endif
 
-static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                            PFILE_OBJECT FileObject, file_ref* related, bool loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options,
+static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PFILE_OBJECT FileObject,
+                            file_ref* related, bool loaded_related, PUNICODE_STRING fnus, ULONG disposition, ULONG options,
                             file_ref** existing_fileref, trans_ref* trans, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref *fileref, *parfileref = NULL;
@@ -4480,8 +4481,7 @@ end:
     return Status;
 }
 
-NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                               root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp) {
+NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
     uint64_t parent = 0;

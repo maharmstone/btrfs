@@ -1424,23 +1424,24 @@ _Dispatch_type_(IRP_MJ_CREATE)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr,
-                      _In_ PUNICODE_STRING fnus, _In_opt_ file_ref* related, _In_ bool parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
+NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _Out_ file_ref** pfr, _In_ PUNICODE_STRING fnus,
+                      _In_opt_ file_ref* related, _In_ bool parent, _Out_opt_ USHORT* parsed, _Out_opt_ ULONG* fn_offset, _In_ POOL_TYPE pooltype,
                       _In_ bool case_sensitive, _In_opt_ trans_ref* trans, _In_ bool do_fork, _In_opt_ PIRP Irp);
-NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
-                  root* subvol, uint64_t inode, uint8_t type, PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
+NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type,
+                  PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp);
 NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp);
 NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, trans_ref* trans, dir_child** pdc);
-NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
-                            _In_ file_ref* sf, _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
-                            _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2, _In_opt_ PIRP Irp);
+NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _In_ file_ref* sf,
+                            _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
+                            _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2,
+                            _In_opt_ PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
                           bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc);
 uint32_t inherit_mode(fcb* parfcb, bool is_dir);
 file_ref* create_fileref(device_extension* Vcb);
-NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb, root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp);
+NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type);
