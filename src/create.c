@@ -329,7 +329,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
     }
 
     if (!dc_found && non_trans_dc) {
-        if (!do_fork || non_trans_dc->type == BTRFS_TYPE_DIRECTORY)
+        if (!do_fork)
             dc_found = non_trans_dc;
         else {
             if (non_trans_dc->forked) { // already forked by another transaction
@@ -2033,7 +2033,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
         if (duff_fr)
             reap_fileref(Vcb, duff_fr);
         else {
-            if (trans && do_fork && fcb->type != BTRFS_TYPE_DIRECTORY) {
+            if (trans && do_fork) {
                 add_fileref_to_trans(dc->fileref, trans);
                 mark_fcb_dirty(fcb);
                 mark_fileref_dirty(dc->fileref);
