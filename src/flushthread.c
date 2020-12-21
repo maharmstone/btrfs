@@ -2662,7 +2662,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
         searchkey.obj_id = EXTENT_CSUM_ID;
         searchkey.obj_type = TYPE_EXTENT_CSUM;
-        searchkey.offset = address + (length << Vcb->sector_shift);
+        searchkey.offset = address + ((uint64_t)length << Vcb->sector_shift);
 
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
@@ -2672,10 +2672,10 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
         tplen = tp.item->size / Vcb->csum_size;
 
-        if (tp.item->key.offset + (tplen << Vcb->sector_shift) >= address + (length << Vcb->sector_shift))
-            endaddr = tp.item->key.offset + (tplen << Vcb->sector_shift);
+        if (tp.item->key.offset + ((uint64_t)tplen << Vcb->sector_shift) >= address + ((uint64_t)length << Vcb->sector_shift))
+            endaddr = tp.item->key.offset + ((uint64_t)tplen << Vcb->sector_shift);
         else
-            endaddr = address + (length << Vcb->sector_shift);
+            endaddr = address + ((uint64_t)length << Vcb->sector_shift);
 
         TRACE("cs starts at %I64x (%lx sectors)\n", address, length);
         TRACE("startaddr = %I64x\n", startaddr);
@@ -5756,7 +5756,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
         stripe = (parity + (offset / sl) + 1) % c->chunk_item->num_stripes;
 
         if (c->devices[stripe]->devobj) {
-            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff + ((uint64_t)(offset % sl) << Vcb->sector_shift),
                                     readlen << Vcb->sector_shift, ps->data + (offset << Vcb->sector_shift), false);
             if (!NT_SUCCESS(Status)) {
                 ERR("sync_read_phys returned %08lx\n", Status);
@@ -5780,7 +5780,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                     }
 
                     if (i == 0 || (stripe == 0 && i == 1)) {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((uint64_t)(offset % sl) << Vcb->sector_shift),
                                                 readlen << Vcb->sector_shift, ps->data + (offset << Vcb->sector_shift), false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
@@ -5788,7 +5788,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                             return Status;
                         }
                     } else {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((uint64_t)(offset % sl) << Vcb->sector_shift),
                                                 readlen << Vcb->sector_shift, scratch, false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
@@ -5818,7 +5818,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             for (k = 0; k < c->chunk_item->num_stripes; k++) {
                 if (i != stripe) {
                     if (c->devices[i]->devobj) {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((uint64_t)(offset % sl) << Vcb->sector_shift),
                                                 readlen << Vcb->sector_shift, scratch + (k * readlen << Vcb->sector_shift), false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);

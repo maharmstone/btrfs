@@ -293,10 +293,10 @@ static void check_boot_options() {
                 boot_subvol |= *s - '0';
             } else if (*s >= 'a' && *s <= 'f') {
                 boot_subvol <<= 4;
-                boot_subvol |= *s - 'a' + 0xa;
+                boot_subvol |= (uint64_t)*s + 0xa - 'a';
             } else if (*s >= 'A' && *s <= 'F') {
                 boot_subvol <<= 4;
-                boot_subvol |= *s - 'A' + 0xa;
+                boot_subvol |= (uint64_t)*s + 0xa - 'A';
             } else
                 break;
 

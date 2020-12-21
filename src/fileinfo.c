@@ -1289,7 +1289,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
 
                 if (!trans)
-                    me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
+                    me->fileref->parent->fcb->inode_item.st_size -= (uint64_t)me->fileref->dc->utf8.Length * 2;
 
                 me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
                 me->fileref->parent->fcb->inode_item.sequence++;
@@ -1357,7 +1357,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
             if (!trans) {
                 TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
-                me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
+                me->fileref->parent->fcb->inode_item.st_size += (uint64_t)me->fileref->dc->utf8.Length * 2;
                 TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
             }
 
@@ -2940,7 +2940,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
         if (!fileref->trans) {
             TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
-            related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2 * oldutf8len);
+            related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * (uint64_t)utf8.Length) - (2 * (uint64_t)oldutf8len);
             TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
         }
 
@@ -3157,7 +3157,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     if (!fileref->trans) {
         TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
-        related->fcb->inode_item.st_size += 2 * utf8len;
+        related->fcb->inode_item.st_size += (uint64_t)utf8len * 2;
         TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
     }
 
@@ -3174,7 +3174,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     if (!fileref->trans) {
         TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
-        fr2->parent->fcb->inode_item.st_size -= 2 * origutf8len;
+        fr2->parent->fcb->inode_item.st_size -= (uint64_t)origutf8len * 2;
         TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
     }
 
@@ -3789,7 +3789,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     if (!fileref->trans) {
         TRACE("parfcb->inode_item.st_size (inode %I64x) was %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
-        parfcb->inode_item.st_size += 2 * utf8len;
+        parfcb->inode_item.st_size += (uint64_t)utf8len * 2;
         TRACE("parfcb->inode_item.st_size (inode %I64x) now %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
     }
 
@@ -4529,7 +4529,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         entry->StreamName[0] = ':';
         RtlCopyMemory(&entry->StreamName[1], suf.Buffer, suf.Length);
 
-        off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR), sizeof(LONGLONG));
+        off = sector_align32(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR), sizeof(LONGLONG));
 
         lastentry = entry;
         entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
@@ -4560,7 +4560,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
             if (lastentry)
                 lastentry->NextEntryOffset = (uint32_t)((uint8_t*)entry - (uint8_t*)lastentry);
 
-            off = (ULONG)sector_align(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
+            off = sector_align32(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
 
             lastentry = entry;
             entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
@@ -4721,7 +4721,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
 
                         if (!overflow) {
                             if (feli) {
-                                feli->NextEntryOffset = (ULONG)sector_align(sizeof(FILE_LINK_ENTRY_INFORMATION) + ((feli->FileNameLength - 1) * sizeof(WCHAR)), 8);
+                                feli->NextEntryOffset = sector_align32(sizeof(FILE_LINK_ENTRY_INFORMATION) + ((feli->FileNameLength - 1) * sizeof(WCHAR)), 8);
                                 feli = (FILE_LINK_ENTRY_INFORMATION*)((uint8_t*)feli + feli->NextEntryOffset);
                             } else
                                 feli = &fli->Entry;
@@ -4889,7 +4889,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
 
                         if (!overflow) {
                             if (flefii) {
-                                flefii->NextEntryOffset = (ULONG)sector_align(offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + (flefii->FileNameLength * sizeof(WCHAR)), 8);
+                                flefii->NextEntryOffset = sector_align32(offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + (flefii->FileNameLength * sizeof(WCHAR)), 8);
                                 flefii = (FILE_LINK_ENTRY_FULL_ID_INFORMATION*)((uint8_t*)flefii + flefii->NextEntryOffset);
                             } else
                                 flefii = &flfii->Entry;

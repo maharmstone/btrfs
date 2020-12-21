@@ -2331,7 +2331,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 else {
                     uint32_t len;
 
-                    len = (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size) >> context->Vcb->sector_shift;
+                    len = sector_align32(length + skip_start, context->Vcb->superblock.sector_size) >> context->Vcb->sector_shift;
 
                     csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                     if (!csum) {
@@ -2353,7 +2353,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     }
                 }
 
-                Status = read_data(context->Vcb, addr, (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size),
+                Status = read_data(context->Vcb, addr, sector_align32(length + skip_start, context->Vcb->superblock.sector_size),
                                    csum, false, buf, NULL, NULL, NULL, 0, false, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08lx\n", Status);

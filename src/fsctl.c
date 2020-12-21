@@ -467,7 +467,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_size += utf8->Length * 2;
+    fcb->inode_item.st_size += (uint64_t)utf8->Length * 2;
 
     if (!ccb->user_set_change_time)
         fcb->inode_item.st_ctime = now;
@@ -1111,7 +1111,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     // change fcb's INODE_ITEM
 
     fcb->inode_item.transid = Vcb->superblock.generation;
-    fcb->inode_item.st_size += utf8.Length * 2;
+    fcb->inode_item.st_size += (uint64_t)utf8.Length * 2;
     fcb->inode_item.sequence++;
 
     if (!ccb->user_set_change_time)
@@ -4029,7 +4029,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         fileref->fcb->fileref = fileref;
 
     ExAcquireResourceExclusiveLite(parfcb->Header.Resource, true);
-    parfcb->inode_item.st_size += utf8.Length * 2;
+    parfcb->inode_item.st_size += (uint64_t)utf8.Length * 2;
     parfcb->inode_item.transid = Vcb->superblock.generation;
     parfcb->inode_item.sequence++;
 

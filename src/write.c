@@ -467,8 +467,8 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         max_stripe_size = max_chunk_size / min_stripes;
     }
 
-    if (max_stripe_size > total_size / (10 * min_stripes))
-        max_stripe_size = total_size / (10 * min_stripes);
+    if (max_stripe_size > total_size / (10 * (uint64_t)min_stripes))
+        max_stripe_size = total_size / (10 * (uint64_t)min_stripes);
 
     TRACE("would allocate a new chunk of %I64x bytes and stripe %I64x\n", max_chunk_size, max_stripe_size);
 
@@ -1038,7 +1038,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk* c, uint64_t add
     ps->bmplen = (ULONG)(num_data_stripes * c->chunk_item->stripe_length) >> Vcb->sector_shift;
 
     ps->address = stripe_addr;
-    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, (size_t)sector_align(((ps->bmplen / 8) + 1), sizeof(ULONG)), ALLOC_TAG);
+    ps->bmparr = ExAllocatePoolWithTag(NonPagedPool, (size_t)sector_align((((uint64_t)ps->bmplen / 8) + 1), sizeof(ULONG)), ALLOC_TAG);
     if (!ps->bmparr) {
         ERR("out of memory\n");
         ExFreePool(ps);
@@ -1122,7 +1122,8 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
 
         if (pos == 0) {
             uint16_t stripe = (parity + startoffstripe + 1) % c->chunk_item->num_stripes;
-            ULONG skip, writelen;
+            ULONG writelen;
+            uint64_t skip;
 
             i = startoffstripe;
             while (stripe != parity) {
@@ -1163,14 +1164,14 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
 
             stripes[parity].start = stripes[parity].end = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
 
-            if (length - pos > c->chunk_item->num_stripes * num_data_stripes * c->chunk_item->stripe_length) {
-                skip = (ULONG)(((length - pos) / (c->chunk_item->num_stripes * num_data_stripes * c->chunk_item->stripe_length)) - 1);
+            if (length - pos > (uint64_t)c->chunk_item->num_stripes * (uint64_t)num_data_stripes * c->chunk_item->stripe_length) {
+                skip = ((length - pos) / ((uint64_t)c->chunk_item->num_stripes * (uint64_t)num_data_stripes * c->chunk_item->stripe_length)) - 1;
 
                 for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                    stripes[i].end += skip * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
+                    stripes[i].end += skip * (uint64_t)c->chunk_item->num_stripes * c->chunk_item->stripe_length;
                 }
 
-                pos += skip * num_data_stripes * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
+                pos += skip * (uint64_t)num_data_stripes * (uint64_t)c->chunk_item->num_stripes * c->chunk_item->stripe_length;
             }
         } else if (length - pos >= c->chunk_item->stripe_length * num_data_stripes) {
             for (i = 0; i < c->chunk_item->num_stripes; i++) {
@@ -1522,7 +1523,8 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
         if (pos == 0) {
             uint16_t stripe = (parity1 + startoffstripe + 2) % c->chunk_item->num_stripes;
             uint16_t parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
-            ULONG skip, writelen;
+            ULONG writelen;
+            uint64_t skip;
 
             i = startoffstripe;
             while (stripe != parity1) {
@@ -1564,14 +1566,14 @@ static NTSTATUS prepare_raid6_write(device_extension* Vcb, chunk* c, uint64_t ad
             stripes[parity1].start = stripes[parity1].end = stripes[parity2].start = stripes[parity2].end =
                 startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
 
-            if (length - pos > c->chunk_item->num_stripes * num_data_stripes * c->chunk_item->stripe_length) {
-                skip = (ULONG)(((length - pos) / (c->chunk_item->num_stripes * num_data_stripes * c->chunk_item->stripe_length)) - 1);
+            if (length - pos > (uint64_t)c->chunk_item->num_stripes * (uint64_t)num_data_stripes * c->chunk_item->stripe_length) {
+                skip = (((length - pos) / ((uint64_t)c->chunk_item->num_stripes * (uint64_t)num_data_stripes * c->chunk_item->stripe_length)) - 1);
 
                 for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                    stripes[i].end += skip * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
+                    stripes[i].end += skip * (uint64_t)c->chunk_item->num_stripes * c->chunk_item->stripe_length;
                 }
 
-                pos += skip * num_data_stripes * c->chunk_item->num_stripes * c->chunk_item->stripe_length;
+                pos += skip * (uint64_t)num_data_stripes * (uint64_t)c->chunk_item->num_stripes * c->chunk_item->stripe_length;
             }
         } else if (length - pos >= c->chunk_item->stripe_length * num_data_stripes) {
             for (i = 0; i < c->chunk_item->num_stripes; i++) {

@@ -2391,7 +2391,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
     if (!fileref->fcb->ads && !fileref->trans) {
         TRACE("fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
-        fileref->parent->fcb->inode_item.st_size -= utf8len * 2;
+        fileref->parent->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
         TRACE("fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
         fileref->parent->fcb->inode_item.st_mtime = now;
     }

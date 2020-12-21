@@ -1019,6 +1019,14 @@ __inline static uint64_t sector_align(_In_ uint64_t n, _In_ uint64_t a) {
     return n;
 }
 
+_Post_satisfies_(return>=n)
+__inline static uint32_t sector_align32(_In_ uint32_t n, _In_ uint32_t a) {
+    if (n & (a - 1))
+        n = (n + a) & ~(a - 1);
+
+    return n;
+}
+
 __inline static bool is_subvol_readonly(root* r, PIRP Irp) {
     if (!(r->root_item.flags & BTRFS_SUBVOL_READONLY))
         return false;

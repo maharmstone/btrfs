@@ -693,8 +693,8 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
                             break;
                     }
 
-                    uint64_t runstart = ps->address + (index << Vcb->sector_shift);
-                    uint64_t runend = runstart + (runlength << Vcb->sector_shift);
+                    uint64_t runstart = ps->address + ((uint64_t)index << Vcb->sector_shift);
+                    uint64_t runend = runstart + ((uint64_t)runlength << Vcb->sector_shift);
                     uint64_t start = max(runstart, addr);
                     uint64_t end = min(runend, addr + length);
 
@@ -1040,8 +1040,8 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                             break;
                     }
 
-                    uint64_t runstart = ps->address + (index << Vcb->sector_shift);
-                    uint64_t runend = runstart + (runlength << Vcb->sector_shift);
+                    uint64_t runstart = ps->address + ((uint64_t)index << Vcb->sector_shift);
+                    uint64_t runend = runstart + ((uint64_t)runlength << Vcb->sector_shift);
                     uint64_t start = max(runstart, addr);
                     uint64_t end = min(runend, addr + length);
 
@@ -2078,11 +2078,11 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 
                 context.stripes[parity].stripestart = context.stripes[parity].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
 
-                if (length - pos > ci->num_stripes * (ci->num_stripes - 1) * ci->stripe_length) {
-                    skip = (ULONG)(((length - pos) / (ci->num_stripes * (ci->num_stripes - 1) * ci->stripe_length)) - 1);
+                if (length - pos > (uint64_t)ci->num_stripes * (uint64_t)(ci->num_stripes - 1) * ci->stripe_length) {
+                    skip = (ULONG)(((length - pos) / ((uint64_t)ci->num_stripes * (uint64_t)(ci->num_stripes - 1) * ci->stripe_length)) - 1);
 
                     for (i = 0; i < ci->num_stripes; i++) {
-                        context.stripes[i].stripeend += skip * ci->num_stripes * ci->stripe_length;
+                        context.stripes[i].stripeend += (uint64_t)skip * (uint64_t)ci->num_stripes * ci->stripe_length;
                     }
 
                     pos += (uint32_t)(skip * (ci->num_stripes - 1) * ci->num_stripes * ci->stripe_length);
@@ -2340,11 +2340,11 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                 parity2 = (parity1 + 1) % ci->num_stripes;
                 context.stripes[parity2].stripestart = context.stripes[parity2].stripeend = startoff - (startoff % ci->stripe_length) + ci->stripe_length;
 
-                if (length - pos > ci->num_stripes * (ci->num_stripes - 2) * ci->stripe_length) {
-                    skip = (ULONG)(((length - pos) / (ci->num_stripes * (ci->num_stripes - 2) * ci->stripe_length)) - 1);
+                if (length - pos > (uint64_t)ci->num_stripes * (uint64_t)(ci->num_stripes - 2) * ci->stripe_length) {
+                    skip = (ULONG)(((length - pos) / ((uint64_t)ci->num_stripes * (uint64_t)(ci->num_stripes - 2) * ci->stripe_length)) - 1);
 
                     for (i = 0; i < ci->num_stripes; i++) {
-                        context.stripes[i].stripeend += skip * ci->num_stripes * ci->stripe_length;
+                        context.stripes[i].stripeend += (uint64_t)skip * (uint64_t)ci->num_stripes * ci->stripe_length;
                     }
 
                     pos += (uint32_t)(skip * (ci->num_stripes - 2) * ci->num_stripes * ci->stripe_length);
@@ -2972,7 +2972,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                         if (rp->addr & (fcb->Vcb->superblock.sector_size - 1)) {
                             rp->bumpoff = rp->addr & (fcb->Vcb->superblock.sector_size - 1);
                             rp->addr -= rp->bumpoff;
-                            rp->to_read = (uint32_t)sector_align(rp->read + rp->bumpoff, fcb->Vcb->superblock.sector_size);
+                            rp->to_read = (uint32_t)sector_align((uint64_t)rp->read + (uint64_t)rp->bumpoff, fcb->Vcb->superblock.sector_size);
                         }
                     } else {
                         rp->addr = ed2->address;

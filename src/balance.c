@@ -1836,7 +1836,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
 
         bmplen = (ULONG)(dr->size >> Vcb->sector_shift);
 
-        bmparr = ExAllocatePoolWithTag(PagedPool, (ULONG)sector_align(bmplen + 1, sizeof(ULONG)), ALLOC_TAG);
+        bmparr = ExAllocatePoolWithTag(PagedPool, sector_align32(bmplen + 1, sizeof(ULONG)), ALLOC_TAG);
         if (!bmparr) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1910,7 +1910,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
             }
 
             if (index > lastoff) {
-                ULONG off = lastoff;
+                uint64_t off = lastoff;
                 ULONG size = index - lastoff;
 
                 // handle no csum run
@@ -1945,20 +1945,20 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 } while (size > 0);
             }
 
-            add_checksum_entry(Vcb, dr->new_address + (index << Vcb->sector_shift), runlength, (uint8_t*)csum + (index * Vcb->csum_size), NULL);
-            add_checksum_entry(Vcb, dr->address + (index << Vcb->sector_shift), runlength, NULL, NULL);
+            add_checksum_entry(Vcb, dr->new_address + ((uint64_t)index << Vcb->sector_shift), runlength, (uint8_t*)csum + ((uint64_t)index * Vcb->csum_size), NULL);
+            add_checksum_entry(Vcb, dr->address + ((uint64_t)index << Vcb->sector_shift), runlength, NULL, NULL);
 
             // handle csum run
             do {
-                ULONG rl;
+                uint64_t rl;
 
                 if (runlength << Vcb->sector_shift > BALANCE_UNIT)
                     rl = BALANCE_UNIT >> Vcb->sector_shift;
                 else
                     rl = runlength;
 
-                Status = read_data(Vcb, dr->address + (index << Vcb->sector_shift), rl << Vcb->sector_shift,
-                                   (uint8_t*)csum + (index * Vcb->csum_size), false, data, c, NULL, NULL, 0, false, NormalPagePriority);
+                Status = read_data(Vcb, dr->address + ((uint64_t)index << Vcb->sector_shift), rl << Vcb->sector_shift,
+                                   (uint8_t*)csum + ((uint64_t)index * Vcb->csum_size), false, data, c, NULL, NULL, 0, false, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08lx\n", Status);
                     ExFreePool(csum);
@@ -1966,7 +1966,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     goto end;
                 }
 
-                Status = write_data_complete(Vcb, dr->new_address + (index << Vcb->sector_shift), data, rl << Vcb->sector_shift,
+                Status = write_data_complete(Vcb, dr->new_address + ((uint64_t)index << Vcb->sector_shift), data, rl << Vcb->sector_shift,
                                              NULL, newchunk, false, 0, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_complete returned %08lx\n", Status);
@@ -1988,7 +1988,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
 
         // handle final nocsum run
         if (lastoff < dr->size >> Vcb->sector_shift) {
-            ULONG off = lastoff;
+            uint64_t off = lastoff;
             ULONG size = (ULONG)((dr->size >> Vcb->sector_shift) - lastoff);
 
             do {

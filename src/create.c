@@ -2597,7 +2597,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
     if (!trans) {
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
         TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) was %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
-        parfileref->fcb->inode_item.st_size += utf8len * 2;
+        parfileref->fcb->inode_item.st_size += (uint64_t)utf8len * 2;
         TRACE("parfileref->fcb->inode_item.st_size (inode %I64x) now %I64x\n", parfileref->fcb->inode, parfileref->fcb->inode_item.st_size);
         parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
         parfileref->fcb->inode_item.sequence++;
@@ -2644,7 +2644,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
         ExFreePool(utf8);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2781,7 +2781,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
         free_fcb(fcb);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
         ExFreePool(utf8);
@@ -2798,7 +2798,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
             free_fcb(fcb);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
             ExFreePool(utf8);
@@ -2813,7 +2813,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
         free_fcb(fcb);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
         ExFreePool(utf8);
@@ -2835,7 +2835,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
             reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
             ExFreePool(utf8);
@@ -2851,7 +2851,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
             reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
             ExFreePool(utf8);
@@ -2867,7 +2867,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
             reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
             ExFreePool(utf8);
@@ -2918,7 +2918,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
             reap_fileref(Vcb, fileref);
 
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
             ExFreePool(utf8);
@@ -2951,7 +2951,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
         reap_fileref(Vcb, fileref);
 
         ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-        parfileref->fcb->inode_item.st_size -= utf8len * 2;
+        parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
         ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
         ExFreePool(utf8);
@@ -2970,7 +2970,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
 
         if (!trans) {
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= utf8len * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
         }
 
@@ -3563,7 +3563,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) de
 
         if (stream.Length == 0) {
             ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= fileref->dc->utf8.Length * 2;
+            parfileref->fcb->inode_item.st_size -= (uint64_t)fileref->dc->utf8.Length * 2;
             ExReleaseResourceLite(parfileref->fcb->Header.Resource);
         }
 
@@ -3620,7 +3620,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) de
 
                 if (stream.Length == 0) {
                     ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-                    parfileref->fcb->inode_item.st_size -= fileref->dc->utf8.Length * 2;
+                    parfileref->fcb->inode_item.st_size -= (uint64_t)fileref->dc->utf8.Length * 2;
                     ExReleaseResourceLite(parfileref->fcb->Header.Resource);
                 }
 
