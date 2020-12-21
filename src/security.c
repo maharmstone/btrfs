@@ -508,7 +508,8 @@ end:
         ExFreePool(groupsid);
 }
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
+void fcb_get_sd(_In_ _When_(look_for_xattr, _Requires_lock_held_(_Curr_->Vcb->tree_lock)) fcb* fcb, _In_opt_ struct _fcb* parent,
+                _In_ bool look_for_xattr, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     PSID usersid = NULL, groupsid = NULL;
     SECURITY_SUBJECT_CONTEXT subjcont;

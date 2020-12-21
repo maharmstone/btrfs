@@ -339,7 +339,7 @@ static __inline tree_data* prev_item(tree* t, tree_data* td) {
 }
 
 __attribute__((nonnull(1,2)))
-static __inline tree_data* next_item(tree* t, tree_data* td) {
+static __inline tree_data* next_item(_In_ tree* t, _In_ tree_data* td) {
     LIST_ENTRY* le = td->list_entry.Flink;
 
     if (le == &t->itemlist)
@@ -349,7 +349,8 @@ static __inline tree_data* next_item(tree* t, tree_data* td) {
 }
 
 __attribute__((nonnull(1,2,3,4)))
-static NTSTATUS next_item2(device_extension* Vcb, tree* t, tree_data* td, traverse_ptr* tp) {
+static NTSTATUS next_item2(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                           _In_ tree_data* td, _Out_ traverse_ptr* tp) {
     tree_data* td2 = next_item(t, td);
     tree* t2;
 
@@ -375,7 +376,8 @@ static NTSTATUS next_item2(device_extension* Vcb, tree* t, tree_data* td, traver
 }
 
 __attribute__((nonnull(1,2,3,4,5)))
-NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, bool* ended1, bool* ended2) {
+NTSTATUS skip_to_difference(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ traverse_ptr* tp,
+                            _In_ traverse_ptr* tp2, _Inout_ bool* ended1, _Inout_ bool* ended2) {
     NTSTATUS Status;
     tree *t1, *t2;
     tree_data *td1, *td2;
@@ -451,7 +453,9 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
 }
 
 __attribute__((nonnull(1,2,3,4)))
-static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, bool ignore, uint8_t level, PIRP Irp) {
+static NTSTATUS find_item_in_tree(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                                  _Out_ traverse_ptr* tp, _In_ const KEY* searchkey, _In_ bool ignore, _In_ uint8_t level,
+                                  _In_opt_ PIRP Irp) {
     int cmp;
     tree_data *td, *lasttd;
     KEY key2;
@@ -578,7 +582,9 @@ NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension
 }
 
 __attribute__((nonnull(1,2,3,4)))
-NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, bool ignore, uint8_t level, PIRP Irp) {
+NTSTATUS find_item_to_level(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r,
+                            _Out_ traverse_ptr* tp, _In_ const KEY* searchkey, _In_ bool ignore, _In_ uint8_t level,
+                            _In_opt_ PIRP Irp) {
     NTSTATUS Status;
 
     if (!r->treeholder.tree) {

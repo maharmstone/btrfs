@@ -110,8 +110,10 @@ typedef struct {
 #define MAX_SEND_WRITE 0xc000 // 48 KB
 #define SEND_BUFFER_LENGTH 0x100000 // 1 MB
 
-static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t generation, send_dir** psd, bool* added_dummy);
-static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2);
+static NTSTATUS find_send_dir(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context, _In_ uint64_t dir,
+                              _In_ uint64_t generation, _Out_ send_dir** psd, _Out_opt_ bool* added_dummy);
+static NTSTATUS wait_for_flush(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                               _In_opt_ traverse_ptr* tp1, _In_opt_ traverse_ptr* tp2);
 
 static void send_command(send_context* context, uint16_t cmd) {
     btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
@@ -161,7 +163,8 @@ static char* uint64_to_char(uint64_t num, char* buf) {
     return &buf[tmp2 + sizeof(tmp2) - tmp];
 }
 
-static NTSTATUS get_orphan_name(send_context* context, uint64_t inode, uint64_t generation, char* name) {
+static NTSTATUS get_orphan_name(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                _In_ uint64_t inode, _In_ uint64_t generation, _In_ char* name) {
     char *ptr, *ptr2;
     uint64_t index = 0;
     KEY searchkey;
@@ -232,7 +235,8 @@ static void add_orphan(send_context* context, orphan* o) {
     InsertTailList(&context->orphans, &o->list_entry);
 }
 
-static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** link, uint16_t* linklen) {
+static NTSTATUS send_read_symlink(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context, _In_ uint64_t inode,
+                                  _Out_ char** link, _Out_ uint16_t* linklen) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -280,7 +284,8 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
+static NTSTATUS send_inode(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                           _In_opt_ traverse_ptr* tp, _In_opt_ traverse_ptr* tp2) {
     NTSTATUS Status;
     INODE_ITEM* ii;
 
@@ -667,7 +672,8 @@ static void send_utimes_command_dir(send_context* context, send_dir* sd, BTRFS_T
     send_command_finish(context, pos);
 }
 
-static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t generation, send_dir** psd, bool* added_dummy) {
+static NTSTATUS find_send_dir(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context, _In_ uint64_t dir,
+                              _In_ uint64_t generation, _Out_ send_dir** psd, _Out_opt_ bool* added_dummy) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     char name[64];
@@ -767,7 +773,8 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tree2) {
+static NTSTATUS send_inode_ref(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                               _In_ traverse_ptr* tp, _In_ bool tree2) {
     NTSTATUS Status;
     uint64_t inode = tp ? tp->item->key.obj_id : 0, dir = tp ? tp->item->key.offset : 0;
     LIST_ENTRY* le;
@@ -869,7 +876,8 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool tree2) {
+static NTSTATUS send_inode_extref(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                  _In_ traverse_ptr* tp, _In_ bool tree2) {
     INODE_EXTREF* ier;
     uint16_t len;
 
@@ -1058,7 +1066,8 @@ static void send_rmdir_command(send_context* context, uint16_t pathlen, char* pa
     send_command_finish(context, pos);
 }
 
-static NTSTATUS get_dir_last_child(send_context* context, uint64_t* last_inode) {
+static NTSTATUS get_dir_last_child(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                   _Out_ uint64_t* last_inode) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1130,7 +1139,9 @@ static NTSTATUS add_pending_rmdir(send_context* context, uint64_t last_inode) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* name, ULONG namelen, uint64_t* inode, bool* dir) {
+static NTSTATUS look_for_collision(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                   _In_ send_dir* sd, _In_ char* name, _In_ ULONG namelen,
+                                   _Out_ uint64_t* inode, _Out_ bool* dir) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1172,7 +1183,8 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS make_file_orphan(send_context* context, uint64_t inode, bool dir, uint64_t generation, ref* r) {
+static NTSTATUS make_file_orphan(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                 _In_ uint64_t inode, _In_ bool dir, _In_ uint64_t generation, _In_ ref* r) {
     NTSTATUS Status;
     ULONG pos = context->datalen;
     send_dir* sd = NULL;
@@ -1271,7 +1283,8 @@ static NTSTATUS make_file_orphan(send_context* context, uint64_t inode, bool dir
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
+static NTSTATUS flush_refs(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                           _In_opt_ traverse_ptr* tp1, _In_opt_ traverse_ptr* tp2) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     ref *nameref = NULL, *nameref2 = NULL;
@@ -1599,7 +1612,8 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
+static NTSTATUS wait_for_flush(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                               _In_opt_ traverse_ptr* tp1, _In_opt_ traverse_ptr* tp2) {
     NTSTATUS Status;
     KEY key1, key2;
 
@@ -1838,7 +1852,8 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
     return STATUS_SUCCESS;
 }
 
-static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t inode) {
+static bool send_add_tlv_clone_path(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                    _In_ root* r, _In_ uint64_t inode) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1934,7 +1949,8 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
     return true;
 }
 
-static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
+static bool try_clone_edr(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                          _In_ send_ext* se, _In_ EXTENT_DATA_REF* edr) {
     NTSTATUS Status;
     root* r = NULL;
     KEY searchkey;
@@ -2025,7 +2041,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
     return false;
 }
 
-static bool try_clone(send_context* context, send_ext* se) {
+static bool try_clone(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context, _In_ send_ext* se) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -2124,7 +2140,8 @@ static bool try_clone(send_context* context, send_ext* se) {
     return false;
 }
 
-static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
+static NTSTATUS flush_extents(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                              _In_opt_ traverse_ptr* tp1, _In_opt_ traverse_ptr* tp2) {
     NTSTATUS Status;
 
     if ((IsListEmpty(&context->lastinode.exts) && IsListEmpty(&context->lastinode.oldexts)) || context->lastinode.size == 0)
@@ -2529,7 +2546,8 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS finish_inode(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
+static NTSTATUS finish_inode(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                             _In_opt_ traverse_ptr* tp1, _In_opt_ traverse_ptr* tp2) {
     LIST_ENTRY* le;
 
     if (!IsListEmpty(&context->lastinode.refs) || !IsListEmpty(&context->lastinode.oldrefs)) {
@@ -2616,7 +2634,8 @@ static NTSTATUS finish_inode(send_context* context, traverse_ptr* tp1, traverse_
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
+static NTSTATUS send_extent_data(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                                 _In_opt_ traverse_ptr* tp, _In_opt_ traverse_ptr* tp2) {
     NTSTATUS Status;
 
     if (tp && tp2 && tp->item->size == tp2->item->size && RtlCompareMemory(tp->item->data, tp2->item->data, tp->item->size) == tp->item->size)
@@ -2767,7 +2786,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } xattr_cmp;
 
-static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
+static NTSTATUS send_xattr(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) send_context* context,
+                           _In_opt_ traverse_ptr* tp, _In_opt_ traverse_ptr* tp2) {
     if (tp && tp2 && tp->item->size == tp2->item->size && RtlCompareMemory(tp->item->data, tp2->item->data, tp->item->size) == tp->item->size)
         return STATUS_SUCCESS;
 
@@ -2968,7 +2988,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 }
 
 _Function_class_(KSTART_ROUTINE)
-static void __stdcall send_thread(void* ctx) {
+static void __stdcall send_thread(_In_ void* ctx) {
     send_context* context = (send_context*)ctx;
     NTSTATUS Status;
     KEY searchkey;

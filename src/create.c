@@ -4481,7 +4481,8 @@ end:
     return Status;
 }
 
-NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp) {
+NTSTATUS open_fileref_by_inode(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol,
+                               _In_ uint64_t inode, _Out_ file_ref** pfr, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
     uint64_t parent = 0;

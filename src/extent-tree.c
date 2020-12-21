@@ -207,8 +207,9 @@ static void sort_extent_refs(LIST_ENTRY* extent_refs) {
     extent_refs->Blink = newlist.Blink;
 }
 
-static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t flags, LIST_ENTRY* extent_refs,
-                                      KEY* firstitem, uint8_t level, PIRP Irp) {
+static NTSTATUS construct_extent_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                      _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t flags, _In_ LIST_ENTRY* extent_refs,
+                                      _In_opt_ KEY* firstitem, _In_ uint8_t level, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY *le, *next_le;
     uint64_t refcount;
@@ -369,7 +370,9 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, u
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, bool tree, KEY* firstitem, uint8_t level, PIRP Irp) {
+static NTSTATUS convert_old_extent(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                   _In_ uint64_t address, _In_ bool tree, _In_ KEY* firstitem, _In_ uint8_t level,
+                                   _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp, next_tp;
@@ -451,7 +454,9 @@ end:
     return Status;
 }
 
-NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem, uint8_t level, PIRP Irp) {
+NTSTATUS increase_extent_refcount(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                  _In_ uint64_t size, _In_ uint8_t type, _In_ void* data, _In_ KEY* firstitem, _In_ uint8_t level,
+                                  _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -889,7 +894,9 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     return STATUS_SUCCESS;
 }
 
-NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset, uint32_t refcount, PIRP Irp) {
+NTSTATUS increase_extent_refcount_data(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t inode,
+                                       _In_ uint64_t offset, _In_ uint32_t refcount, _In_opt_ PIRP Irp) {
     EXTENT_DATA_REF edr;
 
     edr.root = root;
@@ -900,8 +907,9 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     return increase_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
 }
 
-NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem,
-                                  uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
+NTSTATUS decrease_extent_refcount(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                  _In_ uint64_t size, _In_ uint8_t type, _In_ void* data, _In_ KEY* firstitem,
+                                  _In_ uint8_t level, _In_ uint64_t parent, _In_ bool superseded, _In_opt_ PIRP Irp) {
     KEY searchkey;
     NTSTATUS Status;
     traverse_ptr tp, tp2;
@@ -1545,8 +1553,9 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     }
 }
 
-NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode,
-                                       uint64_t offset, uint32_t refcount, bool superseded, PIRP Irp) {
+NTSTATUS decrease_extent_refcount_data(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t inode,
+                                       _In_ uint64_t offset, _In_ uint32_t refcount, _In_ bool superseded, _In_opt_ PIRP Irp) {
     EXTENT_DATA_REF edr;
 
     edr.root = root;
@@ -1557,8 +1566,9 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, 0, superseded, Irp);
 }
 
-NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root,
-                                       uint8_t level, PIRP Irp) {
+NTSTATUS decrease_extent_refcount_tree(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint8_t level,
+                                       _In_opt_ PIRP Irp) {
     TREE_BLOCK_REF tbr;
 
     tbr.offset = root;
@@ -1566,7 +1576,9 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, 
     return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, false, Irp);
 }
 
-static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, PIRP Irp) {
+static uint32_t find_extent_data_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                          _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t objid, _In_ uint64_t offset,
+                                          _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1648,7 +1660,8 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     return 0;
 }
 
-uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp) {
+uint64_t get_extent_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_ uint64_t address, _In_ uint64_t size, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1694,7 +1707,8 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
     return ei->refcount;
 }
 
-bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp) {
+bool is_extent_unique(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                      _In_ uint64_t size, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -1832,7 +1846,8 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     return false;
 }
 
-uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
+uint64_t get_extent_flags(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                          _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1873,7 +1888,8 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
     return ei->flags;
 }
 
-void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags, PIRP Irp) {
+void update_extent_flags(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                         _In_ uint64_t address, _In_ uint64_t flags, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1948,8 +1964,10 @@ static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint6
     return ce;
 }
 
-NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, int32_t count,
-                                   bool no_csum, bool superseded, PIRP Irp) {
+NTSTATUS update_changed_extent_ref(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                   _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t objid,
+                                   _In_ uint64_t offset, _In_ int32_t count, _In_ bool no_csum, _In_ bool superseded,
+                                   _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -2116,7 +2134,8 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
     ce->count += count;
 }
 
-uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp) {
+uint64_t find_extent_shared_tree_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                          _In_ uint64_t address, _In_ uint64_t parent, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -2217,7 +2236,8 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     return 0;
 }
 
-uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp) {
+uint32_t find_extent_shared_data_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                          _In_ uint64_t parent, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;

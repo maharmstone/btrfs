@@ -77,7 +77,7 @@ typedef struct {
 
 extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 
-ULONG get_reparse_tag_fcb(fcb* fcb) {
+ULONG get_reparse_tag_fcb(_In_ fcb* fcb) {
     ULONG tag;
 
     if (fcb->type == BTRFS_TYPE_SYMLINK)
@@ -101,7 +101,8 @@ ULONG get_reparse_tag_fcb(fcb* fcb) {
     return tag;
 }
 
-ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type, ULONG atts, bool lxss, PIRP Irp) {
+static ULONG get_reparse_tag(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol,
+                             _In_ uint64_t inode, _In_ uint8_t type, _In_ ULONG atts, _In_ bool lxss, _In_opt_ PIRP Irp) {
     fcb* fcb;
     ULONG tag = 0;
     NTSTATUS Status;
@@ -142,7 +143,8 @@ ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8
     return tag;
 }
 
-static ULONG get_ea_len(device_extension* Vcb, root* subvol, uint64_t inode, PIRP Irp) {
+static ULONG get_ea_len(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                        _In_ root* subvol, _In_ uint64_t inode, _In_opt_ PIRP Irp) {
     uint8_t* eadata;
     uint16_t len;
 
@@ -179,7 +181,8 @@ static ULONG get_ea_len(device_extension* Vcb, root* subvol, uint64_t inode, PIR
         return 0;
 }
 
-static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Irp, dir_entry* de, root* r) {
+static NTSTATUS query_dir_item(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock) fcb* fcb, _In_ ccb* ccb, _Out_ void* buf,
+                               _Inout_ LONG* len, _In_opt_ PIRP Irp, _In_ dir_entry* de, _In_opt_ root* r) {
     PIO_STACK_LOCATION IrpSp;
     LONG needed;
     uint64_t inode;
@@ -741,7 +744,7 @@ next:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS query_directory(PIRP Irp) {
+static NTSTATUS query_directory(_In_ PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status, status2;
     fcb* fcb;

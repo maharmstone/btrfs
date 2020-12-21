@@ -43,8 +43,10 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_SKINNY_METADATA;
 
-static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
-static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
+static NTSTATUS create_chunk(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_ chunk* c, _In_opt_ PIRP Irp);
+static NTSTATUS update_tree_extents(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                                    _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback);
 
 #ifndef _MSC_VER // not in mingw yet
 #define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
@@ -607,7 +609,7 @@ static bool trees_consistent(device_extension* Vcb) {
     return true;
 }
 
-static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS add_parents(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     ULONG level;
     LIST_ENTRY* le;
 
@@ -701,7 +703,9 @@ static void add_parents_to_cache(tree* t) {
     }
 }
 
-static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint64_t root_id, chunk* c, uint64_t address, PIRP Irp, LIST_ENTRY* rollback) {
+static bool insert_tree_extent_skinny(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint8_t level,
+                                      _In_ uint64_t root_id, _In_ chunk* c, _In_ uint64_t address, _In_opt_ PIRP Irp,
+                                      _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     EXTENT_ITEM_SKINNY_METADATA* eism;
     traverse_ptr insert_tp;
@@ -817,7 +821,9 @@ bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* a
     return false;
 }
 
-static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t root_id, chunk* c, uint64_t* new_address, PIRP Irp, LIST_ENTRY* rollback) {
+static bool insert_tree_extent(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint8_t level,
+                               _In_ uint64_t root_id, _In_ chunk* c, _Out_ uint64_t* new_address, _In_opt_ PIRP Irp,
+                               _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     uint64_t address;
     EXTENT_ITEM_TREE2* eit2;
@@ -870,7 +876,8 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     return true;
 }
 
-NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS get_tree_new_address(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                              _In_ tree* t, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     chunk *origchunk = NULL, *c;
     LIST_ENTRY* le;
@@ -1073,7 +1080,8 @@ end:
     return STATUS_SUCCESS;
 }
 
-static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static bool shared_tree_is_unique(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                                  _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -1102,7 +1110,8 @@ static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST
         return true;
 }
 
-static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_tree_extents(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                                    _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     uint64_t rc = get_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, Irp);
     uint64_t flags = get_extent_flags(Vcb, t->header.address, Irp);
@@ -1457,7 +1466,8 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_tree_extents(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                      _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     bool changed = false;
@@ -1549,7 +1559,8 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_root_root(device_extension* Vcb, bool no_cache, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_root_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                 _In_ bool no_cache, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
 
@@ -1818,7 +1829,8 @@ void calc_tree_checksum(device_extension* Vcb, tree_header* th) {
     }
 }
 
-static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS write_trees(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                            _In_opt_ PIRP Irp) {
     ULONG level;
     uint8_t *data, *body;
     NTSTATUS Status;
@@ -2103,7 +2115,8 @@ end:
     return Status;
 }
 
-static void update_backup_superblock(device_extension* Vcb, superblock_backup* sb, PIRP Irp) {
+static void update_backup_superblock(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                     _In_ superblock_backup* sb, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
 
@@ -2318,7 +2331,8 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS write_superblocks(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                  _In_opt_ PIRP Irp) {
     uint64_t i;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2425,7 +2439,8 @@ end:
     return Status;
 }
 
-static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS flush_changed_extent(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                     _In_ changed_extent* ce, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     uint64_t old_size;
@@ -2594,7 +2609,8 @@ end:
     return STATUS_SUCCESS;
 }
 
-void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, void* csum, PIRP Irp) {
+void add_checksum_entry(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                        _In_ ULONG length, _In_opt_ void* csum, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -2802,7 +2818,8 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
     }
 }
 
-static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_usage(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                   _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks.Flink, *le2;
     chunk* c;
     KEY searchkey;
@@ -3242,7 +3259,8 @@ static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
     return STATUS_SUCCESS;
 }
 
-bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
+bool is_tree_unique(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                    _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -3305,7 +3323,9 @@ end:
     return ret;
 }
 
-static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, bool* done_deletions, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS try_tree_amalgamate(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                    _In_ tree* t, _Out_ bool* done, _Out_ bool* done_deletions, _In_opt_ PIRP Irp,
+                                    _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
@@ -3535,7 +3555,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tree* t, uint8_t level, PIRP Irp) {
+static NTSTATUS update_extent_level(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                    _In_ tree* t, _In_ uint8_t level, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -3635,7 +3656,8 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
     return STATUS_INTERNAL_ERROR;
 }
 
-static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_tree_extents_recursive(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                              _In_ tree* t, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
 
     if (t->parent && !t->parent->updated_extents && t->parent->has_address) {
@@ -3653,7 +3675,8 @@ static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PI
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS do_splits(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                          _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     ULONG level, max_level;
     uint32_t min_size, min_size_fst;
     bool empty, done_deletions = false;
@@ -3873,7 +3896,9 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th, uint8_t level, tree* parent, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS remove_root_extents(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                    _In_ root* r, _In_ tree_holder* th, _In_ uint8_t level, _In_opt_ tree* parent,
+                                    _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
 
     if (!th->tree) {
@@ -3944,7 +3969,8 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS drop_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r,
+                          _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -4071,7 +4097,8 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS drop_roots(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)device_extension* Vcb, _In_opt_ PIRP Irp,
+                           _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->drop_roots.Flink, *le2;
     NTSTATUS Status;
 
@@ -4092,7 +4119,8 @@ static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback
     return STATUS_SUCCESS;
 }
 
-NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
+NTSTATUS update_dev_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ device* device,
+                         _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     DEV_ITEM* di;
@@ -4137,7 +4165,7 @@ NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static void regen_bootstrap(device_extension* Vcb) {
+static void regen_bootstrap(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
     sys_chunk* sc2;
     USHORT i = 0;
     LIST_ENTRY* le;
@@ -4159,7 +4187,9 @@ static void regen_bootstrap(device_extension* Vcb) {
     }
 }
 
-static NTSTATUS add_to_bootstrap(device_extension* Vcb, uint64_t obj_id, uint8_t obj_type, uint64_t offset, void* data, uint16_t size) {
+static NTSTATUS add_to_bootstrap(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                 _In_ uint64_t obj_id, _In_ uint8_t obj_type, _In_ uint64_t offset,
+                                 _In_ void* data, _In_ uint16_t size) {
     sys_chunk* sc;
     LIST_ENTRY* le;
 
@@ -4205,7 +4235,8 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, uint64_t obj_id, uint8_t
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
+static NTSTATUS create_chunk(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_ chunk* c, _In_opt_ PIRP Irp) {
     CHUNK_ITEM* ci;
     CHUNK_ITEM_STRIPE* cis;
     BLOCK_GROUP_ITEM* bgi;
@@ -4307,7 +4338,8 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static void remove_from_bootstrap(device_extension* Vcb, uint64_t obj_id, uint8_t obj_type, uint64_t offset) {
+static void remove_from_bootstrap(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                  _In_ uint64_t obj_id, _In_ uint8_t obj_type, _In_ uint64_t offset) {
     sys_chunk* sc2;
     LIST_ENTRY* le;
 
@@ -4330,8 +4362,9 @@ static void remove_from_bootstrap(device_extension* Vcb, uint64_t obj_id, uint8_
     }
 }
 
-static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, uint64_t inode, char* name, uint16_t namelen,
-                          uint32_t crc32, uint8_t* data, uint16_t datalen) {
+static NTSTATUS set_xattr(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ LIST_ENTRY* batchlist,
+                          _In_ root* subvol, _In_ uint64_t inode, _In_ char* name, _In_ uint16_t namelen,
+                          _In_ uint32_t crc32, _In_ uint8_t* data, _In_ uint16_t datalen) {
     NTSTATUS Status;
     uint16_t xasize;
     DIR_ITEM* xa;
@@ -4366,8 +4399,9 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* subvol, uint64_t inode, char* name,
-                             uint16_t namelen, uint32_t crc32) {
+static NTSTATUS delete_xattr(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ LIST_ENTRY* batchlist,
+                             _In_ root* subvol, _In_ uint64_t inode, _In_ char* name, _In_ uint16_t namelen,
+                             _In_ uint32_t crc32) {
     NTSTATUS Status;
     uint16_t xasize;
     DIR_ITEM* xa;
@@ -4401,7 +4435,8 @@ static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root*
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t start, uint64_t length) {
+static NTSTATUS insert_sparse_extent(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->tree_lock) fcb* fcb, _In_ LIST_ENTRY* batchlist,
+                                     _In_ uint64_t start, _In_ uint64_t length) {
     NTSTATUS Status;
     EXTENT_DATA* ed;
     EXTENT_DATA2* ed2;
@@ -4441,8 +4476,10 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t s
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, uint64_t objid, uint8_t objtype, uint64_t offset,
-                                _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, uint16_t datalen, enum batch_operation operation) {
+NTSTATUS insert_tree_item_batch(_In_ LIST_ENTRY* batchlist, _In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                _In_ root* r, _In_ uint64_t objid, _In_ uint8_t objtype, _In_ uint64_t offset,
+                                _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, _In_ uint16_t datalen,
+                                _In_ enum batch_operation operation) {
     LIST_ENTRY* le;
     batch_root* br = NULL;
     batch_item* bi;
@@ -4516,7 +4553,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent_range;
 
-static void rationalize_extents(fcb* fcb, PIRP Irp) {
+static void rationalize_extents(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->tree_lock) fcb* fcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
     LIST_ENTRY extent_ranges;
     extent_range* er;
@@ -4811,7 +4848,8 @@ end:
     }
 }
 
-NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
+NTSTATUS flush_fcb(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->tree_lock) fcb* fcb, _In_ bool cache,
+                   _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp) {
     traverse_ptr tp;
     KEY searchkey;
     NTSTATUS Status;
@@ -5437,7 +5475,8 @@ void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, uint64_t addres
     add_trim_entry(dev, address, size);
 }
 
-static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS drop_chunk(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                           _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -6044,7 +6083,8 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunks(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                              _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     uint64_t used_minus_cache;
@@ -6157,7 +6197,8 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64_t parsubvolid, uint64_t parinode, PANSI_STRING utf8, PIRP Irp) {
+static NTSTATUS delete_root_ref(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t subvolid,
+                                _In_ uint64_t parsubvolid, _In_ uint64_t parinode, _In_ PANSI_STRING utf8, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -6254,7 +6295,8 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid, _In_ uint64_t parsubvolid, _In_ __drv_aliasesMem ROOT_REF* rr, _In_opt_ PIRP Irp) {
+static NTSTATUS add_root_ref(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t subvolid,
+                             _In_ uint64_t parsubvolid, _In_ __drv_aliasesMem ROOT_REF* rr, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -6313,7 +6355,8 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid,
 #pragma warning(pop)
 #endif
 
-static NTSTATUS update_root_backref(device_extension* Vcb, uint64_t subvolid, uint64_t parsubvolid, PIRP Irp) {
+static NTSTATUS update_root_backref(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t subvolid,
+                                    _In_ uint64_t parsubvolid, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     uint8_t* data;
@@ -6383,7 +6426,8 @@ static NTSTATUS update_root_backref(device_extension* Vcb, uint64_t subvolid, ui
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_root_item_to_cache(device_extension* Vcb, uint64_t root, PIRP Irp) {
+static NTSTATUS add_root_item_to_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t root, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -6435,7 +6479,8 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, uint64_t root, PIR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp) {
+static NTSTATUS flush_fileref(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb->Vcb->tree_lock) file_ref* fileref,
+                              _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
 
     // if fileref created and then immediately deleted, do nothing
@@ -6911,7 +6956,8 @@ nextdev:
     ExFreePool(context.stripes);
 }
 
-static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP Irp) {
+static NTSTATUS flush_changed_dev_stats(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                        _In_ device* dev, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -6955,7 +7001,8 @@ static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
+static NTSTATUS flush_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_ root* r, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
 
     if (r != Vcb->root_root && r != Vcb->chunk_root) {
@@ -7082,7 +7129,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS test_not_full(device_extension* Vcb) {
+static NTSTATUS test_not_full(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
     uint64_t reserve, could_alloc, free_space;
     LIST_ENTRY* le;
 
@@ -7286,7 +7333,8 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp) {
+static NTSTATUS check_for_orphans_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ root* r, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -7361,7 +7409,8 @@ end:
     return Status;
 }
 
-static NTSTATUS check_for_orphans(device_extension* Vcb, PIRP Irp) {
+static NTSTATUS check_for_orphans(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                  _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
 
@@ -7388,7 +7437,8 @@ static NTSTATUS check_for_orphans(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS do_write2(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                          _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
     bool cache_changed = false;
@@ -7798,7 +7848,8 @@ end:
     return Status;
 }
 
-NTSTATUS do_write(device_extension* Vcb, PIRP Irp) {
+NTSTATUS do_write(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                  _In_opt_ PIRP Irp) {
     LIST_ENTRY rollback;
     NTSTATUS Status;
 
@@ -7817,7 +7868,7 @@ NTSTATUS do_write(device_extension* Vcb, PIRP Irp) {
     return Status;
 }
 
-static void do_flush(device_extension* Vcb) {
+static void do_flush(_In_ device_extension* Vcb) {
     NTSTATUS Status;
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
@@ -7836,7 +7887,7 @@ static void do_flush(device_extension* Vcb) {
 }
 
 _Function_class_(KSTART_ROUTINE)
-void __stdcall flush_thread(void* context) {
+void __stdcall flush_thread(_In_ void* context) {
     DEVICE_OBJECT* devobj = context;
     device_extension* Vcb = devobj->DeviceExtension;
     LARGE_INTEGER due_time;

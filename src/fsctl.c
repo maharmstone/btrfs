@@ -86,7 +86,8 @@ static void get_uuid(BTRFS_UUID* uuid) {
     }
 }
 
-static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* subvol, uint64_t* newaddr, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS snapshot_tree_copy(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t addr,
+                                   _In_ root* subvol, _Out_ uint64_t* newaddr, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     uint8_t* buf;
     NTSTATUS Status;
     write_data_context wtc;
@@ -259,7 +260,9 @@ void flush_subvol_fcbs(root* subvol) {
     }
 }
 
-static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name, bool readonly, PIRP Irp) {
+static NTSTATUS do_create_snapshot(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ PFILE_OBJECT parent,
+                                   _In_ fcb* subvol_fcb, _In_ PANSI_STRING utf8, _In_ PUNICODE_STRING name, _In_ bool readonly,
+                                   _In_opt_ PIRP Irp) {
     LIST_ENTRY rollback;
     uint64_t id;
     NTSTATUS Status;
@@ -636,7 +639,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool,
+    Status = open_fileref(Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool,
                           ccb->case_sensitive || posix, NULL, false, Irp);
 
     if (NT_SUCCESS(Status)) {
@@ -864,7 +867,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     win_time_to_unix(time, &now);
 
     // no need for fcb_lock as we have tree_lock exclusively
-    Status = open_fileref(fcb->Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool,
+    Status = open_fileref(Vcb, &fr2, &nameus, fileref, false, NULL, NULL, PagedPool,
                           ccb->case_sensitive || bcs->posix, NULL, false, Irp);
 
     if (NT_SUCCESS(Status)) {
@@ -4489,7 +4492,8 @@ static NTSTATUS reserve_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, P
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS get_subvol_path(device_extension* Vcb, uint64_t id, WCHAR* out, ULONG outlen, PIRP Irp) {
+static NTSTATUS get_subvol_path(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t id,
+                                _In_ WCHAR* out, _In_ ULONG outlen, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le;
     root* r = NULL;
     NTSTATUS Status;

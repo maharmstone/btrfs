@@ -44,7 +44,8 @@ typedef struct {
     LIST_ENTRY list_entry;
 } path_part;
 
-static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64_t devid, uint64_t subvol, uint64_t inode, uint64_t offset) {
+static void log_file_checksum_error(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t addr,
+                                    _In_ uint64_t devid, _In_ uint64_t subvol, _In_ uint64_t inode, _In_ uint64_t offset) {
     LIST_ENTRY *le, parts;
     root* r = NULL;
     KEY searchkey;
@@ -327,7 +328,9 @@ end:
     }
 }
 
-static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treeaddr, uint64_t addr, uint64_t devid, uint64_t extent) {
+static void log_file_checksum_error_shared(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                           _In_ uint64_t treeaddr, _In_ uint64_t addr, _In_ uint64_t devid,
+                                           _In_ uint64_t extent) {
     tree_header* tree;
     NTSTATUS Status;
     leaf_node* ln;
@@ -439,7 +442,8 @@ end:
     ExFreePool(tree);
 }
 
-static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uint64_t devid) {
+static void log_unrecoverable_error(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                    _In_ uint64_t address, _In_ uint64_t devid) {
     KEY searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -602,7 +606,8 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     }
 }
 
-static void log_error(device_extension* Vcb, uint64_t addr, uint64_t devid, bool metadata, bool recoverable, bool parity) {
+static void log_error(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t addr,
+                      _In_ uint64_t devid, _In_ bool metadata, _In_ bool recoverable, _In_ bool parity) {
     if (recoverable) {
         scrub_error* err;
 
@@ -664,7 +669,8 @@ static NTSTATUS __stdcall scrub_read_completion(PDEVICE_OBJECT DeviceObject, PIR
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offset, void* csum, scrub_context* context) {
+static NTSTATUS scrub_extent_dup(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                 _In_ uint64_t offset, _In_ void* csum, _In_ scrub_context* context) {
     NTSTATUS Status;
     bool csum_error = false;
     ULONG i;
@@ -935,7 +941,9 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, uint64_t offset, uint32_t length, uint16_t startoffstripe, void* csum, scrub_context* context) {
+static NTSTATUS scrub_extent_raid0(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                   _In_ uint64_t offset, _In_ uint32_t length, _In_ uint16_t startoffstripe,
+                                   _In_ void* csum, _In_ scrub_context* context) {
     ULONG j;
     uint16_t stripe;
     uint32_t pos, *stripeoff;
@@ -993,7 +1001,9 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, uint64_t off
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t offset, uint32_t length, uint16_t startoffstripe, void* csum, scrub_context* context) {
+static NTSTATUS scrub_extent_raid10(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                    _In_ uint64_t offset, _In_ uint32_t length, _In_ uint16_t startoffstripe,
+                                    _In_ void* csum, _In_ scrub_context* context) {
     ULONG j;
     uint16_t stripe, sub_stripes = max(c->chunk_item->sub_stripes, 1);
     uint32_t pos, *stripeoff;
@@ -1372,7 +1382,8 @@ end:
     return Status;
 }
 
-static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64_t offset, uint32_t size, void* csum) {
+static NTSTATUS scrub_extent(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                             _In_ ULONG type, _In_ uint64_t offset, _In_ uint32_t size, _In_ void* csum) {
     ULONG i;
     scrub_context context;
     CHUNK_ITEM_STRIPE* cis;
@@ -1622,7 +1633,9 @@ end:
     return Status;
 }
 
-static NTSTATUS scrub_data_extent(device_extension* Vcb, chunk* c, uint64_t offset, ULONG type, void* csum, RTL_BITMAP* bmp, ULONG bmplen) {
+static NTSTATUS scrub_data_extent(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                  _In_ uint64_t offset, _In_ ULONG type, _In_ void* csum, _In_ RTL_BITMAP* bmp,
+                                  _In_ ULONG bmplen) {
     NTSTATUS Status;
     ULONG runlength, index;
 
@@ -1703,8 +1716,9 @@ static NTSTATUS __stdcall scrub_read_completion_raid56(PDEVICE_OBJECT DeviceObje
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, uint64_t stripe_start, uint64_t bit_start,
-                               uint64_t num, uint16_t missing_devices) {
+static void scrub_raid5_stripe(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                               _In_ scrub_context_raid56* context, _In_ uint64_t stripe_start, _In_ uint64_t bit_start,
+                               _In_ uint64_t num, _In_ uint16_t missing_devices) {
     ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_length >> Vcb->sector_shift), off;
     uint16_t stripe, parity = (bit_start + num + c->chunk_item->num_stripes - 1) % c->chunk_item->num_stripes;
     uint64_t stripeoff;
@@ -1892,8 +1906,9 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     }
 }
 
-static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, uint64_t stripe_start, uint64_t bit_start,
-                               uint64_t num, uint16_t missing_devices) {
+static void scrub_raid6_stripe(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                               _In_ scrub_context_raid56* context, _In_ uint64_t stripe_start, _In_ uint64_t bit_start,
+                               _In_ uint64_t num, _In_ uint16_t missing_devices) {
     ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_length >> Vcb->sector_shift), off;
     uint16_t stripe, parity1 = (bit_start + num + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
     uint16_t parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
@@ -2422,7 +2437,8 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     }
 }
 
-static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, uint64_t stripe_start, uint64_t stripe_end) {
+static NTSTATUS scrub_chunk_raid56_stripe_run(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                              _In_ chunk* c, _In_ uint64_t stripe_start, _In_ uint64_t stripe_end) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -2833,7 +2849,8 @@ end:
     return Status;
 }
 
-static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* offset, bool* changed) {
+static NTSTATUS scrub_chunk_raid56(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                   _In_ chunk* c, _Inout_ uint64_t* offset, _Out_ bool* changed) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -2920,7 +2937,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, bool* changed) {
+static NTSTATUS scrub_chunk(_In_ device_extension* Vcb, _In_ chunk* c, _Inout_ uint64_t* offset, _Out_ bool* changed) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;

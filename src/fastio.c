@@ -304,8 +304,9 @@ static NTSTATUS __stdcall fast_io_acquire_for_mod_write(PFILE_OBJECT FileObject,
 }
 
 _Function_class_(FAST_IO_RELEASE_FOR_MOD_WRITE)
-static NTSTATUS __stdcall fast_io_release_for_mod_write(PFILE_OBJECT FileObject, struct _ERESOURCE *ResourceToRelease,
-                                                        PDEVICE_OBJECT DeviceObject) {
+static NTSTATUS __stdcall fast_io_release_for_mod_write(_In_ _Requires_lock_held_(((fcb*)_Curr_->FsContext)->Vcb->tree_lock) PFILE_OBJECT FileObject,
+                                                        _In_ _Requires_lock_held_(_Curr_) struct _ERESOURCE* ResourceToRelease,
+                                                        _In_ PDEVICE_OBJECT DeviceObject) {
     fcb* fcb;
 
     TRACE("(%p, %p, %p)\n", FileObject, ResourceToRelease, DeviceObject);

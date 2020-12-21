@@ -149,7 +149,8 @@ typedef struct _FILE_LINKS_FULL_ID_INFORMATION {
 
 extern tIoGetTransactionParameterBlock fIoGetTransactionParameterBlock;
 
-static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+static NTSTATUS set_basic_information(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                      _In_opt_ PIRP Irp, _In_ PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -660,7 +661,8 @@ typedef struct _move_entry {
     LIST_ENTRY list_entry;
 } move_entry;
 
-static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me, trans_ref* trans, PIRP Irp) {
+static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ move_entry* me,
+                                          _In_opt_ trans_ref* trans, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
 
@@ -779,7 +781,8 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_streams_to_move_list(device_extension* Vcb, move_entry* me, PIRP Irp) {
+static NTSTATUS add_streams_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                         _In_ move_entry* me, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
 
@@ -1883,8 +1886,9 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb, FILE_RENAME_INFORMATION_EX* fri,
-                              ULONG flags, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS rename_stream(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ file_ref* fileref,
+                              _In_ ccb* ccb, _In_ FILE_RENAME_INFORMATION_EX* fri, _In_ ULONG flags, _In_opt_ PIRP Irp,
+                              _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UNICODE_STRING fn;
     file_ref* sf = NULL;
@@ -2121,8 +2125,9 @@ end:
     return Status;
 }
 
-static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb, FILE_RENAME_INFORMATION_EX* fri,
-                                      ULONG flags, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ file_ref* fileref,
+                                      _In_ ccb* ccb, _In_ FILE_RENAME_INFORMATION_EX* fri, _In_ ULONG flags, _In_opt_ PIRP Irp,
+                                      _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     UNICODE_STRING fn;
     file_ref* sf = NULL;
@@ -4596,7 +4601,9 @@ static NTSTATUS fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORM
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_ref* fileref, PIRP Irp, LONG* length) {
+static NTSTATUS fill_in_hard_link_information(_Out_ FILE_LINKS_INFORMATION* fli,
+                                              _In_ _Requires_lock_held_(_Curr_->fcb->Vcb->tree_lock) file_ref* fileref,
+                                              _In_opt_ PIRP Irp, _Inout_ LONG* length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     LONG bytes_needed;
@@ -4758,7 +4765,9 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
     return Status;
 }
 
-static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMATION* flfii, file_ref* fileref, PIRP Irp, LONG* length) {
+static NTSTATUS fill_in_hard_link_full_id_information(_Out_ FILE_LINKS_FULL_ID_INFORMATION* flfii,
+                                                      _In_ _Requires_lock_held_(_Curr_->fcb->Vcb->tree_lock) file_ref* fileref,
+                                                      _In_opt_ PIRP Irp, _Inout_ LONG* length) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     LONG bytes_needed;

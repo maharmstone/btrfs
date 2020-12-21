@@ -22,7 +22,9 @@
 // this be a constant number of sectors, a constant 256 KB, or what?
 #define CACHE_INCREMENTS    64
 
-static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS remove_free_space_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                        _In_ uint64_t inode, _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp,
+                                        _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     fcb* fcb;
 
@@ -56,7 +58,8 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, L
     return STATUS_SUCCESS;
 }
 
-NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp) {
+NTSTATUS clear_free_space_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -463,7 +466,8 @@ end:
     return Status;
 }
 
-NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load_only, PIRP Irp) {
+NTSTATUS load_stored_free_space_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                      _In_ chunk* c, _In_ bool load_only, _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp;
     FREE_SPACE_ITEM* fsi;
@@ -726,7 +730,8 @@ clearcache:
     return STATUS_NOT_FOUND;
 }
 
-static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
+static NTSTATUS load_stored_free_space_tree(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                            _In_opt_ PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -883,7 +888,8 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
+static NTSTATUS load_free_space_cache(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                      _In_opt_ PIRP Irp) {
     traverse_ptr tp, next_tp;
     KEY searchkey;
     uint64_t lastaddr;
@@ -977,7 +983,8 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
     return STATUS_SUCCESS;
 }
 
-NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
+NTSTATUS load_cache_chunk(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                          _In_ chunk* c, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
 
     if (c->cache_loaded)
@@ -1040,7 +1047,8 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* changed, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_cache_chunk(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                     _Out_ bool* changed, _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     uint64_t num_entries, new_cache_size, i, num_sectors;
@@ -1375,7 +1383,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
     return STATUS_SUCCESS;
 }
 
-NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS allocate_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                        _Out_ bool* changed, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
 
@@ -1687,7 +1696,8 @@ static NTSTATUS copy_space_list(LIST_ENTRY* old_list, LIST_ENTRY* new_list) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                   _In_ BTRFS_TIME* now, _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     KEY searchkey;
     traverse_ptr tp;
@@ -1830,7 +1840,8 @@ end:
     return Status;
 }
 
-static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
+static NTSTATUS update_chunk_cache_tree(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                        _In_ chunk* c, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY space_list;
     FREE_SPACE_INFO* fsi;
@@ -2036,7 +2047,8 @@ after_tree_walk:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS update_chunk_caches(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
     chunk* c;
@@ -2106,7 +2118,8 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     return STATUS_SUCCESS;
 }
 
-NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
+NTSTATUS update_chunk_caches_tree(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                  _In_opt_ PIRP Irp) {
     LIST_ENTRY *le;
     NTSTATUS Status;
     chunk* c;

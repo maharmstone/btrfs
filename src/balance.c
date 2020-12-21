@@ -3049,7 +3049,7 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
 }
 
 _Function_class_(KSTART_ROUTINE)
-void __stdcall balance_thread(void* context) {
+void __stdcall balance_thread(_In_ void* context) {
     device_extension* Vcb = (device_extension*)context;
     LIST_ENTRY chunks;
     LIST_ENTRY* le;

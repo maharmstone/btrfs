@@ -1289,8 +1289,9 @@ static const char lxdev[] = "$LXDEV";
 // in treefuncs.c
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
                    _In_ const KEY* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2,3,4)));
-NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, bool ignore,
-                            uint8_t level, PIRP Irp) __attribute__((nonnull(1,2,3,4)));
+NTSTATUS find_item_to_level(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r,
+                            _Out_ traverse_ptr* tp, _In_ const KEY* searchkey, _In_ bool ignore, _In_ uint8_t level,
+                            _In_opt_ PIRP Irp) __attribute__((nonnull(1,2,3,4)));
 bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
                     traverse_ptr* next_tp, bool ignore, PIRP Irp) __attribute__((nonnull(1,2,3)));
 bool find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
@@ -1311,7 +1312,8 @@ void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ 
 NTSTATUS commit_batch_list(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
                            LIST_ENTRY* batchlist, PIRP Irp) __attribute__((nonnull(1,2)));
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) __attribute__((nonnull(1,2)));
-NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_ptr* tp2, bool* ended1, bool* ended2) __attribute__((nonnull(1,2,3,4,5)));
+NTSTATUS skip_to_difference(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ traverse_ptr* tp,
+                            _In_ traverse_ptr* tp2, _Inout_ bool* ended1, _Inout_ bool* ended2) __attribute__((nonnull(1,2,3,4,5)));
 
 // in search.c
 NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
@@ -1374,8 +1376,7 @@ _Dispatch_type_(IRP_MJ_DIRECTORY_CONTROL)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_directory_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-ULONG get_reparse_tag(device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type, ULONG atts, bool lxss, PIRP Irp);
-ULONG get_reparse_tag_fcb(fcb* fcb);
+ULONG get_reparse_tag_fcb(_In_ fcb* fcb);
 
 // in security.c
 
@@ -1387,7 +1388,8 @@ _Dispatch_type_(IRP_MJ_SET_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp);
+void fcb_get_sd(_In_ _When_(look_for_xattr, _Requires_lock_held_(_Curr_->Vcb->tree_lock)) fcb* fcb, _In_opt_ struct _fcb* parent,
+                _In_ bool look_for_xattr, _In_opt_ PIRP Irp);
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t uid);
 void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t gid);
 uint32_t sid_to_uid(PSID sid);
@@ -1449,7 +1451,8 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                           bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc);
 uint32_t inherit_mode(fcb* parfcb, bool is_dir);
 file_ref* create_fileref(device_extension* Vcb);
-NTSTATUS open_fileref_by_inode(device_extension* Vcb, root* subvol, uint64_t inode, file_ref** pfr, PIRP Irp);
+NTSTATUS open_fileref_by_inode(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol,
+                               _In_ uint64_t inode, _Out_ file_ref** pfr, _In_opt_ PIRP Irp);
 
 // in fsctl.c
 NTSTATUS fsctl_request(PDEVICE_OBJECT DeviceObject, PIRP* Pirp, uint32_t type);
@@ -1462,22 +1465,30 @@ NTSTATUS dismount_volume(device_extension* Vcb, bool shutdown, PIRP Irp);
 // in flushthread.c
 
 _Function_class_(KSTART_ROUTINE)
-void __stdcall flush_thread(void* context);
+void __stdcall flush_thread(_In_ void* context);
 
-NTSTATUS do_write(device_extension* Vcb, PIRP Irp);
-NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp);
+NTSTATUS do_write(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                  _In_opt_ PIRP Irp);
+NTSTATUS get_tree_new_address(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                              _In_ tree* t, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback);
+NTSTATUS flush_fcb(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->tree_lock) fcb* fcb, _In_ bool cache,
+                   _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp);
 NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ uint64_t address,
                          _In_reads_bytes_(length) void* data, _In_ uint32_t length);
-bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp);
+bool is_tree_unique(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ tree* t,
+                    _In_opt_ PIRP Irp);
 NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_free);
-void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, void* csum, PIRP Irp);
+void add_checksum_entry(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                        _In_ ULONG length, _In_opt_ void* csum, _In_opt_ PIRP Irp);
 bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* address);
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, uint64_t address, uint64_t size);
-NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, uint64_t objid, uint8_t objtype, uint64_t offset,
-                                _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, uint16_t datalen, enum batch_operation operation);
+NTSTATUS insert_tree_item_batch(_In_ LIST_ENTRY* batchlist, _In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                _In_ root* r, _In_ uint64_t objid, _In_ uint8_t objtype, _In_ uint64_t offset,
+                                _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data, _In_ uint16_t datalen,
+                                _In_ enum batch_operation operation);
 NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
-NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
+NTSTATUS update_dev_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ device* device,
+                         _In_opt_ PIRP Irp);
 void calc_tree_checksum(device_extension* Vcb, tree_header* th);
 
 // in read.c
@@ -1509,36 +1520,58 @@ NTSTATUS pnp_surprise_removal(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
 // in free-space.c
-NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
-NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
-NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp);
+NTSTATUS load_cache_chunk(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                          _In_ chunk* c, _In_opt_ PIRP Irp);
+NTSTATUS clear_free_space_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                _In_ LIST_ENTRY* batchlist, _In_opt_ PIRP Irp);
+NTSTATUS allocate_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                        _Out_ bool* changed, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback);
+NTSTATUS update_chunk_caches(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback);
+NTSTATUS update_chunk_caches_tree(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                  _In_opt_ PIRP Irp);
 NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t offset, uint64_t size);
 void space_list_add(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback);
 void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback);
 void space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback);
 void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback);
 void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting);
-NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load_only, PIRP Irp);
+NTSTATUS load_stored_free_space_cache(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                      _In_ chunk* c, _In_ bool load_only, _In_opt_ PIRP Irp);
 
 // in extent-tree.c
-NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset, uint32_t refcount, PIRP Irp);
-NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset,
-                                       uint32_t refcount, bool superseded, PIRP Irp);
-NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint8_t level, PIRP Irp);
-uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
-bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
-NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem, uint8_t level, PIRP Irp);
-uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp);
-void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags, PIRP Irp);
-NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset,
-                                   int32_t count, bool no_csum, bool superseded, PIRP Irp);
+NTSTATUS increase_extent_refcount_data(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t inode,
+                                       _In_ uint64_t offset, _In_ uint32_t refcount, _In_opt_ PIRP Irp);
+NTSTATUS decrease_extent_refcount_data(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t inode,
+                                       _In_ uint64_t offset, _In_ uint32_t refcount, _In_ bool superseded, _In_opt_ PIRP Irp);
+NTSTATUS decrease_extent_refcount_tree(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                       _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint8_t level,
+                                       _In_opt_ PIRP Irp);
+uint64_t get_extent_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                             _In_ uint64_t address, _In_ uint64_t size, _In_opt_ PIRP Irp);
+bool is_extent_unique(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                      _In_ uint64_t size, _In_opt_ PIRP Irp);
+NTSTATUS increase_extent_refcount(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                  _In_ uint64_t size, _In_ uint8_t type, _In_ void* data, _In_ KEY* firstitem, _In_ uint8_t level,
+                                  _In_opt_ PIRP Irp);
+uint64_t get_extent_flags(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                          _In_opt_ PIRP Irp);
+void update_extent_flags(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                         _In_ uint64_t address, _In_ uint64_t flags, _In_opt_ PIRP Irp);
+NTSTATUS update_changed_extent_ref(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ chunk* c,
+                                   _In_ uint64_t address, _In_ uint64_t size, _In_ uint64_t root, _In_ uint64_t objid,
+                                   _In_ uint64_t offset, _In_ int32_t count, _In_ bool no_csum, _In_ bool superseded,
+                                   _In_opt_ PIRP Irp);
 void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum);
-uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
-uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
-NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem,
-                                  uint8_t level, uint64_t parent, bool superseded, PIRP Irp);
+uint64_t find_extent_shared_tree_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                          _In_ uint64_t address, _In_ uint64_t parent, _In_opt_ PIRP Irp);
+uint32_t find_extent_shared_data_refcount(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                          _In_ uint64_t parent, _In_opt_ PIRP Irp);
+NTSTATUS decrease_extent_refcount(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t address,
+                                  _In_ uint64_t size, _In_ uint8_t type, _In_ void* data, _In_ KEY* firstitem,
+                                  _In_ uint8_t level, _In_ uint64_t parent, _In_ bool superseded, _In_opt_ PIRP Irp);
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset);
 
 // in worker-thread.c
@@ -1597,7 +1630,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESSOR_MODE processor_mode);
 
 _Function_class_(KSTART_ROUTINE)
-void __stdcall balance_thread(void* context);
+void __stdcall balance_thread(_In_ void* context);
 
 // in volume.c
 NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
