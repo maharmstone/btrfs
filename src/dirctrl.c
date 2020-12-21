@@ -898,7 +898,7 @@ static NTSTATUS query_directory(PIRP Irp) {
     newoffset = ccb->query_dir_offset;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
-
+    ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, true);
 
     Status = next_dir_entry(fileref, &newoffset, &de, trans, &dc);
@@ -1092,7 +1092,7 @@ static NTSTATUS query_directory(PIRP Irp) {
 
 end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
-
+    ExReleaseResourceLite(&Vcb->fileref_lock);
     ExReleaseResourceLite(&Vcb->tree_lock);
 
     if (trans)

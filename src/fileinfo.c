@@ -2852,8 +2852,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         mark_fileref_dirty(fileref);
 
         if (fileref->dc) {
-            ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
-
             ExFreePool(fileref->dc->utf8.Buffer);
             ExFreePool(fileref->dc->name.Buffer);
             ExFreePool(fileref->dc->name_uc.Buffer);
@@ -2862,7 +2860,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             if (!fileref->dc->utf8.Buffer) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
-                ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
                 ExFreePool(oldfn.Buffer);
                 goto end;
             }
@@ -2874,7 +2871,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             if (!fileref->dc->name.Buffer) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
-                ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
                 ExFreePool(oldfn.Buffer);
                 goto end;
             }
@@ -2885,7 +2881,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             Status = RtlUpcaseUnicodeString(&fileref->dc->name_uc, &fileref->dc->name, true);
             if (!NT_SUCCESS(Status)) {
                 ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
-                ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
                 ExFreePool(oldfn.Buffer);
                 goto end;
             }
@@ -2896,8 +2891,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
 
             insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
-
-            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
         }
 
         newfn.Length = newfn.MaximumLength = 0;
@@ -3015,20 +3008,16 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fileref->created = true;
     fileref->parent = related;
 
-    ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
     InsertHeadList(&fileref->list_entry, &fr2->list_entry);
     RemoveEntryList(&fileref->list_entry);
-    ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
 
     mark_fileref_dirty(fr2);
     mark_fileref_dirty(fileref);
 
     if (fileref->dc) {
         // remove from old parent
-        ExAcquireResourceExclusiveLite(&fr2->parent->fcb->nonpaged->dir_children_lock, true);
         RemoveEntryList(&fileref->dc->list_entry_index);
         remove_dir_child_from_hash_lists(fr2->parent->fcb, fileref->dc);
-        ExReleaseResourceLite(&fr2->parent->fcb->nonpaged->dir_children_lock);
 
         if (fileref->dc->utf8.Length != utf8.Length || RtlCompareMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length) != utf8.Length) {
             // handle changed name
@@ -3068,7 +3057,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         }
 
         // add to new parent
-        ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, true);
 
         if (IsListEmpty(&related->fcb->dir_children_index))
             fileref->dc->index = 2;
@@ -3080,12 +3068,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
         InsertTailList(&related->fcb->dir_children_index, &fileref->dc->list_entry_index);
         insert_dir_child_into_hash_lists(related->fcb, fileref->dc);
-        ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
     }
 
-    ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, true);
     InsertTailList(&related->children, &fileref->list_entry);
-    ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
 
     if (fcb->inode_item.st_nlink > 1) {
         // add new hardlink entry to fcb
@@ -3700,9 +3685,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     fr2->dc = dc;
     dc->fileref = fr2;
 
-    ExAcquireResourceExclusiveLite(&related->fcb->nonpaged->dir_children_lock, true);
     InsertTailList(&related->children, &fr2->list_entry);
-    ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
 
     // add hardlink for existing fileref, if it's not there already
     if (IsListEmpty(&fcb->hardlinks)) {
@@ -4509,6 +4492,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     else
         reqsize = 0;
 
+    ExAcquireResourceSharedLite(&fileref->fcb->Vcb->fileref_lock, true);
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, true);
 
     le = fileref->fcb->streams.Flink;
@@ -4592,6 +4576,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
 
 end:
     ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
+    ExReleaseResourceLite(&fileref->fcb->Vcb->fileref_lock);
 
     return Status;
 }
@@ -5331,7 +5316,9 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
 
             TRACE("FileStreamInformation\n");
 
+            ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
             Status = fill_in_file_stream_information(fsi, fileref, &length);
+            ExReleaseResourceLite(&Vcb->tree_lock);
 
             break;
         }
