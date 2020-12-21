@@ -1773,9 +1773,17 @@ void reap_fcb(fcb* fcb) {
         ExFreePool(xa);
     }
 
+    while (!IsListEmpty(&fcb->streams)) {
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&fcb->streams), dir_child, list_entry_index);
+
+        ExFreePool(dc->utf8.Buffer);
+        ExFreePool(dc->name.Buffer);
+        ExFreePool(dc->name_uc.Buffer);
+        ExFreePool(dc);
+    }
+
     while (!IsListEmpty(&fcb->dir_children_index)) {
-        LIST_ENTRY* le = RemoveHeadList(&fcb->dir_children_index);
-        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&fcb->dir_children_index), dir_child, list_entry_index);
 
         ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc->name.Buffer);

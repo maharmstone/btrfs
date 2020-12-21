@@ -146,6 +146,7 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     InitializeListHead(&fcb->extents);
     InitializeListHead(&fcb->hardlinks);
     InitializeListHead(&fcb->xattrs);
+    InitializeListHead(&fcb->streams);
 
     InitializeListHead(&fcb->dir_children_index);
     InitializeListHead(&fcb->dir_children_hash);
@@ -1232,7 +1233,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     dc->size = di->m;
 
-                    InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+                    InsertTailList(&fcb->streams, &dc->list_entry_index);
                 } else {
                     xattr* xa;
 
@@ -1569,19 +1570,16 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             locked = true;
         }
 
-        le = sf->fcb->dir_children_index.Flink;
-        while (le != &sf->fcb->dir_children_index) {
+        le = sf->fcb->streams.Flink;
+        while (le != &sf->fcb->streams) {
             dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
-            if (dc2->index == 0) {
-                if ((case_sensitive && dc2->name.Length == name->Length && RtlCompareMemory(dc2->name.Buffer, name->Buffer, dc2->name.Length) == dc2->name.Length) ||
-                    (!case_sensitive && dc2->name_uc.Length == name_uc.Length && RtlCompareMemory(dc2->name_uc.Buffer, name_uc.Buffer, dc2->name_uc.Length) == dc2->name_uc.Length)
-                ) {
-                    dc = dc2;
-                    break;
-                }
-            } else
+            if ((case_sensitive && dc2->name.Length == name->Length && RtlCompareMemory(dc2->name.Buffer, name->Buffer, dc2->name.Length) == dc2->name.Length) ||
+                (!case_sensitive && dc2->name_uc.Length == name_uc.Length && RtlCompareMemory(dc2->name_uc.Buffer, name_uc.Buffer, dc2->name_uc.Length) == dc2->name_uc.Length)
+            ) {
+                dc = dc2;
                 break;
+            }
 
             le = le->Flink;
         }
@@ -3286,19 +3284,16 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, true);
 
-    LIST_ENTRY* le = parfileref->fcb->dir_children_index.Flink;
-    while (le != &parfileref->fcb->dir_children_index) {
+    LIST_ENTRY* le = parfileref->fcb->streams.Flink;
+    while (le != &parfileref->fcb->streams) {
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
-        if (dc2->index == 0) {
-            if ((case_sensitive && dc2->name.Length == dc->name.Length && RtlCompareMemory(dc2->name.Buffer, dc->name.Buffer, dc2->name.Length) == dc2->name.Length) ||
-                (!case_sensitive && dc2->name_uc.Length == dc->name_uc.Length && RtlCompareMemory(dc2->name_uc.Buffer, dc->name_uc.Buffer, dc2->name_uc.Length) == dc2->name_uc.Length)
-            ) {
-                existing_dc = dc2;
-                break;
-            }
-        } else
+        if ((case_sensitive && dc2->name.Length == dc->name.Length && RtlCompareMemory(dc2->name.Buffer, dc->name.Buffer, dc2->name.Length) == dc2->name.Length) ||
+            (!case_sensitive && dc2->name_uc.Length == dc->name_uc.Length && RtlCompareMemory(dc2->name_uc.Buffer, dc->name_uc.Buffer, dc2->name_uc.Length) == dc2->name_uc.Length)
+        ) {
+            existing_dc = dc2;
             break;
+        }
 
         le = le->Flink;
     }
@@ -3321,7 +3316,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     fileref->parent = (struct _file_ref*)parfileref;
     fcb->deleted = false;
 
-    InsertHeadList(&parfileref->fcb->dir_children_index, &dc->list_entry_index);
+    InsertHeadList(&parfileref->fcb->streams, &dc->list_entry_index);
 
     InsertTailList(&parfileref->children, &fileref->list_entry);
 
@@ -4051,32 +4046,29 @@ static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_
             }
 
             // remove streams and send notifications
-            le = fileref->fcb->dir_children_index.Flink;
-            while (le != &fileref->fcb->dir_children_index) {
+            le = fileref->fcb->streams.Flink;
+            while (le != &fileref->fcb->streams) {
                 dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
                 LIST_ENTRY* le2 = le->Flink;
 
-                if (dc->index == 0) {
-                    if (!dc->fileref) {
-                        file_ref* fr2;
+                if (!dc->fileref) {
+                    file_ref* fr2;
 
-                        Status = open_fileref_child(Vcb, fileref, &dc->name, true, true, true, PagedPool, fileref->trans,
-                                                    true, &fr2, NULL);
-                        if (!NT_SUCCESS(Status))
-                            WARN("open_fileref_child returned %08lx\n", Status);
+                    Status = open_fileref_child(Vcb, fileref, &dc->name, true, true, true, PagedPool, fileref->trans,
+                                                true, &fr2, NULL);
+                    if (!NT_SUCCESS(Status))
+                        WARN("open_fileref_child returned %08lx\n", Status);
+                }
+
+                if (dc->fileref) {
+                    queue_notification_fcb(fileref, FILE_NOTIFY_CHANGE_STREAM_NAME, FILE_ACTION_REMOVED_STREAM, &dc->name);
+
+                    Status = delete_fileref(dc->fileref, NULL, false, NULL, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_fileref returned %08lx\n", Status);
+                        return Status;
                     }
-
-                    if (dc->fileref) {
-                        queue_notification_fcb(fileref, FILE_NOTIFY_CHANGE_STREAM_NAME, FILE_ACTION_REMOVED_STREAM, &dc->name);
-
-                        Status = delete_fileref(dc->fileref, NULL, false, NULL, rollback);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("delete_fileref returned %08lx\n", Status);
-                            return Status;
-                        }
-                    }
-                } else
-                    break;
+                }
 
                 le = le2;
             }

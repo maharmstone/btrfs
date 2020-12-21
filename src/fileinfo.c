@@ -713,7 +713,7 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
             file_ref* fr;
             move_entry* me2;
 
-            Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false,
+            Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, false,
                                         PagedPool, trans, dc->type != BTRFS_TYPE_DIRECTORY, &fr, Irp);
 
             if (!NT_SUCCESS(Status)) {
@@ -751,7 +751,7 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
                 continue;
             }
 
-            Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, dc->index == 0 ? true : false,
+            Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, false,
                                         PagedPool, NULL, false, &fr, Irp);
 
             if (!NT_SUCCESS(Status)) {
@@ -774,6 +774,47 @@ static NTSTATUS add_children_to_move_list(device_extension* Vcb, move_entry* me,
 
             le = le->Flink;
         }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS add_streams_to_move_list(device_extension* Vcb, move_entry* me, PIRP Irp) {
+    NTSTATUS Status;
+    LIST_ENTRY* le;
+
+    if (IsListEmpty(&me->fileref->fcb->streams))
+        return STATUS_SUCCESS;
+
+    le = me->fileref->fcb->dir_children_index.Flink;
+
+    while (le != &me->fileref->fcb->streams) {
+        dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+        file_ref* fr;
+        move_entry* me2;
+
+        Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, true, PagedPool,
+                                    NULL, false, &fr, Irp);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("open_fileref_child returned %08lx\n", Status);
+            return Status;
+        }
+
+        me2 = ExAllocatePoolWithTag(PagedPool, sizeof(move_entry), ALLOC_TAG);
+        if (!me2) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        me2->fileref = fr;
+        me2->dummyfcb = NULL;
+        me2->dummyfileref = NULL;
+        me2->parent = me;
+
+        InsertHeadList(&me->list_entry, &me2->list_entry);
+
+        le = le->Flink;
     }
 
     return STATUS_SUCCESS;
@@ -970,6 +1011,15 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             if (!NT_SUCCESS(Status)) {
                 ERR("add_children_to_move_list returned %08lx\n", Status);
                 goto end;
+            }
+
+            if (!fileref->fcb->ads) {
+                Status = add_streams_to_move_list(fileref->fcb->Vcb, me, Irp);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_streams_to_move_list returned %08lx\n", Status);
+                    goto end;
+                }
             }
         }
 
@@ -1325,7 +1375,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
 
                 if (me->fileref->fcb->ads)
-                    InsertHeadList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                    InsertHeadList(&me->parent->fileref->fcb->streams, &me->fileref->dc->list_entry_index);
                 else {
                     if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE)
                         me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
@@ -1626,6 +1676,10 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     fileref->fcb->marked_as_orphan = ofr->fcb->marked_as_orphan;
     fileref->fcb->case_sensitive = ofr->fcb->case_sensitive;
     fileref->fcb->case_sensitive_set = ofr->fcb->case_sensitive_set;
+
+    while (!IsListEmpty(&ofr->fcb->streams)) {
+        InsertTailList(&fileref->fcb->streams, RemoveHeadList(&ofr->fcb->streams));
+    }
 
     while (!IsListEmpty(&ofr->fcb->dir_children_index)) {
         InsertTailList(&fileref->fcb->dir_children_index, RemoveHeadList(&ofr->fcb->dir_children_index));
@@ -2397,6 +2451,10 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         le = le->Flink;
     }
 
+    while (!IsListEmpty(&fileref->fcb->streams)) {
+        InsertTailList(&dummyfcb->streams, RemoveHeadList(&fileref->fcb->streams));
+    }
+
     while (!IsListEmpty(&fileref->fcb->dir_children_index)) {
         InsertTailList(&dummyfcb->dir_children_index, RemoveHeadList(&fileref->fcb->dir_children_index));
     }
@@ -2472,7 +2530,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     dc->name_uc = utf16uc;
     dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)dc->name_uc.Buffer, dc->name_uc.Length);
     dc->fileref = fileref;
-    InsertTailList(&dummyfcb->dir_children_index, &dc->list_entry_index);
+    InsertTailList(&dummyfcb->streams, &dc->list_entry_index);
 
     fileref->dc = dc;
     fileref->parent = dummyfileref;
@@ -4453,8 +4511,8 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
 
     ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, true);
 
-    le = fileref->fcb->dir_children_index.Flink;
-    while (le != &fileref->fcb->dir_children_index) {
+    le = fileref->fcb->streams.Flink;
+    while (le != &fileref->fcb->streams) {
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
         if (dc->index == 0) {
@@ -4493,8 +4551,8 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
     }
 
-    le = fileref->fcb->dir_children_index.Flink;
-    while (le != &fileref->fcb->dir_children_index) {
+    le = fileref->fcb->streams.Flink;
+    while (le != &fileref->fcb->streams) {
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
         if (dc->index == 0) {
