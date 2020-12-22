@@ -2310,13 +2310,13 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
                 InsertTailList(&fileref->fcb->Vcb->drop_roots, &fileref->fcb->subvol->list_entry);
 
-                le = fileref->children.Flink;
-                while (le != &fileref->children) {
-                    file_ref* fr2 = CONTAINING_RECORD(le, file_ref, list_entry);
+                le = fileref->fcb->streams.Flink;
+                while (le != &fileref->fcb->streams) {
+                    dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
-                    if (fr2->fcb->ads) {
-                        fr2->fcb->deleted = true;
-                        mark_fcb_dirty(fr2->fcb);
+                    if (dc->fileref) {
+                        dc->fileref->fcb->deleted = true;
+                        mark_fcb_dirty(dc->fileref->fcb);
                     }
 
                     le = le->Flink;
