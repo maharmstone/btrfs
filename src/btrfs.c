@@ -1858,9 +1858,6 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
         fr->dc->fileref = NULL;
     }
 
-    if (fr->list_entry.Flink)
-        RemoveEntryList(&fr->list_entry);
-
     if (fr->parent)
         free_fileref(fr->parent);
 

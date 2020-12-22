@@ -343,7 +343,6 @@ typedef struct _file_ref {
 
     bool dirty;
 
-    LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
     LIST_ENTRY list_entry_trans;
 } file_ref;

@@ -1342,8 +1342,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             me->dummyfileref->fcb->fileref = me->dummyfileref;
 
         if (!me->parent) {
-            RemoveEntryList(&me->fileref->list_entry);
-
             increase_fileref_refcount(destdir);
 
             if (me->fileref->dc) {
@@ -1807,11 +1805,6 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     fileref->created = ofr->created;
 
     fileref->parent = ofr->parent;
-
-    RemoveEntryList(&fileref->list_entry);
-    InsertHeadList(ofr->list_entry.Blink, &fileref->list_entry);
-    RemoveEntryList(&ofr->list_entry);
-    ofr->list_entry.Flink = ofr->list_entry.Blink = NULL;
 
     dc = fileref->dc;
 
@@ -2531,10 +2524,6 @@ static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_loc
     dummyfileref->created = fileref->created;
     dummyfileref->parent = fileref->parent;
 
-    InsertTailList(fileref->list_entry.Blink, &dummyfileref->list_entry);
-
-    RemoveEntryList(&fileref->list_entry);
-
     dummyfileref->dc = fileref->dc;
     dummyfileref->dc->fileref = dummyfileref;
 
@@ -3059,9 +3048,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fileref->deleted = false;
     fileref->created = true;
     fileref->parent = related;
-
-    InsertHeadList(&fileref->list_entry, &fr2->list_entry);
-    RemoveEntryList(&fileref->list_entry);
 
     mark_fileref_dirty(fr2);
     mark_fileref_dirty(fileref);
