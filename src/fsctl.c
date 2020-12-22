@@ -452,8 +452,6 @@ static NTSTATUS do_create_snapshot(_In_ _Requires_exclusive_lock_held_(_Curr_->t
     fr->dc = dc;
     dc->fileref = fr;
 
-    InsertTailList(&fileref->children, &fr->list_entry);
-
     increase_fileref_refcount(fileref);
 
     fr->created = true;
@@ -1095,8 +1093,6 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
 
     RtlZeroMemory(fr->fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
-
-    InsertTailList(&fileref->children, &fr->list_entry);
 
     increase_fileref_refcount(fileref);
 
@@ -4009,8 +4005,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     fileref->dc = dc;
     dc->fileref = fileref;
-
-    InsertTailList(&parfileref->children, &fileref->list_entry);
 
     increase_fileref_refcount(parfileref);
 

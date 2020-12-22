@@ -331,7 +331,6 @@ typedef struct _file_ref {
     bool posix_delete;
     bool deleted;
     bool created;
-    LIST_ENTRY children;
     LONG refcount;
     LONG open_count;
     struct _file_ref* parent;

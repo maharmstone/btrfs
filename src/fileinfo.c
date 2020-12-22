@@ -1352,8 +1352,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me->dummyfileref->parent = me->parent ? me->parent->dummyfileref : origparent;
         increase_fileref_refcount(me->dummyfileref->parent);
 
-        InsertTailList(&me->dummyfileref->parent->children, &me->dummyfileref->list_entry);
-
         if (me->dummyfileref->fcb->type == BTRFS_TYPE_DIRECTORY)
             me->dummyfileref->fcb->fileref = me->dummyfileref;
 
@@ -1431,8 +1429,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
             free_fileref(me->fileref->parent);
             me->fileref->parent = destdir;
-
-            InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
 
             if (!trans) {
                 TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
@@ -1758,11 +1754,29 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     fileref->fcb->case_sensitive_set = ofr->fcb->case_sensitive_set;
 
     while (!IsListEmpty(&ofr->fcb->streams)) {
-        InsertTailList(&fileref->fcb->streams, RemoveHeadList(&ofr->fcb->streams));
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&ofr->fcb->streams), dir_child, list_entry_index);
+
+        if (dc->fileref) {
+            free_fileref(dc->fileref->parent);
+
+            dc->fileref->parent = fileref;
+            InterlockedIncrement(&fileref->refcount);
+        }
+
+        InsertTailList(&fileref->fcb->streams, &dc->list_entry_index);
     }
 
     while (!IsListEmpty(&ofr->fcb->dir_children_index)) {
-        InsertTailList(&fileref->fcb->dir_children_index, RemoveHeadList(&ofr->fcb->dir_children_index));
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&ofr->fcb->dir_children_index), dir_child, list_entry_index);
+
+        if (dc->fileref) {
+            free_fileref(dc->fileref->parent);
+
+            dc->fileref->parent = fileref;
+            InterlockedIncrement(&fileref->refcount);
+        }
+
+        InsertTailList(&fileref->fcb->dir_children_index, &dc->list_entry_index);
     }
 
     while (!IsListEmpty(&ofr->fcb->dir_children_hash)) {
@@ -1836,17 +1850,6 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     InsertHeadList(ofr->list_entry.Blink, &fileref->list_entry);
     RemoveEntryList(&ofr->list_entry);
     ofr->list_entry.Flink = ofr->list_entry.Blink = NULL;
-
-    while (!IsListEmpty(&ofr->children)) {
-        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&ofr->children), file_ref, list_entry);
-
-        free_fileref(fr->parent);
-
-        fr->parent = fileref;
-        InterlockedIncrement(&fileref->refcount);
-
-        InsertTailList(&fileref->children, &fr->list_entry);
-    }
 
     dc = fileref->dc;
 
@@ -2534,11 +2537,29 @@ static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_loc
     }
 
     while (!IsListEmpty(&fileref->fcb->streams)) {
-        InsertTailList(&dummyfcb->streams, RemoveHeadList(&fileref->fcb->streams));
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&fileref->fcb->streams), dir_child, list_entry_index);
+
+        if (dc->fileref) {
+            free_fileref(dc->fileref->parent);
+
+            dc->fileref->parent = dummyfileref;
+            InterlockedIncrement(&dummyfileref->refcount);
+        }
+
+        InsertTailList(&dummyfcb->streams, &dc->list_entry_index);
     }
 
     while (!IsListEmpty(&fileref->fcb->dir_children_index)) {
-        InsertTailList(&dummyfcb->dir_children_index, RemoveHeadList(&fileref->fcb->dir_children_index));
+        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&fileref->fcb->dir_children_index), dir_child, list_entry_index);
+
+        if (dc->fileref) {
+            free_fileref(dc->fileref->parent);
+
+            dc->fileref->parent = dummyfileref;
+            InterlockedIncrement(&dummyfileref->refcount);
+        }
+
+        InsertTailList(&dummyfcb->dir_children_index, &dc->list_entry_index);
     }
 
     while (!IsListEmpty(&fileref->fcb->dir_children_hash)) {
@@ -2571,21 +2592,9 @@ static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_loc
     dummyfileref->created = fileref->created;
     dummyfileref->parent = fileref->parent;
 
-    while (!IsListEmpty(&fileref->children)) {
-        file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&fileref->children), file_ref, list_entry);
-
-        free_fileref(fr->parent);
-
-        fr->parent = dummyfileref;
-        InterlockedIncrement(&dummyfileref->refcount);
-
-        InsertTailList(&dummyfileref->children, &fr->list_entry);
-    }
-
     InsertTailList(fileref->list_entry.Blink, &dummyfileref->list_entry);
 
     RemoveEntryList(&fileref->list_entry);
-    InsertTailList(&dummyfileref->children, &fileref->list_entry);
 
     dummyfileref->dc = fileref->dc;
     dummyfileref->dc->fileref = dummyfileref;
@@ -3174,8 +3183,6 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         InsertTailList(&related->fcb->dir_children_index, &fileref->dc->list_entry_index);
         insert_dir_child_into_hash_lists(related->fcb, fileref->dc);
     }
-
-    InsertTailList(&related->children, &fileref->list_entry);
 
     if (fcb->inode_item.st_nlink > 1) {
         // add new hardlink entry to fcb
@@ -3805,8 +3812,6 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     fr2->dc = dc;
     dc->fileref = fr2;
-
-    InsertTailList(&related->children, &fr2->list_entry);
 
     // add hardlink for existing fileref, if it's not there already
     if (IsListEmpty(&fcb->hardlinks)) {

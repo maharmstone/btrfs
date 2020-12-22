@@ -172,8 +172,6 @@ file_ref* create_fileref(device_extension* Vcb) {
     WARN("fileref %p: refcount now 1\n", fr);
 #endif
 
-    InitializeListHead(&fr->children);
-
     return fr;
 }
 
@@ -1665,7 +1663,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             sf2->dc = dc;
             dc->fileref = sf2;
             increase_fileref_refcount(sf);
-            InsertTailList(&sf->children, &sf2->list_entry);
         }
 
         ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
@@ -1738,7 +1735,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                 old_fr->parent = (struct _file_ref*)sf;
                 old_fr->dc = old_dc;
                 old_dc->fileref = old_fr;
-                InsertTailList(&sf->children, &old_fr->list_entry);
                 increase_fileref_refcount(sf);
 
                 mark_fileref_dirty(old_fr);
@@ -1943,7 +1939,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                             old_fr->parent = (struct _file_ref*)parfr;
                             old_fr->dc = old_dc2;
                             old_dc2->fileref = old_fr;
-                            InsertTailList(&parfr->children, &old_fr->list_entry);
                             increase_fileref_refcount(parfr);
 
                             mark_fileref_dirty(old_fr);
@@ -1969,7 +1964,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                         forked_fileref->parent = (struct _file_ref*)sf;
                         forked_fileref->dc = forked_dc;
                         forked_dc->fileref = forked_fileref;
-                        InsertTailList(&parfr->children, &forked_fileref->list_entry);
                         increase_fileref_refcount(sf);
 
                         add_fileref_to_trans(forked_fileref, trans);
@@ -2010,7 +2004,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             sf2->parent = (struct _file_ref*)sf;
             sf2->dc = dc;
             dc->fileref = sf2;
-            InsertTailList(&sf->children, &sf2->list_entry);
             increase_fileref_refcount(sf);
         } else {
             duff_fr = sf2;
@@ -2979,7 +2972,6 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
     if (type == BTRFS_TYPE_DIRECTORY)
         fileref->fcb->fileref = fileref;
 
-    InsertTailList(&parfileref->children, &fileref->list_entry);
     ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
     ExFreePool(utf8);
@@ -3311,8 +3303,6 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) device_ext
     fcb->deleted = false;
 
     InsertHeadList(&parfileref->fcb->streams, &dc->list_entry_index);
-
-    InsertTailList(&parfileref->children, &fileref->list_entry);
 
     ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
