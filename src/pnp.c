@@ -28,9 +28,25 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
-    if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
-        ExReleaseResourceLite(&Vcb->tree_lock);
-        return STATUS_ACCESS_DENIED;
+    if (Vcb->root_fileref && Vcb->root_fileref->fcb) {
+        bool open_children;
+
+        if (Vcb->root_fileref->open_count > 0) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            return STATUS_ACCESS_DENIED;
+        }
+
+        Status = check_for_open_children(Vcb->root_fileref, &open_children);
+        if (!NT_SUCCESS(Status)) {
+            ERR("check_for_open_children returned %08lx\n", Status);
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            return Status;
+        }
+
+        if (open_children) {
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            return STATUS_ACCESS_DENIED;
+        }
     }
 
     if (Vcb->need_write && !Vcb->readonly) {

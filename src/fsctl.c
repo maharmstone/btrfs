@@ -2258,10 +2258,27 @@ static NTSTATUS lock_volume(device_extension* Vcb, PIRP Irp) {
 
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
 
-    if (Vcb->root_fileref && Vcb->root_fileref->fcb && (Vcb->root_fileref->open_count > 0 || has_open_children(Vcb->root_fileref))) {
-        Status = STATUS_ACCESS_DENIED;
-        ExReleaseResourceLite(&Vcb->fileref_lock);
-        goto end;
+    if (Vcb->root_fileref && Vcb->root_fileref->fcb) {
+        bool open_children;
+
+        if (Vcb->root_fileref->open_count > 0) {
+            Status = STATUS_ACCESS_DENIED;
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+            goto end;
+        }
+
+        Status = check_for_open_children(Vcb->root_fileref, &open_children);
+        if (!NT_SUCCESS(Status)) {
+            ERR("check_for_open_children returned %08lx\n", Status);
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+            goto end;
+        }
+
+        if (open_children) {
+            Status = STATUS_ACCESS_DENIED;
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+            goto end;
+        }
     }
 
     ExReleaseResourceLite(&Vcb->fileref_lock);

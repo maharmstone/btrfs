@@ -402,25 +402,100 @@ end:
     return Status;
 }
 
-bool has_open_children(file_ref* fileref) {
-    LIST_ENTRY* le = fileref->children.Flink;
+NTSTATUS check_for_open_children(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb->Vcb->fileref_lock) file_ref* fileref,
+                                 _Out_ bool* open) {
+    NTSTATUS Status;
+    LIST_ENTRY list, *le;
 
-    if (IsListEmpty(&fileref->children))
-        return false;
+    typedef struct {
+        LIST_ENTRY list_entry;
+        file_ref* fileref;
+    } frle;
 
-    while (le != &fileref->children) {
-        file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
+    frle* v;
 
-        if (c->open_count > 0)
-            return true;
+    *open = false;
+    Status = STATUS_SUCCESS;
 
-        if (has_open_children(c))
-            return true;
+    InitializeListHead(&list);
+
+    v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
+    if (!v) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    v->fileref = fileref;
+    InsertTailList(&list, &v->list_entry);
+
+    le = list.Flink;
+    while (le != &list) {
+        frle* v2 = CONTAINING_RECORD(le, frle, list_entry);
+
+        if (v2->fileref != fileref && v2->fileref->open_count > 0) {
+            *open = true;
+            break;
+        }
+
+        if (v2->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            LIST_ENTRY* le2;
+
+            le2 = v2->fileref->fcb->dir_children_index.Flink;
+
+            while (le2 != &v2->fileref->fcb->dir_children_index) {
+                dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
+
+                if (dc->fileref) {
+                    if (dc->fileref->open_count > 0) {
+                        *open = true;
+                        goto end;
+                    }
+
+                    if (dc->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+                        v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
+                        if (!v) {
+                            ERR("out of memory\n");
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                            goto end;
+                        }
+
+                        v->fileref = dc->fileref;
+                        InsertTailList(&list, &v->list_entry);
+                    }
+                }
+
+                le2 = le2->Flink;
+            }
+        }
+
+        if (!IsListEmpty(&v2->fileref->fcb->streams)) {
+            LIST_ENTRY* le2;
+
+            le2 = v2->fileref->fcb->streams.Flink;
+
+            while (le2 != &v2->fileref->fcb->streams) {
+                dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
+
+                if (dc->fileref && dc->fileref->open_count > 0) {
+                    *open = true;
+                    goto end;
+                }
+
+                le2 = le2->Flink;
+            }
+        }
 
         le = le->Flink;
     }
 
-    return false;
+end:
+    while (!IsListEmpty(&list)) {
+        frle* v2 = CONTAINING_RECORD(RemoveHeadList(&list), frle, list_entry);
+
+        ExFreePool(v2);
+    }
+
+    return Status;
 }
 
 NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
@@ -2579,6 +2654,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     SECURITY_SUBJECT_CONTEXT subjcont;
     ACCESS_MASK access;
     ULONG flags;
+    bool open_children;
 
     InitializeListHead(&rollback);
 
@@ -2712,7 +2788,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             } else if (fileref == oldfileref) {
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            } else if (!(flags & FILE_RENAME_POSIX_SEMANTICS) && (oldfileref->open_count > 0 || has_open_children(oldfileref)) && !oldfileref->deleted) {
+            } else if (!(flags & FILE_RENAME_POSIX_SEMANTICS) && oldfileref->open_count > 0 && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -2724,6 +2800,22 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
                 WARN("trying to overwrite directory\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
+            }
+
+            if (!(flags & FILE_LINK_POSIX_SEMANTICS) && !oldfileref->deleted) {
+                bool open_children;
+
+                Status = check_for_open_children(oldfileref, &open_children);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("check_for_open_children returned %08lx\n", Status);
+                    goto end;
+                }
+
+                if (open_children) {
+                    WARN("trying to overwrite open file\n");
+                    Status = STATUS_ACCESS_DENIED;
+                    goto end;
+                }
             }
         }
 
@@ -2759,7 +2851,13 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     SeReleaseSubjectContext(&subjcont);
 
-    if (has_open_children(fileref)) {
+    Status = check_for_open_children(fileref, &open_children);
+    if (!NT_SUCCESS(Status)) {
+        ERR("check_for_open_children returned %08lx\n", Status);
+        goto end;
+    }
+
+    if (open_children) {
         WARN("trying to rename file with open children\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -3606,7 +3704,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
             } else if (fileref == oldfileref) {
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            } else if (!(flags & FILE_LINK_POSIX_SEMANTICS) && (oldfileref->open_count > 0 || has_open_children(oldfileref)) && !oldfileref->deleted) {
+            } else if (!(flags & FILE_LINK_POSIX_SEMANTICS) && oldfileref->open_count > 0 && !oldfileref->deleted) {
                 WARN("trying to overwrite open file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -3618,6 +3716,22 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
                 WARN("trying to overwrite directory\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
+            }
+
+            if (!(flags & FILE_LINK_POSIX_SEMANTICS) && !oldfileref->deleted) {
+                bool open_children;
+
+                Status = check_for_open_children(oldfileref, &open_children);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("check_for_open_children returned %08lx\n", Status);
+                    goto end;
+                }
+
+                if (open_children) {
+                    WARN("trying to overwrite open file\n");
+                    Status = STATUS_ACCESS_DENIED;
+                    goto end;
+                }
             }
         } else {
             free_fileref(oldfileref);

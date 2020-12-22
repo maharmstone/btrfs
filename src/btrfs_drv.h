@@ -1412,7 +1412,8 @@ _Dispatch_type_(IRP_MJ_SET_EA)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-bool has_open_children(file_ref* fileref);
+NTSTATUS check_for_open_children(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb->Vcb->fileref_lock) file_ref* fileref,
+                                 _Out_ bool* open);
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end, fcb* fcb, file_ref* fileref, bool advance_only);
 NTSTATUS fileref_get_filename(_In_ _Requires_lock_held_(_Curr_->fcb->Vcb->fileref_lock) file_ref* fileref,
                               _Out_ PUNICODE_STRING fn, _Out_opt_ USHORT* name_offset, _Out_opt_ ULONG* preqlen);
