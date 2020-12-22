@@ -1154,7 +1154,6 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
 void reap_fcb(fcb* fcb);
 void reap_fcbs(device_extension* Vcb);
 void reap_fileref(device_extension* Vcb, file_ref* fr);
-void reap_filerefs(device_extension* Vcb, file_ref* fr);
 uint64_t chunk_estimate_phys_size(device_extension* Vcb, chunk* c, uint64_t u);
 NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, ULONG src_len);
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len);
@@ -1294,7 +1293,7 @@ bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
                     traverse_ptr* next_tp, bool ignore, PIRP Irp) __attribute__((nonnull(1,2,3)));
 bool find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
                     traverse_ptr* prev_tp, PIRP Irp) __attribute__((nonnull(1,2,3)));
-void free_trees(device_extension* Vcb) __attribute__((nonnull(1)));
+void free_trees(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb) __attribute__((nonnull(1)));
 NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t obj_id,
                           _In_ uint8_t obj_type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
                           _In_ uint16_t size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2)));

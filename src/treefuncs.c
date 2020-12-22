@@ -819,8 +819,93 @@ void free_trees_root(device_extension* Vcb, root* r) {
     }
 }
 
+typedef struct {
+    LIST_ENTRY list_entry;
+    file_ref* fileref;
+} frle;
+
+static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
+    LIST_ENTRY list, *le;
+    frle* v;
+
+    InitializeListHead(&list);
+
+    // FIXME - would counting the filerefs and allocating an array of pointers be quicker?
+
+    v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
+    if (!v)
+        return;
+
+    v->fileref = Vcb->root_fileref;
+    InsertTailList(&list, &v->list_entry);
+
+    le = list.Flink;
+    while (le != &list) {
+        frle* v2 = CONTAINING_RECORD(le, frle, list_entry);
+
+        if (v2->fileref->fcb->ads) {
+            le = le->Flink;
+            continue;
+        }
+
+        if (v2->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            LIST_ENTRY* le2;
+
+            le2 = v2->fileref->fcb->dir_children_index.Flink;
+
+            while (le2 != &v2->fileref->fcb->dir_children_index) {
+                dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
+
+                if (dc->fileref) {
+                    v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
+                    if (!v)
+                        goto end;
+
+                    v->fileref = dc->fileref;
+                    InsertTailList(&list, &v->list_entry);
+                }
+
+                le2 = le2->Flink;
+            }
+        }
+
+        if (!IsListEmpty(&v2->fileref->fcb->streams)) {
+            LIST_ENTRY* le2;
+
+            le2 = v2->fileref->fcb->streams.Flink;
+
+            while (le2 != &v2->fileref->fcb->streams) {
+                dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
+
+                if (dc->fileref) {
+                    v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
+                    if (!v)
+                        goto end;
+
+                    v->fileref = dc->fileref;
+                    InsertTailList(&list, &v->list_entry);
+                }
+
+                le2 = le2->Flink;
+            }
+        }
+
+        le = le->Flink;
+    }
+
+end:
+    while (!IsListEmpty(&list)) {
+        frle* v2 = CONTAINING_RECORD(RemoveTailList(&list), frle, list_entry);
+
+        if (v2->fileref->refcount == 0)
+            reap_fileref(Vcb, v2->fileref);
+
+        ExFreePool(v2);
+    }
+}
+
 __attribute__((nonnull(1)))
-void free_trees(device_extension* Vcb) {
+void free_trees(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
     LIST_ENTRY* le;
     ULONG level;
 
@@ -855,7 +940,7 @@ void free_trees(device_extension* Vcb) {
             break;
     }
 
-    reap_filerefs(Vcb, Vcb->root_fileref);
+    reap_filerefs(Vcb);
     reap_fcbs(Vcb);
 }
 

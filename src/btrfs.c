@@ -1871,25 +1871,6 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
 
-void reap_filerefs(device_extension* Vcb, file_ref* fr) {
-    LIST_ENTRY* le;
-
-    // FIXME - recursion is a bad idea in kernel mode
-
-    le = fr->children.Flink;
-    while (le != &fr->children) {
-        file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
-        LIST_ENTRY* le2 = le->Flink;
-
-        reap_filerefs(Vcb, c);
-
-        le = le2;
-    }
-
-    if (fr->refcount == 0)
-        reap_fileref(Vcb, fr);
-}
-
 static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
     fcb* fcb;
     ccb* ccb;
