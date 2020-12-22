@@ -324,6 +324,10 @@ typedef struct _fcb {
     LIST_ENTRY list_entry_dirty;
 } fcb;
 
+typedef struct _dcb {
+    struct _fcb fcb;
+} dcb;
+
 typedef struct _file_ref {
     fcb* fcb;
     ANSI_STRING oldutf8;
@@ -815,6 +819,7 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST batch_item_lookaside;
     PAGED_LOOKASIDE_LIST fileref_lookaside;
     PAGED_LOOKASIDE_LIST fcb_lookaside;
+    PAGED_LOOKASIDE_LIST dcb_lookaside;
     PAGED_LOOKASIDE_LIST name_bit_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
     NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
@@ -1450,7 +1455,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                             _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
                             _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2,
                             _In_opt_ PIRP Irp);
-fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type);
+fcb* create_fcb(device_extension* Vcb, bool is_dir, POOL_TYPE pool_type);
 NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
                           bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc);
 uint32_t inherit_mode(fcb* parfcb, bool is_dir);

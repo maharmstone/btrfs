@@ -953,7 +953,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     // add .. inode to new subvol
 
-    rootfcb = create_fcb(Vcb, PagedPool);
+    rootfcb = create_fcb(Vcb, true, PagedPool);
     if (!rootfcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3831,7 +3831,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
 
-    fcb = create_fcb(Vcb, PagedPool);
+    fcb = create_fcb(Vcb, bmn->type == BTRFS_TYPE_DIRECTORY, PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -3916,7 +3916,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     SeCaptureSubjectContext(&subjcont);
 
-    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
+    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, bmn->type == BTRFS_TYPE_DIRECTORY,
                                 SEF_SACL_AUTO_INHERIT, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
 
     if (!NT_SUCCESS(Status)) {

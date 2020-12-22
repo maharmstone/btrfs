@@ -85,17 +85,21 @@ typedef struct {
     file_ref* fileref;
 } oplock_context;
 
-fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
+fcb* create_fcb(device_extension* Vcb, bool is_dir, POOL_TYPE pool_type) {
     fcb* fcb;
 
     if (pool_type == NonPagedPool) {
-        fcb = ExAllocatePoolWithTag(pool_type, sizeof(struct _fcb), ALLOC_TAG);
+        fcb = ExAllocatePoolWithTag(pool_type, is_dir ? sizeof(struct _dcb) : sizeof(struct _fcb), ALLOC_TAG);
         if (!fcb) {
             ERR("out of memory\n");
             return NULL;
         }
     } else {
-        fcb = ExAllocateFromPagedLookasideList(&Vcb->fcb_lookaside);
+        if (is_dir)
+            fcb = ExAllocateFromPagedLookasideList(&Vcb->dcb_lookaside);
+        else
+            fcb = ExAllocateFromPagedLookasideList(&Vcb->fcb_lookaside);
+
         if (!fcb) {
             ERR("out of memory\n");
             return NULL;
@@ -105,11 +109,11 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("allocating fcb %p\n", fcb);
 #endif
-    RtlZeroMemory(fcb, sizeof(struct _fcb));
+    RtlZeroMemory(fcb, is_dir ? sizeof(struct _dcb) : sizeof(struct _fcb));
     fcb->pool_type = pool_type;
 
     fcb->Header.NodeTypeCode = BTRFS_NODE_TYPE_FCB;
-    fcb->Header.NodeByteSize = sizeof(struct _fcb);
+    fcb->Header.NodeByteSize = is_dir ? sizeof(struct _dcb) : sizeof(struct _fcb);
 
     fcb->nonpaged = ExAllocateFromNPagedLookasideList(&Vcb->fcb_np_lookaside);
     if (!fcb->nonpaged) {
@@ -117,6 +121,8 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
 
         if (pool_type == NonPagedPool)
             ExFreePool(fcb);
+        else if (is_dir)
+            ExFreeToPagedLookasideList(&Vcb->dcb_lookaside, fcb);
         else
             ExFreeToPagedLookasideList(&Vcb->fcb_lookaside, fcb);
 
@@ -842,7 +848,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
         return STATUS_SUCCESS;
     }
 
-    fcb = create_fcb(Vcb, pooltype);
+    fcb = create_fcb(Vcb, type == BTRFS_TYPE_DIRECTORY, pooltype);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1460,7 +1466,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) device_e
     RtlCopyMemory(&xattr.Buffer[sizeof(xapref) - 1], dc->utf8.Buffer, dc->utf8.Length);
     xattr.Buffer[xattr.Length] = 0;
 
-    fcb = create_fcb(Vcb, PagedPool);
+    fcb = create_fcb(Vcb, parent->type == BTRFS_TYPE_DIRECTORY, PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
         ExFreePool(xattr.Buffer);
@@ -2625,7 +2631,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
     if (IrpSp->Parameters.Create.FileAttributes == FILE_ATTRIBUTE_NORMAL)
         IrpSp->Parameters.Create.FileAttributes = defda;
 
-    fcb = create_fcb(Vcb, pool_type);
+    fcb = create_fcb(Vcb, type == BTRFS_TYPE_DIRECTORY, pool_type);
     if (!fcb) {
         ERR("out of memory\n");
         ExFreePool(utf8);
@@ -3111,7 +3117,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) device_ext
         return STATUS_OBJECT_NAME_INVALID;
     }
 
-    fcb = create_fcb(Vcb, pool_type);
+    fcb = create_fcb(Vcb, parfileref->fcb->type == BTRFS_TYPE_DIRECTORY, pool_type);
     if (!fcb) {
         ERR("out of memory\n");
         free_fileref(parfileref);

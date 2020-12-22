@@ -1803,6 +1803,8 @@ void reap_fcb(fcb* fcb) {
 
     if (fcb->pool_type == NonPagedPool)
         ExFreePool(fcb);
+    else if (!fcb->ads && fcb->type == BTRFS_TYPE_DIRECTORY)
+        ExFreeToPagedLookasideList(&fcb->Vcb->dcb_lookaside, fcb);
     else
         ExFreeToPagedLookasideList(&fcb->Vcb->fcb_lookaside, fcb);
 }
@@ -2149,6 +2151,7 @@ void uninit(_In_ device_extension* Vcb) {
     ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
     ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
     ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
+    ExDeletePagedLookasideList(&Vcb->dcb_lookaside);
     ExDeletePagedLookasideList(&Vcb->name_bit_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
@@ -4708,6 +4711,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->batch_item_lookaside, NULL, NULL, 0, sizeof(batch_item), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->fileref_lookaside, NULL, NULL, 0, sizeof(file_ref), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->fcb_lookaside, NULL, NULL, 0, sizeof(fcb), ALLOC_TAG, 0);
+    ExInitializePagedLookasideList(&Vcb->dcb_lookaside, NULL, NULL, 0, sizeof(dcb), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->name_bit_lookaside, NULL, NULL, 0, sizeof(name_bit), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->fcb_np_lookaside, NULL, NULL, 0, sizeof(fcb_nonpaged), ALLOC_TAG, 0);
@@ -4809,7 +4813,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    Vcb->volume_fcb = create_fcb(Vcb, NonPagedPool);
+    Vcb->volume_fcb = create_fcb(Vcb, false, NonPagedPool);
     if (!Vcb->volume_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -4819,7 +4823,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
 
-    Vcb->dummy_fcb = create_fcb(Vcb, NonPagedPool);
+    Vcb->dummy_fcb = create_fcb(Vcb, false, NonPagedPool);
     if (!Vcb->dummy_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -4852,7 +4856,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     RtlZeroMemory(Vcb->dummy_fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
 
-    root_fcb = create_fcb(Vcb, NonPagedPool);
+    root_fcb = create_fcb(Vcb, true, NonPagedPool);
     if (!root_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -5034,6 +5038,7 @@ exit2:
                 ExDeletePagedLookasideList(&Vcb->batch_item_lookaside);
                 ExDeletePagedLookasideList(&Vcb->fileref_lookaside);
                 ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
+                ExDeletePagedLookasideList(&Vcb->dcb_lookaside);
                 ExDeletePagedLookasideList(&Vcb->name_bit_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);

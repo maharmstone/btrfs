@@ -1135,7 +1135,7 @@ static NTSTATUS allocate_cache_chunk(_In_ _Requires_exclusive_lock_held_(_Curr_-
 
         // create new inode
 
-        c->cache = create_fcb(Vcb, PagedPool);
+        c->cache = create_fcb(Vcb, false, PagedPool);
         if (!c->cache) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;

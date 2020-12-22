@@ -505,7 +505,7 @@ NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
     // FIXME - we can skip a lot of this if the inode is about to be deleted
 
-    fcb = create_fcb(Vcb, PagedPool); // FIXME - what if we duplicate the paging file?
+    fcb = create_fcb(Vcb, oldfcb->type == BTRFS_TYPE_DIRECTORY, PagedPool); // FIXME - what if we duplicate the paging file?
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -946,7 +946,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     LARGE_INTEGER time;
     BTRFS_TIME now;
 
-    fcb = create_fcb(Vcb, PagedPool);
+    fcb = create_fcb(Vcb, true, PagedPool);
     if (!fcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -1708,7 +1708,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
         return STATUS_INVALID_PARAMETER;
     }
 
-    dummyfcb = create_fcb(Vcb, PagedPool);
+    dummyfcb = create_fcb(Vcb, false, PagedPool);
     if (!dummyfcb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -2157,7 +2157,7 @@ static NTSTATUS rename_stream(_In_ _Requires_lock_held_(_Curr_->tree_lock) devic
 
     // add dummy deleted xattr with old name
 
-    dummyfcb = create_fcb(Vcb, PagedPool);
+    dummyfcb = create_fcb(Vcb, false, PagedPool);
     if (!dummyfcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
