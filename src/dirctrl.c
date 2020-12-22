@@ -658,7 +658,8 @@ static NTSTATUS query_dir_item(_In_ _Requires_lock_held_(_Curr_->Vcb->tree_lock)
     return STATUS_NO_MORE_FILES;
 }
 
-static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* de, trans_ref* trans, dir_child** pdc) {
+static NTSTATUS next_dir_entry(_In_ _Requires_lock_held_(_Curr_->fcb->nonpaged->dir_children_lock) file_ref* fileref,
+                               _Inout_ uint64_t* offset, _Out_ dir_entry* de, _In_opt_ trans_ref* trans, _Inout_ dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
 

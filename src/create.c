@@ -2227,8 +2227,10 @@ end2:
     return Status;
 }
 
-NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type,
-                       trans_ref* trans, dir_child** pdc) {
+NTSTATUS add_dir_child(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lock_held_(_Curr_->fileref_lock) fcb* fcb,
+                       _In_ uint64_t inode, _In_ bool subvol, _In_ PANSI_STRING utf8,
+                       _In_ PUNICODE_STRING name, _In_ uint8_t type,
+                       _In_opt_ trans_ref* trans, _Out_ dir_child** pdc) {
     NTSTATUS Status;
     dir_child* dc;
     bool locked;
@@ -3946,7 +3948,8 @@ end:
     fcb->csum_loaded = true;
 }
 
-static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_access, file_ref* fileref, LIST_ENTRY* rollback) {
+static NTSTATUS open_file3(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lock_held_(_Curr_->fileref_lock) device_extension* Vcb,
+                           _In_opt_ PIRP Irp, _In_ ACCESS_MASK granted_access, _In_ file_ref* fileref, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     ULONG options = IrpSp->Parameters.Create.Options & FILE_VALID_OPTION_FLAGS;
@@ -4290,8 +4293,10 @@ static void oplock_complete(PVOID Context, PIRP Irp) {
     ExFreePool(ctx);
 }
 
-static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, file_ref* fileref, ACCESS_MASK* granted_access,
-                           PFILE_OBJECT FileObject, UNICODE_STRING* fn, ULONG options, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS open_file2(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lock_held_(_Curr_->fileref_lock) device_extension* Vcb,
+                           _In_ ULONG RequestedDisposition, _In_ file_ref* fileref, _Out_ ACCESS_MASK* granted_access,
+                           _In_ PFILE_OBJECT FileObject, _In_ UNICODE_STRING* fn, _In_ ULONG options,
+                           _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     NTSTATUS Status;
     file_ref* sf;
     bool readonly;
@@ -4811,8 +4816,9 @@ NTSTATUS open_fileref_by_inode(_In_ _Requires_lock_held_(_Curr_->tree_lock) devi
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp,
-                          trans_ref* trans, LIST_ENTRY* rollback) {
+static NTSTATUS open_file(_In_ PDEVICE_OBJECT DeviceObject,
+                          _In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lock_held_(_Curr_->fileref_lock) device_extension* Vcb,
+                          _In_opt_ PIRP Irp, _In_opt_ trans_ref* trans, _In_ LIST_ENTRY* rollback) {
     PFILE_OBJECT FileObject = NULL;
     ULONG RequestedDisposition;
     ULONG options;

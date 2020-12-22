@@ -823,7 +823,8 @@ static NTSTATUS add_streams_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree_
     return STATUS_SUCCESS;
 }
 
-void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc) {
+void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+                                      _In_ dir_child* dc) {
     uint8_t c;
 
     c = dc->hash >> 24;
@@ -1509,7 +1510,8 @@ end:
     return Status;
 }
 
-void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc) {
+void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+                                      _In_ dir_child* dc) {
     bool inserted;
     LIST_ENTRY* le;
     uint8_t c, d;
@@ -4310,7 +4312,8 @@ static NTSTATUS fill_in_file_position_information(FILE_POSITION_INFORMATION* fpi
     return STATUS_SUCCESS;
 }
 
-NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen) {
+NTSTATUS fileref_get_filename(_In_ _Requires_lock_held_(_Curr_->fcb->Vcb->fileref_lock) file_ref* fileref,
+                              _Out_ PUNICODE_STRING fn, _Out_opt_ USHORT* name_offset, _Out_opt_ ULONG* preqlen) {
     file_ref* fr;
     NTSTATUS Status;
     ULONG reqlen = 0;
@@ -4505,7 +4508,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
         if (dc->index == 0) {
-            reqsize = (ULONG)sector_align(reqsize, sizeof(LONGLONG));
+            reqsize = sector_align32(reqsize, sizeof(LONGLONG));
             reqsize += sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length;
         } else
             break;
@@ -4543,34 +4546,30 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     le = fileref->fcb->streams.Flink;
     while (le != &fileref->fcb->streams) {
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+        ULONG off;
 
-        if (dc->index == 0) {
-            ULONG off;
+        entry->NextEntryOffset = 0;
+        entry->StreamNameLength = dc->name.Length + suf.Length + sizeof(WCHAR);
 
-            entry->NextEntryOffset = 0;
-            entry->StreamNameLength = dc->name.Length + suf.Length + sizeof(WCHAR);
+        if (dc->fileref)
+            entry->StreamSize.QuadPart = dc->fileref->fcb->adsdata.Length;
+        else
+            entry->StreamSize.QuadPart = dc->size;
 
-            if (dc->fileref)
-                entry->StreamSize.QuadPart = dc->fileref->fcb->adsdata.Length;
-            else
-                entry->StreamSize.QuadPart = dc->size;
+        entry->StreamAllocationSize.QuadPart = entry->StreamSize.QuadPart;
 
-            entry->StreamAllocationSize.QuadPart = entry->StreamSize.QuadPart;
+        entry->StreamName[0] = ':';
 
-            entry->StreamName[0] = ':';
+        RtlCopyMemory(&entry->StreamName[1], dc->name.Buffer, dc->name.Length);
+        RtlCopyMemory(&entry->StreamName[1 + (dc->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
 
-            RtlCopyMemory(&entry->StreamName[1], dc->name.Buffer, dc->name.Length);
-            RtlCopyMemory(&entry->StreamName[1 + (dc->name.Length / sizeof(WCHAR))], suf.Buffer, suf.Length);
+        if (lastentry)
+            lastentry->NextEntryOffset = (uint32_t)((uint8_t*)entry - (uint8_t*)lastentry);
 
-            if (lastentry)
-                lastentry->NextEntryOffset = (uint32_t)((uint8_t*)entry - (uint8_t*)lastentry);
+        off = sector_align32(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
 
-            off = sector_align32(sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR) + dc->name.Length, sizeof(LONGLONG));
-
-            lastentry = entry;
-            entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
-        } else
-            break;
+        lastentry = entry;
+        entry = (FILE_STREAM_INFORMATION*)((uint8_t*)entry + off);
 
         le = le->Flink;
     }

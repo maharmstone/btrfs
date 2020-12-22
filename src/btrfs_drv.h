@@ -183,6 +183,10 @@ typedef struct _FSCTL_SET_INTEGRITY_INFORMATION_BUFFER {
 _Create_lock_level_(tree_lock)
 _Create_lock_level_(fcb_lock)
 _Lock_level_order_(tree_lock, fcb_lock)
+_Create_lock_level_(fileref_lock)
+_Lock_level_order_(tree_lock, fileref_lock)
+_Create_lock_level_(dir_children_lock)
+_Lock_level_order_(fileref_lock, dir_children_lock)
 
 #define MAX_HASH_SIZE 32
 
@@ -193,7 +197,7 @@ typedef struct _fcb_nonpaged {
     SECTION_OBJECT_POINTERS segment_object;
     ERESOURCE resource;
     ERESOURCE paging_resource;
-    ERESOURCE dir_children_lock;
+    _Has_lock_level_(dir_children_lock) ERESOURCE dir_children_lock;
 } fcb_nonpaged;
 
 struct _root;
@@ -765,7 +769,7 @@ typedef struct _device_extension {
     file_ref* root_fileref;
     LONG open_files;
     _Has_lock_level_(fcb_lock) ERESOURCE fcb_lock;
-    ERESOURCE fileref_lock;
+    _Has_lock_level_(fileref_lock) ERESOURCE fileref_lock;
     ERESOURCE load_lock;
     _Has_lock_level_(tree_lock) ERESOURCE tree_lock;
     PNOTIFY_SYNC NotifySync;
@@ -1417,9 +1421,12 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 bool has_open_children(file_ref* fileref);
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end, fcb* fcb, file_ref* fileref, bool advance_only);
-NTSTATUS fileref_get_filename(file_ref* fileref, PUNICODE_STRING fn, USHORT* name_offset, ULONG* preqlen);
-void insert_dir_child_into_hash_lists(fcb* fcb, dir_child* dc);
-void remove_dir_child_from_hash_lists(fcb* fcb, dir_child* dc);
+NTSTATUS fileref_get_filename(_In_ _Requires_lock_held_(_Curr_->fcb->Vcb->fileref_lock) file_ref* fileref,
+                              _Out_ PUNICODE_STRING fn, _Out_opt_ USHORT* name_offset, _Out_opt_ ULONG* preqlen);
+void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+                                      _In_ dir_child* dc);
+void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+                                      _In_ dir_child* dc);
 NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb);
 
 // in reparse.c
@@ -1441,7 +1448,10 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
                   PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp);
 NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp);
-NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, trans_ref* trans, dir_child** pdc);
+NTSTATUS add_dir_child(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lock_held_(_Curr_->fileref_lock) fcb* fcb,
+                       _In_ uint64_t inode, _In_ bool subvol, _In_ PANSI_STRING utf8,
+                       _In_ PUNICODE_STRING name, _In_ uint8_t type,
+                       _In_opt_ trans_ref* trans, _Out_ dir_child** pdc);
 NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _In_ file_ref* sf,
                             _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
                             _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2,
