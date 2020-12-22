@@ -139,6 +139,7 @@ fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
     fcb->Header.Resource = &fcb->nonpaged->resource;
 
     ExInitializeResourceLite(&fcb->nonpaged->dir_children_lock);
+    ExInitializeResourceLite(&fcb->nonpaged->streams_lock);
 
     FsRtlInitializeFileLock(&fcb->lock, NULL, NULL);
     FsRtlInitializeOplock(fcb_oplock(fcb));
@@ -1555,8 +1556,8 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             }
         }
 
-        if (!ExIsResourceAcquiredSharedLite(&sf->fcb->nonpaged->dir_children_lock)) {
-            ExAcquireResourceSharedLite(&sf->fcb->nonpaged->dir_children_lock, true);
+        if (!ExIsResourceAcquiredSharedLite(&sf->fcb->nonpaged->streams_lock)) {
+            ExAcquireResourceSharedLite(&sf->fcb->nonpaged->streams_lock, true);
             locked = true;
         }
 
@@ -1576,7 +1577,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
 
         if (!dc) {
             if (locked)
-                ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+                ExReleaseResourceLite(&sf->fcb->nonpaged->streams_lock);
 
             if (!case_sensitive)
                 ExFreePool(name_uc.Buffer);
@@ -1586,7 +1587,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
 
         if (dc->fileref) {
             if (locked)
-                ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+                ExReleaseResourceLite(&sf->fcb->nonpaged->streams_lock);
 
             if (!case_sensitive)
                 ExFreePool(name_uc.Buffer);
@@ -1597,7 +1598,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
         }
 
         if (locked)
-            ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+            ExReleaseResourceLite(&sf->fcb->nonpaged->streams_lock);
 
         if (!case_sensitive)
             ExFreePool(name_uc.Buffer);
@@ -1651,7 +1652,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, true);
+        ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->streams_lock, true);
 
         if (dc->fileref) {
             duff_fr = sf2;
@@ -1665,7 +1666,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             increase_fileref_refcount(sf);
         }
 
-        ExReleaseResourceLite(&sf->fcb->nonpaged->dir_children_lock);
+        ExReleaseResourceLite(&sf->fcb->nonpaged->streams_lock);
 
         if (duff_fr)
             reap_fileref(Vcb, duff_fr);
@@ -3268,7 +3269,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) device_ext
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
 
-    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->dir_children_lock, true);
+    ExAcquireResourceExclusiveLite(&parfileref->fcb->nonpaged->streams_lock, true);
 
     LIST_ENTRY* le = parfileref->fcb->streams.Flink;
     while (le != &parfileref->fcb->streams) {
@@ -3304,7 +3305,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) device_ext
 
     InsertHeadList(&parfileref->fcb->streams, &dc->list_entry_index);
 
-    ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
+    ExReleaseResourceLite(&parfileref->fcb->nonpaged->streams_lock);
 
     mark_fileref_dirty(fileref);
 

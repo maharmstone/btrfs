@@ -198,6 +198,7 @@ typedef struct _fcb_nonpaged {
     ERESOURCE resource;
     ERESOURCE paging_resource;
     _Has_lock_level_(dir_children_lock) ERESOURCE dir_children_lock;
+    ERESOURCE streams_lock;
 } fcb_nonpaged;
 
 struct _root;

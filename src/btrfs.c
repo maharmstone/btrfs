@@ -1726,6 +1726,7 @@ void reap_fcb(fcb* fcb) {
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
+    ExDeleteResourceLite(&fcb->nonpaged->streams_lock);
 
     ExFreeToNPagedLookasideList(&fcb->Vcb->fcb_np_lookaside, fcb->nonpaged);
 
@@ -2333,13 +2334,16 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
     if (fileref->dc) {
         TRACE("delete file %.*S\n", (int)(fileref->dc->name.Length / sizeof(WCHAR)), fileref->dc->name.Buffer);
 
-        ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
-        RemoveEntryList(&fileref->dc->list_entry_index);
-
-        if (!fileref->fcb->ads)
+        if (fileref->fcb->ads) {
+            ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->streams_lock, true);
+            RemoveEntryList(&fileref->dc->list_entry_index);
+            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->streams_lock);
+        } else {
+            ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
+            RemoveEntryList(&fileref->dc->list_entry_index);
             remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
-
-        ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+        }
 
         if (!fileref->oldutf8.Buffer)
             fileref->oldutf8 = fileref->dc->utf8;

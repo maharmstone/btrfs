@@ -39,12 +39,12 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&trans->old_dir_children), dir_child, list_entry_trans);
         NTSTATUS Status;
 
-        ExAcquireResourceExclusiveLite(&dc->fileref->parent->fcb->nonpaged->dir_children_lock, true);
+        ExAcquireResourceExclusiveLite(&dc->fileref->parent->fcb->nonpaged->streams_lock, true);
 
         RemoveEntryList(&dc->list_entry_index);
         remove_dir_child_from_hash_lists(dc->fileref->parent->fcb, dc);
 
-        ExReleaseResourceLite(&dc->fileref->parent->fcb->nonpaged->dir_children_lock);
+        ExReleaseResourceLite(&dc->fileref->parent->fcb->nonpaged->streams_lock);
 
         ExAcquireResourceExclusiveLite(dc->fileref->fcb->Header.Resource, true);
 
@@ -177,12 +177,12 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
         file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&trans->filerefs), file_ref, list_entry_trans);
 
         if (fr->dc) { // delete dir_child
-            ExAcquireResourceExclusiveLite(&fr->parent->fcb->nonpaged->dir_children_lock, true);
+            ExAcquireResourceExclusiveLite(&fr->parent->fcb->nonpaged->streams_lock, true);
 
             RemoveEntryList(&fr->dc->list_entry_index);
             remove_dir_child_from_hash_lists(fr->parent->fcb, fr->dc);
 
-            ExReleaseResourceLite(&fr->parent->fcb->nonpaged->dir_children_lock);
+            ExReleaseResourceLite(&fr->parent->fcb->nonpaged->streams_lock);
 
             ExFreePool(fr->dc->utf8.Buffer);
             ExFreePool(fr->dc->name.Buffer);

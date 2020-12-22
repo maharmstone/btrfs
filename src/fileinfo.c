@@ -4620,7 +4620,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
         reqsize = 0;
 
     ExAcquireResourceSharedLite(&fileref->fcb->Vcb->fileref_lock, true);
-    ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->dir_children_lock, true);
+    ExAcquireResourceSharedLite(&fileref->fcb->nonpaged->streams_lock, true);
 
     le = fileref->fcb->streams.Flink;
     while (le != &fileref->fcb->streams) {
@@ -4698,7 +4698,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     Status = STATUS_SUCCESS;
 
 end:
-    ExReleaseResourceLite(&fileref->fcb->nonpaged->dir_children_lock);
+    ExReleaseResourceLite(&fileref->fcb->nonpaged->streams_lock);
     ExReleaseResourceLite(&fileref->fcb->Vcb->fileref_lock);
 
     return Status;
