@@ -323,10 +323,6 @@ typedef struct _fcb {
     LIST_ENTRY list_entry_dirty;
 } fcb;
 
-typedef struct {
-    ERESOURCE fileref_lock;
-} file_ref_nonpaged;
-
 typedef struct _file_ref {
     fcb* fcb;
     ANSI_STRING oldutf8;
@@ -335,7 +331,6 @@ typedef struct _file_ref {
     bool posix_delete;
     bool deleted;
     bool created;
-    file_ref_nonpaged* nonpaged;
     LIST_ENTRY children;
     LONG refcount;
     LONG open_count;
@@ -822,7 +817,6 @@ typedef struct _device_extension {
     PAGED_LOOKASIDE_LIST fcb_lookaside;
     PAGED_LOOKASIDE_LIST name_bit_lookaside;
     NPAGED_LOOKASIDE_LIST range_lock_lookaside;
-    NPAGED_LOOKASIDE_LIST fileref_np_lookaside;
     NPAGED_LOOKASIDE_LIST fcb_np_lookaside;
     HANDLE tm_handle;
     PRKRESOURCEMANAGER rm;
