@@ -4694,19 +4694,20 @@ static NTSTATUS fill_in_hard_link_information(_Out_ FILE_LINKS_INFORMATION* fli,
                     bool found = false, deleted = false;
                     UNICODE_STRING* fn = NULL;
 
-                    le2 = parfr->children.Flink;
-                    while (le2 != &parfr->children) {
-                        file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
+                    le2 = parfr->fcb->dir_children_index.Flink;
+                    while (le2 != &parfr->fcb->dir_children_index) {
+                        dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
 
-                        if (fr2->dc->index == hl->index) {
-                            found = true;
-                            deleted = fr2->deleted;
+                        if (dc->index == hl->index) {
+                            if (dc->fileref) {
+                                found = true;
+                                deleted = dc->fileref->deleted;
 
-                            if (!deleted)
-                                fn = &fr2->dc->name;
-
+                                if (!deleted)
+                                    fn = &dc->name;
+                            }
+                        } else if (dc->index > hl->index)
                             break;
-                        }
 
                         le2 = le2->Flink;
                     }
