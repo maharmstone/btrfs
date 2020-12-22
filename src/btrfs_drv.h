@@ -297,12 +297,6 @@ typedef struct _fcb {
     bool transacted;
     LIST_ENTRY streams;
 
-    LIST_ENTRY dir_children_index;
-    LIST_ENTRY dir_children_hash;
-    LIST_ENTRY dir_children_hash_uc;
-    LIST_ENTRY** hash_ptrs;
-    LIST_ENTRY** hash_ptrs_uc;
-
     bool dirty;
     bool sd_dirty, sd_deleted;
     bool atts_changed, atts_deleted;
@@ -326,6 +320,11 @@ typedef struct _fcb {
 
 typedef struct _dcb {
     struct _fcb fcb;
+    LIST_ENTRY dir_children_index;
+    LIST_ENTRY dir_children_hash;
+    LIST_ENTRY dir_children_hash_uc;
+    LIST_ENTRY* hash_ptrs[256];
+    LIST_ENTRY* hash_ptrs_uc[256];
 } dcb;
 
 typedef struct _file_ref {
@@ -1422,9 +1421,9 @@ NTSTATUS check_for_open_children(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end, fcb* fcb, file_ref* fileref, bool advance_only);
 NTSTATUS fileref_get_filename(_In_ _Requires_lock_held_(_Curr_->fcb->Vcb->fileref_lock) file_ref* fileref,
                               _Out_ PUNICODE_STRING fn, _Out_opt_ USHORT* name_offset, _Out_opt_ ULONG* preqlen);
-void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb.nonpaged->dir_children_lock) dcb* dcb,
                                       _In_ dir_child* dc);
-void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb.nonpaged->dir_children_lock) dcb* dcb,
                                       _In_ dir_child* dc);
 NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb);
 
@@ -1446,7 +1445,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_extens
 NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, root* subvol, uint64_t inode, uint8_t type,
                   PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp);
-NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp);
+NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, dcb* dcb, bool ignore_size, PIRP Irp);
 NTSTATUS add_dir_child(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lock_held_(_Curr_->fileref_lock) fcb* fcb,
                        _In_ uint64_t inode, _In_ bool subvol, _In_ PANSI_STRING utf8,
                        _In_ PUNICODE_STRING name, _In_ uint8_t type,
@@ -1456,7 +1455,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                             _In_ POOL_TYPE pooltype, _In_opt_ trans_ref* trans, _In_ bool do_fork, _Out_ file_ref** psf2,
                             _In_opt_ PIRP Irp);
 fcb* create_fcb(device_extension* Vcb, bool is_dir, POOL_TYPE pool_type);
-NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
+NTSTATUS find_file_in_dir(PUNICODE_STRING filename, dcb* dcb, root** subvol, uint64_t* inode, dir_child** pdc,
                           bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc);
 uint32_t inherit_mode(fcb* parfcb, bool is_dir);
 file_ref* create_fileref(device_extension* Vcb);

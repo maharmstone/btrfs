@@ -850,10 +850,11 @@ static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
         if (v2->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
             LIST_ENTRY* le2;
+            dcb* dcb = (struct _dcb*)v2->fileref->fcb;
 
-            le2 = v2->fileref->fcb->dir_children_index.Flink;
+            le2 = dcb->dir_children_index.Flink;
 
-            while (le2 != &v2->fileref->fcb->dir_children_index) {
+            while (le2 != &dcb->dir_children_index) {
                 dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
 
                 if (dc->fileref) {

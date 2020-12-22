@@ -155,9 +155,13 @@ fcb* create_fcb(device_extension* Vcb, bool is_dir, POOL_TYPE pool_type) {
     InitializeListHead(&fcb->xattrs);
     InitializeListHead(&fcb->streams);
 
-    InitializeListHead(&fcb->dir_children_index);
-    InitializeListHead(&fcb->dir_children_hash);
-    InitializeListHead(&fcb->dir_children_hash_uc);
+    if (is_dir) {
+        struct _dcb* dcb = (struct _dcb*)fcb;
+
+        InitializeListHead(&dcb->dir_children_index);
+        InitializeListHead(&dcb->dir_children_hash);
+        InitializeListHead(&dcb->dir_children_hash_uc);
+    }
 
     return fcb;
 }
@@ -244,7 +248,7 @@ static NTSTATUS duplicate_dir_child(dir_child* src, dir_child** dest, trans_ref*
     return STATUS_SUCCESS;
 }
 
-NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uint64_t* inode, dir_child** pdc,
+NTSTATUS find_file_in_dir(PUNICODE_STRING filename, dcb* dcb, root** subvol, uint64_t* inode, dir_child** pdc,
                           bool case_sensitive, trans_ref* trans, bool do_fork, dir_child** old_dc) {
     NTSTATUS Status;
     UNICODE_STRING fnus;
@@ -272,19 +276,19 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
 
     c = hash >> 24;
 
-    if (!ExIsResourceAcquiredSharedLite(&fcb->nonpaged->dir_children_lock)) {
-        ExAcquireResourceSharedLite(&fcb->nonpaged->dir_children_lock, true);
+    if (!ExIsResourceAcquiredSharedLite(&dcb->fcb.nonpaged->dir_children_lock)) {
+        ExAcquireResourceSharedLite(&dcb->fcb.nonpaged->dir_children_lock, true);
         locked = true;
     }
 
     if (case_sensitive) {
-        if (!fcb->hash_ptrs[c]) {
+        if (!dcb->hash_ptrs[c]) {
             Status = STATUS_OBJECT_NAME_NOT_FOUND;
             goto end;
         }
 
-        le = fcb->hash_ptrs[c];
-        while (le != &fcb->dir_children_hash) {
+        le = dcb->hash_ptrs[c];
+        while (le != &dcb->dir_children_hash) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
 
             if (dc->hash == hash) {
@@ -301,13 +305,13 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
             le = le->Flink;
         }
     } else {
-        if (!fcb->hash_ptrs_uc[c]) {
+        if (!dcb->hash_ptrs_uc[c]) {
             Status = STATUS_OBJECT_NAME_NOT_FOUND;
             goto end;
         }
 
-        le = fcb->hash_ptrs_uc[c];
-        while (le != &fcb->dir_children_hash_uc) {
+        le = dcb->hash_ptrs_uc[c];
+        while (le != &dcb->dir_children_hash_uc) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
 
             if (dc->hash_uc == hash) {
@@ -354,8 +358,8 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
             if (subvol) {
                 *subvol = NULL;
 
-                le2 = fcb->Vcb->roots.Flink;
-                while (le2 != &fcb->Vcb->roots) {
+                le2 = dcb->fcb.Vcb->roots.Flink;
+                while (le2 != &dcb->fcb.Vcb->roots) {
                     root* r2 = CONTAINING_RECORD(le2, root, list_entry);
 
                     if (r2->id == dc_found->key.obj_id) {
@@ -371,7 +375,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                 *inode = SUBVOL_ROOT_INODE;
         } else {
             if (subvol)
-                *subvol = fcb->subvol;
+                *subvol = dcb->fcb.subvol;
 
             if (inode)
                 *inode = dc_found->key.obj_id;
@@ -385,7 +389,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
 
 end:
     if (locked)
-        ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
+        ExReleaseResourceLite(&dcb->fcb.nonpaged->dir_children_lock);
 
     if (!case_sensitive)
         ExFreePool(fnus.Buffer);
@@ -582,37 +586,21 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
     return STATUS_SUCCESS;
 }
 
-NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp) {
+NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, dcb* dcb, bool ignore_size, PIRP Irp) {
     KEY searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     ULONG num_children = 0;
     uint64_t max_index = 2;
 
-    fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!fcb->hash_ptrs) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
-
-    fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!fcb->hash_ptrs_uc) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
-
-    if (!ignore_size && fcb->inode_item.st_size == 0)
+    if (!ignore_size && dcb->fcb.inode_item.st_size == 0)
         return STATUS_SUCCESS;
 
-    searchkey.obj_id = fcb->inode;
+    searchkey.obj_id = dcb->fcb.inode;
     searchkey.obj_type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
 
-    Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, false, Irp);
+    Status = find_item(Vcb, dcb->fcb.subvol, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08lx\n", Status);
         return Status;
@@ -702,9 +690,9 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         dc->hash = calc_crc32c(0xffffffff, (uint8_t*)dc->name.Buffer, dc->name.Length);
         dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)dc->name_uc.Buffer, dc->name_uc.Length);
 
-        InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+        InsertTailList(&dcb->dir_children_index, &dc->list_entry_index);
 
-        insert_dir_child_into_hash_lists(fcb, dc);
+        insert_dir_child_into_hash_lists(dcb, dc);
 
         num_children++;
 
@@ -715,7 +703,7 @@ cont:
             break;
     }
 
-    if (!Vcb->options.no_root_dir && fcb->inode == SUBVOL_ROOT_INODE) {
+    if (!Vcb->options.no_root_dir && dcb->fcb.inode == SUBVOL_ROOT_INODE) {
         root* top_subvol;
 
         if (Vcb->root_fileref && Vcb->root_fileref->fcb)
@@ -723,7 +711,7 @@ cont:
         else
             top_subvol = find_default_subvol(Vcb, NULL);
 
-        if (fcb->subvol == top_subvol && top_subvol->id != BTRFS_ROOT_FSTREE) {
+        if (dcb->fcb.subvol == top_subvol && top_subvol->id != BTRFS_ROOT_FSTREE) {
             dir_child* dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
             if (!dc) {
                 ERR("out of memory\n");
@@ -773,9 +761,9 @@ cont:
             dc->hash = calc_crc32c(0xffffffff, (uint8_t*)dc->name.Buffer, dc->name.Length);
             dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)dc->name_uc.Buffer, dc->name_uc.Length);
 
-            InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+            InsertTailList(&dcb->dir_children_index, &dc->list_entry_index);
 
-            insert_dir_child_into_hash_lists(fcb, dc);
+            insert_dir_child_into_hash_lists(dcb, dc);
         }
     }
 
@@ -1307,7 +1295,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
     }
 
     if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        Status = load_dir_children(Vcb, fcb, false, Irp);
+        Status = load_dir_children(Vcb, (dcb*)fcb, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_dir_children returned %08lx\n", Status);
             reap_fcb(fcb);
@@ -1684,7 +1672,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
         fcb* fcb;
         file_ref* duff_fr = NULL;
 
-        Status = find_file_in_dir(name, sf->fcb, &subvol, &inode, &dc, case_sensitive, trans, do_fork, &old_dc);
+        Status = find_file_in_dir(name, (dcb*)sf->fcb, &subvol, &inode, &dc, case_sensitive, trans, do_fork, &old_dc);
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             TRACE("could not find %.*S\n", (int)(name->Length / sizeof(WCHAR)), name->Buffer);
 
@@ -1916,7 +1904,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                         dir_child* forked_dc;
                         file_ref* forked_fileref;
 
-                        Status = find_file_in_dir(&hl->name, parfr->fcb, NULL, NULL, &forked_dc,
+                        Status = find_file_in_dir(&hl->name, (dcb*)parfr->fcb, NULL, NULL, &forked_dc,
                                                   true, trans, true, &old_dc2);
                         // FIXME - die if DC already forked by something else(?)
 
@@ -2225,6 +2213,7 @@ NTSTATUS add_dir_child(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lo
     NTSTATUS Status;
     dir_child* dc;
     bool locked;
+    struct _dcb* dcb = (struct _dcb*)fcb;
 
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
     if (!dc) {
@@ -2278,17 +2267,17 @@ NTSTATUS add_dir_child(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lo
     if (!locked)
         ExAcquireResourceExclusiveLite(&fcb->nonpaged->dir_children_lock, true);
 
-    if (IsListEmpty(&fcb->dir_children_index))
+    if (IsListEmpty(&dcb->dir_children_index))
         dc->index = 2;
     else {
-        dir_child* dc2 = CONTAINING_RECORD(fcb->dir_children_index.Blink, dir_child, list_entry_index);
+        dir_child* dc2 = CONTAINING_RECORD(dcb->dir_children_index.Blink, dir_child, list_entry_index);
 
         dc->index = max(2, dc2->index + 1);
     }
 
-    InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
+    InsertTailList(&dcb->dir_children_index, &dc->list_entry_index);
 
-    insert_dir_child_into_hash_lists(fcb, dc);
+    insert_dir_child_into_hash_lists(dcb, dc);
 
     if (!locked)
         ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
@@ -2551,6 +2540,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
     ANSI_STRING utf8as;
     LIST_ENTRY* lastle = NULL;
     file_ref* existing_fileref = NULL;
+    dcb* pardcb = (dcb*)parfileref->fcb;
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif
@@ -2837,40 +2827,6 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
         }
     }
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
-        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->hash_ptrs) {
-            ERR("out of memory\n");
-            reap_fileref(Vcb, fileref);
-
-            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
-            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
-
-            ExFreePool(utf8);
-
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
-
-        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->hash_ptrs_uc) {
-            ERR("out of memory\n");
-            reap_fileref(Vcb, fileref);
-
-            ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
-            parfileref->fcb->inode_item.st_size -= (uint64_t)utf8len * 2;
-            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
-
-            ExFreePool(utf8);
-
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
-    }
-
     fcb->deleted = false;
 
     fileref->created = true;
@@ -2887,9 +2843,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
     if (case_sensitive) {
         uint32_t dc_hash = calc_crc32c(0xffffffff, (uint8_t*)fpus->Buffer, fpus->Length);
 
-        if (parfileref->fcb->hash_ptrs[dc_hash >> 24]) {
-            LIST_ENTRY* le = parfileref->fcb->hash_ptrs[dc_hash >> 24];
-            while (le != &parfileref->fcb->dir_children_hash) {
+        if (pardcb->hash_ptrs[dc_hash >> 24]) {
+            LIST_ENTRY* le = pardcb->hash_ptrs[dc_hash >> 24];
+            while (le != &pardcb->dir_children_hash) {
                 dc = CONTAINING_RECORD(le, dir_child, list_entry_hash);
 
                 if (dc->hash == dc_hash && dc->name.Length == fpus->Length && RtlCompareMemory(dc->name.Buffer, fpus->Buffer, fpus->Length) == fpus->Length) {
@@ -2921,9 +2877,9 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
 
         uint32_t dc_hash = calc_crc32c(0xffffffff, (uint8_t*)fpusuc.Buffer, fpusuc.Length);
 
-        if (parfileref->fcb->hash_ptrs_uc[dc_hash >> 24]) {
-            LIST_ENTRY* le = parfileref->fcb->hash_ptrs_uc[dc_hash >> 24];
-            while (le != &parfileref->fcb->dir_children_hash_uc) {
+        if (pardcb->hash_ptrs_uc[dc_hash >> 24]) {
+            LIST_ENTRY* le = pardcb->hash_ptrs_uc[dc_hash >> 24];
+            while (le != &pardcb->dir_children_hash_uc) {
                 dc = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
 
                 if (dc->hash_uc == dc_hash && dc->name.Length == fpusuc.Length && RtlCompareMemory(dc->name.Buffer, fpusuc.Buffer, fpusuc.Length) == fpusuc.Length) {

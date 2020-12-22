@@ -439,10 +439,11 @@ NTSTATUS check_for_open_children(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb
 
         if (v2->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
             LIST_ENTRY* le2;
+            dcb* dcb = (struct _dcb*)v2->fileref->fcb;
 
-            le2 = v2->fileref->fcb->dir_children_index.Flink;
+            le2 = dcb->dir_children_index.Flink;
 
-            while (le2 != &v2->fileref->fcb->dir_children_index) {
+            while (le2 != &dcb->dir_children_index) {
                 dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
 
                 if (dc->fileref) {
@@ -740,8 +741,9 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
                                           _In_opt_ trans_ref* trans, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
+    dcb* dcb = (struct _dcb*)me->fileref->fcb;
 
-    if (IsListEmpty(&me->fileref->fcb->dir_children_index))
+    if (IsListEmpty(&dcb->dir_children_index))
         return STATUS_SUCCESS;
 
     if (trans) {
@@ -751,9 +753,9 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
         // We have to take a temporary copy of the dir_child pointers of the directory, as
         // open_fileref_child will create new entries if it forks.
 
-        le = me->fileref->fcb->dir_children_index.Flink;
+        le = dcb->dir_children_index.Flink;
 
-        while (le != &me->fileref->fcb->dir_children_index) {
+        while (le != &dcb->dir_children_index) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
             if (dc->trans == trans || (!dc->trans && !dc->forked))
@@ -771,10 +773,10 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        le = me->fileref->fcb->dir_children_index.Flink;
+        le = dcb->dir_children_index.Flink;
         i = 0;
 
-        while (le != &me->fileref->fcb->dir_children_index) {
+        while (le != &dcb->dir_children_index) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
             if (dc->trans == trans || (!dc->trans && !dc->forked)) {
@@ -816,9 +818,9 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
 
         ExFreePool(list);
     } else {
-        le = me->fileref->fcb->dir_children_index.Flink;
+        le = dcb->dir_children_index.Flink;
 
-        while (le != &me->fileref->fcb->dir_children_index) {
+        while (le != &dcb->dir_children_index) {
             dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
             file_ref* fr;
             move_entry* me2;
@@ -864,7 +866,7 @@ static NTSTATUS add_streams_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree_
     if (IsListEmpty(&me->fileref->fcb->streams))
         return STATUS_SUCCESS;
 
-    le = me->fileref->fcb->dir_children_index.Flink;
+    le = me->fileref->fcb->streams.Flink;
 
     while (le != &me->fileref->fcb->streams) {
         dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
@@ -898,22 +900,22 @@ static NTSTATUS add_streams_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree_
     return STATUS_SUCCESS;
 }
 
-void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) dcb* dcb,
                                       _In_ dir_child* dc) {
     uint8_t c;
 
     c = dc->hash >> 24;
 
-    if (fcb->hash_ptrs[c] == &dc->list_entry_hash) {
-        if (dc->list_entry_hash.Flink == &fcb->dir_children_hash)
-            fcb->hash_ptrs[c] = NULL;
+    if (dcb->hash_ptrs[c] == &dc->list_entry_hash) {
+        if (dc->list_entry_hash.Flink == &dcb->dir_children_hash)
+            dcb->hash_ptrs[c] = NULL;
         else {
             dir_child* dc2 = CONTAINING_RECORD(dc->list_entry_hash.Flink, dir_child, list_entry_hash);
 
             if (dc2->hash >> 24 == c)
-                fcb->hash_ptrs[c] = &dc2->list_entry_hash;
+                dcb->hash_ptrs[c] = &dc2->list_entry_hash;
             else
-                fcb->hash_ptrs[c] = NULL;
+                dcb->hash_ptrs[c] = NULL;
         }
     }
 
@@ -921,16 +923,16 @@ void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
 
     c = dc->hash_uc >> 24;
 
-    if (fcb->hash_ptrs_uc[c] == &dc->list_entry_hash_uc) {
-        if (dc->list_entry_hash_uc.Flink == &fcb->dir_children_hash_uc)
-            fcb->hash_ptrs_uc[c] = NULL;
+    if (dcb->hash_ptrs_uc[c] == &dc->list_entry_hash_uc) {
+        if (dc->list_entry_hash_uc.Flink == &dcb->dir_children_hash_uc)
+            dcb->hash_ptrs_uc[c] = NULL;
         else {
             dir_child* dc2 = CONTAINING_RECORD(dc->list_entry_hash_uc.Flink, dir_child, list_entry_hash_uc);
 
             if (dc2->hash_uc >> 24 == c)
-                fcb->hash_ptrs_uc[c] = &dc2->list_entry_hash_uc;
+                dcb->hash_ptrs_uc[c] = &dc2->list_entry_hash_uc;
             else
-                fcb->hash_ptrs_uc[c] = NULL;
+                dcb->hash_ptrs_uc[c] = NULL;
         }
     }
 
@@ -1012,22 +1014,6 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
 
     fcb->prop_compression = parfcb->prop_compression;
     fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
-
-    fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!fcb->hash_ptrs) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
-
-    fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!fcb->hash_ptrs_uc) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
 
     acquire_fcb_lock_exclusive(Vcb);
     InsertTailList(&r->fcbs, &fcb->list_entry);
@@ -1361,9 +1347,11 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             increase_fileref_refcount(destdir);
 
             if (me->fileref->dc) {
+                dcb* destdcb = (dcb*)destdir->fcb;
+
                 // remove from old parent
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
-                remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
+                remove_dir_child_from_hash_lists((dcb*)me->fileref->parent->fcb, me->fileref->dc);
 
                 if (!trans)
                     me->fileref->parent->fcb->inode_item.st_size -= (uint64_t)me->fileref->dc->utf8.Length * 2;
@@ -1415,16 +1403,16 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 // add to new parent
 
-                if (IsListEmpty(&destdir->fcb->dir_children_index))
+                if (IsListEmpty(&destdcb->dir_children_index))
                     me->fileref->dc->index = 2;
                 else {
-                    dir_child* dc2 = CONTAINING_RECORD(destdir->fcb->dir_children_index.Blink, dir_child, list_entry_index);
+                    dir_child* dc2 = CONTAINING_RECORD(destdcb->dir_children_index.Blink, dir_child, list_entry_index);
 
                     me->fileref->dc->index = max(2, dc2->index + 1);
                 }
 
-                InsertTailList(&destdir->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
-                insert_dir_child_into_hash_lists(destdir->fcb, me->fileref->dc);
+                InsertTailList(&destdcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                insert_dir_child_into_hash_lists(destdcb, me->fileref->dc);
             }
 
             free_fileref(me->fileref->parent);
@@ -1446,25 +1434,26 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             if (me->fileref->dc) {
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
 
-                if (!me->fileref->fcb->ads)
-                    remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
-
                 if (me->fileref->fcb->ads)
                     InsertHeadList(&me->parent->fileref->fcb->streams, &me->fileref->dc->list_entry_index);
                 else {
+                    dcb* dcb = (struct _dcb*)me->parent->fileref->fcb;
+
+                    remove_dir_child_from_hash_lists((struct _dcb*)me->fileref->parent->fcb, me->fileref->dc);
+
                     if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE)
                         me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
 
-                    if (IsListEmpty(&me->parent->fileref->fcb->dir_children_index))
+                    if (IsListEmpty(&dcb->dir_children_index))
                         me->fileref->dc->index = 2;
                     else {
-                        dir_child* dc2 = CONTAINING_RECORD(me->parent->fileref->fcb->dir_children_index.Blink, dir_child, list_entry_index);
+                        dir_child* dc2 = CONTAINING_RECORD(dcb->dir_children_index.Blink, dir_child, list_entry_index);
 
                         me->fileref->dc->index = max(2, dc2->index + 1);
                     }
 
-                    InsertTailList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
-                    insert_dir_child_into_hash_lists(me->parent->fileref->fcb, me->fileref->dc);
+                    InsertTailList(&dcb->dir_children_index, &me->fileref->dc->list_entry_index);
+                    insert_dir_child_into_hash_lists(dcb, me->fileref->dc);
                 }
             }
         }
@@ -1581,7 +1570,7 @@ end:
     return Status;
 }
 
-void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) fcb* fcb,
+void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->nonpaged->dir_children_lock) dcb* dcb,
                                       _In_ dir_child* dc) {
     bool inserted;
     LIST_ENTRY* le;
@@ -1593,7 +1582,7 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
 
     d = c;
     do {
-        le = fcb->hash_ptrs[d];
+        le = dcb->hash_ptrs[d];
 
         if (d == 0)
             break;
@@ -1602,9 +1591,9 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
     } while (!le);
 
     if (!le)
-        le = fcb->dir_children_hash.Flink;
+        le = dcb->dir_children_hash.Flink;
 
-    while (le != &fcb->dir_children_hash) {
+    while (le != &dcb->dir_children_hash) {
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
 
         if (dc2->hash > dc->hash) {
@@ -1617,15 +1606,15 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
     }
 
     if (!inserted)
-        InsertTailList(&fcb->dir_children_hash, &dc->list_entry_hash);
+        InsertTailList(&dcb->dir_children_hash, &dc->list_entry_hash);
 
-    if (!fcb->hash_ptrs[c])
-        fcb->hash_ptrs[c] = &dc->list_entry_hash;
+    if (!dcb->hash_ptrs[c])
+        dcb->hash_ptrs[c] = &dc->list_entry_hash;
     else {
-        dir_child* dc2 = CONTAINING_RECORD(fcb->hash_ptrs[c], dir_child, list_entry_hash);
+        dir_child* dc2 = CONTAINING_RECORD(dcb->hash_ptrs[c], dir_child, list_entry_hash);
 
         if (dc2->hash > dc->hash)
-            fcb->hash_ptrs[c] = &dc->list_entry_hash;
+            dcb->hash_ptrs[c] = &dc->list_entry_hash;
     }
 
     c = dc->hash_uc >> 24;
@@ -1634,7 +1623,7 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
 
     d = c;
     do {
-        le = fcb->hash_ptrs_uc[d];
+        le = dcb->hash_ptrs_uc[d];
 
         if (d == 0)
             break;
@@ -1643,9 +1632,9 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
     } while (!le);
 
     if (!le)
-        le = fcb->dir_children_hash_uc.Flink;
+        le = dcb->dir_children_hash_uc.Flink;
 
-    while (le != &fcb->dir_children_hash_uc) {
+    while (le != &dcb->dir_children_hash_uc) {
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
 
         if (dc2->hash_uc > dc->hash_uc) {
@@ -1658,15 +1647,15 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
     }
 
     if (!inserted)
-        InsertTailList(&fcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
+        InsertTailList(&dcb->dir_children_hash_uc, &dc->list_entry_hash_uc);
 
-    if (!fcb->hash_ptrs_uc[c])
-        fcb->hash_ptrs_uc[c] = &dc->list_entry_hash_uc;
+    if (!dcb->hash_ptrs_uc[c])
+        dcb->hash_ptrs_uc[c] = &dc->list_entry_hash_uc;
     else {
-        dir_child* dc2 = CONTAINING_RECORD(fcb->hash_ptrs_uc[c], dir_child, list_entry_hash_uc);
+        dir_child* dc2 = CONTAINING_RECORD(dcb->hash_ptrs_uc[c], dir_child, list_entry_hash_uc);
 
         if (dc2->hash_uc > dc->hash_uc)
-            fcb->hash_ptrs_uc[c] = &dc->list_entry_hash_uc;
+            dcb->hash_ptrs_uc[c] = &dc->list_entry_hash_uc;
     }
 }
 
@@ -1765,33 +1754,6 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
 
         InsertTailList(&fileref->fcb->streams, &dc->list_entry_index);
     }
-
-    while (!IsListEmpty(&ofr->fcb->dir_children_index)) {
-        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&ofr->fcb->dir_children_index), dir_child, list_entry_index);
-
-        if (dc->fileref) {
-            free_fileref(dc->fileref->parent);
-
-            dc->fileref->parent = fileref;
-            InterlockedIncrement(&fileref->refcount);
-        }
-
-        InsertTailList(&fileref->fcb->dir_children_index, &dc->list_entry_index);
-    }
-
-    while (!IsListEmpty(&ofr->fcb->dir_children_hash)) {
-        InsertTailList(&fileref->fcb->dir_children_hash, RemoveHeadList(&ofr->fcb->dir_children_hash));
-    }
-
-    while (!IsListEmpty(&ofr->fcb->dir_children_hash_uc)) {
-        InsertTailList(&fileref->fcb->dir_children_hash_uc, RemoveHeadList(&ofr->fcb->dir_children_hash_uc));
-    }
-
-    fileref->fcb->hash_ptrs = ofr->fcb->hash_ptrs;
-    fileref->fcb->hash_ptrs_uc = ofr->fcb->hash_ptrs_uc;
-
-    ofr->fcb->hash_ptrs = NULL;
-    ofr->fcb->hash_ptrs_uc = NULL;
 
     fileref->fcb->sd_dirty = ofr->fcb->sd_dirty;
     fileref->fcb->sd_deleted = ofr->fcb->sd_deleted;
@@ -2523,8 +2485,6 @@ static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_loc
         dummyfcb->Header.ValidDataLength.QuadPart = 0;
     }
 
-    dummyfcb->hash_ptrs = fileref->fcb->hash_ptrs;
-    dummyfcb->hash_ptrs_uc = fileref->fcb->hash_ptrs_uc;
     dummyfcb->created = fileref->fcb->created;
 
     le = fileref->fcb->extents.Flink;
@@ -2547,27 +2507,6 @@ static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_loc
         }
 
         InsertTailList(&dummyfcb->streams, &dc->list_entry_index);
-    }
-
-    while (!IsListEmpty(&fileref->fcb->dir_children_index)) {
-        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&fileref->fcb->dir_children_index), dir_child, list_entry_index);
-
-        if (dc->fileref) {
-            free_fileref(dc->fileref->parent);
-
-            dc->fileref->parent = dummyfileref;
-            InterlockedIncrement(&dummyfileref->refcount);
-        }
-
-        InsertTailList(&dummyfcb->dir_children_index, &dc->list_entry_index);
-    }
-
-    while (!IsListEmpty(&fileref->fcb->dir_children_hash)) {
-        InsertTailList(&dummyfcb->dir_children_hash, RemoveHeadList(&fileref->fcb->dir_children_hash));
-    }
-
-    while (!IsListEmpty(&fileref->fcb->dir_children_hash_uc)) {
-        InsertTailList(&dummyfcb->dir_children_hash_uc, RemoveHeadList(&fileref->fcb->dir_children_hash_uc));
     }
 
     InsertTailList(&Vcb->all_fcbs, &dummyfcb->list_entry_all);
@@ -2604,9 +2543,6 @@ static NTSTATUS rename_file_to_stream(_In_ _Requires_lock_held_(_Curr_->tree_loc
     free_fileref(dummyfileref);
 
     // change fcb values
-
-    fileref->fcb->hash_ptrs = NULL;
-    fileref->fcb->hash_ptrs_uc = NULL;
 
     fileref->fcb->ads = true;
 
@@ -2966,6 +2902,8 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         mark_fileref_dirty(fileref);
 
         if (fileref->dc) {
+            dcb* pardcb = (dcb*)fileref->parent->fcb;
+
             ExFreePool(fileref->dc->utf8.Buffer);
             ExFreePool(fileref->dc->name.Buffer);
             ExFreePool(fileref->dc->name_uc.Buffer);
@@ -2999,12 +2937,12 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
                 goto end;
             }
 
-            remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
+            remove_dir_child_from_hash_lists(pardcb, fileref->dc);
 
             fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name.Buffer, fileref->dc->name.Length);
             fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name_uc.Buffer, fileref->dc->name_uc.Length);
 
-            insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
+            insert_dir_child_into_hash_lists(pardcb, fileref->dc);
         }
 
         newfn.Length = newfn.MaximumLength = 0;
@@ -3129,9 +3067,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     mark_fileref_dirty(fileref);
 
     if (fileref->dc) {
+        dcb* reldcb = (dcb*)related->fcb;
+
         // remove from old parent
         RemoveEntryList(&fileref->dc->list_entry_index);
-        remove_dir_child_from_hash_lists(fr2->parent->fcb, fileref->dc);
+        remove_dir_child_from_hash_lists((dcb*)fr2->parent->fcb, fileref->dc);
 
         if (fileref->dc->utf8.Length != utf8.Length || RtlCompareMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length) != utf8.Length) {
             // handle changed name
@@ -3172,16 +3112,16 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
         // add to new parent
 
-        if (IsListEmpty(&related->fcb->dir_children_index))
+        if (IsListEmpty(&reldcb->dir_children_index))
             fileref->dc->index = 2;
         else {
-            dir_child* dc2 = CONTAINING_RECORD(related->fcb->dir_children_index.Blink, dir_child, list_entry_index);
+            dir_child* dc2 = CONTAINING_RECORD(reldcb->dir_children_index.Blink, dir_child, list_entry_index);
 
             fileref->dc->index = max(2, dc2->index + 1);
         }
 
-        InsertTailList(&related->fcb->dir_children_index, &fileref->dc->list_entry_index);
-        insert_dir_child_into_hash_lists(related->fcb, fileref->dc);
+        InsertTailList(&reldcb->dir_children_index, &fileref->dc->list_entry_index);
+        insert_dir_child_into_hash_lists(reldcb, fileref->dc);
     }
 
     if (fcb->inode_item.st_nlink > 1) {
@@ -4812,9 +4752,10 @@ static NTSTATUS fill_in_hard_link_information(_Out_ FILE_LINKS_INFORMATION* fli,
                     LIST_ENTRY* le2;
                     bool found = false, deleted = false;
                     UNICODE_STRING* fn = NULL;
+                    dcb* pardcb = (dcb*)parfr->fcb;
 
-                    le2 = parfr->fcb->dir_children_index.Flink;
-                    while (le2 != &parfr->fcb->dir_children_index) {
+                    le2 = pardcb->dir_children_index.Flink;
+                    while (le2 != &pardcb->dir_children_index) {
                         dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
 
                         if (dc->index == hl->index) {
@@ -4983,9 +4924,10 @@ static NTSTATUS fill_in_hard_link_full_id_information(_Out_ FILE_LINKS_FULL_ID_I
                     LIST_ENTRY* le2;
                     bool found = false, deleted = false;
                     UNICODE_STRING* fn = NULL;
+                    dcb* pardcb = (dcb*)parfr->fcb;
 
-                    le2 = parfr->fcb->dir_children_index.Flink;
-                    while (le2 != &parfr->fcb->dir_children_index) {
+                    le2 = pardcb->dir_children_index.Flink;
+                    while (le2 != &pardcb->dir_children_index) {
                         dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
 
                         if (dc->index == hl->index) {

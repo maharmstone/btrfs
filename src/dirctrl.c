@@ -662,12 +662,13 @@ static NTSTATUS next_dir_entry(_In_ _Requires_lock_held_(_Curr_->fcb->nonpaged->
                                _Inout_ uint64_t* offset, _Out_ dir_entry* de, _In_opt_ trans_ref* trans, _Inout_ dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
+    dcb* dcb = (struct _dcb*)fileref->fcb;
 
     if (*pdc) {
         dc = *pdc;
 
         while (true) {
-            if (dc->list_entry_index.Flink == &fileref->fcb->dir_children_index) {
+            if (dc->list_entry_index.Flink == &dcb->dir_children_index) {
                 dc = NULL;
                 goto next;
             }
@@ -713,10 +714,10 @@ static NTSTATUS next_dir_entry(_In_ _Requires_lock_held_(_Curr_->fcb->nonpaged->
         *offset = 2;
 
     dc = NULL;
-    le = fileref->fcb->dir_children_index.Flink;
+    le = dcb->dir_children_index.Flink;
 
     // skip entries before offset
-    while (le != &fileref->fcb->dir_children_index) {
+    while (le != &dcb->dir_children_index) {
         dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_index);
 
         if (dc2->index >= *offset) {
@@ -931,6 +932,7 @@ static NTSTATUS query_directory(_In_ PIRP Irp) {
         LIST_ENTRY* le;
         uint32_t hash;
         uint8_t c;
+        struct _dcb* dcb = (struct _dcb*)fileref->fcb;
 
         us.Buffer = NULL;
 
@@ -948,9 +950,9 @@ static NTSTATUS query_directory(_In_ PIRP Irp) {
         c = hash >> 24;
 
         if (ccb->case_sensitive) {
-            if (fileref->fcb->hash_ptrs[c]) {
-                le = fileref->fcb->hash_ptrs[c];
-                while (le != &fileref->fcb->dir_children_hash) {
+            if (dcb->hash_ptrs[c]) {
+                le = dcb->hash_ptrs[c];
+                while (le != &dcb->dir_children_hash) {
                     dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash);
 
                     if (dc2->hash == hash) {
@@ -972,9 +974,9 @@ static NTSTATUS query_directory(_In_ PIRP Irp) {
                 }
             }
         } else {
-            if (fileref->fcb->hash_ptrs_uc[c]) {
-                le = fileref->fcb->hash_ptrs_uc[c];
-                while (le != &fileref->fcb->dir_children_hash_uc) {
+            if (dcb->hash_ptrs_uc[c]) {
+                le = dcb->hash_ptrs_uc[c];
+                while (le != &dcb->dir_children_hash_uc) {
                     dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_hash_uc);
 
                     if (dc2->hash_uc == hash) {

@@ -1783,20 +1783,18 @@ void reap_fcb(fcb* fcb) {
         ExFreePool(dc);
     }
 
-    while (!IsListEmpty(&fcb->dir_children_index)) {
-        dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&fcb->dir_children_index), dir_child, list_entry_index);
+    if (!fcb->ads && fcb->type == BTRFS_TYPE_DIRECTORY) {
+        struct _dcb* dcb = (struct _dcb*)fcb;
 
-        ExFreePool(dc->utf8.Buffer);
-        ExFreePool(dc->name.Buffer);
-        ExFreePool(dc->name_uc.Buffer);
-        ExFreePool(dc);
+        while (!IsListEmpty(&dcb->dir_children_index)) {
+            dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&dcb->dir_children_index), dir_child, list_entry_index);
+
+            ExFreePool(dc->utf8.Buffer);
+            ExFreePool(dc->name.Buffer);
+            ExFreePool(dc->name_uc.Buffer);
+            ExFreePool(dc);
+        }
     }
-
-    if (fcb->hash_ptrs)
-        ExFreePool(fcb->hash_ptrs);
-
-    if (fcb->hash_ptrs_uc)
-        ExFreePool(fcb->hash_ptrs_uc);
 
     FsRtlUninitializeFileLock(&fcb->lock);
     FsRtlUninitializeOplock(fcb_oplock(fcb));
@@ -2344,7 +2342,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
         } else {
             ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
             RemoveEntryList(&fileref->dc->list_entry_index);
-            remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
+            remove_dir_child_from_hash_lists((dcb*)fileref->parent->fcb, fileref->dc);
             ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
         }
 
@@ -4838,24 +4836,6 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->dummy_fcb->inode_item.st_nlink = 1;
     Vcb->dummy_fcb->inode_item.st_mode = __S_IFDIR;
 
-    Vcb->dummy_fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!Vcb->dummy_fcb->hash_ptrs) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto exit;
-    }
-
-    RtlZeroMemory(Vcb->dummy_fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
-
-    Vcb->dummy_fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-    if (!Vcb->dummy_fcb->hash_ptrs_uc) {
-        ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto exit;
-    }
-
-    RtlZeroMemory(Vcb->dummy_fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
-
     root_fcb = create_fcb(Vcb, true, NonPagedPool);
     if (!root_fcb) {
         ERR("out of memory\n");
@@ -4881,7 +4861,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    Status = load_dir_children(Vcb, root_fcb, true, Irp);
+    Status = load_dir_children(Vcb, (dcb*)root_fcb, true, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("load_dir_children returned %08lx\n", Status);
         goto exit;
