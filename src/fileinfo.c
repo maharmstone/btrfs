@@ -1071,12 +1071,14 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         ExAcquireResourceSharedLite(me->fileref->fcb->Header.Resource, true);
 
         if (!me->fileref->fcb->ads && me->fileref->fcb->subvol == origparent->fcb->subvol) {
-            Status = add_children_to_move_list(fileref->fcb->Vcb, me, trans, Irp);
+            if (me->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+                Status = add_children_to_move_list(fileref->fcb->Vcb, me, trans, Irp);
 
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_children_to_move_list returned %08lx\n", Status);
-                ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
-                goto end;
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_children_to_move_list returned %08lx\n", Status);
+                    ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
+                    goto end;
+                }
             }
 
             if (!fileref->fcb->ads) {
