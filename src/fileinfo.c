@@ -1075,6 +1075,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
             if (!NT_SUCCESS(Status)) {
                 ERR("add_children_to_move_list returned %08lx\n", Status);
+                ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
                 goto end;
             }
 
@@ -1083,6 +1084,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_streams_to_move_list returned %08lx\n", Status);
+                    ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
                     goto end;
                 }
             }
