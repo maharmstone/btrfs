@@ -793,7 +793,7 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
             move_entry* me2;
 
             Status = open_fileref_child(Vcb, me->fileref, &dc->name, true, true, false,
-                                        PagedPool, trans, dc->type != BTRFS_TYPE_DIRECTORY, &fr, Irp);
+                                        PagedPool, trans, true, &fr, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("open_fileref_child returned %08lx\n", Status);
