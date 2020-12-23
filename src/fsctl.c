@@ -3691,7 +3691,7 @@ end:
 static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     NTSTATUS Status;
     btrfs_mknod* bmn;
-    fcb* fcb;
+    fcb *fcb, *parfcb;
     dcb* pardcb;
     ccb* parccb;
     file_ref *parfileref, *fileref;
@@ -3716,15 +3716,17 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     if (Vcb->readonly)
         return STATUS_MEDIA_WRITE_PROTECTED;
 
-    pardcb = FileObject->FsContext;
+    parfcb = FileObject->FsContext;
 
-    if (pardcb->fcb.ads || pardcb->fcb.type != BTRFS_TYPE_DIRECTORY) {
+    if (parfcb->ads || parfcb->type != BTRFS_TYPE_DIRECTORY) {
         WARN("trying to create file in something other than a directory\n");
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (is_subvol_readonly(pardcb->fcb.subvol, Irp))
+    if (is_subvol_readonly(parfcb->subvol, Irp))
         return STATUS_ACCESS_DENIED;
+
+    pardcb = get_dcb(parfcb);
 
     parccb = FileObject->FsContext2;
     parfileref = parccb->fileref;
@@ -3829,7 +3831,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode_item.st_nlink = 1;
     fcb->inode_item.st_uid = UID_NOBODY;
     fcb->inode_item.st_gid = GID_NOBODY;
-    fcb->inode_item.st_mode = inherit_mode(&pardcb->fcb, bmn->type == BTRFS_TYPE_DIRECTORY);
+    fcb->inode_item.st_mode = inherit_mode(parfcb, bmn->type == BTRFS_TYPE_DIRECTORY);
 
     if (bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV)
         fcb->inode_item.st_rdev = (minor(bmn->st_rdev) & 0xFFFFF) | ((major(bmn->st_rdev) & 0xFFFFFFFFFFF) << 20);
@@ -3862,17 +3864,17 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         fcb->inode_item.st_mode &= ~(S_IXUSR | S_IXGRP | S_IXOTH); // remove executable bit if not directory
 
     // inherit nodatacow flag from parent directory
-    if (pardcb->fcb.inode_item.flags & BTRFS_INODE_NODATACOW) {
+    if (parfcb->inode_item.flags & BTRFS_INODE_NODATACOW) {
         fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
 
         if (bmn->type != BTRFS_TYPE_DIRECTORY)
             fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
     }
 
-    if (pardcb->fcb.inode_item.flags & BTRFS_INODE_COMPRESS)
+    if (parfcb->inode_item.flags & BTRFS_INODE_COMPRESS)
         fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
 
-    fcb->prop_compression = pardcb->fcb.prop_compression;
+    fcb->prop_compression = parfcb->prop_compression;
     fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
 
     fcb->inode_item_changed = true;
@@ -3892,8 +3894,8 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     fcb->atts_changed = false;
 
-    InterlockedIncrement(&pardcb->fcb.refcount);
-    fcb->subvol = pardcb->fcb.subvol;
+    InterlockedIncrement(&parfcb->refcount);
+    fcb->subvol = parfcb->subvol;
 
     SeCaptureSubjectContext(&subjcont);
 
@@ -3915,23 +3917,23 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         fcb->sd_dirty = fcb->inode_item.st_uid == UID_NOBODY;
     }
 
-    find_gid(fcb, &pardcb->fcb, &subjcont);
+    find_gid(fcb, parfcb, &subjcont);
 
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
     acquire_fcb_lock_exclusive(Vcb);
 
     if (bmn->inode == 0) {
-        inode = InterlockedIncrement64(&pardcb->fcb.subvol->lastinode);
-        lastle = pardcb->fcb.subvol->fcbs.Blink;
+        inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
+        lastle = parfcb->subvol->fcbs.Blink;
     } else {
-        if (bmn->inode > (uint64_t)pardcb->fcb.subvol->lastinode) {
-            inode = pardcb->fcb.subvol->lastinode = bmn->inode;
-            lastle = pardcb->fcb.subvol->fcbs.Blink;
+        if (bmn->inode > (uint64_t)parfcb->subvol->lastinode) {
+            inode = parfcb->subvol->lastinode = bmn->inode;
+            lastle = parfcb->subvol->fcbs.Blink;
         } else {
-            LIST_ENTRY* le = pardcb->fcb.subvol->fcbs.Flink;
+            LIST_ENTRY* le = parfcb->subvol->fcbs.Flink;
 
-            lastle = pardcb->fcb.subvol->fcbs.Blink;;
-            while (le != &pardcb->fcb.subvol->fcbs) {
+            lastle = parfcb->subvol->fcbs.Blink;
+            while (le != &parfcb->subvol->fcbs) {
                 struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
 
                 if (fcb2->inode == bmn->inode && !fcb2->deleted) {
@@ -3995,25 +3997,25 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     if (bmn->type == BTRFS_TYPE_DIRECTORY)
         fileref->fcb->fileref = fileref;
 
-    ExAcquireResourceExclusiveLite(pardcb->fcb.Header.Resource, true);
-    pardcb->fcb.inode_item.st_size += (uint64_t)utf8.Length * 2;
-    pardcb->fcb.inode_item.transid = Vcb->superblock.generation;
-    pardcb->fcb.inode_item.sequence++;
+    ExAcquireResourceExclusiveLite(parfcb->Header.Resource, true);
+    parfcb->inode_item.st_size += (uint64_t)utf8.Length * 2;
+    parfcb->inode_item.transid = Vcb->superblock.generation;
+    parfcb->inode_item.sequence++;
 
     if (!parccb->user_set_change_time)
-        pardcb->fcb.inode_item.st_ctime = now;
+        parfcb->inode_item.st_ctime = now;
 
     if (!parccb->user_set_write_time)
-        pardcb->fcb.inode_item.st_mtime = now;
+        parfcb->inode_item.st_mtime = now;
 
-    pardcb->fcb.subvol->fcbs_version++;
+    parfcb->subvol->fcbs_version++;
 
-    ExReleaseResourceLite(pardcb->fcb.Header.Resource);
+    ExReleaseResourceLite(parfcb->Header.Resource);
     release_fcb_lock(Vcb);
     ExReleaseResourceLite(&Vcb->fileref_lock);
 
-    pardcb->fcb.inode_item_changed = true;
-    mark_fcb_dirty(&pardcb->fcb);
+    parfcb->inode_item_changed = true;
+    mark_fcb_dirty(parfcb);
 
     send_notification_fileref(fileref, bmn->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
 

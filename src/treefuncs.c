@@ -850,7 +850,7 @@ static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
         if (v2->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
             LIST_ENTRY* le2;
-            dcb* dcb = (struct _dcb*)v2->fileref->fcb;
+            dcb* dcb = get_dcb(v2->fileref->fcb);
 
             le2 = dcb->dir_children_index.Flink;
 

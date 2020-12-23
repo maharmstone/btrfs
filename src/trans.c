@@ -42,7 +42,7 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         ExAcquireResourceExclusiveLite(&dc->fileref->parent->fcb->nonpaged->streams_lock, true);
 
         RemoveEntryList(&dc->list_entry_index);
-        remove_dir_child_from_hash_lists((dcb*)dc->fileref->parent->fcb, dc);
+        remove_dir_child_from_hash_lists(get_dcb(dc->fileref->parent->fcb), dc);
 
         ExReleaseResourceLite(&dc->fileref->parent->fcb->nonpaged->streams_lock);
 
@@ -180,7 +180,7 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
             ExAcquireResourceExclusiveLite(&fr->parent->fcb->nonpaged->streams_lock, true);
 
             RemoveEntryList(&fr->dc->list_entry_index);
-            remove_dir_child_from_hash_lists((dcb*)fr->parent->fcb, fr->dc);
+            remove_dir_child_from_hash_lists(get_dcb(fr->parent->fcb), fr->dc);
 
             ExReleaseResourceLite(&fr->parent->fcb->nonpaged->streams_lock);
 

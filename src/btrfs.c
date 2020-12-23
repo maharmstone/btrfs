@@ -2339,7 +2339,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
         } else {
             ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
             RemoveEntryList(&fileref->dc->list_entry_index);
-            remove_dir_child_from_hash_lists((dcb*)fileref->parent->fcb, fileref->dc);
+            remove_dir_child_from_hash_lists(get_dcb(fileref->parent->fcb), fileref->dc);
             ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
         }
 

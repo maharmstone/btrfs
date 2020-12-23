@@ -662,7 +662,7 @@ static NTSTATUS next_dir_entry(_In_ _Requires_lock_held_(_Curr_->fcb->nonpaged->
                                _Inout_ uint64_t* offset, _Out_ dir_entry* de, _In_opt_ trans_ref* trans, _Inout_ dir_child** pdc) {
     LIST_ENTRY* le;
     dir_child* dc;
-    dcb* dcb = (struct _dcb*)fileref->fcb;
+    dcb* dcb = get_dcb(fileref->fcb);
 
     if (*pdc) {
         dc = *pdc;
@@ -932,7 +932,7 @@ static NTSTATUS query_directory(_In_ PIRP Irp) {
         LIST_ENTRY* le;
         uint32_t hash;
         uint8_t c;
-        struct _dcb* dcb = (struct _dcb*)fileref->fcb;
+        struct _dcb* dcb = get_dcb(fileref->fcb);
 
         us.Buffer = NULL;
 

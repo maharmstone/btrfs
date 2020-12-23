@@ -439,7 +439,7 @@ NTSTATUS check_for_open_children(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb
 
         if (v2->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
             LIST_ENTRY* le2;
-            dcb* dcb = (struct _dcb*)v2->fileref->fcb;
+            dcb* dcb = get_dcb(v2->fileref->fcb);
 
             le2 = dcb->dir_children_index.Flink;
 
@@ -741,7 +741,7 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
                                           _In_opt_ trans_ref* trans, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    dcb* dcb = (struct _dcb*)me->fileref->fcb;
+    dcb* dcb = get_dcb(me->fileref->fcb);
 
     if (IsListEmpty(&dcb->dir_children_index))
         return STATUS_SUCCESS;
@@ -1345,11 +1345,11 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             increase_fileref_refcount(destdir);
 
             if (me->fileref->dc) {
-                dcb* destdcb = (dcb*)destdir->fcb;
+                dcb* destdcb = get_dcb(destdir->fcb);
 
                 // remove from old parent
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
-                remove_dir_child_from_hash_lists((dcb*)me->fileref->parent->fcb, me->fileref->dc);
+                remove_dir_child_from_hash_lists(get_dcb(me->fileref->parent->fcb), me->fileref->dc);
 
                 if (!trans)
                     me->fileref->parent->fcb->inode_item.st_size -= (uint64_t)me->fileref->dc->utf8.Length * 2;
@@ -1435,9 +1435,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 if (me->fileref->fcb->ads)
                     InsertHeadList(&me->parent->fileref->fcb->streams, &me->fileref->dc->list_entry_index);
                 else {
-                    dcb* dcb = (struct _dcb*)me->parent->fileref->fcb;
+                    dcb* dcb = get_dcb(me->parent->fileref->fcb);
 
-                    remove_dir_child_from_hash_lists((struct _dcb*)me->fileref->parent->fcb, me->fileref->dc);
+                    remove_dir_child_from_hash_lists(get_dcb(me->fileref->parent->fcb), me->fileref->dc);
 
                     if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE)
                         me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
@@ -2891,7 +2891,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         mark_fileref_dirty(fileref);
 
         if (fileref->dc) {
-            dcb* pardcb = (dcb*)fileref->parent->fcb;
+            dcb* pardcb = get_dcb(fileref->parent->fcb);
 
             ExFreePool(fileref->dc->utf8.Buffer);
             ExFreePool(fileref->dc->name.Buffer);
@@ -3053,11 +3053,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     mark_fileref_dirty(fileref);
 
     if (fileref->dc) {
-        dcb* reldcb = (dcb*)related->fcb;
+        dcb* reldcb = get_dcb(related->fcb);
 
         // remove from old parent
         RemoveEntryList(&fileref->dc->list_entry_index);
-        remove_dir_child_from_hash_lists((dcb*)fr2->parent->fcb, fileref->dc);
+        remove_dir_child_from_hash_lists(get_dcb(fr2->parent->fcb), fileref->dc);
 
         if (fileref->dc->utf8.Length != utf8.Length || RtlCompareMemory(fileref->dc->utf8.Buffer, utf8.Buffer, utf8.Length) != utf8.Length) {
             // handle changed name
@@ -4738,7 +4738,7 @@ static NTSTATUS fill_in_hard_link_information(_Out_ FILE_LINKS_INFORMATION* fli,
                     LIST_ENTRY* le2;
                     bool found = false, deleted = false;
                     UNICODE_STRING* fn = NULL;
-                    dcb* pardcb = (dcb*)parfr->fcb;
+                    dcb* pardcb = get_dcb(parfr->fcb);
 
                     le2 = pardcb->dir_children_index.Flink;
                     while (le2 != &pardcb->dir_children_index) {
@@ -4910,7 +4910,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(_Out_ FILE_LINKS_FULL_ID_I
                     LIST_ENTRY* le2;
                     bool found = false, deleted = false;
                     UNICODE_STRING* fn = NULL;
-                    dcb* pardcb = (dcb*)parfr->fcb;
+                    dcb* pardcb = get_dcb(parfr->fcb);
 
                     le2 = pardcb->dir_children_index.Flink;
                     while (le2 != &pardcb->dir_children_index) {

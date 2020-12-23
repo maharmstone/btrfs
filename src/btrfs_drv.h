@@ -1091,6 +1091,10 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
     }
 }
 
+static _inline dcb* get_dcb(_In_ fcb* fcb) {
+    return (dcb*)fcb;
+}
+
 // in xor-gas.S
 #if defined(_X86_) || defined(_AMD64_)
 void __stdcall do_xor_sse2(uint8_t* buf1, uint8_t* buf2, uint32_t len);
