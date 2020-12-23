@@ -1788,7 +1788,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
 
             fcb->sd_dirty = fcb->sd ? true : false;
             fcb->atts_changed = fcb->atts != defda;
-            fcb->extents_changed = true;
             fcb->reparse_xattr_changed = fcb->reparse_xattr.Length > 0;
             fcb->ea_changed = fcb->ea_xattr.Length > 0;
             fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
@@ -1836,6 +1835,8 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                     le = le->Flink;
                 }
             }
+
+            fcb->extents_changed = !IsListEmpty(&fcb->extents);
 
             acquire_fcb_lock_exclusive(Vcb);
 
