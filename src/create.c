@@ -1672,7 +1672,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
         fcb* fcb;
         file_ref* duff_fr = NULL;
 
-        Status = find_file_in_dir(name, (dcb*)sf->fcb, &subvol, &inode, &dc, case_sensitive, trans, do_fork, &old_dc);
+        Status = find_file_in_dir(name, get_dcb(sf->fcb), &subvol, &inode, &dc, case_sensitive, trans, do_fork, &old_dc);
         if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
             TRACE("could not find %.*S\n", (int)(name->Length / sizeof(WCHAR)), name->Buffer);
 
@@ -1775,6 +1775,13 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
 
             old_fcb = fcb;
             fcb = new_fcb;
+
+            if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+                dcb* newdcb = (dcb*)fcb;
+
+                newdcb->real_dcb = (dcb*)old_fcb;
+                InterlockedIncrement(&old_fcb->refcount);
+            }
 
             defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, dc->name.Buffer[0] == '.',
                                         true, NULL);
@@ -1904,7 +1911,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                         dir_child* forked_dc;
                         file_ref* forked_fileref;
 
-                        Status = find_file_in_dir(&hl->name, (dcb*)parfr->fcb, NULL, NULL, &forked_dc,
+                        Status = find_file_in_dir(&hl->name, get_dcb(parfr->fcb), NULL, NULL, &forked_dc,
                                                   true, trans, true, &old_dc2);
                         // FIXME - die if DC already forked by something else(?)
 
@@ -2540,7 +2547,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _In_ device_extension* Vcb, _In_ PUN
     ANSI_STRING utf8as;
     LIST_ENTRY* lastle = NULL;
     file_ref* existing_fileref = NULL;
-    dcb* pardcb = (dcb*)parfileref->fcb;
+    dcb* pardcb = get_dcb(parfileref->fcb);
 #ifdef DEBUG_FCB_REFCOUNTS
     LONG rc;
 #endif

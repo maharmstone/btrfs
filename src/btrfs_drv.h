@@ -320,6 +320,7 @@ typedef struct _fcb {
 
 typedef struct _dcb {
     struct _fcb fcb;
+    struct _dcb* real_dcb;
     LIST_ENTRY dir_children_index;
     LIST_ENTRY dir_children_hash;
     LIST_ENTRY dir_children_hash_uc;
@@ -1092,7 +1093,12 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
 }
 
 static _inline dcb* get_dcb(_In_ fcb* fcb) {
-    return (dcb*)fcb;
+    dcb* d = (dcb*)fcb;
+
+    if (d->real_dcb)
+        return d->real_dcb;
+    else
+        return d;
 }
 
 // in xor-gas.S

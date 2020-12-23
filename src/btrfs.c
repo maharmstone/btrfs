@@ -1794,6 +1794,9 @@ void reap_fcb(fcb* fcb) {
             ExFreePool(dc->name_uc.Buffer);
             ExFreePool(dc);
         }
+
+        if (dcb->real_dcb)
+            InterlockedDecrement(&dcb->real_dcb->fcb.refcount);
     }
 
     FsRtlUninitializeFileLock(&fcb->lock);
