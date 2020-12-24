@@ -1445,6 +1445,22 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             mark_fcb_dirty(me->fileref->parent->fcb);
         } else {
             if (me->fileref->dc) {
+                if (me->fileref->dc->non_trans_dc && me->fileref->dc->non_trans_dc->fileref) {
+                    file_ref* ntfr = me->fileref->dc->non_trans_dc->fileref;
+
+                    if (ntfr->parent && ntfr->parent->dc && ntfr->parent->dc->non_trans_dc) {
+                        file_ref* par = ntfr->parent->dc->non_trans_dc->fileref;
+
+                        if (par && par != ntfr->parent) {
+                            if (ntfr->parent)
+                                free_fileref(ntfr->parent);
+
+                            ntfr->parent = par;
+                            increase_fileref_refcount(par);
+                        }
+                    }
+                }
+
                 RemoveEntryList(&me->fileref->dc->list_entry_index);
 
                 if (me->fileref->fcb->ads)
