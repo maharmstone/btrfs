@@ -1261,6 +1261,17 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     }
                 }
 
+                if (me->dummyfcb->type == BTRFS_TYPE_DIRECTORY) {
+                    dcb* olddcb = (dcb*)me->fileref->fcb;
+
+                    if (olddcb->real_dcb) {
+                        dcb* newdcb = (dcb*)me->dummyfcb;
+
+                        newdcb->real_dcb = olddcb->real_dcb;
+                        olddcb->real_dcb = NULL;
+                    }
+                }
+
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
             } else {
                 ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, true);
