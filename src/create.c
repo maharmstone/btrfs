@@ -205,6 +205,7 @@ static NTSTATUS duplicate_dir_child(dir_child* src, dir_child** dest, trans_ref*
     dc->root_dir = src->root_dir;
     dc->trans = trans;
     dc->forked = false;
+    dc->non_trans_dc = NULL;
 
     dc->utf8.Length = dc->utf8.MaximumLength = src->utf8.Length;
     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.Length, ALLOC_TAG);
@@ -348,6 +349,8 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, dcb* dcb, root** subvol, uin
 
             if (old_dc)
                 *old_dc = non_trans_dc;
+
+            dc_found->non_trans_dc = non_trans_dc;
         }
     }
 
@@ -647,6 +650,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         dc->root_dir = false;
         dc->trans = NULL;
         dc->forked = false;
+        dc->non_trans_dc = NULL;
 
         max_index = dc->index;
 
@@ -727,6 +731,7 @@ cont:
             dc->root_dir = true;
             dc->trans = NULL;
             dc->forked = false;
+            dc->non_trans_dc = NULL;
 
             dc->utf8.MaximumLength = dc->utf8.Length = sizeof(root_dir) - sizeof(char);
             dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, sizeof(root_dir) - sizeof(char), ALLOC_TAG);
@@ -2257,6 +2262,7 @@ NTSTATUS add_dir_child(_In_ _Requires_lock_held_(_Curr_->tree_lock) _Requires_lo
     dc->fileref = NULL;
     dc->trans = trans;
     dc->forked = false;
+    dc->non_trans_dc = NULL;
 
     dc->utf8.Length = dc->utf8.MaximumLength = utf8->Length;
     RtlCopyMemory(dc->utf8.Buffer, utf8->Buffer, utf8->Length);

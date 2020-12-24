@@ -228,7 +228,7 @@ struct _file_ref;
 
 typedef struct _trans_ref trans_ref;
 
-typedef struct {
+typedef struct _dir_child {
     KEY key;
     uint64_t index;
     uint8_t type;
@@ -242,6 +242,7 @@ typedef struct {
     bool root_dir;
     trans_ref* trans;
     bool forked;
+    struct _dir_child* non_trans_dc;
     LIST_ENTRY list_entry_index;
     LIST_ENTRY list_entry_hash;
     LIST_ENTRY list_entry_hash_uc;

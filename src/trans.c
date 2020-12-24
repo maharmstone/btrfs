@@ -94,6 +94,7 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         if (fr->dc) {
             fr->dc->trans = NULL;
             fr->dc->key.obj_id = fr->fcb->inode;
+            fr->dc->non_trans_dc = NULL;
 
             if (fr->created) {
                 ExAcquireResourceExclusiveLite(fr->parent->fcb->Header.Resource, true);
