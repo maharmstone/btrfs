@@ -91,38 +91,119 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
 
         if (fr->dc) {
             fr->dc->trans = NULL;
-            fr->dc->key.obj_id = fr->fcb->inode;
+
+            if (fr->dc->key.obj_type == TYPE_INODE_ITEM)
+                fr->dc->key.obj_id = fr->fcb->inode;
+
             fr->dc->non_trans_dc = NULL;
 
             if (fr->created) {
-                ExAcquireResourceExclusiveLite(fr->parent->fcb->Header.Resource, true);
-                fr->parent->fcb->inode_item.st_size += (uint64_t)fr->dc->utf8.Length * 2;
-                fr->parent->fcb->inode_item.sequence++;
-                fr->parent->fcb->inode_item_changed = true;
-                ExReleaseResourceLite(fr->parent->fcb->Header.Resource);
+                fcb* parfcb = &(get_dcb(fr->parent->fcb)->fcb);
+
+                ExAcquireResourceExclusiveLite(parfcb->Header.Resource, true);
+                parfcb->inode_item.st_size += (uint64_t)fr->dc->utf8.Length * 2;
+                parfcb->inode_item.sequence++;
+                parfcb->inode_item_changed = true;
+                ExReleaseResourceLite(parfcb->Header.Resource);
 
                 // FIXME - update parent st_ctime? To now, or when operation performed?
 
-                mark_fcb_dirty(fr->parent->fcb);
+                mark_fcb_dirty(parfcb);
             } else if (fr->oldutf8.Buffer) { // renamed
-                ExAcquireResourceExclusiveLite(fr->parent->fcb->Header.Resource, true);
-                fr->parent->fcb->inode_item.st_size = fr->parent->fcb->inode_item.st_size + (2 * (uint64_t)fr->dc->utf8.Length) - (2 * (uint64_t)fr->oldutf8.Length);
-                fr->parent->fcb->inode_item.sequence++;
-                fr->parent->fcb->inode_item_changed = true;
-                ExReleaseResourceLite(fr->parent->fcb->Header.Resource);
+                fcb* parfcb = &(get_dcb(fr->parent->fcb)->fcb);
 
-                mark_fcb_dirty(fr->parent->fcb);
+                ExAcquireResourceExclusiveLite(parfcb->Header.Resource, true);
+                get_dcb(parfcb)->fcb.inode_item.st_size = parfcb->inode_item.st_size + (2 * (uint64_t)fr->dc->utf8.Length) - (2 * (uint64_t)fr->oldutf8.Length);
+                parfcb->inode_item.sequence++;
+                parfcb->inode_item_changed = true;
+                ExReleaseResourceLite(parfcb->Header.Resource);
+
+                mark_fcb_dirty(parfcb);
             }
         } else if (fr->deleted && fr->oldutf8.Buffer) {
-            ExAcquireResourceExclusiveLite(fr->parent->fcb->Header.Resource, true);
-            fr->parent->fcb->inode_item.st_size -= (uint64_t)fr->oldutf8.Length * 2;
-            fr->parent->fcb->inode_item.sequence++;
-            fr->parent->fcb->inode_item_changed = true;
-            ExReleaseResourceLite(fr->parent->fcb->Header.Resource);
+            fcb* parfcb = &(get_dcb(fr->parent->fcb)->fcb);
+
+            ExAcquireResourceExclusiveLite(parfcb->Header.Resource, true);
+            parfcb->inode_item.st_size -= (uint64_t)fr->oldutf8.Length * 2;
+            parfcb->inode_item.sequence++;
+            parfcb->inode_item_changed = true;
+            ExReleaseResourceLite(parfcb->Header.Resource);
 
             // FIXME - update parent st_ctime? To now, or when operation performed?
 
-            mark_fcb_dirty(fr->parent->fcb);
+            mark_fcb_dirty(parfcb);
+        }
+
+        if (!fr->fcb->ads && fr->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            struct _dcb* dcb = (struct _dcb*)fr->fcb;
+
+            if (dcb->real_dcb) { // swap inode numbers if committing forked directory
+                uint32_t hash;
+                uint64_t inode;
+                bool fcb_created;
+                LIST_ENTRY* le;
+
+                inode = dcb->real_dcb->fcb.inode;
+                hash = dcb->real_dcb->fcb.hash;
+                fcb_created = dcb->real_dcb->fcb.created;
+
+                dcb->real_dcb->fcb.inode = fr->fcb->inode;
+                dcb->real_dcb->fcb.hash = fr->fcb->hash;
+                dcb->real_dcb->fcb.created = fr->fcb->created;
+
+                fr->fcb->inode = inode;
+                fr->fcb->hash = hash;
+                fr->fcb->created = fr->created = fcb_created;
+
+                fr->fcb->inode_item.st_size = dcb->real_dcb->fcb.inode_item.st_size;
+                fr->fcb->inode_item_changed = true;
+                dcb->real_dcb->fcb.inode_item.st_size = 0;
+
+                dcb->real_dcb->fcb.fileref->created = true;
+                dcb->real_dcb->fcb.fileref->deleted = true;
+
+                dcb->dir_children_index.Flink = dcb->real_dcb->dir_children_index.Flink;
+                dcb->dir_children_index.Flink->Blink = &dcb->dir_children_index;
+                dcb->dir_children_index.Blink = dcb->real_dcb->dir_children_index.Blink;
+                dcb->dir_children_index.Blink->Flink = &dcb->dir_children_index;
+
+                dcb->dir_children_hash.Flink = dcb->real_dcb->dir_children_hash.Flink;
+                dcb->dir_children_hash.Flink->Blink = &dcb->dir_children_hash;
+                dcb->dir_children_hash.Blink = dcb->real_dcb->dir_children_hash.Blink;
+                dcb->dir_children_hash.Blink->Flink = &dcb->dir_children_hash;
+
+                dcb->dir_children_hash_uc.Flink = dcb->real_dcb->dir_children_hash_uc.Flink;
+                dcb->dir_children_hash_uc.Flink->Blink = &dcb->dir_children_hash_uc;
+                dcb->dir_children_hash_uc.Blink = dcb->real_dcb->dir_children_hash_uc.Blink;
+                dcb->dir_children_hash_uc.Blink->Flink = &dcb->dir_children_hash_uc;
+
+                RtlCopyMemory(dcb->hash_ptrs, dcb->real_dcb->hash_ptrs, sizeof(dcb->hash_ptrs));
+                RtlCopyMemory(dcb->hash_ptrs_uc, dcb->real_dcb->hash_ptrs_uc, sizeof(dcb->hash_ptrs_uc));
+                RtlZeroMemory(dcb->real_dcb->hash_ptrs, sizeof(dcb->real_dcb->hash_ptrs));
+                RtlZeroMemory(dcb->real_dcb->hash_ptrs_uc, sizeof(dcb->real_dcb->hash_ptrs_uc));
+
+                le = dcb->dir_children_index.Flink;
+                while (le != &dcb->dir_children_index) {
+                    dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
+
+                    if (dc->fileref) {
+                        free_fileref(dc->fileref->parent);
+                        dc->fileref->parent = fr;
+                        increase_fileref_refcount(fr);
+                    }
+
+                    le = le->Flink;
+                }
+
+                // FIXME - fcb_ptrs etc.
+
+                free_fcb((fcb*)dcb->real_dcb);
+                dcb->real_dcb = NULL;
+            } else
+                fr->created = true;
+        } else {
+            fr->created = true;
+            fr->fcb->marked_as_orphan = true;
         }
 
         fr->trans = NULL;
@@ -132,10 +213,7 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
 
         mark_fcb_dirty(fr->fcb);
 
-        fr->created = true;
         mark_fileref_dirty(fr);
-
-        fr->fcb->marked_as_orphan = true;
     }
 
     ExReleaseResourceLite(&trans->lock);
