@@ -1727,6 +1727,9 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                 old_fr->fcb = fcb;
                 InterlockedIncrement(&fcb->refcount);
 
+                if (fcb->type == BTRFS_TYPE_DIRECTORY)
+                    fcb->fileref = old_fr;
+
                 old_fr->parent = (struct _file_ref*)sf;
                 old_fr->dc = old_dc;
                 old_dc->fileref = old_fr;
@@ -1938,6 +1941,9 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
 
                             old_fr->fcb = old_fcb;
                             InterlockedIncrement(&old_fcb->refcount);
+
+                            if (old_fcb->type == BTRFS_TYPE_DIRECTORY)
+                                old_fcb->fileref = old_fr;
 
                             old_fr->parent = (struct _file_ref*)parfr;
                             old_fr->dc = old_dc2;
