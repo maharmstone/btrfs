@@ -31,6 +31,8 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
     if (!skip_lock)
         ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
+
     ExAcquireResourceExclusiveLite(&trans->lock, true);
 
     // remove old dir_children and mark fcbs as orphaned
@@ -39,12 +41,8 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
         dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&trans->old_dir_children), dir_child, list_entry_trans);
         NTSTATUS Status;
 
-        ExAcquireResourceExclusiveLite(&dc->fileref->parent->fcb->nonpaged->streams_lock, true);
-
         RemoveEntryList(&dc->list_entry_index);
         remove_dir_child_from_hash_lists(get_dcb(dc->fileref->parent->fcb), dc);
-
-        ExReleaseResourceLite(&dc->fileref->parent->fcb->nonpaged->streams_lock);
 
         ExAcquireResourceExclusiveLite(dc->fileref->fcb->Header.Resource, true);
 
@@ -141,6 +139,8 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
     }
 
     ExReleaseResourceLite(&trans->lock);
+
+    ExReleaseResourceLite(&Vcb->fileref_lock);
 
     Vcb->need_write = true;
 
