@@ -1270,6 +1270,9 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                         newdcb->real_dcb = olddcb->real_dcb;
                         olddcb->real_dcb = NULL;
                     }
+
+                    if (trans)
+                        me->fileref->fcb->inode_item.st_size = 0; // will get set by trans_commit instead
                 }
 
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
