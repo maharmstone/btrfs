@@ -2761,6 +2761,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 #endif
     fcb->subvol = parfileref->fcb->subvol;
     fcb->inode = parfileref->fcb->inode;
+    fcb->hash = parfileref->fcb->hash;
     fcb->type = parfileref->fcb->type;
 
     fcb->ads = true;
