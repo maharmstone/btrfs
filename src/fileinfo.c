@@ -2218,10 +2218,17 @@ static NTSTATUS rename_stream(_In_ _Requires_lock_held_(_Curr_->tree_lock) devic
     dummyfcb->Vcb = Vcb;
     dummyfcb->subvol = fileref->fcb->subvol;
     dummyfcb->inode = fileref->fcb->inode;
+    dummyfcb->hash = fileref->fcb->hash;
     dummyfcb->adsxattr = fileref->fcb->adsxattr;
     dummyfcb->adshash = fileref->fcb->adshash;
     dummyfcb->ads = true;
     dummyfcb->deleted = true;
+
+    acquire_fcb_lock_exclusive(Vcb);
+    add_fcb_to_subvol(dummyfcb);
+    InsertTailList(&Vcb->all_fcbs, &dummyfcb->list_entry_all);
+    dummyfcb->subvol->fcbs_version++;
+    release_fcb_lock(Vcb);
 
     mark_fcb_dirty(dummyfcb);
 
