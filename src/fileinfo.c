@@ -844,6 +844,68 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     return STATUS_SUCCESS;
 }
 
+static void add_fcb_to_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb) {
+    LIST_ENTRY* lastle = NULL;
+    uint32_t hash = fcb->hash;
+
+    if (fcb->subvol->fcbs_ptrs[hash >> 24]) {
+        LIST_ENTRY* le = fcb->subvol->fcbs_ptrs[hash >> 24];
+
+        while (le != &fcb->subvol->fcbs) {
+            struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+            if (fcb2->hash > hash) {
+                lastle = le->Blink;
+                break;
+            }
+
+            le = le->Flink;
+        }
+    }
+
+    if (!lastle) {
+        uint8_t c = hash >> 24;
+
+        if (c != 0xff) {
+            uint8_t d = c + 1;
+
+            do {
+                if (fcb->subvol->fcbs_ptrs[d]) {
+                    lastle = fcb->subvol->fcbs_ptrs[d]->Blink;
+                    break;
+                }
+
+                d++;
+            } while (d != 0);
+        }
+    }
+
+    if (lastle) {
+        InsertHeadList(lastle, &fcb->list_entry);
+
+        if (lastle == &fcb->subvol->fcbs || (CONTAINING_RECORD(lastle, struct _fcb, list_entry)->hash >> 24) != (hash >> 24))
+            fcb->subvol->fcbs_ptrs[hash >> 24] = &fcb->list_entry;
+    } else {
+        InsertTailList(&fcb->subvol->fcbs, &fcb->list_entry);
+
+        if (fcb->list_entry.Blink == &fcb->subvol->fcbs || (CONTAINING_RECORD(fcb->list_entry.Blink, struct _fcb, list_entry)->hash >> 24) != (hash >> 24))
+            fcb->subvol->fcbs_ptrs[hash >> 24] = &fcb->list_entry;
+    }
+}
+
+static void remove_fcb_from_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb) {
+    uint8_t c = fcb->hash >> 24;
+
+    if (fcb->subvol->fcbs_ptrs[c] == &fcb->list_entry) {
+        if (fcb->list_entry.Flink != &fcb->subvol->fcbs && (CONTAINING_RECORD(fcb->list_entry.Flink, struct _fcb, list_entry)->hash >> 24) == c)
+            fcb->subvol->fcbs_ptrs[c] = fcb->list_entry.Flink;
+        else
+            fcb->subvol->fcbs_ptrs[c] = NULL;
+    }
+
+    RemoveEntryList(&fcb->list_entry);
+}
+
 static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
@@ -911,8 +973,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE && me->fileref->fcb != fileref->fcb->Vcb->dummy_fcb) {
             if (!me->dummyfcb) {
                 ULONG defda;
-                bool inserted = false;
-                LIST_ENTRY* le3;
 
                 ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, true);
 
@@ -925,6 +985,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                 me->dummyfcb->subvol = me->fileref->fcb->subvol;
                 me->dummyfcb->inode = me->fileref->fcb->inode;
+                me->dummyfcb->hash = me->fileref->fcb->hash;
 
                 if (!me->dummyfcb->ads) {
                     me->dummyfcb->sd_dirty = me->fileref->fcb->sd_dirty;
@@ -944,6 +1005,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                     me->fileref->fcb->subvol = destdir->fcb->subvol;
                     me->fileref->fcb->inode = InterlockedIncrement64(&destdir->fcb->subvol->lastinode);
+                    me->fileref->fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&me->fileref->fcb->hash, sizeof(uint64_t));
                     me->fileref->fcb->inode_item.st_nlink = 1;
 
                     defda = get_file_attributes(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, me->fileref->fcb->inode,
@@ -1003,31 +1065,20 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                         le2 = le2->Flink;
                     }
+
+                    add_fcb_to_subvol(me->dummyfcb);
+                    remove_fcb_from_subvol(me->fileref->fcb);
+                    add_fcb_to_subvol(me->fileref->fcb);
                 } else {
                     me->fileref->fcb->subvol = me->parent->fileref->fcb->subvol;
                     me->fileref->fcb->inode = me->parent->fileref->fcb->inode;
+                    me->fileref->fcb->hash = me->parent->fileref->fcb->hash;
+
+                    // put stream after parent in FCB list
+                    InsertHeadList(&me->parent->fileref->fcb->list_entry, &me->fileref->fcb->list_entry);
                 }
 
                 me->fileref->fcb->created = true;
-
-                InsertHeadList(&me->fileref->fcb->list_entry, &me->dummyfcb->list_entry);
-                RemoveEntryList(&me->fileref->fcb->list_entry);
-
-                le3 = destdir->fcb->subvol->fcbs.Flink;
-                while (le3 != &destdir->fcb->subvol->fcbs) {
-                    fcb* fcb = CONTAINING_RECORD(le3, struct _fcb, list_entry);
-
-                    if (fcb->inode > me->fileref->fcb->inode) {
-                        InsertHeadList(le3->Blink, &me->fileref->fcb->list_entry);
-                        inserted = true;
-                        break;
-                    }
-
-                    le3 = le3->Flink;
-                }
-
-                if (!inserted)
-                    InsertTailList(&destdir->fcb->subvol->fcbs, &me->fileref->fcb->list_entry);
 
                 InsertTailList(&me->fileref->fcb->Vcb->all_fcbs, &me->dummyfcb->list_entry_all);
 
