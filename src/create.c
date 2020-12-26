@@ -1719,7 +1719,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
         if (trans && do_fork && old_dc) {
             struct _fcb* new_fcb;
             struct _fcb* old_fcb;
-            LIST_ENTRY* lastle = NULL;
             ULONG defda;
 
             ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, true);
@@ -1853,51 +1852,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             fcb->extents_changed = !IsListEmpty(&fcb->extents);
 
             acquire_fcb_lock_exclusive(Vcb);
-
-            if (new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24]) {
-                LIST_ENTRY* le = new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24];
-
-                while (le != &new_fcb->subvol->fcbs) {
-                    struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
-
-                    if (fcb2->hash > new_fcb->hash) {
-                        lastle = le->Blink;
-                        break;
-                    }
-
-                    le = le->Flink;
-                }
-            }
-
-            if (!lastle) {
-                uint8_t c = new_fcb->hash >> 24;
-
-                if (c != 0xff) {
-                    uint8_t d = c + 1;
-
-                    do {
-                        if (new_fcb->subvol->fcbs_ptrs[d]) {
-                            lastle = new_fcb->subvol->fcbs_ptrs[d]->Blink;
-                            break;
-                        }
-
-                        d++;
-                    } while (d != 0);
-                }
-            }
-
-            if (lastle) {
-                InsertHeadList(lastle, &new_fcb->list_entry);
-
-                if (lastle == &new_fcb->subvol->fcbs || (CONTAINING_RECORD(lastle, struct _fcb, list_entry)->hash >> 24) != (new_fcb->hash >> 24))
-                    new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24] = &new_fcb->list_entry;
-            } else {
-                InsertTailList(&new_fcb->subvol->fcbs, &new_fcb->list_entry);
-
-                if (new_fcb->list_entry.Blink == &new_fcb->subvol->fcbs || (CONTAINING_RECORD(new_fcb->list_entry.Blink, struct _fcb, list_entry)->hash >> 24) != (new_fcb->hash >> 24))
-                    new_fcb->subvol->fcbs_ptrs[new_fcb->hash >> 24] = &new_fcb->list_entry;
-            }
-
+            add_fcb_to_subvol(new_fcb);
             InsertTailList(&Vcb->all_fcbs, &new_fcb->list_entry_all);
             new_fcb->subvol->fcbs_version++;
             release_fcb_lock(Vcb);
