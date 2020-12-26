@@ -1005,7 +1005,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                     me->fileref->fcb->subvol = destdir->fcb->subvol;
                     me->fileref->fcb->inode = InterlockedIncrement64(&destdir->fcb->subvol->lastinode);
-                    me->fileref->fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&me->fileref->fcb->hash, sizeof(uint64_t));
+                    me->fileref->fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&me->fileref->fcb->inode, sizeof(uint64_t));
                     me->fileref->fcb->inode_item.st_nlink = 1;
 
                     defda = get_file_attributes(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, me->fileref->fcb->inode,
