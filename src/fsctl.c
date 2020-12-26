@@ -3689,6 +3689,44 @@ end:
     return Status;
 }
 
+static NTSTATUS check_inode_used(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
+                                 _In_ root* subvol, _In_ uint64_t inode, _In_ uint32_t hash, _In_opt_ PIRP Irp) {
+    KEY searchkey;
+    traverse_ptr tp;
+    NTSTATUS Status;
+    uint8_t c = hash >> 24;
+
+    if (subvol->fcbs_ptrs[c]) {
+        LIST_ENTRY* le = subvol->fcbs_ptrs[c];
+
+        while (le != &subvol->fcbs) {
+            struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+
+            if (fcb2->inode == inode)
+                return STATUS_SUCCESS;
+            else if (fcb2->hash > hash)
+                break;
+
+            le = le->Flink;
+        }
+    }
+
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+
+    Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
+        return STATUS_SUCCESS;
+
+    return STATUS_NOT_FOUND;
+}
+
 static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data, ULONG datalen, PIRP Irp) {
     NTSTATUS Status;
     btrfs_mknod* bmn;
@@ -3702,7 +3740,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     dir_child* dc;
     LARGE_INTEGER time;
     BTRFS_TIME now;
-    LIST_ENTRY* lastle;
     ANSI_STRING utf8;
     ULONG len, i;
     SECURITY_SUBJECT_CONTEXT subjcont;
@@ -3924,35 +3961,33 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     acquire_fcb_lock_exclusive(Vcb);
 
     if (bmn->inode == 0) {
-        inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
-        lastle = parfcb->subvol->fcbs.Blink;
+        fcb->inode = InterlockedIncrement64(&parfcb->subvol->lastinode);
+        fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&fcb->inode, sizeof(uint64_t));
     } else {
         if (bmn->inode > (uint64_t)parfcb->subvol->lastinode) {
-            inode = parfcb->subvol->lastinode = bmn->inode;
-            lastle = parfcb->subvol->fcbs.Blink;
+            fcb->inode = parfcb->subvol->lastinode = bmn->inode;
+            fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&fcb->inode, sizeof(uint64_t));
         } else {
-            LIST_ENTRY* le = parfcb->subvol->fcbs.Flink;
+            uint32_t hash = calc_crc32c(0xffffffff, (uint8_t*)&bmn->inode, sizeof(uint64_t));
 
-            lastle = parfcb->subvol->fcbs.Blink;
-            while (le != &parfcb->subvol->fcbs) {
-                struct _fcb* fcb2 = CONTAINING_RECORD(le, struct _fcb, list_entry);
+            Status = check_inode_used(Vcb, subvol, bmn->inode, hash, Irp);
+            if (NT_SUCCESS(Status)) { // STATUS_SUCCESS means inode found
+                release_fcb_lock(Vcb);
+                ExReleaseResourceLite(&Vcb->fileref_lock);
 
-                if (fcb2->inode == bmn->inode && !fcb2->deleted) {
-                    release_fcb_lock(Vcb);
-                    ExReleaseResourceLite(&Vcb->fileref_lock);
+                WARN("inode collision\n");
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            } else if (Status != STATUS_NOT_FOUND) {
+                ERR("check_inode_used returned %08lx\n", Status);
 
-                    WARN("inode collision\n");
-                    Status = STATUS_INVALID_PARAMETER;
-                    goto end;
-                } else if (fcb2->inode > bmn->inode) {
-                    lastle = fcb2->list_entry.Blink;
-                    break;
-                }
-
-                le = le->Flink;
+                release_fcb_lock(Vcb);
+                ExReleaseResourceLite(&Vcb->fileref_lock);
+                goto end;
             }
 
-            inode = bmn->inode;
+            fcb->inode = bmn->inode;
+            fcb->hash = hash;
         }
     }
 
@@ -3992,7 +4027,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     increase_fileref_refcount(parfileref);
 
-    InsertHeadList(lastle, &fcb->list_entry);
+    add_fcb_to_subvol(fcb);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
 
     if (bmn->type == BTRFS_TYPE_DIRECTORY)
