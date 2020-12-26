@@ -963,8 +963,9 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     rootfcb->Vcb = Vcb;
 
     rootfcb->subvol = r;
-    rootfcb->inode = SUBVOL_ROOT_INODE;
     rootfcb->type = BTRFS_TYPE_DIRECTORY;
+    rootfcb->inode = SUBVOL_ROOT_INODE;
+    rootfcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&rootfcb->inode, sizeof(uint64_t)); // FIXME - we can hardcode this
 
     rootfcb->inode_item.generation = Vcb->superblock.generation;
     rootfcb->inode_item.transid = Vcb->superblock.generation;
@@ -1008,7 +1009,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     rootfcb->inode_item_changed = true;
 
     acquire_fcb_lock_exclusive(Vcb);
-    InsertTailList(&r->fcbs, &rootfcb->list_entry);
+    add_fcb_to_subvol(rootfcb);
     InsertTailList(&Vcb->all_fcbs, &rootfcb->list_entry_all);
     r->fcbs_version++;
     release_fcb_lock(Vcb);
