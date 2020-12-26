@@ -841,6 +841,46 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
         return STATUS_SUCCESS;
     }
 
+    searchkey.obj_id = inode;
+    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
+
+    Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+        WARN("couldn't find INODE_ITEM for inode %I64x in subvol %I64x\n", inode, subvol->id);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (type == 0) { // guess the type from the inode mode, if the caller doesn't know already
+        INODE_ITEM* ii = (INODE_ITEM*)tp.item->data;
+
+        if (tp.item->size < sizeof(INODE_ITEM)) {
+            ERR("(%I64x;%I64x,%x,%I64x) was %u bytes, expected %u\n", subvol->id, tp.item->key.obj_id, tp.item->key.obj_type,
+                tp.item->key.offset, tp.item->size, (uint32_t)sizeof(INODE_ITEM));
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        if ((ii->st_mode & __S_IFDIR) == __S_IFDIR)
+            type = BTRFS_TYPE_DIRECTORY;
+        else if ((ii->st_mode & __S_IFCHR) == __S_IFCHR)
+            type = BTRFS_TYPE_CHARDEV;
+        else if ((ii->st_mode & __S_IFBLK) == __S_IFBLK)
+            type = BTRFS_TYPE_BLOCKDEV;
+        else if ((ii->st_mode & __S_IFIFO) == __S_IFIFO)
+            type = BTRFS_TYPE_FIFO;
+        else if ((ii->st_mode & __S_IFLNK) == __S_IFLNK)
+            type = BTRFS_TYPE_SYMLINK;
+        else if ((ii->st_mode & __S_IFSOCK) == __S_IFSOCK)
+            type = BTRFS_TYPE_SOCKET;
+        else
+            type = BTRFS_TYPE_FILE;
+    }
+
     fcb = create_fcb(Vcb, type == BTRFS_TYPE_DIRECTORY, pooltype);
     if (!fcb) {
         ERR("out of memory\n");
@@ -854,42 +894,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
     fcb->hash = hash;
     fcb->type = type;
 
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-
-    Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08lx\n", Status);
-        reap_fcb(fcb);
-        return Status;
-    }
-
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-        WARN("couldn't find INODE_ITEM for inode %I64x in subvol %I64x\n", inode, subvol->id);
-        reap_fcb(fcb);
-        return STATUS_INVALID_PARAMETER;
-    }
-
     if (tp.item->size > 0)
         RtlCopyMemory(&fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
-
-    if (fcb->type == 0) { // guess the type from the inode mode, if the caller doesn't know already
-        if ((fcb->inode_item.st_mode & __S_IFDIR) == __S_IFDIR)
-            fcb->type = BTRFS_TYPE_DIRECTORY;
-        else if ((fcb->inode_item.st_mode & __S_IFCHR) == __S_IFCHR)
-            fcb->type = BTRFS_TYPE_CHARDEV;
-        else if ((fcb->inode_item.st_mode & __S_IFBLK) == __S_IFBLK)
-            fcb->type = BTRFS_TYPE_BLOCKDEV;
-        else if ((fcb->inode_item.st_mode & __S_IFIFO) == __S_IFIFO)
-            fcb->type = BTRFS_TYPE_FIFO;
-        else if ((fcb->inode_item.st_mode & __S_IFLNK) == __S_IFLNK)
-            fcb->type = BTRFS_TYPE_SYMLINK;
-        else if ((fcb->inode_item.st_mode & __S_IFSOCK) == __S_IFSOCK)
-            fcb->type = BTRFS_TYPE_SOCKET;
-        else
-            fcb->type = BTRFS_TYPE_FILE;
-    }
 
     no_data = fcb->inode_item.st_size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK);
 
