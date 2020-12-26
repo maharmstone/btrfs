@@ -1436,6 +1436,8 @@ void insert_dir_child_into_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_
 void remove_dir_child_from_hash_lists(_In_ _Requires_exclusive_lock_held_(_Curr_->fcb.nonpaged->dir_children_lock) dcb* dcb,
                                       _In_ dir_child* dc);
 NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb);
+void add_fcb_to_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb);
+void remove_fcb_from_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb);
 
 // in reparse.c
 NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, ULONG_PTR* retlen);

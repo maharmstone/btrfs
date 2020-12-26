@@ -147,20 +147,34 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
                 hash = dcb->real_dcb->fcb.hash;
                 fcb_created = dcb->real_dcb->fcb.created;
 
-                dcb->real_dcb->fcb.inode = fr->fcb->inode;
-                dcb->real_dcb->fcb.hash = fr->fcb->hash;
-                dcb->real_dcb->fcb.created = fr->fcb->created;
+                ExAcquireResourceExclusiveLite(&Vcb->fcb_lock, true);
 
+                remove_fcb_from_subvol(&dcb->real_dcb->fcb);
+                remove_fcb_from_subvol(fr->fcb);
+
+                dcb->real_dcb->fcb.hash = fr->fcb->hash;
+                dcb->real_dcb->fcb.inode = fr->fcb->inode;
                 fr->fcb->inode = inode;
                 fr->fcb->hash = hash;
+
+                add_fcb_to_subvol(&dcb->real_dcb->fcb);
+                add_fcb_to_subvol(fr->fcb);
+
+                fr->fcb->subvol->fcbs_version++;
+
+                ExReleaseResourceLite(&Vcb->fcb_lock);
+
+                dcb->real_dcb->fcb.created = fr->fcb->created;
                 fr->fcb->created = fr->created = fcb_created;
 
                 fr->fcb->inode_item.st_size = dcb->real_dcb->fcb.inode_item.st_size;
                 fr->fcb->inode_item_changed = true;
                 dcb->real_dcb->fcb.inode_item.st_size = 0;
 
-                dcb->real_dcb->fcb.fileref->created = true;
-                dcb->real_dcb->fcb.fileref->deleted = true;
+                if (dcb->real_dcb->fcb.fileref) {
+                    dcb->real_dcb->fcb.fileref->created = true;
+                    dcb->real_dcb->fcb.fileref->deleted = true;
+                }
 
                 dcb->dir_children_index.Flink = dcb->real_dcb->dir_children_index.Flink;
                 dcb->dir_children_index.Flink->Blink = &dcb->dir_children_index;
@@ -194,8 +208,6 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
 
                     le = le->Flink;
                 }
-
-                // FIXME - fcb_ptrs etc.
 
                 free_fcb((fcb*)dcb->real_dcb);
                 dcb->real_dcb = NULL;

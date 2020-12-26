@@ -1028,7 +1028,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     return STATUS_SUCCESS;
 }
 
-static void add_fcb_to_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb) {
+void add_fcb_to_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb) {
     LIST_ENTRY* lastle = NULL;
     uint32_t hash = fcb->hash;
 
@@ -1077,7 +1077,7 @@ static void add_fcb_to_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->f
     }
 }
 
-static void remove_fcb_from_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb) {
+void remove_fcb_from_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb_lock) fcb* fcb) {
     uint8_t c = fcb->hash >> 24;
 
     if (fcb->subvol->fcbs_ptrs[c] == &fcb->list_entry) {
