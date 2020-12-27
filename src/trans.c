@@ -176,6 +176,9 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
                     dcb->real_dcb->fcb.fileref->deleted = true;
                 }
 
+                if (fr->dc)
+                    fr->dc->key.obj_id = inode;
+
                 dcb->dir_children_index.Flink = dcb->real_dcb->dir_children_index.Flink;
                 dcb->dir_children_index.Flink->Blink = &dcb->dir_children_index;
                 dcb->dir_children_index.Blink = dcb->real_dcb->dir_children_index.Blink;
