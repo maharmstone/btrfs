@@ -199,6 +199,10 @@ static NTSTATUS trans_commit(device_extension* Vcb, trans_ref* trans) {
                 RtlZeroMemory(dcb->real_dcb->hash_ptrs, sizeof(dcb->real_dcb->hash_ptrs));
                 RtlZeroMemory(dcb->real_dcb->hash_ptrs_uc, sizeof(dcb->real_dcb->hash_ptrs_uc));
 
+                InitializeListHead(&dcb->real_dcb->dir_children_index);
+                InitializeListHead(&dcb->real_dcb->dir_children_hash);
+                InitializeListHead(&dcb->real_dcb->dir_children_hash_uc);
+
                 le = dcb->dir_children_index.Flink;
                 while (le != &dcb->dir_children_index) {
                     dir_child* dc = CONTAINING_RECORD(le, dir_child, list_entry_index);
