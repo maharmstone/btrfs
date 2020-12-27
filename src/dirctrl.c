@@ -957,15 +957,17 @@ static NTSTATUS query_directory(_In_ PIRP Irp) {
 
                     if (dc2->hash == hash) {
                         if (dc2->name.Length == ccb->query_string.Length && RtlCompareMemory(dc2->name.Buffer, ccb->query_string.Buffer, ccb->query_string.Length) == ccb->query_string.Length) {
-                            found = true;
+                            if (dc2->trans == trans || (trans && !dc2->forked)) {
+                                found = true;
 
-                            de.key = dc2->key;
-                            de.name = dc2->name;
-                            de.type = dc2->type;
-                            de.dir_entry_type = DirEntryType_File;
-                            de.dc = dc2;
+                                de.key = dc2->key;
+                                de.name = dc2->name;
+                                de.type = dc2->type;
+                                de.dir_entry_type = DirEntryType_File;
+                                de.dc = dc2;
 
-                            break;
+                                break;
+                            }
                         }
                     } else if (dc2->hash > hash)
                         break;
@@ -981,15 +983,17 @@ static NTSTATUS query_directory(_In_ PIRP Irp) {
 
                     if (dc2->hash_uc == hash) {
                         if (dc2->name_uc.Length == us.Length && RtlCompareMemory(dc2->name_uc.Buffer, us.Buffer, us.Length) == us.Length) {
-                            found = true;
+                            if (dc2->trans == trans || (trans && !dc2->forked)) {
+                                found = true;
 
-                            de.key = dc2->key;
-                            de.name = dc2->name;
-                            de.type = dc2->type;
-                            de.dir_entry_type = DirEntryType_File;
-                            de.dc = dc2;
+                                de.key = dc2->key;
+                                de.name = dc2->name;
+                                de.type = dc2->type;
+                                de.dir_entry_type = DirEntryType_File;
+                                de.dc = dc2;
 
-                            break;
+                                break;
+                            }
                         }
                     } else if (dc2->hash_uc > hash)
                         break;
