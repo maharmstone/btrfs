@@ -2943,7 +2943,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         goto end;
     }
 
-    if (related == fileref->parent) { // keeping file in same directory
+    if (get_dcb(related->fcb) == get_dcb(fileref->parent->fcb)) { // keeping file in same directory
         UNICODE_STRING oldfn, newfn;
         USHORT name_offset;
         ULONG reqlen, oldutf8len;
