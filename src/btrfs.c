@@ -4821,7 +4821,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->volume_fcb->Vcb = Vcb;
     Vcb->volume_fcb->sd = NULL;
 
-    Vcb->dummy_fcb = create_fcb(Vcb, false, NonPagedPool);
+    Vcb->dummy_fcb = create_fcb(Vcb, true, NonPagedPool);
     if (!Vcb->dummy_fcb) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
