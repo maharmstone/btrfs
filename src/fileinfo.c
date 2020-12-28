@@ -2530,7 +2530,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         for (i = fnlen - 1; i >= 0; i--) {
             if (fri->FileName[i] == '\\' || fri->FileName[i] == '/') {
                 fn = &fri->FileName[i+1];
-                fnlen = (fri->FileNameLength / sizeof(WCHAR)) - i - 1;
+                fnlen -= i + 1;
                 break;
             }
         }
