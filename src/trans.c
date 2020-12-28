@@ -259,6 +259,8 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
     if (!skip_lock)
         ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
+    ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
+
     ExAcquireResourceExclusiveLite(&trans->lock, true);
 
     // mark old dir_children as not forked, and remove from list
@@ -275,12 +277,8 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
         file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&trans->filerefs), file_ref, list_entry_trans);
 
         if (fr->dc) { // delete dir_child
-            ExAcquireResourceExclusiveLite(&fr->parent->fcb->nonpaged->streams_lock, true);
-
             RemoveEntryList(&fr->dc->list_entry_index);
             remove_dir_child_from_hash_lists(get_dcb(fr->parent->fcb), fr->dc);
-
-            ExReleaseResourceLite(&fr->parent->fcb->nonpaged->streams_lock);
 
             ExFreePool(fr->dc->utf8.Buffer);
             ExFreePool(fr->dc->name.Buffer);
@@ -317,6 +315,8 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
     ExReleaseResourceLite(&trans->lock);
 
     // FIXME - make sure trans->refcount decreased correctly
+
+    ExReleaseResourceLite(&Vcb->fileref_lock);
 
     if (!skip_lock)
         ExReleaseResourceLite(&Vcb->tree_lock);
