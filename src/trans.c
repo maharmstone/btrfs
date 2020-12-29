@@ -268,6 +268,24 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
     while (!IsListEmpty(&trans->old_dir_children)) {
         dir_child* dc = CONTAINING_RECORD(RemoveHeadList(&trans->old_dir_children), dir_child, list_entry_trans);
 
+        if (dc->fileref && !dc->fileref->fcb->ads && dc->fileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            struct _dcb* dcb = (struct _dcb*)dc->fileref->fcb;
+            LIST_ENTRY* le;
+
+            le = dcb->dir_children_index.Flink;
+            while (le != &dcb->dir_children_index) {
+                dir_child* dc2 = CONTAINING_RECORD(le, dir_child, list_entry_index);
+
+                if (dc2->fileref && dc2->fileref->parent != dc->fileref) {
+                    increase_fileref_refcount(dc->fileref);
+                    free_fileref(dc2->fileref->parent);
+                    dc2->fileref->parent = dc->fileref;
+                }
+
+                le = le->Flink;
+            }
+        }
+
         dc->forked = false;
     }
 
