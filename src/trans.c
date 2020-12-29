@@ -322,6 +322,15 @@ static NTSTATUS trans_rollback(device_extension* Vcb, trans_ref* trans) {
             clear_rollback(&rollback);
         }
 
+        if (!fr->fcb->ads && fr->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            struct _dcb* dcb = (struct _dcb*)fr->fcb;
+
+            if (dcb->real_dcb) {
+                free_fcb(&dcb->real_dcb->fcb);
+                dcb->real_dcb = NULL;
+            }
+        }
+
         mark_fcb_dirty(fr->fcb);
 
         fr->created = true;
