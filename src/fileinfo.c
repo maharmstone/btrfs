@@ -734,6 +734,7 @@ typedef struct _move_entry {
     fcb* dummyfcb;
     file_ref* dummyfileref;
     struct _move_entry* parent;
+    bool hardlinks_fixed;
     LIST_ENTRY list_entry;
 } move_entry;
 
@@ -812,6 +813,7 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
             me2->dummyfcb = NULL;
             me2->dummyfileref = NULL;
             me2->parent = me;
+            me2->hardlinks_fixed = false;
 
             InsertHeadList(&me->list_entry, &me2->list_entry);
         }
@@ -848,6 +850,7 @@ static NTSTATUS add_children_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree
             me2->dummyfcb = NULL;
             me2->dummyfileref = NULL;
             me2->parent = me;
+            me2->hardlinks_fixed = false;
 
             InsertHeadList(&me->list_entry, &me2->list_entry);
 
@@ -891,6 +894,7 @@ static NTSTATUS add_streams_to_move_list(_In_ _Requires_lock_held_(_Curr_->tree_
         me2->dummyfcb = NULL;
         me2->dummyfileref = NULL;
         me2->parent = me;
+        me2->hardlinks_fixed = false;
 
         InsertHeadList(&me->list_entry, &me2->list_entry);
 
@@ -1124,6 +1128,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     me->dummyfcb = NULL;
     me->dummyfileref = NULL;
     me->parent = NULL;
+    me->hardlinks_fixed = false;
 
     InsertTailList(&move_list, &me->list_entry);
 
@@ -1538,6 +1543,81 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
                     InsertTailList(&dcb->dir_children_index, &me->fileref->dc->list_entry_index);
                     insert_dir_child_into_hash_lists(dcb, me->fileref->dc);
+                }
+            }
+
+            if (trans && !me->hardlinks_fixed && !me->dummyfcb->ads && me->dummyfcb->inode_item.st_nlink > 1) {
+                LIST_ENTRY* le2 = me->dummyfcb->hardlinks.Flink;
+
+                while (le2 != &me->dummyfcb->hardlinks) {
+                    hardlink* hl = CONTAINING_RECORD(le2, hardlink, list_entry);
+                    bool moving = false;
+                    LIST_ENTRY* le3;
+
+                    if (hl->parent != SUBVOL_ROOT_INODE) {
+                        le3 = move_list.Flink;
+                        while (le3 != &move_list) {
+                            move_entry* me2 = CONTAINING_RECORD(le3, move_entry, list_entry);
+
+                            if (!me2->dummyfcb->ads && me2->dummyfcb->type == BTRFS_TYPE_DIRECTORY) {
+                                struct _dcb* dcb = get_dcb(me2->dummyfcb);
+
+                                if (me2->dummyfcb->inode == hl->parent || dcb->fcb.inode == hl->parent) {
+                                    moving = true;
+                                    break;
+                                }
+                            }
+
+                            le3 = le3->Flink;
+                        }
+                    }
+
+                    TRACE("hardlink: parent %I64x, index %I64x, name %.*S, moving %s\n", hl->parent, hl->index,
+                          (int)(hl->name.Length / sizeof(WCHAR)), hl->name.Buffer, moving ? "true" : "false");
+
+                    if (!moving) {
+                        file_ref *hlpar, *fr;
+
+                        Status = open_fileref_by_inode(me->fileref->fcb->Vcb, me->dummyfcb->subvol, hl->parent, &hlpar, Irp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("open_fileref_by_inode returned %08lx\n", Status);
+                            goto end;
+                        }
+
+                        Status = open_fileref_child(me->fileref->fcb->Vcb, hlpar, &hl->name, true, true, false, PagedPool, trans,
+                                                    true, &fr, Irp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("open_fileref_child returned %08lx\n", Status);
+                            free_fileref(hlpar);
+                            goto end;
+                        }
+
+                        free_fcb(fr->fcb);
+                        fr->fcb = me->dummyfcb;
+                        me->dummyfcb->refcount++;
+
+                        if (fr->parent != hlpar) {
+                            free_fileref(fr->parent);
+                            fr->parent = hlpar;
+                        } else
+                            free_fileref(hlpar);
+
+                        mark_fileref_dirty(fr);
+
+                        free_fileref(fr);
+                    }
+
+                    le2 = le2->Flink;
+                }
+
+                le2 = le->Flink;
+                while (le2 != &move_list) {
+                    move_entry* me2 = CONTAINING_RECORD(le2, move_entry, list_entry);
+
+                    if (me2->dummyfcb == me->dummyfcb)
+                        me2->hardlinks_fixed = true;
+
+                    le2 = le2->Flink;
                 }
             }
         }
