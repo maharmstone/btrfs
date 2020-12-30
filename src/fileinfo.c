@@ -1172,7 +1172,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         if (le == move_list.Flink && (me->fileref->dc->utf8.Length != utf8->Length || RtlCompareMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length) != utf8->Length))
             name_changed = true;
 
-        if ((le == move_list.Flink || me->fileref->fcb->inode == SUBVOL_ROOT_INODE) && !me->dummyfileref->oldutf8.Buffer) {
+        if (!me->dummyfileref->oldutf8.Buffer) {
             me->dummyfileref->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, me->fileref->dc->utf8.Length, ALLOC_TAG);
             if (!me->dummyfileref->oldutf8.Buffer) {
                 ERR("out of memory\n");
