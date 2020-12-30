@@ -1883,8 +1883,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
 
                         Status = find_file_in_dir(&hl->name, get_dcb(parfr->fcb), NULL, NULL, &forked_dc,
                                                   true, trans, true, &old_dc2);
-                        // FIXME - die if DC already forked by something else(?)
-
                         if (!NT_SUCCESS(Status)) {
                             ERR("find_file_in_dir returned %08lx\n", Status);
                             free_fileref(parfr);
@@ -1893,58 +1891,60 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
                             return Status;
                         }
 
-                        if (!old_dc2->fileref) {
-                            file_ref* old_fr;
+                        if (old_dc2) { // not already forked
+                            if (!old_dc2->fileref) {
+                                file_ref* old_fr;
 
-                            old_fr = create_fileref(Vcb);
-                            if (!old_fr) {
+                                old_fr = create_fileref(Vcb);
+                                if (!old_fr) {
+                                    ERR("out of memory\n");
+                                    free_fileref(parfr);
+                                    free_fcb(old_fcb);
+                                    free_fcb(new_fcb);
+                                    return STATUS_INSUFFICIENT_RESOURCES;
+                                }
+
+                                old_fr->fcb = old_fcb;
+                                InterlockedIncrement(&old_fcb->refcount);
+
+                                if (old_fcb->type == BTRFS_TYPE_DIRECTORY)
+                                    old_fcb->fileref = old_fr;
+
+                                old_fr->parent = (struct _file_ref*)parfr;
+                                old_fr->dc = old_dc2;
+                                old_dc2->fileref = old_fr;
+                                increase_fileref_refcount(parfr);
+
+                                mark_fileref_dirty(old_fr);
+                                free_fileref(old_fr);
+                            }
+
+                            // create new fileref and add to list
+
+                            forked_fileref = create_fileref(Vcb);
+                            if (!forked_fileref) {
                                 ERR("out of memory\n");
+                                ExReleaseResourceLite(old_fcb->Header.Resource);
                                 free_fileref(parfr);
                                 free_fcb(old_fcb);
                                 free_fcb(new_fcb);
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
 
-                            old_fr->fcb = old_fcb;
-                            InterlockedIncrement(&old_fcb->refcount);
+                            forked_fileref->fcb = new_fcb;
+                            InterlockedIncrement(&new_fcb->refcount);
+                            forked_fileref->trans = trans;
 
-                            if (old_fcb->type == BTRFS_TYPE_DIRECTORY)
-                                old_fcb->fileref = old_fr;
+                            forked_fileref->parent = (struct _file_ref*)sf;
+                            forked_fileref->dc = forked_dc;
+                            forked_dc->fileref = forked_fileref;
+                            increase_fileref_refcount(sf);
 
-                            old_fr->parent = (struct _file_ref*)parfr;
-                            old_fr->dc = old_dc2;
-                            old_dc2->fileref = old_fr;
-                            increase_fileref_refcount(parfr);
+                            add_fileref_to_trans(forked_fileref, trans);
+                            mark_fileref_dirty(forked_fileref);
 
-                            mark_fileref_dirty(old_fr);
-                            free_fileref(old_fr);
+                            free_fileref(forked_fileref);
                         }
-
-                        // create new fileref and add to list
-
-                        forked_fileref = create_fileref(Vcb);
-                        if (!forked_fileref) {
-                            ERR("out of memory\n");
-                            ExReleaseResourceLite(old_fcb->Header.Resource);
-                            free_fileref(parfr);
-                            free_fcb(old_fcb);
-                            free_fcb(new_fcb);
-                            return STATUS_INSUFFICIENT_RESOURCES;
-                        }
-
-                        forked_fileref->fcb = new_fcb;
-                        InterlockedIncrement(&new_fcb->refcount);
-                        forked_fileref->trans = trans;
-
-                        forked_fileref->parent = (struct _file_ref*)sf;
-                        forked_fileref->dc = forked_dc;
-                        forked_dc->fileref = forked_fileref;
-                        increase_fileref_refcount(sf);
-
-                        add_fileref_to_trans(forked_fileref, trans);
-                        mark_fileref_dirty(forked_fileref);
-
-                        free_fileref(forked_fileref);
                     }
 
                     le = le->Flink;
