@@ -3752,7 +3752,8 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
             return STATUS_ACCESS_DENIED;
         }
 
-        free_trans(Vcb, trans);
+        if (trans)
+            free_trans(Vcb, trans);
     }
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);

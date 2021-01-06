@@ -1688,7 +1688,7 @@ extern BTRFS_UUID boot_uuid;
 // in trans.c
 NTSTATUS init_trans_man(device_extension* Vcb);
 NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref** t);
-void free_trans(device_extension* Vcb, trans_ref* t);
+void free_trans(_In_ device_extension* Vcb, _In_ trans_ref* t);
 void mark_dc_forked(dir_child* dc, trans_ref* trans);
 void add_fileref_to_trans(file_ref* fr, trans_ref* trans);
 NTSTATUS get_transacted_version(PFILE_OBJECT FileObject, TXFS_GET_TRANSACTED_VERSION* buf, ULONG buflen, ULONG_PTR* retlen);

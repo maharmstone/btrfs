@@ -606,7 +606,7 @@ NTSTATUS get_trans(device_extension* Vcb, PTXN_PARAMETER_BLOCK block, trans_ref*
     return STATUS_SUCCESS;
 }
 
-void free_trans(device_extension* Vcb, trans_ref* t) {
+void free_trans(_In_ device_extension* Vcb, _In_ trans_ref* t) {
     KIRQL irql;
 
     KeAcquireSpinLock(&Vcb->trans_list_lock, &irql);
