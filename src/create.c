@@ -1674,7 +1674,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
         ExReleaseResourceLite(&sf->fcb->nonpaged->streams_lock);
 
         if (duff_fr)
-            reap_fileref(Vcb, duff_fr);
+            ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, duff_fr);
     } else {
         root* subvol;
         uint64_t inode;
@@ -1970,9 +1970,6 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
         sf2->fcb = fcb;
         sf2->trans = dc->trans;
 
-        if (dc->type == BTRFS_TYPE_DIRECTORY)
-            fcb->fileref = sf2;
-
         ExAcquireResourceExclusiveLite(&sf->fcb->nonpaged->dir_children_lock, true);
 
         if (!dc->fileref) {
@@ -1980,6 +1977,9 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _In_ device_
             sf2->dc = dc;
             dc->fileref = sf2;
             increase_fileref_refcount(sf);
+
+            if (dc->type == BTRFS_TYPE_DIRECTORY)
+                fcb->fileref = sf2;
         } else {
             duff_fr = sf2;
             sf2 = dc->fileref;
