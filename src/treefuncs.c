@@ -833,8 +833,10 @@ static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
     // FIXME - would counting the filerefs and allocating an array of pointers be quicker?
 
     v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
-    if (!v)
+    if (!v) {
+        ERR("out of memory\n");
         return;
+    }
 
     v->fileref = Vcb->root_fileref;
     InsertTailList(&list, &v->list_entry);
@@ -859,8 +861,10 @@ static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
                 if (dc->fileref) {
                     v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
-                    if (!v)
+                    if (!v) {
+                        ERR("out of memory\n");
                         goto end;
+                    }
 
                     v->fileref = dc->fileref;
                     InsertTailList(&list, &v->list_entry);
@@ -880,8 +884,10 @@ static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
                 if (dc->fileref) {
                     v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
-                    if (!v)
+                    if (!v) {
+                        ERR("out of memory\n");
                         goto end;
+                    }
 
                     v->fileref = dc->fileref;
                     InsertTailList(&list, &v->list_entry);
