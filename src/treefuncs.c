@@ -860,6 +860,12 @@ static void reap_filerefs(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 dir_child* dc = CONTAINING_RECORD(le2, dir_child, list_entry_index);
 
                 if (dc->fileref) {
+                    if (dc->fileref->fcb == Vcb->root_fileref->fcb) {
+                        // avoid infinite loop caused by root subvol in $Root directory
+                        le2 = le2->Flink;
+                        continue;
+                    }
+
                     v = ExAllocatePoolWithTag(PagedPool, sizeof(frle), ALLOC_TAG);
                     if (!v) {
                         ERR("out of memory\n");
