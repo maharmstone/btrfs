@@ -761,6 +761,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
 
     fcb->subvol = r;
     fcb->inode = InterlockedIncrement64(&r->lastinode);
+    fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&fcb->inode, sizeof(uint64_t));
     fcb->type = BTRFS_TYPE_DIRECTORY;
 
     fcb->inode_item.generation = Vcb->superblock.generation;
@@ -832,7 +833,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
 
     acquire_fcb_lock_exclusive(Vcb);
-    InsertTailList(&r->fcbs, &fcb->list_entry);
+    add_fcb_to_subvol(fcb);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
     r->fcbs_version++;
     release_fcb_lock(Vcb);
