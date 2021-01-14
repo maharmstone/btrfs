@@ -1,4 +1,4 @@
-WinBtrfs v1.7.5
+WinBtrfs v1.7.6
 ---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -249,6 +249,14 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7.6 (2021-01-14):
+* Fixed race condition when booting with Quibble
+* No longer need to restart Windows after initial installation
+* Forced maximum file name to 255 UTF-8 characters, to match Linux driver
+* Fixed issue where directories could be created with trailing backslash
+* Fixed potential deadlock when Windows calls NtCreateSection during flush
+* Miscellaneous bug fixes
 
 v1.7.5 (2020-10-31):
 * Fixed text display issue in shell extension
