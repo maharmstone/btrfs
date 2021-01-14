@@ -164,13 +164,6 @@ file_ref* create_fileref(device_extension* Vcb) {
 
     RtlZeroMemory(fr, sizeof(file_ref));
 
-    fr->nonpaged = ExAllocateFromNPagedLookasideList(&Vcb->fileref_np_lookaside);
-    if (!fr->nonpaged) {
-        ERR("out of memory\n");
-        ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
-        return NULL;
-    }
-
     fr->refcount = 1;
 
 #ifdef DEBUG_FCB_REFCOUNTS
@@ -178,8 +171,6 @@ file_ref* create_fileref(device_extension* Vcb) {
 #endif
 
     InitializeListHead(&fr->children);
-
-    ExInitializeResourceLite(&fr->nonpaged->fileref_lock);
 
     return fr;
 }

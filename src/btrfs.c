@@ -1832,10 +1832,6 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
 
     // FIXME - do delete if needed
 
-    ExDeleteResourceLite(&fr->nonpaged->fileref_lock);
-
-    ExFreeToNPagedLookasideList(&Vcb->fileref_np_lookaside, fr->nonpaged);
-
     // FIXME - throw error if children not empty
 
     if (fr->fcb->fileref == fr)
@@ -2160,7 +2156,6 @@ void uninit(_In_ device_extension* Vcb) {
     ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
     ExDeletePagedLookasideList(&Vcb->name_bit_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
-    ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
     ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
 
     ZwClose(Vcb->flush_thread_handle);
@@ -4707,7 +4702,6 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     ExInitializePagedLookasideList(&Vcb->fcb_lookaside, NULL, NULL, 0, sizeof(fcb), ALLOC_TAG, 0);
     ExInitializePagedLookasideList(&Vcb->name_bit_lookaside, NULL, NULL, 0, sizeof(name_bit), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->range_lock_lookaside, NULL, NULL, 0, sizeof(range_lock), ALLOC_TAG, 0);
-    ExInitializeNPagedLookasideList(&Vcb->fileref_np_lookaside, NULL, NULL, 0, sizeof(file_ref_nonpaged), ALLOC_TAG, 0);
     ExInitializeNPagedLookasideList(&Vcb->fcb_np_lookaside, NULL, NULL, 0, sizeof(fcb_nonpaged), ALLOC_TAG, 0);
     init_lookaside = true;
 
@@ -5025,7 +5019,6 @@ exit2:
                 ExDeletePagedLookasideList(&Vcb->fcb_lookaside);
                 ExDeletePagedLookasideList(&Vcb->name_bit_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->range_lock_lookaside);
-                ExDeleteNPagedLookasideList(&Vcb->fileref_np_lookaside);
                 ExDeleteNPagedLookasideList(&Vcb->fcb_np_lookaside);
             }
 
