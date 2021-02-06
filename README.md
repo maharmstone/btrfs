@@ -96,10 +96,8 @@ To install the driver, [download and extract the latest release](https://github.
 right-click btrfs.inf, and choose Install. The driver is signed, so should work out
 of the box on modern versions of Windows.
 
-For the very latest versions of Windows 10, Microsoft introduced more onerous
-requirements for signing, which are only available to corporations and not individuals.
-If this affects you (i.e. you get a signing error when trying to install the driver),
-try disabling Secure Boot in your BIOS settings.
+If you using Windows 10 and have Secure Boot enabled, you may have to make a Registry
+change in order for the driver to be loaded - see [below](#secureboot).
 
 There's also a [Chocolatey package](https://chocolatey.org/packages/winbtrfs) available -
 if you have Chocolatey installed, try running `choco install winbtrfs`.
@@ -208,6 +206,16 @@ or
 The driver assumes that all filenames are encoded in UTF-8. This should be the
 default on most setups nowadays - if you're not using UTF-8, it's probably worth
 looking into converting your files.
+
+* <a name="secureboot"></a>How do I get this working with Secure Boot turned on?
+
+For the very latest versions of Windows 10, Microsoft introduced more onerous
+requirements for signing, which seemingly aren't available for open-source drivers.
+
+To work around this, go to `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\CI\Policy` in Regedit,
+create a new DWORD value called `UpgradedSystem` and set to 1, and reboot.
+
+Or you could always just turn off Secure Boot in your BIOS settings.
 
 * The root of the drive isn't case-sensitive in LXSS
 
