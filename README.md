@@ -199,6 +199,14 @@ clone subvolumes.
 Troubleshooting
 ---------------
 
+* How do I debug this?
+
+On the releases page, there's zip files to download containing the PDBs. Or you
+can try the symbols server http://symbols.burntcomma.com/ - in windbg, set your
+symbol path to something like this:
+
+```symsrv*symsrv.dll*C:\symbols*http://msdl.microsoft.com/download/symbols;symsrv*symsrv.dll*C:\symbols*http://symbols.burntcomma.com```
+
 * The filenames are weird!
 or
 * I get strange errors on certain files or directories!
