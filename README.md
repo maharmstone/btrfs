@@ -153,8 +153,8 @@ LXSS ("Ubuntu on Windows" / "Windows Subsystem for Linux")
 ----------------------------------------------------------
 
 The driver will passthrough Linux metadata to recent versions of LXSS, but you
-will have to let Windows that you wish to do this. From a Bash prompt on Windows,
-edit `/etc/wsl.conf` to look like the following:
+will have to let Windows know that you wish to do this. From a Bash prompt on
+Windows, edit `/etc/wsl.conf` to look like the following:
 
 ```
 [automount]
