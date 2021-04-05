@@ -832,7 +832,8 @@ static NTSTATUS query_directory(PIRP Irp) {
             if (FsRtlDoesNameContainWildCards(IrpSp->Parameters.QueryDirectory.FileName)) {
                 has_wildcard = true;
                 specific_file = false;
-            }
+            } else if (!initial)
+                return STATUS_NO_MORE_FILES;
         }
 
         if (ccb->query_string.Buffer)
