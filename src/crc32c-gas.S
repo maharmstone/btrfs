@@ -44,7 +44,8 @@ mov r10b, byte ptr [rdx]
 xor al, r10b
 and rax, 255
 shl rax, 2
-mov rax, [crctable + rax]
+movabs r10, offset crctable
+mov eax, dword ptr [r10 + rax]
 xor rax, rcx
 
 inc rdx
