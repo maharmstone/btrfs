@@ -1,4 +1,4 @@
-WinBtrfs v1.7.6
+WinBtrfs v1.7.7
 ---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -265,6 +265,12 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7.7 (2021-04-12):
+* Fixed deadlock on high load
+* Fixed free space issue when installing Genshin Impact
+* Fixed issue when copying files with wildcards in command prompt
+* Increased speed of directory lookups
 
 v1.7.6 (2021-01-14):
 * Fixed race condition when booting with Quibble
