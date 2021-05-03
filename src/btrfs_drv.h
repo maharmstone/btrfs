@@ -1606,7 +1606,7 @@ extern BTRFS_UUID boot_uuid;
 // not in mingw yet
 #ifndef _MSC_VER
 typedef struct {
-    FSRTL_COMMON_FCB_HEADER DUMMYSTRUCTNAME;
+    FSRTL_COMMON_FCB_HEADER Header;
     PFAST_MUTEX FastMutex;
     LIST_ENTRY FilterContexts;
     EX_PUSH_LOCK PushLock;
