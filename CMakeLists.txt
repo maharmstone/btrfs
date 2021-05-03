@@ -170,6 +170,8 @@ else()
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(btrfs PUBLIC -Werror=cast-function-type -Wold-style-declaration)
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(btrfs PUBLIC -Wno-pragma-pack) # ignore warning in mingw headers
     endif()
 
     target_link_libraries(btrfs ntoskrnl hal gcc)
@@ -274,6 +276,10 @@ endif()
 
 target_compile_definitions(ubtrfs PUBLIC _USRDLL)
 target_link_libraries(ubtrfs ntdll advapi32)
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(ubtrfs PUBLIC -Wno-pragma-pack) # ignore warning in mingw headers
+endif()
 
 if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
     target_compile_options(ubtrfs PUBLIC /Gz) # stdcall
