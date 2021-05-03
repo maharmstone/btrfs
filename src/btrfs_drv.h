@@ -112,7 +112,7 @@
 
 #define BTRFS_VOLUME_PREFIX L"\\Device\\Btrfs{"
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__clang__)
 #define try __try
 #define except __except
 #define finally __finally
