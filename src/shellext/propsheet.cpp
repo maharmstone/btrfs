@@ -317,7 +317,7 @@ HRESULT BtrfsPropSheet::load_file_list() {
     totalsize = allocsize = sparsesize = 0;
 
     for (i = 0; i < num_files; i++) {
-        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
             HRESULT hr;
 
             hr = check_file(fn, i, num_files, &sv);
@@ -685,7 +685,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
         num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
         for (i = 0; i < num_files; i++) {
-            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
                 apply_changes_file(hDlg, fn);
             }
         }
@@ -863,7 +863,7 @@ void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
     GetModuleFileNameW(module, modfn, sizeof(modfn) / sizeof(WCHAR));
 
     for (i = 0; i < num_files; i++) {
-        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(MAX_PATH))) {
+        if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
             wstring t;
             SHELLEXECUTEINFOW sei;
 
