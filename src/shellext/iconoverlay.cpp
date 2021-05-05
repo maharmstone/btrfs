@@ -32,7 +32,7 @@ HRESULT __stdcall BtrfsIconOverlay::QueryInterface(REFIID riid, void **ppObj) {
     return E_NOINTERFACE;
 }
 
-HRESULT __stdcall BtrfsIconOverlay::GetOverlayInfo(PWSTR pwszIconFile, int cchMax, int* pIndex, DWORD* pdwFlags) {
+HRESULT __stdcall BtrfsIconOverlay::GetOverlayInfo(PWSTR pwszIconFile, int cchMax, int* pIndex, DWORD* pdwFlags) noexcept {
     if (GetModuleFileNameW(module, pwszIconFile, cchMax) == 0)
         return E_FAIL;
 
@@ -51,7 +51,7 @@ HRESULT __stdcall BtrfsIconOverlay::GetOverlayInfo(PWSTR pwszIconFile, int cchMa
     return S_OK;
 }
 
-HRESULT __stdcall BtrfsIconOverlay::GetPriority(int *pPriority) {
+HRESULT __stdcall BtrfsIconOverlay::GetPriority(int *pPriority) noexcept {
     if (!pPriority)
         return E_INVALIDARG;
 
@@ -60,7 +60,7 @@ HRESULT __stdcall BtrfsIconOverlay::GetPriority(int *pPriority) {
     return S_OK;
 }
 
-HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) {
+HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) noexcept {
     win_handle h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
