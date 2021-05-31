@@ -902,36 +902,3 @@ size_t HUF_compress4X_repeat (void* dst, size_t dstSize,
                                  workSpace, wkspSize,
                                  hufTable, repeat, preferRepeat, bmi2);
 }
-
-#ifndef ZSTD_NO_UNUSED_FUNCTIONS
-/** HUF_buildCTable() :
- * @return : maxNbBits
- *  Note : count is used before tree is written, so they can safely overlap
- */
-size_t HUF_buildCTable (HUF_CElt* tree, const unsigned* count, unsigned maxSymbolValue, unsigned maxNbBits)
-{
-    HUF_buildCTable_wksp_tables workspace;
-    return HUF_buildCTable_wksp(tree, count, maxSymbolValue, maxNbBits, &workspace, sizeof(workspace));
-}
-
-size_t HUF_compress1X (void* dst, size_t dstSize,
-                 const void* src, size_t srcSize,
-                 unsigned maxSymbolValue, unsigned huffLog)
-{
-    unsigned workSpace[HUF_WORKSPACE_SIZE_U32];
-    return HUF_compress1X_wksp(dst, dstSize, src, srcSize, maxSymbolValue, huffLog, workSpace, sizeof(workSpace));
-}
-
-size_t HUF_compress2 (void* dst, size_t dstSize,
-                const void* src, size_t srcSize,
-                unsigned maxSymbolValue, unsigned huffLog)
-{
-    unsigned workSpace[HUF_WORKSPACE_SIZE_U32];
-    return HUF_compress4X_wksp(dst, dstSize, src, srcSize, maxSymbolValue, huffLog, workSpace, sizeof(workSpace));
-}
-
-size_t HUF_compress (void* dst, size_t maxDstSize, const void* src, size_t srcSize)
-{
-    return HUF_compress2(dst, maxDstSize, src, srcSize, 255, HUF_TABLELOG_DEFAULT);
-}
-#endif

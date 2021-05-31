@@ -387,19 +387,4 @@ size_t FSE_decompress_wksp_bmi2(void* dst, size_t dstCapacity, const void* cSrc,
 
 typedef FSE_DTable DTable_max_t[FSE_DTABLE_SIZE_U32(FSE_MAX_TABLELOG)];
 
-#ifndef ZSTD_NO_UNUSED_FUNCTIONS
-size_t FSE_buildDTable(FSE_DTable* dt, const short* normalizedCounter, unsigned maxSymbolValue, unsigned tableLog) {
-    U32 wksp[FSE_BUILD_DTABLE_WKSP_SIZE_U32(FSE_TABLELOG_ABSOLUTE_MAX, FSE_MAX_SYMBOL_VALUE)];
-    return FSE_buildDTable_wksp(dt, normalizedCounter, maxSymbolValue, tableLog, wksp, sizeof(wksp));
-}
-
-size_t FSE_decompress(void* dst, size_t dstCapacity, const void* cSrc, size_t cSrcSize)
-{
-    /* Static analyzer seems unable to understand this table will be properly initialized later */
-    U32 wksp[FSE_DECOMPRESS_WKSP_SIZE_U32(FSE_MAX_TABLELOG, FSE_MAX_SYMBOL_VALUE)];
-    return FSE_decompress_wksp(dst, dstCapacity, cSrc, cSrcSize, FSE_MAX_TABLELOG, wksp, sizeof(wksp));
-}
-#endif
-
-
 #endif   /* FSE_COMMONDEFS_ONLY */
