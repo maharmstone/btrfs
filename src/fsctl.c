@@ -34,10 +34,6 @@
 
 #define SEF_AVOID_PRIVILEGE_CHECK 0x08 // on MSDN but not in any header files(?)
 
-#ifndef _MSC_VER // not in mingw yet
-#define DEVICE_DSM_FLAG_TRIM_NOT_FS_ALLOCATED 0x80000000
-#endif
-
 #define SEF_SACL_AUTO_INHERIT 0x02
 
 extern LIST_ENTRY VcbList;
