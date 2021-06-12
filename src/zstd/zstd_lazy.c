@@ -11,7 +11,6 @@
 #include "zstd_compress_internal.h"
 #include "zstd_lazy.h"
 
-
 /*-*************************************
 *  Binary Tree search
 ***************************************/
@@ -1513,7 +1512,7 @@ FORCE_INLINE_TEMPLATE size_t ZSTD_RowFindBestMatch_extDict_selectRowLog (
 *********************************/
 typedef enum { search_hashChain=0, search_binaryTree=1, search_rowHash=2 } searchMethod_e;
 
-FORCE_INLINE_TEMPLATE size_t
+size_t
 ZSTD_compressBlock_lazy_generic(
                         ZSTD_matchState_t* ms, seqStore_t* seqStore,
                         U32 rep[ZSTD_REP_NUM],
