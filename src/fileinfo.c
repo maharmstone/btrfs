@@ -2286,7 +2286,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
     if (!dc) {
-        ERR("short read\n");
+        ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;;
         ExFreePool(utf8.Buffer);
         ExFreePool(utf16.Buffer);
