@@ -1,5 +1,5 @@
-WinBtrfs v1.7.8
----------------
+WinBtrfs v1.7.8.1
+-----------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -265,6 +265,10 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7.8.1 (2021-06-13):
+* Fixed bug preventing new directories from appearing in listings
+* Fixed Release version of driver still not working on XP
 
 v1.7.8 (2021-06-09):
 * Upgraded zstd to version 1.5.0
