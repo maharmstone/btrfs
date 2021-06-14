@@ -83,6 +83,7 @@ Features
 Todo
 ----
 
+* Zoned support (Linux 5.11)
 * Defragmentation
 * Support for Btrfs quotas
 * Windows 10 reserved storage
