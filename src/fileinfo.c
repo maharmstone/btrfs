@@ -2582,13 +2582,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     TRACE("fnus = %.*S\n", (int)(fnus.Length / sizeof(WCHAR)), fnus.Buffer);
 
-    for (unsigned int i = 0 ; i < fnus.Length / sizeof(WCHAR); i++) {
-        if (fnus.Buffer[i] == ':') {
-            TRACE("colon in filename\n");
-            Status = STATUS_OBJECT_NAME_INVALID;
-            goto end;
-        }
-    }
+    Status = check_file_name_valid(&fnus, false, false);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     origutf8len = fileref->dc->utf8.Length;
 
