@@ -2521,8 +2521,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     } else {
         LONG i;
 
-        while (fnlen > 0 && (fri->FileName[fnlen - 1] == '/' || fri->FileName[fnlen - 1] == '\\'))
+        while (fnlen > 0 && (fri->FileName[fnlen - 1] == '/' || fri->FileName[fnlen - 1] == '\\')) {
             fnlen--;
+        }
 
         if (fnlen == 0)
             return STATUS_INVALID_PARAMETER;
