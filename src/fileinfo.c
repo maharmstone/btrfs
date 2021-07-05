@@ -3401,8 +3401,9 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
         tfofcb = tfo->FsContext;
         parfcb = tfofcb;
 
-        while (fnlen > 0 && (fli->FileName[fnlen - 1] == '/' || fli->FileName[fnlen - 1] == '\\'))
+        while (fnlen > 0 && (fli->FileName[fnlen - 1] == '/' || fli->FileName[fnlen - 1] == '\\')) {
             fnlen--;
+        }
 
         if (fnlen == 0)
             return STATUS_INVALID_PARAMETER;
