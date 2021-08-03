@@ -1772,11 +1772,11 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         name_bit* nb;
 
         nb = CONTAINING_RECORD(RemoveTailList(&parts), name_bit, list_entry);
-        ExFreePool(nb);
+        ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb);
 
         if (has_stream && !IsListEmpty(&parts)) {
             nb = CONTAINING_RECORD(RemoveTailList(&parts), name_bit, list_entry);
-            ExFreePool(nb);
+            ExFreeToPagedLookasideList(&Vcb->name_bit_lookaside, nb);
 
             has_stream = false;
         }
