@@ -6276,6 +6276,8 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
     is_windows_8 = ver.dwMajorVersion > 6 || (ver.dwMajorVersion == 6 && ver.dwMinorVersion >= 2);
 
+    KeInitializeSpinLock(&fve_data_lock);
+
     InitializeListHead(&uid_map_list);
     InitializeListHead(&gid_map_list);
 

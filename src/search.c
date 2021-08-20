@@ -37,10 +37,20 @@ extern bool shutting_down;
 extern PDEVICE_OBJECT busobj;
 extern tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 extern ERESOURCE boot_lock;
+extern PDRIVER_OBJECT drvobj;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
 
 extern PDEVICE_OBJECT master_devobj;
+
+typedef struct {
+    LIST_ENTRY list_entry;
+    PDEVICE_OBJECT devobj;
+    void* notification_entry;
+} fve_data;
+
+static LIST_ENTRY fve_data_list = { &fve_data_list, &fve_data_list };
+KSPIN_LOCK fve_data_lock;
 
 static bool fs_ignored(BTRFS_UUID* uuid) {
     UNICODE_STRING path, ignoreus;
@@ -113,6 +123,71 @@ static bool fs_ignored(BTRFS_UUID* uuid) {
     ExFreePool(path.Buffer);
 
     return ret;
+}
+
+static NTSTATUS __stdcall event_notification(PVOID NotificationStructure, PVOID Context) {
+    TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = NotificationStructure;
+
+    // FIXME - if GUID_IO_VOLUME_FVE_STATUS_CHANGE, check device again and unregister notification
+
+    return STATUS_SUCCESS;
+}
+
+static void register_fve_callback(PDEVICE_OBJECT devobj, PFILE_OBJECT fileobj) {
+    NTSTATUS Status;
+    KIRQL irql;
+    LIST_ENTRY* le;
+
+    fve_data* d = ExAllocatePoolWithTag(NonPagedPool, sizeof(fve_data), ALLOC_TAG);
+    if (!d) {
+        ERR("out of memory\n");
+        return;
+    }
+
+    KeAcquireSpinLock(&fve_data_lock, &irql);
+
+    le = fve_data_list.Flink;
+    while (le != &fve_data_list) {
+        fve_data* d2 = CONTAINING_RECORD(le, fve_data, list_entry);
+
+        if (d2->devobj == devobj) {
+            KeReleaseSpinLock(&fve_data_lock, irql);
+            ExFreePool(d);
+            return;
+        }
+
+        le = le->Flink;
+    }
+
+    KeReleaseSpinLock(&fve_data_lock, irql);
+
+    Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj, drvobj, event_notification,
+                                            drvobj, &d->notification_entry);
+    if (!NT_SUCCESS(Status)) {
+        ERR("IoRegisterPlugPlayNotification returned %08lx\n", Status);
+        return;
+    }
+
+    KeAcquireSpinLock(&fve_data_lock, &irql);
+
+    le = fve_data_list.Flink;
+    while (le != &fve_data_list) {
+        fve_data* d2 = CONTAINING_RECORD(le, fve_data, list_entry);
+
+        if (d2->devobj == devobj) {
+            KeReleaseSpinLock(&fve_data_lock, irql);
+            IoUnregisterPlugPlayNotification(d->notification_entry);
+            ExFreePool(d);
+            return;
+        }
+
+        le = le->Flink;
+    }
+
+    d->devobj = devobj;
+    InsertTailList(&fve_data_list, &d->list_entry);
+
+    KeReleaseSpinLock(&fve_data_lock, irql);
 }
 
 static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
@@ -195,7 +270,8 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 add_volume_device(sb, devpath, length, disk_num, part_num);
             }
         }
-    }
+    } else if (Status == STATUS_FVE_LOCKED_VOLUME)
+        register_fve_callback(DeviceObject, FileObject);
 
 deref:
     if (data)
