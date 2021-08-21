@@ -53,6 +53,8 @@ typedef struct {
     LIST_ENTRY list_entry;
     PDEVICE_OBJECT devobj;
     void* notification_entry;
+    UNICODE_STRING devpath;
+    WCHAR buf[1];
 } fve_data;
 
 static LIST_ENTRY fve_data_list = { &fve_data_list, &fve_data_list };
@@ -134,6 +136,8 @@ static bool fs_ignored(BTRFS_UUID* uuid) {
 typedef struct {
     PIO_WORKITEM work_item;
     PFILE_OBJECT fileobj;
+    UNICODE_STRING devpath;
+    WCHAR buf[1];
 } fve_callback_context;
 
 _Function_class_(IO_WORKITEM_ROUTINE)
@@ -145,16 +149,16 @@ static void __stdcall fve_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     // FIXME
 
     IoFreeWorkItem(ctx->work_item);
-    ObDereferenceObject(ctx->fileobj);
     ExFreePool(ctx);
 }
 
 static NTSTATUS __stdcall event_notification(PVOID NotificationStructure, PVOID Context) {
     TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = NotificationStructure;
+    PDEVICE_OBJECT devobj = Context;
     PIO_WORKITEM work_item;
     fve_callback_context* ctx;
-
-    UNUSED(Context);
+    LIST_ENTRY* le;
+    KIRQL irql;
 
     if (RtlCompareMemory(&tdrn->Event, &GUID_IO_VOLUME_FVE_STATUS_CHANGE, sizeof(GUID)) != sizeof(GUID))
         return STATUS_SUCCESS;
@@ -165,34 +169,63 @@ static NTSTATUS __stdcall event_notification(PVOID NotificationStructure, PVOID 
         return STATUS_SUCCESS;
     }
 
-    ctx = ExAllocatePoolWithTag(PagedPool, sizeof(fve_callback_context), ALLOC_TAG);
+    KeAcquireSpinLock(&fve_data_lock, &irql);
 
-    if (!ctx) {
-        ERR("out of memory\n");
-        IoFreeWorkItem(work_item);
-        return STATUS_SUCCESS;
+    le = fve_data_list.Flink;
+    while (le != &fve_data_list) {
+        fve_data* d = CONTAINING_RECORD(le, fve_data, list_entry);
+
+        if (d->devobj == devobj) {
+            ctx = ExAllocatePoolWithTag(NonPagedPool, offsetof(fve_callback_context, buf) + d->devpath.Length,
+                                        ALLOC_TAG);
+
+            if (!ctx) {
+                KeReleaseSpinLock(&fve_data_lock, irql);
+                ERR("out of memory\n");
+                IoFreeWorkItem(work_item);
+                return STATUS_SUCCESS;
+            }
+
+            RtlCopyMemory(ctx->buf, d->devpath.Buffer, d->devpath.Length);
+            ctx->devpath.Length = ctx->devpath.MaximumLength = d->devpath.Length;
+
+            KeReleaseSpinLock(&fve_data_lock, irql);
+
+            ctx->devpath.Buffer = ctx->buf;
+
+            ctx->fileobj = tdrn->FileObject;
+            ctx->work_item = work_item;
+
+            IoQueueWorkItem(work_item, fve_callback, DelayedWorkQueue, ctx);
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->Flink;
     }
 
-    ctx->fileobj = tdrn->FileObject;
-    ObReferenceObject(ctx->fileobj);
+    KeReleaseSpinLock(&fve_data_lock, irql);
 
-    ctx->work_item = work_item;
-
-    IoQueueWorkItem(work_item, fve_callback, DelayedWorkQueue, ctx);
+    IoFreeWorkItem(work_item);
 
     return STATUS_SUCCESS;
 }
 
-static void register_fve_callback(PDEVICE_OBJECT devobj, PFILE_OBJECT fileobj) {
+static void register_fve_callback(PDEVICE_OBJECT devobj, PFILE_OBJECT fileobj,
+                                  PUNICODE_STRING devpath) {
     NTSTATUS Status;
     KIRQL irql;
     LIST_ENTRY* le;
 
-    fve_data* d = ExAllocatePoolWithTag(NonPagedPool, sizeof(fve_data), ALLOC_TAG);
+    fve_data* d = ExAllocatePoolWithTag(NonPagedPool, offsetof(fve_data, buf) + devpath->Length, ALLOC_TAG);
     if (!d) {
         ERR("out of memory\n");
         return;
     }
+
+    d->devpath.Buffer = d->buf;
+    d->devpath.Length = d->devpath.MaximumLength = devpath->Length;
+    RtlCopyMemory(d->devpath.Buffer, devpath->Buffer, devpath->Length);
 
     KeAcquireSpinLock(&fve_data_lock, &irql);
 
@@ -212,7 +245,7 @@ static void register_fve_callback(PDEVICE_OBJECT devobj, PFILE_OBJECT fileobj) {
     KeReleaseSpinLock(&fve_data_lock, irql);
 
     Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, fileobj, drvobj, event_notification,
-                                            drvobj, &d->notification_entry);
+                                            devobj, &d->notification_entry);
     if (!NT_SUCCESS(Status)) {
         ERR("IoRegisterPlugPlayNotification returned %08lx\n", Status);
         return;
@@ -321,7 +354,7 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             }
         }
     } else if (Status == STATUS_FVE_LOCKED_VOLUME)
-        register_fve_callback(DeviceObject, FileObject);
+        register_fve_callback(DeviceObject, FileObject, devpath);
 
 deref:
     if (data)
