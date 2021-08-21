@@ -27,6 +27,7 @@
 
 #include <initguid.h>
 #include <wdmguid.h>
+#include <ioevent.h>
 
 extern ERESOURCE pdo_list_lock;
 extern LIST_ENTRY pdo_list;
@@ -40,6 +41,11 @@ extern ERESOURCE boot_lock;
 extern PDRIVER_OBJECT drvobj;
 
 typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
+
+// not in mingw yet
+#ifndef _MSC_VER
+DEFINE_GUID(GUID_IO_VOLUME_FVE_STATUS_CHANGE, 0x062998b2, 0xee1f, 0x4b6a, 0xb8, 0x57, 0xe7, 0x6c, 0xbb, 0xe9, 0xa6, 0xda);
+#endif
 
 extern PDEVICE_OBJECT master_devobj;
 
@@ -125,10 +131,54 @@ static bool fs_ignored(BTRFS_UUID* uuid) {
     return ret;
 }
 
+typedef struct {
+    PIO_WORKITEM work_item;
+    PFILE_OBJECT fileobj;
+} fve_callback_context;
+
+_Function_class_(IO_WORKITEM_ROUTINE)
+static void __stdcall fve_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
+    fve_callback_context* ctx = con;
+
+    UNUSED(DeviceObject);
+
+    // FIXME
+
+    IoFreeWorkItem(ctx->work_item);
+    ObDereferenceObject(ctx->fileobj);
+    ExFreePool(ctx);
+}
+
 static NTSTATUS __stdcall event_notification(PVOID NotificationStructure, PVOID Context) {
     TARGET_DEVICE_REMOVAL_NOTIFICATION* tdrn = NotificationStructure;
+    PIO_WORKITEM work_item;
+    fve_callback_context* ctx;
 
-    // FIXME - if GUID_IO_VOLUME_FVE_STATUS_CHANGE, check device again and unregister notification
+    UNUSED(Context);
+
+    if (RtlCompareMemory(&tdrn->Event, &GUID_IO_VOLUME_FVE_STATUS_CHANGE, sizeof(GUID)) != sizeof(GUID))
+        return STATUS_SUCCESS;
+
+    work_item = IoAllocateWorkItem(master_devobj);
+    if (!work_item) {
+        ERR("out of memory\n");
+        return STATUS_SUCCESS;
+    }
+
+    ctx = ExAllocatePoolWithTag(PagedPool, sizeof(fve_callback_context), ALLOC_TAG);
+
+    if (!ctx) {
+        ERR("out of memory\n");
+        IoFreeWorkItem(work_item);
+        return STATUS_SUCCESS;
+    }
+
+    ctx->fileobj = tdrn->FileObject;
+    ObReferenceObject(ctx->fileobj);
+
+    ctx->work_item = work_item;
+
+    IoQueueWorkItem(work_item, fve_callback, DelayedWorkQueue, ctx);
 
     return STATUS_SUCCESS;
 }
