@@ -1292,7 +1292,7 @@ _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS __stdcall pnp_notification(PVOID NotificationStructure, PVOID Context);
 
 void disk_arrival(PUNICODE_STRING devpath);
-void volume_arrival(PUNICODE_STRING devpath);
+bool volume_arrival(PUNICODE_STRING devpath, bool fve_callback);
 void volume_removal(PUNICODE_STRING devpath);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)

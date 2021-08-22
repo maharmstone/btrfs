@@ -136,6 +136,7 @@ static bool fs_ignored(BTRFS_UUID* uuid) {
 typedef struct {
     PIO_WORKITEM work_item;
     PFILE_OBJECT fileobj;
+    PDEVICE_OBJECT devobj;
     UNICODE_STRING devpath;
     WCHAR buf[1];
 } fve_callback_context;
@@ -146,7 +147,35 @@ static void __stdcall fve_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
 
     UNUSED(DeviceObject);
 
-    // FIXME
+    if (volume_arrival(&ctx->devpath, true)) {
+        KIRQL irql;
+        LIST_ENTRY* le;
+        fve_data* d = NULL;
+
+        // volume no longer locked - unregister notification
+
+        KeAcquireSpinLock(&fve_data_lock, &irql);
+
+        le = fve_data_list.Flink;
+        while (le != &fve_data_list) {
+            fve_data* d2 = CONTAINING_RECORD(le, fve_data, list_entry);
+
+            if (d2->devobj == ctx->devobj) {
+                RemoveEntryList(&d2->list_entry);
+                d = d2;
+                break;
+            }
+
+            le = le->Flink;
+        }
+
+        KeReleaseSpinLock(&fve_data_lock, irql);
+
+        if (d) {
+            IoUnregisterPlugPlayNotification(d->notification_entry);
+            ExFreePool(d);
+        }
+    }
 
     IoFreeWorkItem(ctx->work_item);
     ExFreePool(ctx);
@@ -162,6 +191,9 @@ static NTSTATUS __stdcall event_notification(PVOID NotificationStructure, PVOID 
 
     if (RtlCompareMemory(&tdrn->Event, &GUID_IO_VOLUME_FVE_STATUS_CHANGE, sizeof(GUID)) != sizeof(GUID))
         return STATUS_SUCCESS;
+
+    /* The FVE event has trailing data, presumably telling us whether the volume has
+     * been unlocked or whatever, but unfortunately it's undocumented! */
 
     work_item = IoAllocateWorkItem(master_devobj);
     if (!work_item) {
@@ -194,6 +226,7 @@ static NTSTATUS __stdcall event_notification(PVOID NotificationStructure, PVOID 
             ctx->devpath.Buffer = ctx->buf;
 
             ctx->fileobj = tdrn->FileObject;
+            ctx->devobj = devobj;
             ctx->work_item = work_item;
 
             IoQueueWorkItem(work_item, fve_callback, DelayedWorkQueue, ctx);
@@ -273,12 +306,14 @@ static void register_fve_callback(PDEVICE_OBJECT devobj, PFILE_OBJECT fileobj,
     KeReleaseSpinLock(&fve_data_lock, irql);
 }
 
-static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
-                     PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, uint64_t length) {
+static bool test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
+                     PUNICODE_STRING devpath, DWORD disk_num, DWORD part_num, uint64_t length,
+                     bool fve_callback) {
     NTSTATUS Status;
     ULONG toread;
     uint8_t* data = NULL;
     uint32_t sector_size;
+    bool ret = true;
 
     TRACE("%.*S\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
 
@@ -353,12 +388,18 @@ static void test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 add_volume_device(sb, devpath, length, disk_num, part_num);
             }
         }
-    } else if (Status == STATUS_FVE_LOCKED_VOLUME)
-        register_fve_callback(DeviceObject, FileObject, devpath);
+    } else if (Status == STATUS_FVE_LOCKED_VOLUME) {
+        if (fve_callback)
+            ret = false;
+        else
+            register_fve_callback(DeviceObject, FileObject, devpath);
+    }
 
 deref:
     if (data)
         ExFreePool(data);
+
+    return ret;
 }
 
 NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
@@ -476,7 +517,8 @@ void disk_arrival(PUNICODE_STRING devpath) {
     } else
         TRACE("DeviceType = %lu, DeviceNumber = %lu, PartitionNumber = %lu\n", sdn.DeviceType, sdn.DeviceNumber, sdn.PartitionNumber);
 
-    test_vol(devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
+    test_vol(devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber,
+             gli.Length.QuadPart, false);
 
 end:
     ObDereferenceObject(fileobj);
@@ -646,12 +688,13 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         ExReleaseResourceLite(&pdode->child_lock);
 }
 
-void volume_arrival(PUNICODE_STRING devpath) {
+bool volume_arrival(PUNICODE_STRING devpath, bool fve_callback) {
     STORAGE_DEVICE_NUMBER sdn;
     PFILE_OBJECT fileobj;
     PDEVICE_OBJECT devobj;
     GET_LENGTH_INFORMATION gli;
     NTSTATUS Status;
+    bool ret = true;
 
     TRACE("%.*S\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
 
@@ -661,7 +704,7 @@ void volume_arrival(PUNICODE_STRING devpath) {
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&boot_lock);
         ERR("IoGetDeviceObjectPointer returned %08lx\n", Status);
-        return;
+        return false;
     }
 
     // make sure we're not processing devices we've created ourselves
@@ -732,12 +775,19 @@ void volume_arrival(PUNICODE_STRING devpath) {
         ExReleaseResourceLite(&pdo_list_lock);
     }
 
-    test_vol(devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber, gli.Length.QuadPart);
+    ret = test_vol(devobj, fileobj, devpath, sdn.DeviceNumber, sdn.PartitionNumber,
+                   gli.Length.QuadPart, fve_callback);
 
 end:
     ObDereferenceObject(fileobj);
 
     ExReleaseResourceLite(&boot_lock);
+
+    return ret;
+}
+
+static void volume_arrival2(PUNICODE_STRING devpath) {
+    volume_arrival(devpath, false);
 }
 
 void volume_removal(PUNICODE_STRING devpath) {
@@ -866,7 +916,7 @@ NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Contex
     UNUSED(Context);
 
     if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
-        enqueue_pnp_callback(dicn->SymbolicLinkName, volume_arrival);
+        enqueue_pnp_callback(dicn->SymbolicLinkName, volume_arrival2);
     else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
         enqueue_pnp_callback(dicn->SymbolicLinkName, volume_removal);
 

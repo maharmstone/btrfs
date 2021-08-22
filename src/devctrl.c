@@ -207,7 +207,7 @@ static NTSTATUS probe_volume(void* data, ULONG length, KPROCESSOR_MODE processor
     if (RtlCompareMemory(guid, &GUID_DEVINTERFACE_DISK, sizeof(GUID)) == sizeof(GUID))
         disk_arrival(&pnp_name);
     else
-        volume_arrival(&pnp_name);
+        volume_arrival(&pnp_name, false);
 
     return STATUS_SUCCESS;
 }
