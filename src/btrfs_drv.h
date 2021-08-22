@@ -1291,9 +1291,9 @@ void __stdcall mountmgr_thread(_In_ void* context);
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS __stdcall pnp_notification(PVOID NotificationStructure, PVOID Context);
 
-void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
-void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
-void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
+void disk_arrival(PUNICODE_STRING devpath);
+void volume_arrival(PUNICODE_STRING devpath);
+void volume_removal(PUNICODE_STRING devpath);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Context);

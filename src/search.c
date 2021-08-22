@@ -40,7 +40,7 @@ extern tIoUnregisterPlugPlayNotificationEx fIoUnregisterPlugPlayNotificationEx;
 extern ERESOURCE boot_lock;
 extern PDRIVER_OBJECT drvobj;
 
-typedef void (*pnp_callback)(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath);
+typedef void (*pnp_callback)(PUNICODE_STRING devpath);
 
 // not in mingw yet
 #ifndef _MSC_VER
@@ -414,7 +414,7 @@ NTSTATUS remove_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath) {
     return Status;
 }
 
-void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+void disk_arrival(PUNICODE_STRING devpath) {
     PFILE_OBJECT fileobj;
     PDEVICE_OBJECT devobj;
     NTSTATUS Status;
@@ -423,8 +423,6 @@ void disk_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
     DRIVE_LAYOUT_INFORMATION_EX* dli = NULL;
     IO_STATUS_BLOCK iosb;
     GET_LENGTH_INFORMATION gli;
-
-    UNUSED(DriverObject);
 
     ExAcquireResourceSharedLite(&boot_lock, TRUE);
 
@@ -648,7 +646,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         ExReleaseResourceLite(&pdode->child_lock);
 }
 
-void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+void volume_arrival(PUNICODE_STRING devpath) {
     STORAGE_DEVICE_NUMBER sdn;
     PFILE_OBJECT fileobj;
     PDEVICE_OBJECT devobj;
@@ -668,7 +666,7 @@ void volume_arrival(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
 
     // make sure we're not processing devices we've created ourselves
 
-    if (devobj->DriverObject == DriverObject)
+    if (devobj->DriverObject == drvobj)
         goto end;
 
     Status = dev_ioctl(devobj, IOCTL_VOLUME_ONLINE, NULL, 0, NULL, 0, true, NULL);
@@ -742,13 +740,11 @@ end:
     ExReleaseResourceLite(&boot_lock);
 }
 
-void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
+void volume_removal(PUNICODE_STRING devpath) {
     LIST_ENTRY* le;
     UNICODE_STRING devpath2;
 
     TRACE("%.*S\n", (int)(devpath->Length / sizeof(WCHAR)), devpath->Buffer);
-
-    UNUSED(DriverObject);
 
     devpath2 = *devpath;
 
@@ -802,7 +798,6 @@ void volume_removal(PDRIVER_OBJECT DriverObject, PUNICODE_STRING devpath) {
 }
 
 typedef struct {
-    PDRIVER_OBJECT DriverObject;
     UNICODE_STRING name;
     pnp_callback func;
     PIO_WORKITEM work_item;
@@ -814,7 +809,7 @@ static void __stdcall do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
 
     UNUSED(DeviceObject);
 
-    context->func(context->DriverObject, &context->name);
+    context->func(&context->name);
 
     if (context->name.Buffer)
         ExFreePool(context->name.Buffer);
@@ -824,7 +819,7 @@ static void __stdcall do_pnp_callback(PDEVICE_OBJECT DeviceObject, PVOID con) {
     ExFreePool(context);
 }
 
-static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING name, pnp_callback func) {
+static void enqueue_pnp_callback(PUNICODE_STRING name, pnp_callback func) {
     PIO_WORKITEM work_item;
     pnp_callback_context* context;
 
@@ -841,8 +836,6 @@ static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING na
         IoFreeWorkItem(work_item);
         return;
     }
-
-    context->DriverObject = DriverObject;
 
     if (name->Length > 0) {
         context->name.Buffer = ExAllocatePoolWithTag(PagedPool, name->Length, ALLOC_TAG);
@@ -869,12 +862,13 @@ static void enqueue_pnp_callback(PDRIVER_OBJECT DriverObject, PUNICODE_STRING na
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
-    PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
+
+    UNUSED(Context);
 
     if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
-        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, volume_arrival);
+        enqueue_pnp_callback(dicn->SymbolicLinkName, volume_arrival);
     else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
-        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, volume_removal);
+        enqueue_pnp_callback(dicn->SymbolicLinkName, volume_removal);
 
     return STATUS_SUCCESS;
 }
@@ -882,12 +876,13 @@ NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Contex
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
 NTSTATUS __stdcall pnp_notification(PVOID NotificationStructure, PVOID Context) {
     DEVICE_INTERFACE_CHANGE_NOTIFICATION* dicn = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
-    PDRIVER_OBJECT DriverObject = (PDRIVER_OBJECT)Context;
+
+    UNUSED(Context);
 
     if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)) == sizeof(GUID))
-        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, disk_arrival);
+        enqueue_pnp_callback(dicn->SymbolicLinkName, disk_arrival);
     else if (RtlCompareMemory(&dicn->Event, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)) == sizeof(GUID))
-        enqueue_pnp_callback(DriverObject, dicn->SymbolicLinkName, volume_removal);
+        enqueue_pnp_callback(dicn->SymbolicLinkName, volume_removal);
 
     return STATUS_SUCCESS;
 }
