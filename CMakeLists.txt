@@ -111,7 +111,7 @@ add_library(btrfs SHARED ${SRC_FILES})
 if(MSVC)
     include_directories("$ENV{WindowsSdkDir}Include\\$ENV{WindowsSDKLibVersion}km")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    include_directories("${CMAKE_FIND_ROOT_PATH}/usr/include/ddk")
+    include_directories("${CMAKE_FIND_ROOT_PATH}/include/ddk")
 endif()
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
