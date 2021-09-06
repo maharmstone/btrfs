@@ -83,7 +83,8 @@ Features
 Todo
 ----
 
-* Zoned support (Linux 5.11)
+* fs-verity support (Linux 5.15)
+* Zoned support (Linux 5.11) (HM-SMR not supported on Windows?)
 * Defragmentation
 * Support for Btrfs quotas
 * Windows 10 reserved storage
