@@ -4568,6 +4568,12 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
+    if (pdode) {
+        // FIXME - is this safe? Does Windows guarantee that mount_vol is serialized?
+        ExReleaseResourceLite(&pdode->child_lock);
+        pdode = NULL;
+    }
+
     if (Vcb->options.ignore) {
         TRACE("ignoring volume\n");
         Status = STATUS_UNRECOGNIZED_VOLUME;
