@@ -5788,6 +5788,14 @@ NTSTATUS check_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bo
             (!posix && !stream && (us->Buffer[i] == '<' || us->Buffer[i] == '>' || us->Buffer[i] == '"' ||
             us->Buffer[i] == '|' || us->Buffer[i] == '?' || us->Buffer[i] == '*' || (us->Buffer[i] >= 1 && us->Buffer[i] <= 31))))
             return STATUS_OBJECT_NAME_INVALID;
+
+        /* Don't allow unpaired surrogates ("WTF-16") */
+
+        if ((us->Buffer[i] & 0xdc00) == 0xdc00 && (i == 0 || ((us->Buffer[i-1] & 0xd800) != 0xd800)))
+            return STATUS_OBJECT_NAME_INVALID;
+
+        if ((us->Buffer[i] & 0xd800) == 0xd800 && (i == (us->Length / sizeof(WCHAR) - 1) || ((us->Buffer[i+1] & 0xdc00) != 0xdc00)))
+            return STATUS_OBJECT_NAME_INVALID;
     }
 
     if (us->Buffer[0] == '.' && (us->Length == sizeof(WCHAR) || (us->Length == 2 * sizeof(WCHAR) && us->Buffer[1] == '.')))
