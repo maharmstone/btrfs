@@ -169,6 +169,11 @@ sub compat_ro_flags {
         $f&=~2;
     }
 
+    if ($f&4) {
+        push @l,"verity";
+        $f&=~4;
+    }
+
     if ($f!=0 || $#l==-1) {
         push @l,sprintf("%x",$f);
     }
@@ -213,7 +218,7 @@ sub read_superblock {
 		$bootstrap=substr($bootstrap,0x11);
 
 		my @c=unpack("QQQQVVVvvQQA16",$bootstrap);
-		dump_item(0xe4, substr($bootstrap,0,0x30+($c[7]*0x20)), "");
+		dump_item(0xe4, substr($bootstrap,0,0x30+($c[7]*0x20)), "", 0);
 
 		$bootstrap=substr($bootstrap,0x30+($c[7]*0x20));
 
@@ -322,6 +327,11 @@ sub inode_flags {
     if ($flags & 2048) {
         push @l,"compress";
         $flags &= ~2048;
+    }
+
+    if ($flags & 4294967296) {
+        push @l,"ro_verity";
+        $flags &= ~4294967296;
     }
 
     if ($flags != 0) {
@@ -456,7 +466,7 @@ sub qgroup_status_flags {
 }
 
 sub dump_item {
-	my ($type,$s,$pref,$id)=@_;
+	my ($type,$s,$pref,$id,$off)=@_;
 	my (@b);
 
 	my $unrecog = 0;
@@ -525,6 +535,27 @@ sub dump_item {
 			$s=substr($s,$b[4]);
 
 			printf(" key=%x,%x,%x transid=%x m=%x n=%x type=%x name=%s%s",$b[0],$b[1],$b[2],$b[3],$b[4],$b[5],$b[6],$name,$name2 eq ""?"":(" name2=".$name2));
+		}
+    } elsif ($type == 0x24) { # VERITY_DESC_ITEM
+		printf("verity_desc_item");
+
+		if ($off == 0) {
+			@b=unpack("Qx16C",$s);
+			$s=substr($s,25);
+
+			printf(" size=%x enc=%x", $b[0], $b[1]);
+		} else {
+			while (length($s)>0) {
+				@b=unpack("C",$s);
+				printf(" %02x", $b[0]);
+				$s = substr($s,1);
+			}
+		}
+	} elsif ($type == 0x25) { # VERITY_MERKLE_ITEM
+		while (length($s)>0) {
+			@b=unpack("QQQQ",$s);
+			printf(" %016x%016x%016x%016x", $b[3], $b[2], $b[1], $b[0]);
+			$s = substr($s,32);
 		}
 	} elsif ($type == 0x30) { # ORPHAN_ITEM
 		printf("orphan_item");
@@ -875,7 +906,7 @@ sub dump_tree {
 			printf("%x,%x,%x\n",$ihb[0],$ihb[1],$ihb[2]);
 
 			my $item=substr($tree,0x65+$ihb[3],$ihb[4]);
-			dump_item($ihb[1],$item,$pref,$ihb[0]);
+			dump_item($ihb[1],$item,$pref,$ihb[0],$ihb[2]);
 
 			if ($treenum==3&&$ihb[1]==0xe4) {
 				my @b=unpack("QQQQVVVvv",$item);
