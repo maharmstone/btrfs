@@ -553,8 +553,8 @@ sub dump_item {
 		}
 	} elsif ($type == 0x25) { # VERITY_MERKLE_ITEM
 		while (length($s)>0) {
-			@b=unpack("QQQQ",$s);
-			printf(" %016x%016x%016x%016x", $b[3], $b[2], $b[1], $b[0]);
+			@b=unpack("NNNNNNNN",$s);
+			printf(" %008x%008x%008x%008x%008x%008x%008x%008x", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], $b[6], $b[7]);
 			$s = substr($s,32);
 		}
 	} elsif ($type == 0x30) { # ORPHAN_ITEM
