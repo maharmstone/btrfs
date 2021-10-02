@@ -1,5 +1,5 @@
-WinBtrfs v1.7.8.1
------------------
+WinBtrfs v1.7.9
+---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -87,7 +87,6 @@ Todo
 * Zoned support (Linux 5.11) (HM-SMR not supported on Windows?)
 * Defragmentation
 * Support for Btrfs quotas
-* Windows 10 reserved storage
 * Full transaction log support
 * Support for Windows transactions (TxF)
 
@@ -267,6 +266,12 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.7.9 (2021-10-02):
+* Fixed deadlock when mounting on Windows 11
+* Added support for BitLocker-encrypted volumes
+* Improved filename checks when renaming or creating hard links
+* Miscellaneous bug fixes
 
 v1.7.8.1 (2021-06-13):
 * Fixed bug preventing new directories from appearing in listings
