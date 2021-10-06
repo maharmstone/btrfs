@@ -5260,7 +5260,7 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
         {
             FILE_STAT_INFORMATION* fsi = Irp->AssociatedIrp.SystemBuffer;
 
-            if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_STAT_LX_INFORMATION)) {
+            if (IrpSp->Parameters.QueryFile.Length < sizeof(FILE_STAT_INFORMATION)) {
                 WARN("overflow\n");
                 Status = STATUS_BUFFER_OVERFLOW;
                 goto exit;
