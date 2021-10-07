@@ -2972,14 +2972,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
 
-            uint64_t old_phys_used = chunk_estimate_phys_size(Vcb, c, c->oldused);
-            uint64_t phys_used = chunk_estimate_phys_size(Vcb, c, c->used);
-
-            if (Vcb->superblock.bytes_used + phys_used > old_phys_used)
-                Vcb->superblock.bytes_used += phys_used - old_phys_used;
-            else
-                Vcb->superblock.bytes_used = 0;
-
+            Vcb->superblock.bytes_used += c->used - c->oldused;
             c->oldused = c->used;
         }
 
