@@ -2801,32 +2801,6 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
     }
 }
 
-static uint64_t chunk_estimate_phys_size(device_extension* Vcb, chunk* c, uint64_t u) {
-    uint64_t nfactor, dfactor;
-
-    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE || c->chunk_item->type & BLOCK_FLAG_RAID1 || c->chunk_item->type & BLOCK_FLAG_RAID10) {
-        nfactor = 1;
-        dfactor = 2;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
-        nfactor = Vcb->superblock.num_devices - 1;
-        dfactor = Vcb->superblock.num_devices;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
-        nfactor = Vcb->superblock.num_devices - 2;
-        dfactor = Vcb->superblock.num_devices;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3) {
-        nfactor = 1;
-        dfactor = 3;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4) {
-        nfactor = 1;
-        dfactor = 4;
-    } else {
-        nfactor = 1;
-        dfactor = 1;
-    }
-
-    return u * dfactor / nfactor;
-}
-
 static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY *le = Vcb->chunks.Flink, *le2;
     chunk* c;
@@ -5707,12 +5681,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             Vcb->superblock.incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_RAID1C34;
     }
 
-    uint64_t phys_used = chunk_estimate_phys_size(Vcb, c, c->oldused);
-
-    if (phys_used < Vcb->superblock.bytes_used)
-        Vcb->superblock.bytes_used -= phys_used;
-    else
-        Vcb->superblock.bytes_used = 0;
+    Vcb->superblock.bytes_used -= c->oldused;
 
     ExFreePool(c->chunk_item);
     ExFreePool(c->devices);
