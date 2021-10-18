@@ -38,13 +38,32 @@ static unique_handle create_file(const u16string_view& path, ACCESS_MASK access,
     return unique_handle(h);
 }
 
-int main() {
+static void try_create_file(const string& msg, const u16string_view& path, ACCESS_MASK access, ULONG atts,
+                            ULONG share, ULONG dispo, ULONG options, ULONG_PTR exp_info, NTSTATUS exp_status) {
+    NTSTATUS Status = STATUS_SUCCESS;
+    string error;
+
     try {
-        // FIXME
-        create_file(u"\\??\\C:", 0, 0, 0, 0, 0, FILE_OPENED);
+        create_file(path, access, atts, share, dispo, options, exp_info);
+    } catch (const ntstatus_error& e) {
+        Status = e.Status;
     } catch (const exception& e) {
-        fmt::print(stderr, "{}\n", e.what());
+        error = e.what();
     }
+
+    if (error.empty() && exp_status != Status)
+        error = fmt::format("Expected {}, received {}", ntstatus_to_string(exp_status), ntstatus_to_string(Status));
+
+    // FIXME - coloured and aligned output
+
+    if (error.empty())
+        fmt::print("{}, PASS\n", msg);
+    else
+        fmt::print("{}, FAIL ({})\n", msg, error);
+}
+
+int main() {
+    try_create_file("Opening C:", u"\\??\\C:", 0, 0, 0, 0, 0, FILE_OPENED, STATUS_SUCCESS);
 
     return 0;
 }
