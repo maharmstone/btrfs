@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 
 project(btrfs VERSION 1.7.9)
 
+option(WITH_TEST "Compile test program" ON)
+
 # btrfs.sys
 
 set(ZSTD_SRC_FILES src/zstd/entropy_common.c
@@ -307,6 +309,27 @@ if(MSVC)
     set_property(TARGET mkbtrfs PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
     target_link_options(mkbtrfs PUBLIC -static -static-libgcc)
+endif()
+
+# --------------------------------------
+
+# test.exe
+
+if(WITH_TEST)
+    find_package(fmt REQUIRED)
+
+    set(TEST_SRC_FILES src/tests/test.cpp)
+
+    add_executable(test ${TEST_SRC_FILES})
+
+    if(MSVC)
+        set_property(TARGET test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    else()
+        target_link_options(test PUBLIC -static -static-libgcc)
+    endif()
+
+    target_link_libraries(test ntdll)
+    target_link_libraries(test fmt::fmt-header-only)
 endif()
 
 # --------------------------------------
