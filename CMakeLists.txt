@@ -325,7 +325,7 @@ if(WITH_TEST)
     if(MSVC)
         set_property(TARGET test PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     else()
-        target_link_options(test PUBLIC -static -static-libgcc)
+        target_link_options(test PUBLIC -static -static-libgcc -municode)
     endif()
 
     target_link_libraries(test ntdll)

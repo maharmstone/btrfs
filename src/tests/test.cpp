@@ -62,8 +62,15 @@ static void try_create_file(const string& msg, const u16string_view& path, ACCES
         fmt::print("{}, FAIL ({})\n", msg, error);
 }
 
-int main() {
-    try_create_file("Opening C:", u"\\??\\C:", 0, 0, 0, 0, 0, FILE_OPENED, STATUS_SUCCESS);
+int wmain(int argc, wchar_t* argv[]) {
+    if (argc < 2) {
+        fmt::print(stderr, "Usage: test.exe dir\n");
+        return 1;
+    }
+
+    u16string ntdir = u"\\??\\"s + u16string((char16_t*)argv[1]);
+
+    try_create_file("Opening dir", ntdir, 0, 0, 0, 0, 0, FILE_OPENED, STATUS_SUCCESS);
 
     return 0;
 }
