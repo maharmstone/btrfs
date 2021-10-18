@@ -3,7 +3,7 @@
 using namespace std;
 
 static unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
-                                 ULONG dispo, ULONG options) {
+                                 ULONG dispo, ULONG options, ULONG_PTR exp_info) {
     NTSTATUS Status;
     HANDLE h;
     IO_STATUS_BLOCK iosb;
@@ -24,15 +24,16 @@ static unique_handle create_file(const u16string_view& path, ACCESS_MASK access,
     // FIXME - AllocationSize
     // FIXME - EaBuffer and EaLength
 
+    iosb.Information = 0xdeadbeef;
+
     Status = NtCreateFile(&h, access, &oa, &iosb, nullptr, atts, share,
                           dispo, options, nullptr, 0);
-
-    // FIXME
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
 
-    // FIXME - check iosb
+    if (iosb.Information != exp_info)
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
 
     return unique_handle(h);
 }
@@ -40,7 +41,7 @@ static unique_handle create_file(const u16string_view& path, ACCESS_MASK access,
 int main() {
     try {
         // FIXME
-        create_file(u"\\??\\C:", 0, 0, 0, 0, 0);
+        create_file(u"\\??\\C:", 0, 0, 0, 0, 0, FILE_OPENED);
     } catch (const exception& e) {
         fmt::print(stderr, "{}\n", e.what());
     }

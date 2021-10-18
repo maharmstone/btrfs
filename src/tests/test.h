@@ -1,3 +1,5 @@
+#pragma once
+
 #include <windef.h>
 #include <winbase.h>
 #include <winternl.h>
@@ -13,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <fmt/format.h>
+#include <fmt/compile.h>
 
 class handle_closer {
 public:
@@ -3634,3 +3637,20 @@ public:
     NTSTATUS Status;
     std::string msg;
 };
+
+class _formatted_error : public std::exception {
+public:
+    template<typename T, typename... Args>
+    _formatted_error(const T& s, Args&&... args) {
+        msg = fmt::format(s, std::forward<Args>(args)...);
+    }
+
+    const char* what() const noexcept {
+        return msg.c_str();
+    }
+
+private:
+    std::string msg;
+};
+
+#define formatted_error(s, ...) _formatted_error(FMT_COMPILE(s), ##__VA_ARGS__)
