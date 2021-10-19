@@ -214,6 +214,10 @@ static void test_create_file(const u16string& dir) {
         });
 
         h.reset();
+
+        test("Open file", [&]() {
+            create_file(dir + u"\\file", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+        });
     }
 
     test("Create file (FILE_NON_DIRECTORY_FILE)", [&]() {
@@ -325,6 +329,10 @@ static void test_create_file(const u16string& dir) {
         });
 
         h.reset();
+
+        test("Open directory", [&]() {
+            create_file(dir + u"\\dir", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+        });
     }
 
     test("Create file (FILE_ATTRIBUTE_DIRECTORY)", [&]() {
@@ -592,18 +600,18 @@ static void test_create_file(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - FILE_OPEN
     // FIXME - FILE_SUPERSEDE
     // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE
     // FIXME - FILE_OVERWRITE_IF
-    // FIXME - share modes
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
     // FIXME - check can't overwrite or supersede directory or readonly file
     // FIXME - check can't overwrite or supersede while changing hidden or system flags
-    // FIXME - flag to ignore readonly attribute
+
+    // FIXME - reading
+    // FIXME - writing
 
     // FIXME - preallocation
 
@@ -620,19 +628,21 @@ static void test_create_file(const u16string& dir) {
     // FIXME - moving
     // FIXME - renaming by overwrite
     // FIXME - POSIX renames
+    // FIXME - FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
 
     // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
     // FIXME - POSIX deletion
     // FIXME - FILE_DELETE_ON_CLOSE
+    // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
+    // FIXME - FILE_DISPOSITION_ON_CLOSE
+    // FIXME - FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE
 
     // FIXME - hard links
     // FIXME - linking by overwrite
     // FIXME - POSIX hard links
+    // FIXME - FILE_LINK_IGNORE_READONLY_ATTRIBUTE
 
     // FIXME - setting file information
-
-    // FIXME - reading
-    // FIXME - writing
 
     // FIXME - querying SD
     // FIXME - setting SD
@@ -640,7 +650,7 @@ static void test_create_file(const u16string& dir) {
     // FIXME - open files asking for too many permissions
     // FIXME - MAXIMUM_ALLOWED
 
-    // FIXME - querying directory
+    // FIXME - querying directory (inc. specific files)
     // FIXME - directory notifications
 
     // FIXME - oplocks
