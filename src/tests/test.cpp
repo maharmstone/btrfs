@@ -72,6 +72,22 @@ static void exp_status(const function<void()>& func, NTSTATUS Status) {
         throw formatted_error("Status was STATUS_SUCCESS, expected {}", ntstatus_to_string(Status));
 }
 
+static FILE_BASIC_INFORMATION query_basic_information(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    FILE_BASIC_INFORMATION fbi;
+
+    Status = NtQueryInformationFile(h, &iosb, &fbi, sizeof(fbi), FileBasicInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != sizeof(FILE_BASIC_INFORMATION))
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(FILE_BASIC_INFORMATION));
+
+    return fbi;
+}
+
 static void test_create_file(const u16string& dir) {
     unique_handle h;
 
@@ -92,8 +108,41 @@ static void test_create_file(const u16string& dir) {
             }, STATUS_OBJECT_NAME_COLLISION);
         });
 
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        // FIXME - FileAllInformation
+        // FIXME - FileAttributeTagInformation
+        // FIXME - FileCompressionInformation
+        // FIXME - FileEaInformation
+        // FIXME - FileInternalInformation
+        // FIXME - FileNameInformation
+        // FIXME - FileNetworkOpenInformation
+        // FIXME - FilePositionInformation
+        // FIXME - FileStandardInformation
+        // FIXME - FileStreamInformation
+        // FIXME - FileHardLinkInformation
+        // FIXME - FileNormalizedNameInformation
+        // FIXME - FileStandardLinkInformation
+        // FIXME - FileIdInformation
+        // FIXME - FileStatInformation
+        // FIXME - FileStatLxInformation
+        // FIXME - FileCaseSensitiveInformation
+        // FIXME - FileHardLinkFullIdInformation
+
+        // FIXME - check granted access
+
         h.reset();
     }
+
+    // FIXME - check with FILE_NON_DIRECTORY_FILE
+    // FIXME - check with FILE_DIRECTORY_FILE
 }
 
 static u16string to_u16string(time_t n) {
