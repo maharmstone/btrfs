@@ -102,6 +102,22 @@ static FILE_BASIC_INFORMATION query_basic_information(HANDLE h) {
     return fbi;
 }
 
+static FILE_STANDARD_INFORMATION query_standard_information(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    FILE_STANDARD_INFORMATION fsi;
+
+    Status = NtQueryInformationFile(h, &iosb, &fsi, sizeof(fsi), FileStandardInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != sizeof(FILE_STANDARD_INFORMATION))
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(FILE_STANDARD_INFORMATION));
+
+    return fsi;
+}
+
 static OBJECT_BASIC_INFORMATION query_object_basic_information(HANDLE h) {
     NTSTATUS Status;
     OBJECT_BASIC_INFORMATION obi;
@@ -147,6 +163,25 @@ static void test_create_file(const u16string& dir) {
             }
         });
 
+        test("Check standard information", [&]() {
+            auto fsi = query_standard_information(h.get());
+
+            if (fsi.AllocationSize.QuadPart != 0)
+                throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
+
+            if (fsi.EndOfFile.QuadPart != 0)
+                throw formatted_error("EndOfFile was {}, expected 0", fsi.EndOfFile.QuadPart);
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsi.Directory)
+                throw runtime_error("Directory was true, expected false");
+        });
+
         // FIXME - FileAllInformation
         // FIXME - FileAttributeTagInformation
         // FIXME - FileCompressionInformation
@@ -155,7 +190,6 @@ static void test_create_file(const u16string& dir) {
         // FIXME - FileNameInformation
         // FIXME - FileNetworkOpenInformation
         // FIXME - FilePositionInformation
-        // FIXME - FileStandardInformation
         // FIXME - FileStreamInformation
         // FIXME - FileHardLinkInformation
         // FIXME - FileNormalizedNameInformation
@@ -165,6 +199,7 @@ static void test_create_file(const u16string& dir) {
         // FIXME - FileStatLxInformation
         // FIXME - FileCaseSensitiveInformation
         // FIXME - FileHardLinkFullIdInformation
+        // FIXME - FILE_STANDARD_INFORMATION_EX
 
         test("Check granted access", [&]() {
             auto obi = query_object_basic_information(h.get());
@@ -191,7 +226,6 @@ static void test_create_file(const u16string& dir) {
     // FIXME - FILE_OVERWRITE_IF
     // FIXME - share modes
     // FIXME - FILE_OPEN_BY_FILE_ID
-    // FIXME - FILE_DELETE_ON_CLOSE
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
@@ -213,6 +247,7 @@ static void test_create_file(const u16string& dir) {
 
     // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
     // FIXME - POSIX deletion
+    // FIXME - FILE_DELETE_ON_CLOSE
 
     // FIXME - hard links
     // FIXME - linking by overwrite
