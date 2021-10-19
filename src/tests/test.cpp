@@ -364,7 +364,150 @@ static void test_create_file(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - specifying file attributes
+    test("Create file (FILE_ATTRIBUTE_HIDDEN)", [&]() {
+        h = create_file(dir + u"\\filehidden", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_ATTRIBUTE_READONLY)", [&]() {
+        h = create_file(dir + u"\\filero", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_READONLY)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_READONLY",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_ATTRIBUTE_SYSTEM)", [&]() {
+        h = create_file(dir + u"\\filesys", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_SYSTEM, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_SYSTEM)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_SYSTEM",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_ATTRIBUTE_NORMAL)", [&]() {
+        h = create_file(dir + u"\\filenormal", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_NORMAL, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create directory (FILE_ATTRIBUTE_HIDDEN)", [&]() {
+        h = create_file(dir + u"\\dirhidden", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create directory (FILE_ATTRIBUTE_READONLY)", [&]() {
+        h = create_file(dir + u"\\dirro", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create directory (FILE_ATTRIBUTE_SYSTEM)", [&]() {
+        h = create_file(dir + u"\\dirsys", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_SYSTEM, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_SYSTEM)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_SYSTEM",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Create directory (FILE_ATTRIBUTE_NORMAL)", [&]() {
+        h = create_file(dir + u"\\dirnormal", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_NORMAL, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
     // FIXME - FILE_SUPERSEDE
     // FIXME - FILE_OPEN
     // FIXME - FILE_OPEN_IF
