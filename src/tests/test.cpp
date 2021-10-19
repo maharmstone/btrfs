@@ -88,12 +88,23 @@ static void test_create_file(const u16string& dir) {
 
         test("Create file differing in case", [&]() {
             exp_status([&]() {
-                create_file(dir + u"\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+                create_file(dir + u"\\FILE", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
             }, STATUS_OBJECT_NAME_COLLISION);
         });
 
         h.reset();
     }
+}
+
+static u16string to_u16string(time_t n) {
+    u16string s;
+
+    while (n > 0) {
+        s += (n % 10) + u'0';
+        n /= 10;
+    }
+
+    return u16string(s.rbegin(), s.rend());
 }
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -103,6 +114,9 @@ int wmain(int argc, wchar_t* argv[]) {
     }
 
     u16string ntdir = u"\\??\\"s + u16string((char16_t*)argv[1]);
+    ntdir += u"\\" + to_u16string(time(nullptr));
+
+    create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
 
     test_create_file(ntdir);
 
