@@ -216,8 +216,154 @@ static void test_create_file(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - check with FILE_NON_DIRECTORY_FILE (inc. with FILE_ATTRIBUTE_DIRECTORY)
-    // FIXME - check with FILE_DIRECTORY_FILE
+    test("Create file (FILE_NON_DIRECTORY_FILE)", [&]() {
+        h = create_file(dir + u"\\file2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_standard_information(h.get());
+
+            if (fsi.AllocationSize.QuadPart != 0)
+                throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
+
+            if (fsi.EndOfFile.QuadPart != 0)
+                throw formatted_error("EndOfFile was {}, expected 0", fsi.EndOfFile.QuadPart);
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsi.Directory)
+                throw runtime_error("Directory was true, expected false");
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_NON_DIRECTORY_FILE, FILE_ATTRIBUTE_DIRECTORY)", [&]() {
+        h = create_file(dir + u"\\file3", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_DIRECTORY, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_standard_information(h.get());
+
+            if (fsi.AllocationSize.QuadPart != 0)
+                throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
+
+            if (fsi.EndOfFile.QuadPart != 0)
+                throw formatted_error("EndOfFile was {}, expected 0", fsi.EndOfFile.QuadPart);
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsi.Directory)
+                throw runtime_error("Directory was true, expected false");
+        });
+
+        h.reset();
+    }
+
+    test("Create directory (FILE_DIRECTORY_FILE)", [&]() {
+        h = create_file(dir + u"\\dir", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_standard_information(h.get());
+
+            if (fsi.AllocationSize.QuadPart != 0)
+                throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
+
+            if (fsi.EndOfFile.QuadPart != 0)
+                throw formatted_error("EndOfFile was {}, expected 0", fsi.EndOfFile.QuadPart);
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (!fsi.Directory)
+                throw runtime_error("Directory was false, expected true");
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_ATTRIBUTE_DIRECTORY)", [&]() {
+        h = create_file(dir + u"\\file4", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_DIRECTORY, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_standard_information(h.get());
+
+            if (fsi.AllocationSize.QuadPart != 0)
+                throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
+
+            if (fsi.EndOfFile.QuadPart != 0)
+                throw formatted_error("EndOfFile was {}, expected 0", fsi.EndOfFile.QuadPart);
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsi.Directory)
+                throw runtime_error("Directory was true, expected false");
+        });
+
+        h.reset();
+    }
+
     // FIXME - specifying file attributes
     // FIXME - FILE_SUPERSEDE
     // FIXME - FILE_OPEN
