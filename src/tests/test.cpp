@@ -328,6 +328,18 @@ static void test_create_file(const u16string& dir) {
                 throw runtime_error("Directory was false, expected true");
         });
 
+        test("Check granted access", [&]() {
+            auto obi = query_object_basic_information(h.get());
+
+            ACCESS_MASK exp = SYNCHRONIZE | WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE |
+                              FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_DELETE_CHILD |
+                              FILE_EXECUTE | FILE_WRITE_EA | FILE_READ_EA | FILE_APPEND_DATA |
+                              FILE_WRITE_DATA | FILE_READ_DATA;
+
+            if (obi.GrantedAccess != exp)
+                throw formatted_error("granted access was {:x}, expected {:x}", obi.GrantedAccess, exp);
+        });
+
         h.reset();
 
         test("Open directory", [&]() {
