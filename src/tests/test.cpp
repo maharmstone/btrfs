@@ -88,6 +88,22 @@ static FILE_BASIC_INFORMATION query_basic_information(HANDLE h) {
     return fbi;
 }
 
+static OBJECT_BASIC_INFORMATION query_object_basic_information(HANDLE h) {
+    NTSTATUS Status;
+    OBJECT_BASIC_INFORMATION obi;
+    ULONG len;
+
+    Status = NtQueryObject(h, ObjectBasicInformation, &obi, sizeof(obi), &len);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (len != sizeof(obi))
+        throw formatted_error("returned length was {}, expected {}", len, sizeof(obi));
+
+    return obi;
+}
+
 static void test_create_file(const u16string& dir) {
     unique_handle h;
 
@@ -136,13 +152,58 @@ static void test_create_file(const u16string& dir) {
         // FIXME - FileCaseSensitiveInformation
         // FIXME - FileHardLinkFullIdInformation
 
-        // FIXME - check granted access
+        test("Check granted access", [&]() {
+            auto obi = query_object_basic_information(h.get());
+
+            ACCESS_MASK exp = SYNCHRONIZE | WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE |
+                              FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_DELETE_CHILD |
+                              FILE_EXECUTE | FILE_WRITE_EA | FILE_READ_EA | FILE_APPEND_DATA |
+                              FILE_WRITE_DATA | FILE_READ_DATA;
+
+            if (obi.GrantedAccess != exp)
+                throw formatted_error("granted access was {:x}, expected {:x}", obi.GrantedAccess, exp);
+        });
 
         h.reset();
     }
 
     // FIXME - check with FILE_NON_DIRECTORY_FILE
     // FIXME - check with FILE_DIRECTORY_FILE
+    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+
+    // FIXME - preallocation
+
+    // FIXME - check with case-sensitive flag set
+
+    // FIXME - reparse points (opening, opening following link, creating, setting, querying tag)
+
+    // FIXME - ADSes (including prohibited names)
+
+    // FIXME - EAs
+
+    // FIXME - renaming
+    // FIXME - moving
+    // FIXME - renaming by overwrite
+    // FIXME - POSIX renames
+
+    // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
+    // FIXME - POSIX deletion
+
+    // FIXME - setting file information
+
+    // FIXME - reading
+    // FIXME - writing
+
+    // FIXME - querying SD
+    // FIXME - setting SD
+    // FIXME - inheriting SD
+
+    // FIXME - querying directory
+    // FIXME - directory notifications
+
+    // FIXME - oplocks
+
+    // FIXME - IOCTLs and FSCTLs
 }
 
 static u16string to_u16string(time_t n) {
