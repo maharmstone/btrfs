@@ -181,8 +181,18 @@ static void test_create_file(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - check with FILE_NON_DIRECTORY_FILE
+    // FIXME - check with FILE_NON_DIRECTORY_FILE (inc. with FILE_ATTRIBUTE_DIRECTORY)
     // FIXME - check with FILE_DIRECTORY_FILE
+    // FIXME - specifying file attributes
+    // FIXME - FILE_SUPERSEDE
+    // FIXME - FILE_OPEN
+    // FIXME - FILE_OPEN_IF
+    // FIXME - FILE_OVERWRITE
+    // FIXME - FILE_OVERWRITE_IF
+    // FIXME - share modes
+    // FIXME - FILE_OPEN_BY_FILE_ID
+    // FIXME - FILE_DELETE_ON_CLOSE
+    // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - preallocation
@@ -194,6 +204,7 @@ static void test_create_file(const u16string& dir) {
     // FIXME - ADSes (including prohibited names)
 
     // FIXME - EAs
+    // FIXME - FILE_NO_EA_KNOWLEDGE
 
     // FIXME - renaming
     // FIXME - moving
@@ -203,6 +214,10 @@ static void test_create_file(const u16string& dir) {
     // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
     // FIXME - POSIX deletion
 
+    // FIXME - hard links
+    // FIXME - linking by overwrite
+    // FIXME - POSIX hard links
+
     // FIXME - setting file information
 
     // FIXME - reading
@@ -211,13 +226,21 @@ static void test_create_file(const u16string& dir) {
     // FIXME - querying SD
     // FIXME - setting SD
     // FIXME - inheriting SD
+    // FIXME - open files asking for too many permissions
+    // FIXME - MAXIMUM_ALLOWED
 
     // FIXME - querying directory
     // FIXME - directory notifications
 
     // FIXME - oplocks
+    // FIXME - FILE_RESERVE_OPFILTER
+    // FIXME - FILE_OPEN_REQUIRING_OPLOCK
+    // FIXME - FILE_COMPLETE_IF_OPLOCKED
 
     // FIXME - IOCTLs and FSCTLs
+
+    // FIXME - querying volume info
+    // FIXME - setting volume label
 }
 
 static u16string to_u16string(time_t n) {
