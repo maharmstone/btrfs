@@ -1,4 +1,5 @@
 #include "test.h"
+#include <functional>
 
 using namespace std;
 
@@ -38,28 +39,23 @@ static unique_handle create_file(const u16string_view& path, ACCESS_MASK access,
     return unique_handle(h);
 }
 
-static void try_create_file(const string& msg, const u16string_view& path, ACCESS_MASK access, ULONG atts,
-                            ULONG share, ULONG dispo, ULONG options, ULONG_PTR exp_info, NTSTATUS exp_status) {
-    NTSTATUS Status = STATUS_SUCCESS;
-    string error;
+static void test(const string& msg, const function<void()>& func) {
+    string err;
 
     try {
-        create_file(path, access, atts, share, dispo, options, exp_info);
-    } catch (const ntstatus_error& e) {
-        Status = e.Status;
+        func();
     } catch (const exception& e) {
-        error = e.what();
+        err = e.what();
+    } catch (...) {
+        err = "Uncaught exception.";
     }
-
-    if (error.empty() && exp_status != Status)
-        error = fmt::format("Expected {}, received {}", ntstatus_to_string(exp_status), ntstatus_to_string(Status));
 
     // FIXME - coloured and aligned output
 
-    if (error.empty())
+    if (err.empty())
         fmt::print("{}, PASS\n", msg);
     else
-        fmt::print("{}, FAIL ({})\n", msg, error);
+        fmt::print("{}, FAIL ({})\n", msg, err);
 }
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -70,7 +66,9 @@ int wmain(int argc, wchar_t* argv[]) {
 
     u16string ntdir = u"\\??\\"s + u16string((char16_t*)argv[1]);
 
-    try_create_file("Opening dir", ntdir, 0, 0, 0, 0, 0, FILE_OPENED, STATUS_SUCCESS);
+    test("Opening dir", [&]() {
+        create_file(ntdir, 0, 0, 0, 0, 0, FILE_OPENED);
+    });
 
     return 0;
 }
