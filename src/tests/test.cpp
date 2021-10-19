@@ -508,8 +508,92 @@ static void test_create_file(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - FILE_SUPERSEDE
+    test("Create file (FILE_SHARE_READ)", [&]() {
+        h = create_file(dir + u"\\fileshareread", FILE_READ_DATA, 0, FILE_SHARE_READ, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Open for read", [&]() {
+            create_file(dir + u"\\fileshareread", FILE_READ_DATA, 0, FILE_SHARE_READ, FILE_OPEN,
+                        0, FILE_OPENED);
+        });
+
+        test("Open for write", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\fileshareread", FILE_WRITE_DATA, 0, FILE_SHARE_READ, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        test("Open for delete", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\fileshareread", DELETE, 0, FILE_SHARE_READ, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_SHARE_WRITE)", [&]() {
+        h = create_file(dir + u"\\filesharewrite", FILE_WRITE_DATA, 0, FILE_SHARE_WRITE, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Open for read", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\filesharewrite", FILE_READ_DATA, 0, FILE_SHARE_WRITE, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        test("Open for write", [&]() {
+            create_file(dir + u"\\filesharewrite", FILE_WRITE_DATA, 0, FILE_SHARE_WRITE, FILE_OPEN,
+                        0, FILE_OPENED);
+        });
+
+        test("Open for delete", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\filesharewrite", DELETE, 0, FILE_SHARE_WRITE, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h.reset();
+    }
+
+    test("Create file (FILE_SHARE_DELETE)", [&]() {
+        h = create_file(dir + u"\\filesharedelete", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Open for read", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\filesharedelete", FILE_READ_DATA, 0, FILE_SHARE_DELETE, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        test("Open for write", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\filesharedelete", FILE_WRITE_DATA, 0, FILE_SHARE_DELETE, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        test("Open for delete", [&]() {
+            create_file(dir + u"\\filesharedelete", DELETE, 0, FILE_SHARE_DELETE, FILE_OPEN,
+                        0, FILE_OPENED);
+        });
+
+        h.reset();
+    }
+
     // FIXME - FILE_OPEN
+    // FIXME - FILE_SUPERSEDE
     // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE
     // FIXME - FILE_OVERWRITE_IF
@@ -517,6 +601,9 @@ static void test_create_file(const u16string& dir) {
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+    // FIXME - check can't overwrite or supersede directory or readonly file
+    // FIXME - check can't overwrite or supersede while changing hidden or system flags
+    // FIXME - flag to ignore readonly attribute
 
     // FIXME - preallocation
 
@@ -565,6 +652,8 @@ static void test_create_file(const u16string& dir) {
 
     // FIXME - querying volume info
     // FIXME - setting volume label
+
+    // FIXME - locking
 }
 
 static u16string to_u16string(time_t n) {
