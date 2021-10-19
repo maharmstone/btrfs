@@ -25,7 +25,7 @@ public:
         if (h == INVALID_HANDLE_VALUE)
             return;
 
-        CloseHandle(h);
+        NtClose(h);
     }
 };
 
