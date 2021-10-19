@@ -58,6 +58,44 @@ static void test(const string& msg, const function<void()>& func) {
         fmt::print("{}, FAIL ({})\n", msg, err);
 }
 
+static void exp_status(const function<void()>& func, NTSTATUS Status) {
+    try {
+        func();
+    } catch (const ntstatus_error& e) {
+        if (e.Status != Status)
+            throw formatted_error("Status was {}, expected {}", ntstatus_to_string(e.Status), ntstatus_to_string(Status));
+        else
+            return;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw formatted_error("Status was STATUS_SUCCESS, expected {}", ntstatus_to_string(Status));
+}
+
+static void test_create_file(const u16string& dir) {
+    unique_handle h;
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create duplicate file", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Create file differing in case", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        h.reset();
+    }
+}
+
 int wmain(int argc, wchar_t* argv[]) {
     if (argc < 2) {
         fmt::print(stderr, "Usage: test.exe dir\n");
@@ -66,9 +104,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
     u16string ntdir = u"\\??\\"s + u16string((char16_t*)argv[1]);
 
-    test("Opening dir", [&]() {
-        create_file(ntdir, 0, 0, 0, 0, 0, FILE_OPENED);
-    });
+    test_create_file(ntdir);
 
     return 0;
 }
