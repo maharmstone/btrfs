@@ -3847,7 +3847,7 @@ static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_
     return STATUS_SUCCESS;
 }
 
-static void oplock_complete(PVOID Context, PIRP Irp) {
+static void __stdcall oplock_complete(PVOID Context, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY rollback;
     bool skip_lock;
