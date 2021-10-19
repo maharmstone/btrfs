@@ -1,4 +1,5 @@
 #include "test.h"
+#include <wincon.h>
 #include <functional>
 
 using namespace std;
@@ -41,6 +42,7 @@ static unique_handle create_file(const u16string_view& path, ACCESS_MASK access,
 
 static void test(const string& msg, const function<void()>& func) {
     string err;
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
 
     try {
         func();
@@ -50,12 +52,24 @@ static void test(const string& msg, const function<void()>& func) {
         err = "Uncaught exception.";
     }
 
-    // FIXME - coloured and aligned output
+    // FIXME - aligned output?
 
-    if (err.empty())
-        fmt::print("{}, PASS\n", msg);
-    else
-        fmt::print("{}, FAIL ({})\n", msg, err);
+    fmt::print("{}, ", msg);
+
+    auto col = GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+
+    if (col)
+        SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), err.empty() ? FOREGROUND_GREEN : (FOREGROUND_RED | FOREGROUND_INTENSITY));
+
+    fmt::print("{}", err.empty() ? "PASS" : "FAIL");
+
+    if (col)
+        SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), csbi.wAttributes);
+
+    if (!err.empty())
+        fmt::print(" ({})", err);
+
+    fmt::print("\n");
 }
 
 static void exp_status(const function<void()>& func, NTSTATUS Status) {
