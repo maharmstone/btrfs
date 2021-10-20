@@ -612,6 +612,20 @@ static void test_create_file(const u16string& dir) {
         h.reset();
     }
 
+    test("Create file in invalid path", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\nosuchdir\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE,
+                        FILE_CREATED);
+        }, STATUS_OBJECT_PATH_NOT_FOUND);
+    });
+
+    test("Create directory in invalid path", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\nosuchdir\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE,
+                        FILE_CREATED);
+        }, STATUS_OBJECT_PATH_NOT_FOUND);
+    });
+
     // FIXME - FILE_SUPERSEDE
     // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE
