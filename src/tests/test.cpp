@@ -626,15 +626,88 @@ static void test_create_file(const u16string& dir) {
         }, STATUS_OBJECT_PATH_NOT_FOUND);
     });
 
-    // FIXME - FILE_SUPERSEDE
-    // FIXME - FILE_OPEN_IF
+    test("Try overwriting non-existent file", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\nonsuch", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                        0, FILE_OVERWRITTEN);
+        }, STATUS_OBJECT_NAME_NOT_FOUND);
+    });
+
+    test("Create file by FILE_SUPERSEDE", [&]() {
+        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_SUPERSEDE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Supersede file", [&]() {
+        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                        0, FILE_SUPERSEDED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Supersede adding hidden flag", [&]() {
+        create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0,
+                    FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+    });
+
+    test("Try superseding while clearing hidden flag", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                        0, FILE_SUPERSEDED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
+    test("Supersede adding system flag", [&]() {
+        create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, 0,
+                    FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+    });
+
+    test("Try superseding while clearing system flag", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0,
+                        FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
+    test("Try creating directory by FILE_SUPERSEDE", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\supersededir", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
     // FIXME - FILE_OVERWRITE
+    // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE_IF
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
-    // FIXME - check can't overwrite or supersede directory or readonly file
-    // FIXME - check can't overwrite or supersede while changing hidden or system flags
+    // FIXME - check can't overwrite directory or readonly file
+    // FIXME - check can't overwrite while changing hidden or system flags
 
     // FIXME - reading
     // FIXME - writing
