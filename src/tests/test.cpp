@@ -626,13 +626,6 @@ static void test_create_file(const u16string& dir) {
         }, STATUS_OBJECT_PATH_NOT_FOUND);
     });
 
-    test("Try overwriting non-existent file", [&]() {
-        exp_status([&]() {
-            create_file(dir + u"\\nonsuch", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                        0, FILE_OVERWRITTEN);
-        }, STATUS_OBJECT_NAME_NOT_FOUND);
-    });
-
     test("Create file by FILE_SUPERSEDE", [&]() {
         h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_SUPERSEDE,
                         0, FILE_CREATED);
@@ -701,13 +694,129 @@ static void test_create_file(const u16string& dir) {
     });
 
     // FIXME - FILE_OVERWRITE
+
+    test("Try overwriting non-existent file", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\nonsuch", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                        0, FILE_OVERWRITTEN);
+        }, STATUS_OBJECT_NAME_NOT_FOUND);
+    });
+
+    test("Create readonly file", [&]() {
+        h = create_file(dir + u"\\overwritero", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting readonly file", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwritero", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Overwrite file", [&]() {
+            h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+        });
+    }
+
+    if (h) {
+        h.reset();
+
+        test("Overwrite file adding readonly flag", [&]() {
+            create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_OVERWRITE,
+                        0, FILE_OVERWRITTEN);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting file, changing to directory", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            FILE_DIRECTORY_FILE, FILE_OVERWRITTEN);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Overwrite file adding hidden flag", [&]() {
+            h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+        });
+    }
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting file clearing hidden flag", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Overwrite file adding system flag", [&]() {
+        h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, 0,
+                        FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting file clearing system flag", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting directory", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            FILE_DIRECTORY_FILE, FILE_OVERWRITTEN);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Try overwriting directory, changing to file", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            FILE_NON_DIRECTORY_FILE, FILE_OVERWRITTEN);
+            }, STATUS_FILE_IS_A_DIRECTORY);
+        });
+    }
+
     // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE_IF
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
-    // FIXME - check can't overwrite directory or readonly file
-    // FIXME - check can't overwrite while changing hidden or system flags
 
     // FIXME - reading
     // FIXME - writing
@@ -728,6 +837,7 @@ static void test_create_file(const u16string& dir) {
     // FIXME - renaming by overwrite
     // FIXME - POSIX renames
     // FIXME - FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
+    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
     // FIXME - POSIX deletion
@@ -740,6 +850,7 @@ static void test_create_file(const u16string& dir) {
     // FIXME - linking by overwrite
     // FIXME - POSIX hard links
     // FIXME - FILE_LINK_IGNORE_READONLY_ATTRIBUTE
+    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - setting file information
 
