@@ -644,8 +644,8 @@ static void test_create_file(const u16string& dir) {
     });
 
     test("Create file by FILE_SUPERSEDE", [&]() {
-        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_SUPERSEDE,
-                        0, FILE_CREATED);
+        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_SUPERSEDE, 0, FILE_CREATED);
     });
 
     if (h) {
@@ -656,6 +656,11 @@ static void test_create_file(const u16string& dir) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE",
                                       fbi.FileAttributes);
             }
+        });
+
+        test("Try superseding open file", [&]() {
+            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
         });
 
         h.reset();
@@ -736,11 +741,16 @@ static void test_create_file(const u16string& dir) {
     }
 
     test("Create file", [&]() {
-        h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
-                        0, FILE_CREATED);
+        h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h) {
+        test("Try overwriting open file", [&]() {
+            create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+        });
+
         h.reset();
 
         test("Overwrite file", [&]() {
@@ -829,11 +839,13 @@ static void test_create_file(const u16string& dir) {
         });
     }
 
+    // FIXME - check names on overwrite or supersede (esp. if changing case)
     // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE_IF
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+    // FIXME - test all the variations of NtQueryInformationFile
 
     // FIXME - reading
     // FIXME - writing
@@ -849,9 +861,9 @@ static void test_create_file(const u16string& dir) {
     // FIXME - EAs
     // FIXME - FILE_NO_EA_KNOWLEDGE
 
-    // FIXME - renaming
+    // FIXME - renaming (check names before and after)
     // FIXME - moving
-    // FIXME - renaming by overwrite
+    // FIXME - renaming by overwrite (if different case, will be filename be old or new?)
     // FIXME - POSIX renames
     // FIXME - FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
@@ -891,6 +903,11 @@ static void test_create_file(const u16string& dir) {
     // FIXME - setting volume label
 
     // FIXME - locking
+
+    // FIXME - reflink copies
+    // FIXME - creating subvols
+    // FIXME - snapshots
+    // FIXME - sending and receiving(?)
 }
 
 static u16string to_u16string(time_t n) {
@@ -914,6 +931,8 @@ int wmain(int argc, wchar_t* argv[]) {
     ntdir += u"\\" + to_u16string(time(nullptr));
 
     create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+
+    // FIXME - can we print name and version of FS driver?
 
     test_create_file(ntdir);
 
