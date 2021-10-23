@@ -151,6 +151,41 @@ static OBJECT_BASIC_INFORMATION query_object_basic_information(HANDLE h) {
     return obi;
 }
 
+static u16string query_file_name_information(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    FILE_NAME_INFORMATION fni;
+
+    fni.FileNameLength = 0;
+
+    Status = NtQueryInformationFile(h, &iosb, &fni, sizeof(fni), FileNameInformation);
+
+    if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW)
+        throw ntstatus_error(Status);
+
+    vector<uint8_t> buf(offsetof(FILE_NAME_INFORMATION, FileName) + fni.FileNameLength);
+
+    auto& fni2 = *reinterpret_cast<FILE_NAME_INFORMATION*>(buf.data());
+
+    fni2.FileNameLength = buf.size() - offsetof(FILE_NAME_INFORMATION, FileName);
+
+    Status = NtQueryInformationFile(h, &iosb, &fni2, buf.size(), FileNameInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != buf.size())
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, buf.size());
+
+    u16string ret;
+
+    ret.resize(fni.FileNameLength / sizeof(char16_t));
+
+    memcpy(ret.data(), fni2.FileName, fni.FileNameLength);
+
+    return ret;
+}
+
 static void test_create_file(const u16string& dir) {
     unique_handle h;
 
@@ -199,12 +234,20 @@ static void test_create_file(const u16string& dir) {
                 throw runtime_error("Directory was true, expected false");
         });
 
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\file";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\file\".");
+        });
+
         // FIXME - FileAllInformation
         // FIXME - FileAttributeTagInformation
         // FIXME - FileCompressionInformation
         // FIXME - FileEaInformation
         // FIXME - FileInternalInformation
-        // FIXME - FileNameInformation
         // FIXME - FileNetworkOpenInformation
         // FIXME - FilePositionInformation
         // FIXME - FileStreamInformation
