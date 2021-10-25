@@ -19,56 +19,6 @@
 #include <wincon.h>
 #include <functional>
 
-extern "C"
-NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
-                                        PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock,
-                                        PVOID FileInformation, ULONG Length,
-                                        FILE_INFORMATION_CLASS FileInformationClass,
-                                        BOOLEAN ReturnSingleEntry, PUNICODE_STRING FileName,
-                                        BOOLEAN RestartScan);
-
-// not currently in mingw
-#ifndef _MSC_VER
-#define FileIdExtdDirectoryInformation (enum _FILE_INFORMATION_CLASS)60
-#define FileIdExtdBothDirectoryInformation (enum _FILE_INFORMATION_CLASS)63
-
-typedef struct _FILE_ID_EXTD_DIR_INFORMATION {
-    ULONG NextEntryOffset;
-    ULONG FileIndex;
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER EndOfFile;
-    LARGE_INTEGER AllocationSize;
-    ULONG FileAttributes;
-    ULONG FileNameLength;
-    ULONG EaSize;
-    ULONG ReparsePointTag;
-    FILE_ID_128 FileId;
-    WCHAR FileName[1];
-} FILE_ID_EXTD_DIR_INFORMATION, *PFILE_ID_EXTD_DIR_INFORMATION;
-
-typedef struct _FILE_ID_EXTD_BOTH_DIR_INFORMATION {
-    ULONG NextEntryOffset;
-    ULONG FileIndex;
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER EndOfFile;
-    LARGE_INTEGER AllocationSize;
-    ULONG FileAttributes;
-    ULONG FileNameLength;
-    ULONG EaSize;
-    ULONG ReparsePointTag;
-    FILE_ID_128 FileId;
-    CCHAR ShortNameLength;
-    WCHAR ShortName[12];
-    WCHAR FileName[1];
-} FILE_ID_EXTD_BOTH_DIR_INFORMATION, *PFILE_ID_EXTD_BOTH_DIR_INFORMATION;
-#endif
-
 using namespace std;
 
 static unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
@@ -604,6 +554,30 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
 }
 
 template<typename T>
+concept has_CreationTime = requires { T::CreationTime; };
+
+template<typename T>
+concept has_LastAccessTime = requires { T::LastAccessTime; };
+
+template<typename T>
+concept has_LastWriteTime = requires { T::LastWriteTime; };
+
+template<typename T>
+concept has_ChangeTime = requires { T::ChangeTime; };
+
+template<typename T>
+concept has_EndOfFile = requires { T::EndOfFile; };
+
+template<typename T>
+concept has_AllocationSize = requires { T::AllocationSize; };
+
+template<typename T>
+concept has_FileAttributes = requires { T::FileAttributes; };
+
+template<typename T>
+concept has_FileNameLength = requires { T::FileNameLength; };
+
+template<typename T>
 static void check_dir_entry(const u16string& dir, const u16string_view& name,
                             const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi) {
     auto items = query_dir<T>(dir, name);
@@ -613,42 +587,42 @@ static void check_dir_entry(const u16string& dir, const u16string_view& name,
 
     auto& fdi = *static_cast<const T*>(items.front());
 
-    if constexpr (requires { T::CreationTime; }) {
+    if constexpr (has_CreationTime<T>) {
         if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
             throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
     }
 
-    if constexpr (requires { T::LastAccessTime; }) {
+    if constexpr (has_LastAccessTime<T>) {
         if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
             throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
     }
 
-    if constexpr (requires { T::LastWriteTime; }) {
+    if constexpr (has_LastWriteTime<T>) {
         if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
             throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
     }
 
-    if constexpr (requires { T::ChangeTime; }) {
+    if constexpr (has_ChangeTime<T>) {
         if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
             throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
     }
 
-    if constexpr (requires { T::EndOfFile; }) {
+    if constexpr (has_EndOfFile<T>) {
         if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
             throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
     }
 
-    if constexpr (requires { T::AllocationSize; }) {
+    if constexpr (has_AllocationSize<T>) {
         if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
             throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
     }
 
-    if constexpr (requires { T::FileAttributes; }) {
+    if constexpr (has_FileAttributes<T>) {
         if (fdi.FileAttributes != fbi.FileAttributes)
             throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
     }
 
-    if constexpr (requires { T::FileNameLength; }) {
+    if constexpr (has_FileNameLength<T>) {
         if (fdi.FileNameLength != name.size() * sizeof(char16_t))
             throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
 

@@ -34,6 +34,221 @@
 #include <fmt/format.h>
 #include <fmt/compile.h>
 
+extern "C"
+NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                                        PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock,
+                                        PVOID FileInformation, ULONG Length,
+                                        FILE_INFORMATION_CLASS FileInformationClass,
+                                        BOOLEAN ReturnSingleEntry, PUNICODE_STRING FileName,
+                                        BOOLEAN RestartScan);
+
+#define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
+#define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)63)
+
+#ifdef _MSC_VER
+#define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
+#define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)
+#define FileBothDirectoryInformation ((FILE_INFORMATION_CLASS)3)
+#define FileBasicInformation ((FILE_INFORMATION_CLASS)4)
+#define FileStandardInformation ((FILE_INFORMATION_CLASS)5)
+#define FileInternalInformation ((FILE_INFORMATION_CLASS)6)
+#define FileEaInformation ((FILE_INFORMATION_CLASS)7)
+#define FileAccessInformation ((FILE_INFORMATION_CLASS)8)
+#define FileNameInformation ((FILE_INFORMATION_CLASS)9)
+#define FileRenameInformation ((FILE_INFORMATION_CLASS)10)
+#define FileLinkInformation ((FILE_INFORMATION_CLASS)11)
+#define FileNamesInformation ((FILE_INFORMATION_CLASS)12)
+#define FileDispositionInformation ((FILE_INFORMATION_CLASS)13)
+#define FilePositionInformation ((FILE_INFORMATION_CLASS)14)
+#define FileFullEaInformation ((FILE_INFORMATION_CLASS)15)
+#define FileModeInformation ((FILE_INFORMATION_CLASS)16)
+#define FileAlignmentInformation ((FILE_INFORMATION_CLASS)17)
+#define FileAllInformation ((FILE_INFORMATION_CLASS)18)
+#define FileAllocationInformation ((FILE_INFORMATION_CLASS)19)
+#define FileEndOfFileInformation ((FILE_INFORMATION_CLASS)20)
+#define FileAlternateNameInformation ((FILE_INFORMATION_CLASS)21)
+#define FileStreamInformation ((FILE_INFORMATION_CLASS)22)
+#define FilePipeInformation ((FILE_INFORMATION_CLASS)23)
+#define FilePipeLocalInformation ((FILE_INFORMATION_CLASS)24)
+#define FilePipeRemoteInformation ((FILE_INFORMATION_CLASS)25)
+#define FileMailslotQueryInformation ((FILE_INFORMATION_CLASS)26)
+#define FileMailslotSetInformation ((FILE_INFORMATION_CLASS)27)
+#define FileCompressionInformation ((FILE_INFORMATION_CLASS)28)
+#define FileObjectIdInformation ((FILE_INFORMATION_CLASS)29)
+#define FileCompletionInformation ((FILE_INFORMATION_CLASS)30)
+#define FileMoveClusterInformation ((FILE_INFORMATION_CLASS)31)
+#define FileQuotaInformation ((FILE_INFORMATION_CLASS)32)
+#define FileReparsePointInformation ((FILE_INFORMATION_CLASS)33)
+#define FileNetworkOpenInformation ((FILE_INFORMATION_CLASS)34)
+#define FileAttributeTagInformation ((FILE_INFORMATION_CLASS)35)
+#define FileTrackingInformation ((FILE_INFORMATION_CLASS)36)
+#define FileIdBothDirectoryInformation ((FILE_INFORMATION_CLASS)37)
+#define FileIdFullDirectoryInformation ((FILE_INFORMATION_CLASS)38)
+#define FileValidDataLengthInformation ((FILE_INFORMATION_CLASS)39)
+
+extern "C"
+NTSTATUS NTAPI NtQueryInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr,
+                                      ULONG len, FILE_INFORMATION_CLASS FileInformationClass);
+
+typedef struct _FILE_BASIC_INFORMATION {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    ULONG FileAttributes;
+} FILE_BASIC_INFORMATION, *PFILE_BASIC_INFORMATION;
+
+typedef struct _FILE_STANDARD_INFORMATION {
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG NumberOfLinks;
+    BOOLEAN DeletePending;
+    BOOLEAN Directory;
+} FILE_STANDARD_INFORMATION, *PFILE_STANDARD_INFORMATION;
+
+typedef struct _FILE_NAME_INFORMATION {
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_NAME_INFORMATION, *PFILE_NAME_INFORMATION;
+
+typedef struct _FILE_DIRECTORY_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    WCHAR FileName[ANYSIZE_ARRAY];
+} FILE_DIRECTORY_INFORMATION, *PFILE_DIRECTORY_INFORMATION;
+
+typedef struct _FILE_FULL_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    WCHAR FileName[ANYSIZE_ARRAY];
+} FILE_FULL_DIR_INFORMATION, *PFILE_FULL_DIR_INFORMATION;
+
+typedef struct _FILE_ID_FULL_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    LARGE_INTEGER FileId;
+    WCHAR FileName[ANYSIZE_ARRAY];
+} FILE_ID_FULL_DIR_INFORMATION, *PFILE_ID_FULL_DIR_INFORMATION;
+
+typedef struct _FILE_BOTH_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[ANYSIZE_ARRAY];
+} FILE_BOTH_DIR_INFORMATION, *PFILE_BOTH_DIR_INFORMATION;
+
+typedef struct _FILE_ID_BOTH_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CHAR ShortNameLength;
+    WCHAR ShortName[12];
+    LARGE_INTEGER FileId;
+    WCHAR FileName[ANYSIZE_ARRAY];
+} FILE_ID_BOTH_DIR_INFORMATION, *PFILE_ID_BOTH_DIR_INFORMATION;
+
+typedef struct _FILE_NAMES_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_NAMES_INFORMATION, *PFILE_NAMES_INFORMATION;
+
+typedef struct _OBJECT_BASIC_INFORMATION {
+    ULONG Attributes;
+    ACCESS_MASK GrantedAccess;
+    ULONG HandleCount;
+    ULONG PointerCount;
+    ULONG PagedPoolUsage;
+    ULONG NonPagedPoolUsage;
+    ULONG Reserved[3];
+    ULONG NameInformationLength;
+    ULONG TypeInformationLength;
+    ULONG SecurityDescriptorLength;
+    LARGE_INTEGER CreateTime;
+} OBJECT_BASIC_INFORMATION, *POBJECT_BASIC_INFORMATION;
+#endif
+
+typedef struct _FILE_ID_EXTD_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    ULONG ReparsePointTag;
+    FILE_ID_128 FileId;
+    WCHAR FileName[1];
+} FILE_ID_EXTD_DIR_INFORMATION, *PFILE_ID_EXTD_DIR_INFORMATION;
+
+typedef struct _FILE_ID_EXTD_BOTH_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    ULONG ReparsePointTag;
+    FILE_ID_128 FileId;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[1];
+} FILE_ID_EXTD_BOTH_DIR_INFORMATION, *PFILE_ID_EXTD_BOTH_DIR_INFORMATION;
+
 class handle_closer {
 public:
     typedef HANDLE pointer;
@@ -3196,24 +3411,12 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
             return "STATUS_GRAPHICS_UAB_NOT_SUPPORTED";
         case STATUS_GRAPHICS_OPM_INVALID_ENCRYPTED_PARAMETERS:
             return "STATUS_GRAPHICS_OPM_INVALID_ENCRYPTED_PARAMETERS";
-        case STATUS_GRAPHICS_OPM_PARAMETER_ARRAY_TOO_SMALL:
-            return "STATUS_GRAPHICS_OPM_PARAMETER_ARRAY_TOO_SMALL";
         case STATUS_GRAPHICS_OPM_NO_PROTECTED_OUTPUTS_EXIST:
             return "STATUS_GRAPHICS_OPM_NO_PROTECTED_OUTPUTS_EXIST";
-        case STATUS_GRAPHICS_PVP_NO_DISPLAY_DEVICE_CORRESPONDS_TO_NAME:
-            return "STATUS_GRAPHICS_PVP_NO_DISPLAY_DEVICE_CORRESPONDS_TO_NAME";
-        case STATUS_GRAPHICS_PVP_DISPLAY_DEVICE_NOT_ATTACHED_TO_DESKTOP:
-            return "STATUS_GRAPHICS_PVP_DISPLAY_DEVICE_NOT_ATTACHED_TO_DESKTOP";
-        case STATUS_GRAPHICS_PVP_MIRRORING_DEVICES_NOT_SUPPORTED:
-            return "STATUS_GRAPHICS_PVP_MIRRORING_DEVICES_NOT_SUPPORTED";
-        case STATUS_GRAPHICS_OPM_INVALID_POINTER:
-            return "STATUS_GRAPHICS_OPM_INVALID_POINTER";
         case STATUS_GRAPHICS_OPM_INTERNAL_ERROR:
             return "STATUS_GRAPHICS_OPM_INTERNAL_ERROR";
         case STATUS_GRAPHICS_OPM_INVALID_HANDLE:
             return "STATUS_GRAPHICS_OPM_INVALID_HANDLE";
-        case STATUS_GRAPHICS_PVP_NO_MONITORS_CORRESPOND_TO_DISPLAY_DEVICE:
-            return "STATUS_GRAPHICS_PVP_NO_MONITORS_CORRESPOND_TO_DISPLAY_DEVICE";
         case STATUS_GRAPHICS_PVP_INVALID_CERTIFICATE_LENGTH:
             return "STATUS_GRAPHICS_PVP_INVALID_CERTIFICATE_LENGTH";
         case STATUS_GRAPHICS_OPM_SPANNING_MODE_ENABLED:
@@ -3238,8 +3441,6 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
             return "STATUS_GRAPHICS_OPM_ALL_HDCP_HARDWARE_ALREADY_IN_USE";
         case STATUS_GRAPHICS_OPM_PROTECTED_OUTPUT_NO_LONGER_EXISTS:
             return "STATUS_GRAPHICS_OPM_PROTECTED_OUTPUT_NO_LONGER_EXISTS";
-        case STATUS_GRAPHICS_OPM_SESSION_TYPE_CHANGE_IN_PROGRESS:
-            return "STATUS_GRAPHICS_OPM_SESSION_TYPE_CHANGE_IN_PROGRESS";
         case STATUS_GRAPHICS_OPM_PROTECTED_OUTPUT_DOES_NOT_HAVE_COPP_SEMANTICS:
             return "STATUS_GRAPHICS_OPM_PROTECTED_OUTPUT_DOES_NOT_HAVE_COPP_SEMANTICS";
         case STATUS_GRAPHICS_OPM_INVALID_INFORMATION_REQUEST:
@@ -3308,8 +3509,6 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
             return "STATUS_FVE_TOO_SMALL";
         case STATUS_FVE_FAILED_WRONG_FS:
             return "STATUS_FVE_FAILED_WRONG_FS";
-        case STATUS_FVE_FAILED_BAD_FS:
-            return "STATUS_FVE_FAILED_BAD_FS";
         case STATUS_FVE_FS_NOT_EXTENDED:
             return "STATUS_FVE_FS_NOT_EXTENDED";
         case STATUS_FVE_FS_MOUNTED:
@@ -3426,8 +3625,6 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
             return "STATUS_FWP_LIFETIME_MISMATCH";
         case STATUS_FWP_BUILTIN_OBJECT:
             return "STATUS_FWP_BUILTIN_OBJECT";
-        case STATUS_FWP_TOO_MANY_BOOTTIME_FILTERS:
-            return "STATUS_FWP_TOO_MANY_BOOTTIME_FILTERS";
         case STATUS_FWP_NOTIFICATION_DROPPED:
             return "STATUS_FWP_NOTIFICATION_DROPPED";
         case STATUS_FWP_TRAFFIC_MISMATCH:
@@ -3490,10 +3687,6 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
             return "STATUS_FWP_TOO_MANY_SUBLAYERS";
         case STATUS_FWP_CALLOUT_NOTIFICATION_FAILED:
             return "STATUS_FWP_CALLOUT_NOTIFICATION_FAILED";
-        case STATUS_FWP_INCOMPATIBLE_AUTH_CONFIG:
-            return "STATUS_FWP_INCOMPATIBLE_AUTH_CONFIG";
-        case STATUS_FWP_INCOMPATIBLE_CIPHER_CONFIG:
-            return "STATUS_FWP_INCOMPATIBLE_CIPHER_CONFIG";
         case STATUS_FWP_DUPLICATE_AUTH_METHOD:
             return "STATUS_FWP_DUPLICATE_AUTH_METHOD";
         case STATUS_FWP_TCPIP_NOT_READY:
