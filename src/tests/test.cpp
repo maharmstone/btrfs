@@ -471,16 +471,23 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     unique_handle dh;
-    vector<uint8_t> buf(sizeof(T));
+    vector<uint8_t> buf(sizeof(T) + 7);
     bool first = true;
     vector<varbuf<T>> ret;
     FILE_INFORMATION_CLASS fic;
     UNICODE_STRING us;
+    size_t off;
 
     if constexpr (is_same_v<T, FILE_DIRECTORY_INFORMATION>)
         fic = FileDirectoryInformation;
-    else
-        static_assert("Unsupported file information class.");
+    else if constexpr (is_same_v<T, FILE_BOTH_DIR_INFORMATION>)
+        fic = FileBothDirectoryInformation;
+
+    // buffer needs to be aligned to 8 bytes
+    off = 8 - ((uintptr_t)buf.data() % 8);
+
+    if (off == 8)
+        off = 0;
 
     if (!filter.empty()) {
         us.Buffer = (WCHAR*)filter.data();
@@ -491,7 +498,7 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
 
     while (true) {
         Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
-                                      buf.data(), buf.size(), fic, false,
+                                      buf.data() + off, buf.size() - off, fic, false,
                                       !filter.empty() ? &us : nullptr, first);
 
         if (Status == STATUS_BUFFER_OVERFLOW) {
@@ -500,10 +507,15 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
             new_size = offsetof(T, FileName);
             new_size += ((T*)buf.data())->FileNameLength * sizeof(WCHAR);
 
-            buf.resize(new_size);
+            buf.resize(new_size + 7);
+
+            off = 8 - ((uintptr_t)buf.data() % 8);
+
+            if (off == 8)
+                off = 0;
 
             Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
-                                          buf.data(), buf.size(), fic, false,
+                                          buf.data() + off, buf.size() - off, fic, false,
                                           !filter.empty() ? &us : nullptr, first);
         }
 
@@ -518,7 +530,7 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
         do {
             varbuf<T> item;
 
-            item.buf.resize(offsetof(T, FileNameLength) + (ptr->FileNameLength * sizeof(WCHAR)));
+            item.buf.resize(offsetof(T, FileName) + (ptr->FileNameLength * sizeof(WCHAR)));
             memcpy(item.buf.data(), ptr, item.buf.size());
 
             ret.emplace_back(item);
@@ -616,7 +628,7 @@ static void test_create(const u16string& dir) {
 
         static const u16string_view name = u"file";
 
-        test("Check directory entry", [&]() {
+        test("Check directory entry (FILE_DIRECTORY_INFORMATION)", [&]() {
             auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
 
             if (items.size() != 1)
@@ -652,7 +664,45 @@ static void test_create(const u16string& dir) {
                 throw runtime_error("FileName did not match.");
         });
 
-        // FIXME - FileBothDirectoryInformation
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            auto items = query_dir<FILE_BOTH_DIR_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_BOTH_DIR_INFORMATION*>(items.front());
+
+            if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+                throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+
+            if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+                throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+
+            if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+                throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+
+            if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+                throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+
+            if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+                throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+
+            if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+                throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+
+            if (fdi.FileAttributes != fbi.FileAttributes)
+                throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            // FIXME - EaSize
+            // FIXME - ShortNameLength / ShortName
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
         // FIXME - FileFullDirectoryInformation
         // FIXME - FileIdBothDirectoryInformation
         // FIXME - FileIdFullDirectoryInformation
