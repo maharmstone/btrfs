@@ -758,7 +758,30 @@ static void test_create_file(const u16string& dir) {
         }, STATUS_INVALID_PARAMETER);
     });
 
-    // FIXME - FILE_OVERWRITE
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\supersede2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Supersede file with different case", [&]() {
+            h = create_file(dir + u"\\SUPERSEDE2", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                            0, FILE_SUPERSEDED);
+        });
+
+        if (h) {
+            test("Check name", [&]() {
+                auto fn = query_file_name_information(h.get());
+
+                static const u16string_view ends_with = u"\\supersede2";
+
+                if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                    throw runtime_error("Name did not end with \"\\supersede2\".");
+            });
+        }
+    }
 
     test("Try overwriting non-existent file", [&]() {
         exp_status([&]() {
@@ -882,7 +905,31 @@ static void test_create_file(const u16string& dir) {
         });
     }
 
-    // FIXME - check names on overwrite or supersede (esp. if changing case)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\overwrite3", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Overwrite file with different case", [&]() {
+            h = create_file(dir + u"\\OVERWRITE3", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+        });
+
+        if (h) {
+            test("Check name", [&]() {
+                auto fn = query_file_name_information(h.get());
+
+                static const u16string_view ends_with = u"\\overwrite3";
+
+                if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                    throw runtime_error("Name did not end with \"\\overwrite3\".");
+            });
+        }
+    }
+
     // FIXME - FILE_OPEN_IF
     // FIXME - FILE_OVERWRITE_IF
     // FIXME - FILE_OPEN_BY_FILE_ID
