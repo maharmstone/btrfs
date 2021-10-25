@@ -186,7 +186,261 @@ static u16string query_file_name_information(HANDLE h) {
     return ret;
 }
 
-static void test_create_file(const u16string& dir) {
+static void test_supersede(const u16string& dir) {
+    unique_handle h;
+
+    test("Create file by FILE_SUPERSEDE", [&]() {
+        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_SUPERSEDE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE)) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        test("Try superseding open file", [&]() {
+            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+        });
+
+        h.reset();
+    }
+
+    test("Supersede file", [&]() {
+        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                        0, FILE_SUPERSEDED);
+    });
+
+    if (h) {
+        test("Check attributes", [&]() {
+            auto fbi = query_basic_information(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fbi.FileAttributes);
+            }
+        });
+
+        h.reset();
+    }
+
+    test("Supersede adding hidden flag", [&]() {
+        create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0,
+                    FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+    });
+
+    test("Try superseding while clearing hidden flag", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                        0, FILE_SUPERSEDED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
+    test("Supersede adding system flag", [&]() {
+        create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, 0,
+                    FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+    });
+
+    test("Try superseding while clearing system flag", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0,
+                        FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
+    test("Try creating directory by FILE_SUPERSEDE", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\supersededir", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\supersede2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Supersede file with different case", [&]() {
+            h = create_file(dir + u"\\SUPERSEDE2", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                            0, FILE_SUPERSEDED);
+        });
+
+        if (h) {
+            test("Check name", [&]() {
+                auto fn = query_file_name_information(h.get());
+
+                static const u16string_view ends_with = u"\\supersede2";
+
+                if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                    throw runtime_error("Name did not end with \"\\supersede2\".");
+            });
+        }
+    }
+}
+
+static void test_overwrite(const u16string& dir) {
+    unique_handle h;
+
+    test("Try overwriting non-existent file", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\nonsuch", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                        0, FILE_OVERWRITTEN);
+        }, STATUS_OBJECT_NAME_NOT_FOUND);
+    });
+
+    test("Create readonly file", [&]() {
+        h = create_file(dir + u"\\overwritero", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting readonly file", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwritero", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try overwriting open file", [&]() {
+            create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+        });
+
+        h.reset();
+
+        test("Overwrite file", [&]() {
+            h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+        });
+    }
+
+    if (h) {
+        h.reset();
+
+        test("Overwrite file adding readonly flag", [&]() {
+            create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_OVERWRITE,
+                        0, FILE_OVERWRITTEN);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting file, changing to directory", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            FILE_DIRECTORY_FILE, FILE_OVERWRITTEN);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Overwrite file adding hidden flag", [&]() {
+            h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+        });
+    }
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting file clearing hidden flag", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Overwrite file adding system flag", [&]() {
+        h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, 0,
+                        FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting file clearing system flag", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Try overwriting directory", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            FILE_DIRECTORY_FILE, FILE_OVERWRITTEN);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Try overwriting directory, changing to file", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            FILE_NON_DIRECTORY_FILE, FILE_OVERWRITTEN);
+            }, STATUS_FILE_IS_A_DIRECTORY);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\overwrite3", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Overwrite file with different case", [&]() {
+            h = create_file(dir + u"\\OVERWRITE3", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                            0, FILE_OVERWRITTEN);
+        });
+
+        if (h) {
+            test("Check name", [&]() {
+                auto fn = query_file_name_information(h.get());
+
+                static const u16string_view ends_with = u"\\overwrite3";
+
+                if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                    throw runtime_error("Name did not end with \"\\overwrite3\".");
+            });
+        }
+    }
+
+    // FIXME - FILE_OVERWRITE_IF
+}
+
+static void test_create(const u16string& dir) {
     unique_handle h;
 
     test("Create file", [&]() {
@@ -686,256 +940,17 @@ static void test_create_file(const u16string& dir) {
         }, STATUS_OBJECT_PATH_NOT_FOUND);
     });
 
-    test("Create file by FILE_SUPERSEDE", [&]() {
-        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        FILE_SUPERSEDE, 0, FILE_CREATED);
-    });
-
-    if (h) {
-        test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
-
-            if (fbi.FileAttributes != (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE)) {
-                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE",
-                                      fbi.FileAttributes);
-            }
-        });
-
-        test("Try superseding open file", [&]() {
-            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
-        });
-
-        h.reset();
-    }
-
-    test("Supersede file", [&]() {
-        h = create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
-                        0, FILE_SUPERSEDED);
-    });
-
-    if (h) {
-        test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
-
-            if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
-                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
-                                      fbi.FileAttributes);
-            }
-        });
-
-        h.reset();
-    }
-
-    test("Supersede adding hidden flag", [&]() {
-        create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0,
-                    FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
-    });
-
-    test("Try superseding while clearing hidden flag", [&]() {
-        exp_status([&]() {
-            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
-                        0, FILE_SUPERSEDED);
-        }, STATUS_ACCESS_DENIED);
-    });
-
-    test("Supersede adding system flag", [&]() {
-        create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, 0,
-                    FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
-    });
-
-    test("Try superseding while clearing system flag", [&]() {
-        exp_status([&]() {
-            create_file(dir + u"\\supersede", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0,
-                        FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
-        }, STATUS_ACCESS_DENIED);
-    });
-
-    test("Try creating directory by FILE_SUPERSEDE", [&]() {
-        exp_status([&]() {
-            create_file(dir + u"\\supersededir", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
-                        FILE_DIRECTORY_FILE, FILE_CREATED);
-        }, STATUS_INVALID_PARAMETER);
-    });
-
-    test("Create file", [&]() {
-        h = create_file(dir + u"\\supersede2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
-                        0, FILE_CREATED);
-    });
-
-    if (h) {
-        h.reset();
-
-        test("Supersede file with different case", [&]() {
-            h = create_file(dir + u"\\SUPERSEDE2", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
-                            0, FILE_SUPERSEDED);
-        });
-
-        if (h) {
-            test("Check name", [&]() {
-                auto fn = query_file_name_information(h.get());
-
-                static const u16string_view ends_with = u"\\supersede2";
-
-                if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
-                    throw runtime_error("Name did not end with \"\\supersede2\".");
-            });
-        }
-    }
-
-    test("Try overwriting non-existent file", [&]() {
-        exp_status([&]() {
-            create_file(dir + u"\\nonsuch", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                        0, FILE_OVERWRITTEN);
-        }, STATUS_OBJECT_NAME_NOT_FOUND);
-    });
-
-    test("Create readonly file", [&]() {
-        h = create_file(dir + u"\\overwritero", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
-                        0, FILE_CREATED);
-    });
-
-    if (h) {
-        h.reset();
-
-        test("Try overwriting readonly file", [&]() {
-            exp_status([&]() {
-                create_file(dir + u"\\overwritero", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            0, FILE_OVERWRITTEN);
-            }, STATUS_ACCESS_DENIED);
-        });
-    }
-
-    test("Create file", [&]() {
-        h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        FILE_CREATE, 0, FILE_CREATED);
-    });
-
-    if (h) {
-        test("Try overwriting open file", [&]() {
-            create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                        FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
-        });
-
-        h.reset();
-
-        test("Overwrite file", [&]() {
-            h = create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            0, FILE_OVERWRITTEN);
-        });
-    }
-
-    if (h) {
-        h.reset();
-
-        test("Overwrite file adding readonly flag", [&]() {
-            create_file(dir + u"\\overwrite", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_OVERWRITE,
-                        0, FILE_OVERWRITTEN);
-        });
-    }
-
-    test("Create file", [&]() {
-        h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
-                        0, FILE_CREATED);
-    });
-
-    if (h) {
-        h.reset();
-
-        test("Try overwriting file, changing to directory", [&]() {
-            exp_status([&]() {
-                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            FILE_DIRECTORY_FILE, FILE_OVERWRITTEN);
-            }, STATUS_INVALID_PARAMETER);
-        });
-
-        test("Overwrite file adding hidden flag", [&]() {
-            h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_OVERWRITE,
-                            0, FILE_OVERWRITTEN);
-        });
-    }
-
-    if (h) {
-        h.reset();
-
-        test("Try overwriting file clearing hidden flag", [&]() {
-            exp_status([&]() {
-                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            0, FILE_OVERWRITTEN);
-            }, STATUS_ACCESS_DENIED);
-        });
-    }
-
-    test("Overwrite file adding system flag", [&]() {
-        h = create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, 0,
-                        FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
-    });
-
-    if (h) {
-        h.reset();
-
-        test("Try overwriting file clearing system flag", [&]() {
-            exp_status([&]() {
-                create_file(dir + u"\\overwrite2", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_HIDDEN, 0, FILE_OVERWRITE,
-                            0, FILE_OVERWRITTEN);
-            }, STATUS_ACCESS_DENIED);
-        });
-    }
-
-    test("Create directory", [&]() {
-        h = create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
-                        FILE_DIRECTORY_FILE, FILE_CREATED);
-    });
-
-    if (h) {
-        h.reset();
-
-        test("Try overwriting directory", [&]() {
-            exp_status([&]() {
-                create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            FILE_DIRECTORY_FILE, FILE_OVERWRITTEN);
-            }, STATUS_INVALID_PARAMETER);
-        });
-
-        test("Try overwriting directory, changing to file", [&]() {
-            exp_status([&]() {
-                create_file(dir + u"\\overwritedir", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            FILE_NON_DIRECTORY_FILE, FILE_OVERWRITTEN);
-            }, STATUS_FILE_IS_A_DIRECTORY);
-        });
-    }
-
-    test("Create file", [&]() {
-        h = create_file(dir + u"\\overwrite3", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
-                        0, FILE_CREATED);
-    });
-
-    if (h) {
-        h.reset();
-
-        test("Overwrite file with different case", [&]() {
-            h = create_file(dir + u"\\OVERWRITE3", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
-                            0, FILE_OVERWRITTEN);
-        });
-
-        if (h) {
-            test("Check name", [&]() {
-                auto fn = query_file_name_information(h.get());
-
-                static const u16string_view ends_with = u"\\overwrite3";
-
-                if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
-                    throw runtime_error("Name did not end with \"\\overwrite3\".");
-            });
-        }
-    }
-
     // FIXME - FILE_OPEN_IF
-    // FIXME - FILE_OVERWRITE_IF
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
     // FIXME - test all the variations of NtQueryInformationFile
+}
+
+static void test_create_file(const u16string& dir) {
+    test_create(dir);
+    test_supersede(dir);
+    test_overwrite(dir);
 
     // FIXME - reading
     // FIXME - writing
