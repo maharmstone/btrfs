@@ -27,6 +27,48 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
                                         BOOLEAN ReturnSingleEntry, PUNICODE_STRING FileName,
                                         BOOLEAN RestartScan);
 
+// not currently in mingw
+#ifndef _MSC_VER
+#define FileIdExtdDirectoryInformation (enum _FILE_INFORMATION_CLASS)60
+#define FileIdExtdBothDirectoryInformation (enum _FILE_INFORMATION_CLASS)63
+
+typedef struct _FILE_ID_EXTD_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    ULONG ReparsePointTag;
+    FILE_ID_128 FileId;
+    WCHAR FileName[1];
+} FILE_ID_EXTD_DIR_INFORMATION, *PFILE_ID_EXTD_DIR_INFORMATION;
+
+typedef struct _FILE_ID_EXTD_BOTH_DIR_INFORMATION {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    ULONG ReparsePointTag;
+    FILE_ID_128 FileId;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[1];
+} FILE_ID_EXTD_BOTH_DIR_INFORMATION, *PFILE_ID_EXTD_BOTH_DIR_INFORMATION;
+#endif
+
 using namespace std;
 
 static unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
@@ -484,6 +526,14 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
         fic = FileBothDirectoryInformation;
     else if constexpr (is_same_v<T, FILE_FULL_DIR_INFORMATION>)
         fic = FileFullDirectoryInformation;
+    else if constexpr (is_same_v<T, FILE_ID_BOTH_DIR_INFORMATION>)
+        fic = FileIdBothDirectoryInformation;
+    else if constexpr (is_same_v<T, FILE_ID_FULL_DIR_INFORMATION>)
+        fic = FileIdFullDirectoryInformation;
+    else if constexpr (is_same_v<T, FILE_ID_EXTD_DIR_INFORMATION>)
+        fic = FileIdExtdDirectoryInformation;
+    else if constexpr (is_same_v<T, FILE_ID_EXTD_BOTH_DIR_INFORMATION>)
+        fic = FileIdExtdBothDirectoryInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -549,6 +599,49 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
     }
 
     return ret;
+}
+
+template<typename T>
+static void check_dir_entry(const u16string& dir, const u16string_view& name,
+                            const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi) {
+    auto items = query_dir<T>(dir, name);
+
+    if (items.size() != 1)
+        throw formatted_error("{} entries returned, expected 1.", items.size());
+
+    auto& fdi = *static_cast<const T*>(items.front());
+
+    if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+        throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+
+    if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+        throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+
+    if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+        throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+
+    if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+        throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+
+    if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+        throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+
+    if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+        throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+
+    if (fdi.FileAttributes != fbi.FileAttributes)
+        throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
+
+    if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+        throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+    if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+        throw runtime_error("FileName did not match.");
+
+    // FIXME - EaSize
+    // FIXME - ShortNameLength / ShortName
+    // FIXME - FileId (two different possible lengths)
+    // FIXME - ReparsePointTag
 }
 
 static void test_create(const u16string& dir) {
@@ -633,122 +726,33 @@ static void test_create(const u16string& dir) {
         static const u16string_view name = u"file";
 
         test("Check directory entry (FILE_DIRECTORY_INFORMATION)", [&]() {
-            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
-
-            if (items.size() != 1)
-                throw formatted_error("{} entries returned, expected 1.", items.size());
-
-            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
-
-            if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
-                throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
-
-            if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
-                throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
-
-            if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
-                throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
-
-            if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
-                throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
-
-            if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
-                throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
-
-            if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
-                throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
-
-            if (fdi.FileAttributes != fbi.FileAttributes)
-                throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
-
-            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
-                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
-
-            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
-                throw runtime_error("FileName did not match.");
+            check_dir_entry<FILE_DIRECTORY_INFORMATION>(dir, name, fbi, fsi);
         });
 
         test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
-            auto items = query_dir<FILE_BOTH_DIR_INFORMATION>(dir, name);
-
-            if (items.size() != 1)
-                throw formatted_error("{} entries returned, expected 1.", items.size());
-
-            auto& fdi = *static_cast<const FILE_BOTH_DIR_INFORMATION*>(items.front());
-
-            if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
-                throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
-
-            if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
-                throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
-
-            if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
-                throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
-
-            if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
-                throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
-
-            if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
-                throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
-
-            if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
-                throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
-
-            if (fdi.FileAttributes != fbi.FileAttributes)
-                throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
-
-            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
-                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
-
-            // FIXME - EaSize
-            // FIXME - ShortNameLength / ShortName
-
-            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
-                throw runtime_error("FileName did not match.");
+            check_dir_entry<FILE_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi);
         });
 
         test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
-            auto items = query_dir<FILE_FULL_DIR_INFORMATION>(dir, name);
-
-            if (items.size() != 1)
-                throw formatted_error("{} entries returned, expected 1.", items.size());
-
-            auto& fdi = *static_cast<const FILE_FULL_DIR_INFORMATION*>(items.front());
-
-            if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
-                throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
-
-            if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
-                throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
-
-            if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
-                throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
-
-            if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
-                throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
-
-            if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
-                throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
-
-            if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
-                throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
-
-            if (fdi.FileAttributes != fbi.FileAttributes)
-                throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
-
-            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
-                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
-
-            // FIXME - EaSize
-
-            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
-                throw runtime_error("FileName did not match.");
+            check_dir_entry<FILE_FULL_DIR_INFORMATION>(dir, name, fbi, fsi);
         });
 
-        // FIXME - FileIdBothDirectoryInformation
-        // FIXME - FileIdFullDirectoryInformation
-        // FIXME - FileIdExtdDirectoryInformation
-        // FIXME - FileIdExtdBothDirectoryInformation
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_dir_entry<FILE_ID_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_dir_entry<FILE_ID_FULL_DIR_INFORMATION>(dir, name, fbi, fsi);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_dir_entry<FILE_ID_EXTD_DIR_INFORMATION>(dir, name, fbi, fsi);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_dir_entry<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi);
+        });
+
         // FIXME - FileNamesInformation
         // FIXME - FileObjectIdInformation
         // FIXME - FileQuotaInformation
