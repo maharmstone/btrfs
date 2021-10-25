@@ -940,7 +940,18 @@ static void test_create(const u16string& dir) {
         }, STATUS_OBJECT_PATH_NOT_FOUND);
     });
 
-    // FIXME - FILE_OPEN_IF
+    test("Create file with FILE_OPEN_IF", [&]() {
+        h = create_file(dir + u"\\openif", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN_IF, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Open file with FILE_OPEN_IF", [&]() {
+            create_file(dir + u"\\openif", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN_IF, 0, FILE_OPENED);
+        });
+    }
+
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
