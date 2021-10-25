@@ -500,7 +500,9 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
         us.Length = us.MaximumLength = filter.size() * sizeof(char16_t);
     }
 
-    dh = create_file(dir, FILE_LIST_DIRECTORY, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    dh = create_file(dir, SYNCHRONIZE | FILE_LIST_DIRECTORY, 0, 0, FILE_OPEN,
+                     FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                     FILE_OPENED);
 
     while (true) {
         Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
