@@ -482,6 +482,10 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
         fic = FileDirectoryInformation;
     else if constexpr (is_same_v<T, FILE_BOTH_DIR_INFORMATION>)
         fic = FileBothDirectoryInformation;
+    else if constexpr (is_same_v<T, FILE_FULL_DIR_INFORMATION>)
+        fic = FileFullDirectoryInformation;
+    else
+        throw runtime_error("Unrecognized file information class.");
 
     // buffer needs to be aligned to 8 bytes
     off = 8 - ((uintptr_t)buf.data() % 8);
@@ -703,7 +707,44 @@ static void test_create(const u16string& dir) {
                 throw runtime_error("FileName did not match.");
         });
 
-        // FIXME - FileFullDirectoryInformation
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            auto items = query_dir<FILE_FULL_DIR_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_FULL_DIR_INFORMATION*>(items.front());
+
+            if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+                throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+
+            if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+                throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+
+            if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+                throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+
+            if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+                throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+
+            if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+                throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+
+            if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+                throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+
+            if (fdi.FileAttributes != fbi.FileAttributes)
+                throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            // FIXME - EaSize
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
         // FIXME - FileIdBothDirectoryInformation
         // FIXME - FileIdFullDirectoryInformation
         // FIXME - FileIdExtdDirectoryInformation
