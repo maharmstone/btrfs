@@ -437,7 +437,17 @@ static void test_overwrite(const u16string& dir) {
         }
     }
 
-    // FIXME - FILE_OVERWRITE_IF
+    test("Create file with FILE_OPEN_IF", [&]() {
+        h = create_file(dir + u"\\overwriteif", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE_IF, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Open file with FILE_OVERWRITE_IF", [&]() {
+            create_file(dir + u"\\overwriteif", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE_IF, 0, FILE_OVERWRITTEN);
+        });
+    }
 }
 
 template<typename T>
