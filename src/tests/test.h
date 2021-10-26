@@ -42,6 +42,11 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
                                         BOOLEAN ReturnSingleEntry, PUNICODE_STRING FileName,
                                         BOOLEAN RestartScan);
 
+extern "C"
+NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                               PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                               ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
 #define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)63)
 

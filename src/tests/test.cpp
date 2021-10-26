@@ -18,6 +18,9 @@
 #include "test.h"
 #include <wincon.h>
 #include <functional>
+#include <random>
+#include <span>
+#include <optional>
 
 using namespace std;
 
@@ -1241,20 +1244,104 @@ static void test_create(const u16string& dir) {
     }
 
     // FIXME - FILE_OPEN_BY_FILE_ID
-    // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
     // FIXME - test all the variations of NtQueryInformationFile
 }
 
-static void test_create_file(const u16string& dir) {
+static void write_file(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER off;
+
+    if (offset)
+        off.QuadPart = *offset;
+
+    Status = NtWriteFile(h, nullptr, nullptr, nullptr, &iosb, data.data(),
+                         data.size(), offset ? &off : nullptr,
+                         nullptr);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != data.size())
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, data.size());
+}
+
+static void test_io(const u16string& dir) {
+    unique_handle h;
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\io", SYNCHRONIZE | FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        vector<uint8_t> random(4096 * 2);
+
+        random_device rd;
+        mt19937 gen(rd());
+        uniform_int_distribution<> distrib(0, 0xffffffff);
+
+        for (auto& s : span((uint32_t*)random.data(), random.size() / sizeof(uint32_t))) {
+            s = distrib(gen);
+        }
+
+        test("Write file", [&]() {
+            write_file(h.get(), random, nullopt);
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if (fpi.CurrentByteOffset.QuadPart != random.size()) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, random.size());
+            }
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.AllocationSize.QuadPart != random.size()) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.AllocationSize.QuadPart, random.size());
+            }
+
+            if (fsi.EndOfFile.QuadPart != random.size()) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, random.size());
+            }
+        });
+
+        // FIXME - ByteOffset of (-1, FILE_USE_FILE_POINTER_POSITION)
+        // FIXME - specifying ByteOffset
+
+        // FIXME - reading at end
+        // FIXME - reading after end
+        // FIXME - reading from beginning
+
+        // FIXME - change VDL to after EOF
+        // FIXME - change VDL to before EOF
+        // FIXME - change EOF to before VDL
+
+        // FIXME - files less than 1 sector
+    }
+
+    // FIXME - IO that doesn't change cursor position (not FILE_SYNCHRONOUS_IO_ALERT or FILE_SYNCHRONOUS_IO_NONALERT)
+    // FIXME - FILE_APPEND_DATA
+    // FIXME - preallocation
+    // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
+    // FIXME - async I/O
+}
+
+static void do_tests(const u16string& dir) {
+    // FIXME - allow user to specify test on command line
+
     test_create(dir);
     test_supersede(dir);
     test_overwrite(dir);
-
-    // FIXME - reading
-    // FIXME - writing
-
-    // FIXME - preallocation
+    test_io(dir);
 
     // FIXME - check with case-sensitive flag set
 
@@ -1312,6 +1399,7 @@ static void test_create_file(const u16string& dir) {
     // FIXME - creating subvols
     // FIXME - snapshots
     // FIXME - sending and receiving(?)
+    // FIXME - using mknod etc. to test mapping between Linux and Windows concepts?
 }
 
 static u16string to_u16string(time_t n) {
@@ -1338,7 +1426,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
     // FIXME - can we print name and version of FS driver?
 
-    test_create_file(ntdir);
+    do_tests(ntdir);
 
     return 0;
 }
