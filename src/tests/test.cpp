@@ -120,6 +120,8 @@ static T query_information(HANDLE h) {
         fic = FileModeInformation;
     else if constexpr (is_same_v<T, FILE_ALIGNMENT_INFORMATION>)
         fic = FileAlignmentInformation;
+    else if constexpr (is_same_v<T, FILE_POSITION_INFORMATION>)
+        fic = FilePositionInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -734,13 +736,19 @@ static void test_create(const u16string& dir) {
                 throw formatted_error("AlignmentRequirement was {:x}, expected FILE_WORD_ALIGNMENT", fai.AlignmentRequirement);
         });
 
+        test("Check position information", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if (fpi.CurrentByteOffset.QuadPart != 0)
+                throw formatted_error("CurrentByteOffset was {:x}, expected 0", fpi.CurrentByteOffset.QuadPart);
+        });
+
         // FIXME - FileAllInformation
         // FIXME - FileAttributeTagInformation
         // FIXME - FileCompressionInformation
         // FIXME - FileEaInformation
         // FIXME - FileInternalInformation
         // FIXME - FileNetworkOpenInformation
-        // FIXME - FilePositionInformation
         // FIXME - FileStreamInformation
         // FIXME - FileHardLinkInformation
         // FIXME - FileNormalizedNameInformation
