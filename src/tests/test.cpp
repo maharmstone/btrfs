@@ -726,6 +726,11 @@ static void test_create(const u16string& dir) {
         // FIXME - FileCaseSensitiveInformation
         // FIXME - FileHardLinkFullIdInformation
         // FIXME - FILE_STANDARD_INFORMATION_EX
+        // FIXME - FileAlternateNameInformation
+        // FIXME - FileSfioReserveInformation
+        // FIXME - FileDesiredStorageClassInformation
+        // FIXME - FileStorageReserveIdInformation
+        // FIXME - FileKnownFolderInformation
 
         static const u16string_view name = u"file";
 
