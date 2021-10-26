@@ -116,6 +116,8 @@ static T query_information(HANDLE h) {
         fic = FileStandardInformation;
     else if constexpr (is_same_v<T, FILE_ACCESS_INFORMATION>)
         fic = FileAccessInformation;
+    else if constexpr (is_same_v<T, FILE_MODE_INFORMATION>)
+        fic = FileModeInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -714,6 +716,13 @@ static void test_create(const u16string& dir) {
 
             if (fai.AccessFlags != exp)
                 throw formatted_error("AccessFlags was {:x}, expected {:x}", fai.AccessFlags, exp);
+        });
+
+        test("Check mode information", [&]() {
+            auto fmi = query_information<FILE_MODE_INFORMATION>(h.get());
+
+            if (fmi.Mode != 0)
+                throw formatted_error("Mode was {:x}, expected 0", fmi.Mode);
         });
 
         // FIXME - FileAllInformation
