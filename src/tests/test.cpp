@@ -103,36 +103,31 @@ static void exp_status(const function<void()>& func, NTSTATUS Status) {
         throw formatted_error("Status was STATUS_SUCCESS, expected {}", ntstatus_to_string(Status));
 }
 
-static FILE_BASIC_INFORMATION query_basic_information(HANDLE h) {
+template<typename T>
+static T query_information(HANDLE h) {
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
-    FILE_BASIC_INFORMATION fbi;
+    T t;
+    FILE_INFORMATION_CLASS fic;
 
-    Status = NtQueryInformationFile(h, &iosb, &fbi, sizeof(fbi), FileBasicInformation);
+    if constexpr (is_same_v<T, FILE_BASIC_INFORMATION>)
+        fic = FileBasicInformation;
+    else if constexpr (is_same_v<T, FILE_STANDARD_INFORMATION>)
+        fic = FileStandardInformation;
+    else if constexpr (is_same_v<T, FILE_ACCESS_INFORMATION>)
+        fic = FileAccessInformation;
+    else
+        throw runtime_error("Unrecognized file information class.");
+
+    Status = NtQueryInformationFile(h, &iosb, &t, sizeof(t), fic);
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
 
-    if (iosb.Information != sizeof(FILE_BASIC_INFORMATION))
-        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(FILE_BASIC_INFORMATION));
+    if (iosb.Information != sizeof(t))
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(t));
 
-    return fbi;
-}
-
-static FILE_STANDARD_INFORMATION query_standard_information(HANDLE h) {
-    IO_STATUS_BLOCK iosb;
-    NTSTATUS Status;
-    FILE_STANDARD_INFORMATION fsi;
-
-    Status = NtQueryInformationFile(h, &iosb, &fsi, sizeof(fsi), FileStandardInformation);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != sizeof(FILE_STANDARD_INFORMATION))
-        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(FILE_STANDARD_INFORMATION));
-
-    return fsi;
+    return t;
 }
 
 static OBJECT_BASIC_INFORMATION query_object_basic_information(HANDLE h) {
@@ -196,7 +191,7 @@ static void test_supersede(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_ARCHIVE",
@@ -219,7 +214,7 @@ static void test_supersede(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
@@ -671,7 +666,7 @@ static void test_create(const u16string& dir) {
         FILE_BASIC_INFORMATION fbi;
 
         test("Check attributes", [&]() {
-            fbi = query_basic_information(h.get());
+            fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
@@ -682,7 +677,7 @@ static void test_create(const u16string& dir) {
         FILE_STANDARD_INFORMATION fsi;
 
         test("Check standard information", [&]() {
-            fsi = query_standard_information(h.get());
+            fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
             if (fsi.AllocationSize.QuadPart != 0)
                 throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
@@ -707,6 +702,18 @@ static void test_create(const u16string& dir) {
 
             if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
                 throw runtime_error("Name did not end with \"\\file\".");
+        });
+
+        test("Check access information", [&]() {
+            auto fai = query_information<FILE_ACCESS_INFORMATION>(h.get());
+
+            ACCESS_MASK exp = SYNCHRONIZE | WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE |
+                              FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_DELETE_CHILD |
+                              FILE_EXECUTE | FILE_WRITE_EA | FILE_READ_EA | FILE_APPEND_DATA |
+                              FILE_WRITE_DATA | FILE_READ_DATA;
+
+            if (fai.AccessFlags != exp)
+                throw formatted_error("AccessFlags was {:x}, expected {:x}", fai.AccessFlags, exp);
         });
 
         // FIXME - FileAllInformation
@@ -796,7 +803,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
@@ -805,7 +812,7 @@ static void test_create(const u16string& dir) {
         });
 
         test("Check standard information", [&]() {
-            auto fsi = query_standard_information(h.get());
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
             if (fsi.AllocationSize.QuadPart != 0)
                 throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
@@ -833,7 +840,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
@@ -842,7 +849,7 @@ static void test_create(const u16string& dir) {
         });
 
         test("Check standard information", [&]() {
-            auto fsi = query_standard_information(h.get());
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
             if (fsi.AllocationSize.QuadPart != 0)
                 throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
@@ -870,7 +877,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY",
@@ -879,7 +886,7 @@ static void test_create(const u16string& dir) {
         });
 
         test("Check standard information", [&]() {
-            auto fsi = query_standard_information(h.get());
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
             if (fsi.AllocationSize.QuadPart != 0)
                 throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
@@ -923,7 +930,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
@@ -932,7 +939,7 @@ static void test_create(const u16string& dir) {
         });
 
         test("Check standard information", [&]() {
-            auto fsi = query_standard_information(h.get());
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
             if (fsi.AllocationSize.QuadPart != 0)
                 throw formatted_error("AllocationSize was {}, expected 0", fsi.AllocationSize.QuadPart);
@@ -960,7 +967,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN",
@@ -978,7 +985,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_READONLY)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_READONLY",
@@ -996,7 +1003,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_SYSTEM)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_SYSTEM",
@@ -1014,7 +1021,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
@@ -1032,7 +1039,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN",
@@ -1050,7 +1057,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY",
@@ -1068,7 +1075,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_SYSTEM)) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_SYSTEM",
@@ -1086,7 +1093,7 @@ static void test_create(const u16string& dir) {
 
     if (h) {
         test("Check attributes", [&]() {
-            auto fbi = query_basic_information(h.get());
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
 
             if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY) {
                 throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_DIRECTORY",
