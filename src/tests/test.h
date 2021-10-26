@@ -45,6 +45,8 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
 #define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)63)
 
+#define FILE_WORD_ALIGNMENT 0x00000001
+
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
 #define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)

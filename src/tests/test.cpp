@@ -118,6 +118,8 @@ static T query_information(HANDLE h) {
         fic = FileAccessInformation;
     else if constexpr (is_same_v<T, FILE_MODE_INFORMATION>)
         fic = FileModeInformation;
+    else if constexpr (is_same_v<T, FILE_ALIGNMENT_INFORMATION>)
+        fic = FileAlignmentInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -723,6 +725,13 @@ static void test_create(const u16string& dir) {
 
             if (fmi.Mode != 0)
                 throw formatted_error("Mode was {:x}, expected 0", fmi.Mode);
+        });
+
+        test("Check alignment information", [&]() {
+            auto fai = query_information<FILE_ALIGNMENT_INFORMATION>(h.get());
+
+            if (fai.AlignmentRequirement != FILE_WORD_ALIGNMENT)
+                throw formatted_error("AlignmentRequirement was {:x}, expected FILE_WORD_ALIGNMENT", fai.AlignmentRequirement);
         });
 
         // FIXME - FileAllInformation
