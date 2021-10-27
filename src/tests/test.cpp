@@ -26,12 +26,13 @@
 using namespace std;
 
 static unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
-                                 ULONG dispo, ULONG options, ULONG_PTR exp_info) {
+                                 ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation = nullopt) {
     NTSTATUS Status;
     HANDLE h;
     IO_STATUS_BLOCK iosb;
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES oa;
+    LARGE_INTEGER alloc_size;
 
     oa.Length = sizeof(oa);
     oa.RootDirectory = nullptr; // FIXME - test
@@ -44,13 +45,15 @@ static unique_handle create_file(const u16string_view& path, ACCESS_MASK access,
     oa.SecurityDescriptor = nullptr; // FIXME - test
     oa.SecurityQualityOfService = nullptr; // FIXME - test(?)
 
-    // FIXME - AllocationSize
+    if (allocation)
+        alloc_size.QuadPart = allocation.value();
+
     // FIXME - EaBuffer and EaLength
 
     iosb.Information = 0xdeadbeef;
 
-    Status = NtCreateFile(&h, access, &oa, &iosb, nullptr, atts, share,
-                          dispo, options, nullptr, 0);
+    Status = NtCreateFile(&h, access, &oa, &iosb, allocation ? &alloc_size : nullptr,
+                          atts, share, dispo, options, nullptr, 0);
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
@@ -1824,9 +1827,70 @@ static void test_io(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create preallocated file", [&]() {
+        h = create_file(dir + u"\\ioprealloc", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED, 4096);
+    });
+
+    if (h) {
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 4096) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 0) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+        });
+
+        auto random = random_data(4096);
+
+        test("Write data", [&]() {
+            write_file(h.get(), random, nullopt);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 4096) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+        });
+
+        test("Set allocation to 0", [&]() {
+            set_allocation(h.get(), 0);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 0) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 0) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+        });
+
+        h.reset();
+    }
+
     // FIXME - IO that doesn't change cursor position (not FILE_SYNCHRONOUS_IO_ALERT or FILE_SYNCHRONOUS_IO_NONALERT)
     // FIXME - FILE_APPEND_DATA
-    // FIXME - preallocation
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
     // FIXME - async I/O
     // FIXME - DASD I/O
