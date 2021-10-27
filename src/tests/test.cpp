@@ -1889,6 +1889,30 @@ static void test_io(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create preallocated directory", [&]() {
+        h = create_file(dir + u"\\iopreallocdir", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED, 4096);
+    });
+
+    if (h) {
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 0) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 0) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+        });
+
+        h.reset();
+    }
+
     // FIXME - IO that doesn't change cursor position (not FILE_SYNCHRONOUS_IO_ALERT or FILE_SYNCHRONOUS_IO_NONALERT)
     // FIXME - FILE_APPEND_DATA
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
