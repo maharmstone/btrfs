@@ -1508,7 +1508,7 @@ static void test_io(HANDLE token, const u16string& dir) {
         adjust_token_privileges(token, array{ laa });
     });
 
-    auto write_check = [&](uint64_t multiple) {
+    auto write_check = [&](uint64_t multiple, bool sector_align) {
         auto random = random_data(multiple * 2);
 
         test("Write file", [&]() {
@@ -1540,7 +1540,7 @@ static void test_io(HANDLE token, const u16string& dir) {
 
         test("Read file at end", [&]() {
             exp_status([&]() {
-                read_file(h.get(), 100);
+                read_file(h.get(), sector_align ? multiple : 100);
             }, STATUS_END_OF_FILE);
         });
 
@@ -1553,33 +1553,63 @@ static void test_io(HANDLE token, const u16string& dir) {
             }
         });
 
-        test("Set position", [&]() {
-            set_position(h.get(), random.size() + 100);
-        });
+        if (sector_align) {
+            test("Set position", [&]() {
+                set_position(h.get(), random.size() + multiple);
+            });
 
-        test("Check position", [&]() {
-            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
 
-            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() + 100) {
-                throw formatted_error("CurrentByteOffset was {}, expected {}",
-                                      fpi.CurrentByteOffset.QuadPart, random.size() + 100);
-            }
-        });
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() + multiple) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                          fpi.CurrentByteOffset.QuadPart, random.size() + multiple);
+                }
+            });
 
-        test("Read file after end", [&]() {
-            exp_status([&]() {
-                read_file(h.get(), 100);
-            }, STATUS_END_OF_FILE);
-        });
+            test("Read file after end", [&]() {
+                exp_status([&]() {
+                    read_file(h.get(), multiple);
+                }, STATUS_END_OF_FILE);
+            });
 
-        test("Check position", [&]() {
-            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
 
-            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() + 100) {
-                throw formatted_error("CurrentByteOffset was {}, expected {}",
-                                      fpi.CurrentByteOffset.QuadPart, random.size() + 100);
-            }
-        });
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() + multiple) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                          fpi.CurrentByteOffset.QuadPart, random.size() + multiple);
+                }
+            });
+        } else {
+            test("Set position", [&]() {
+                set_position(h.get(), random.size() + 100);
+            });
+
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() + 100) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                        fpi.CurrentByteOffset.QuadPart, random.size() + 100);
+                }
+            });
+
+            test("Read file after end", [&]() {
+                exp_status([&]() {
+                    read_file(h.get(), 100);
+                }, STATUS_END_OF_FILE);
+            });
+
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() + 100) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                        fpi.CurrentByteOffset.QuadPart, random.size() + 100);
+                }
+            });
+        }
 
         test("Set negative position", [&]() {
             exp_status([&]() {
@@ -1632,56 +1662,85 @@ static void test_io(HANDLE token, const u16string& dir) {
             }
         });
 
-        test("Read 100 bytes", [&]() {
-            auto ret = read_file(h.get(), 100);
+        if (sector_align) {
+            test("Try reading 100 bytes", [&]() {
+                exp_status([&]() {
+                    read_file(h.get(), 100);
+                }, STATUS_INVALID_PARAMETER);
+            });
 
-            if (ret.size() != 100)
-                throw formatted_error("{} bytes read, expected {}", ret.size(), 100);
+            test("Try seting position to odd value near end", [&]() {
+                exp_status([&]() {
+                    set_position(h.get(), random.size() - 100);
+                }, STATUS_INVALID_PARAMETER);
+            });
 
-            if (memcmp(ret.data(), random.data(), 100))
-                throw runtime_error("Data read did not match data written");
-        });
+            test("Set position to near end", [&]() {
+                set_position(h.get(), random.size() - multiple);
+            });
 
-        test("Check position", [&]() {
-            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+            test("Read past end of file", [&]() {
+                auto ret = read_file(h.get(), multiple * 2);
 
-            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 100) {
-                throw formatted_error("CurrentByteOffset was {}, expected {}",
-                                      fpi.CurrentByteOffset.QuadPart, 100);
-            }
-        });
+                if (ret.size() != multiple)
+                    throw formatted_error("{} bytes read, expected {}", ret.size(), multiple);
 
-        test("Set position to near end", [&]() {
-            set_position(h.get(), random.size() - 100);
-        });
+                if (memcmp(ret.data(), random.data() + random.size() - multiple, multiple))
+                    throw runtime_error("Data read did not match data written");
+            });
+        } else {
+            test("Read 100 bytes", [&]() {
+                auto ret = read_file(h.get(), 100);
 
-        test("Check position", [&]() {
-            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+                if (ret.size() != 100)
+                    throw formatted_error("{} bytes read, expected {}", ret.size(), 100);
 
-            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() - 100) {
-                throw formatted_error("CurrentByteOffset was {}, expected {}",
-                                      fpi.CurrentByteOffset.QuadPart, random.size() - 100);
-            }
-        });
+                if (memcmp(ret.data(), random.data(), 100))
+                    throw runtime_error("Data read did not match data written");
+            });
 
-        test("Read past end of file", [&]() {
-            auto ret = read_file(h.get(), 200);
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
 
-            if (ret.size() != 100)
-                throw formatted_error("{} bytes read, expected {}", ret.size(), 100);
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 100) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                        fpi.CurrentByteOffset.QuadPart, 100);
+                }
+            });
 
-            if (memcmp(ret.data(), random.data() + random.size() - 100, 100))
-                throw runtime_error("Data read did not match data written");
-        });
+            test("Set position to near end", [&]() {
+                set_position(h.get(), random.size() - 100);
+            });
 
-        test("Check position", [&]() {
-            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
 
-            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size()) {
-                throw formatted_error("CurrentByteOffset was {}, expected {}",
-                                      fpi.CurrentByteOffset.QuadPart, random.size());
-            }
-        });
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size() - 100) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                        fpi.CurrentByteOffset.QuadPart, random.size() - 100);
+                }
+            });
+
+            test("Read past end of file", [&]() {
+                auto ret = read_file(h.get(), 200);
+
+                if (ret.size() != 100)
+                    throw formatted_error("{} bytes read, expected {}", ret.size(), 100);
+
+                if (memcmp(ret.data(), random.data() + random.size() - 100, 100))
+                    throw runtime_error("Data read did not match data written");
+            });
+
+            test("Check position", [&]() {
+                auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+                if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size()) {
+                    throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                        fpi.CurrentByteOffset.QuadPart, random.size());
+                }
+            });
+        }
+
 
         test("Extend file", [&]() {
             set_end_of_file(h.get(), multiple * 3);
@@ -1779,7 +1838,7 @@ static void test_io(HANDLE token, const u16string& dir) {
     });
 
     if (h) {
-        write_check(4096);
+        write_check(4096, false);
 
         h.reset();
     }
@@ -1791,7 +1850,7 @@ static void test_io(HANDLE token, const u16string& dir) {
     });
 
     if (h) {
-        write_check(200);
+        write_check(200, false);
 
         h.reset();
     }
@@ -2411,7 +2470,70 @@ static void test_io(HANDLE token, const u16string& dir) {
         });
     }
 
-    // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
+    test("Add SeManageVolumePrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_MANAGE_VOLUME_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Create file with FILE_NO_INTERMEDIATE_BUFFERING", [&]() {
+        h = create_file(dir + u"\\io6", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_NO_INTERMEDIATE_BUFFERING,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        write_check(4096, true);
+
+        auto random = random_data(100);
+
+        test("Try writing less than sector", [&]() {
+            exp_status([&]() {
+                write_file(h.get(), random);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Try setting position to odd value", [&]() {
+            exp_status([&]() {
+                set_position(h.get(), 100);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Set position to 0", [&]() {
+            set_position(h.get(), 0);
+        });
+
+        test("Try reading less than sector", [&]() {
+            exp_status([&]() {
+                read_file(h.get(), 100);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Set length to odd value", [&]() {
+            set_end_of_file(h.get(), 100);
+        });
+
+        test("Set length to sector", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+        });
+
+        h.reset();
+    }
+
     // FIXME - DASD I/O
 }
 
