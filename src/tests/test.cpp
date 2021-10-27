@@ -21,6 +21,7 @@
 #include <random>
 #include <span>
 #include <optional>
+#include <array>
 
 using namespace std;
 
@@ -1246,6 +1247,7 @@ static void test_create(const u16string& dir) {
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
     // FIXME - test all the variations of NtQueryInformationFile
+    // FIXME - test NtOpenFile
 }
 
 static void write_file(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
@@ -1306,8 +1308,90 @@ static void set_position(HANDLE h, uint64_t pos) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void test_io(const u16string& dir) {
+static void set_valid_data_length(HANDLE h, uint64_t vdl) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    FILE_VALID_DATA_LENGTH_INFORMATION fvdli;
+
+    fvdli.ValidDataLength.QuadPart = vdl;
+
+    Status = NtSetInformationFile(h, &iosb, &fvdli, sizeof(fvdli), FileValidDataLengthInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
+static void set_end_of_file(HANDLE h, uint64_t eof) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    FILE_END_OF_FILE_INFORMATION feofi;
+
+    feofi.EndOfFile.QuadPart = eof;
+
+    Status = NtSetInformationFile(h, &iosb, &feofi, sizeof(feofi), FileEndOfFileInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
+static unique_handle open_process_token(HANDLE process, ACCESS_MASK access) {
+    NTSTATUS Status;
+    HANDLE h;
+
+    Status = NtOpenProcessToken(process, access, &h);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    return unique_handle(h);
+}
+
+template<unsigned N>
+static void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& privs) {
+    NTSTATUS Status;
+    array<uint8_t, offsetof(TOKEN_PRIVILEGES, Privileges) + (N * sizeof(LUID_AND_ATTRIBUTES))> buf;
+    auto& tp = *(TOKEN_PRIVILEGES*)buf.data();
+
+    tp.PrivilegeCount = privs.size();
+
+    for (unsigned int i = 0; i < privs.size(); i++) {
+        tp.Privileges[i] = privs[i];
+    }
+
+    Status = NtAdjustPrivilegesToken(token, false, &tp, 0, nullptr, nullptr);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static void disable_token_privileges(HANDLE token) {
+    NTSTATUS Status;
+
+    Status = NtAdjustPrivilegesToken(token, true, nullptr, 0, nullptr, nullptr);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static void test_io(HANDLE token, const u16string& dir) {
     unique_handle h;
+
+    // needed to set VDL
+    test("Add SeManageVolumePrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_MANAGE_VOLUME_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
 
     test("Create file", [&]() {
         h = create_file(dir + u"\\io", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
@@ -1501,27 +1585,97 @@ static void test_io(const u16string& dir) {
             }
         });
 
-        // FIXME - change VDL to after EOF
-        // FIXME - change VDL to before EOF
-        // FIXME - change EOF to before VDL
+        test("Extend file", [&]() {
+            set_end_of_file(h.get(), 4096 * 3);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096 * 3) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, random.size());
+            }
+        });
+
+        test("Read new end of file", [&]() {
+            auto ret = read_file(h.get(), 4096 * 2);
+
+            if (ret.size() != 4096)
+                throw formatted_error("{} bytes read, expected {}", ret.size(), 4096);
+
+            auto it = ranges::find_if(ret, [](uint8_t c) {
+                return c != 0;
+            });
+
+            if (it != ret.end())
+                throw runtime_error("End of file not zeroed");
+        });
+
+        test("Try setting valid data length to 0", [&]() {
+            exp_status([&]() {
+                set_valid_data_length(h.get(), 0);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Set valid data length to end of file", [&]() {
+            set_valid_data_length(h.get(), 4096 * 3);
+        });
+
+        test("Try setting valid data length to after end of file", [&]() {
+            exp_status([&]() {
+                set_valid_data_length(h.get(), 4096 * 4);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        // FIXME - truncating file
+        // FIXME - setting allocation
 
         // FIXME - files less than 1 sector
+    }
+
+    disable_token_privileges(token);
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\io2", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        test("Extend file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Try setting valid data length without privilege", [&]() {
+            exp_status([&]() {
+                set_valid_data_length(h.get(), 4096);
+            }, STATUS_PRIVILEGE_NOT_HELD);
+        });
+
+        h.reset();
     }
 
     // FIXME - IO that doesn't change cursor position (not FILE_SYNCHRONOUS_IO_ALERT or FILE_SYNCHRONOUS_IO_NONALERT)
     // FIXME - FILE_APPEND_DATA
     // FIXME - preallocation
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
+    // FIXME - try setting end of file etc. on directories
     // FIXME - async I/O
+    // FIXME - DASD I/O
 }
 
 static void do_tests(const u16string& dir) {
     // FIXME - allow user to specify test on command line
 
+    auto token = open_process_token(NtCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY);
+
+    disable_token_privileges(token.get());
+
     test_create(dir);
     test_supersede(dir);
     test_overwrite(dir);
-    test_io(dir);
+    test_io(token.get(), dir);
 
     // FIXME - check with case-sensitive flag set
 
@@ -1575,6 +1729,8 @@ static void do_tests(const u16string& dir) {
 
     // FIXME - locking
 
+    // FIXME - traverse checking
+
     // FIXME - reflink copies
     // FIXME - creating subvols
     // FIXME - snapshots
@@ -1604,7 +1760,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
     create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
 
-    // FIXME - can we print name and version of FS driver?
+    // FIXME - can we print name and version of FS driver? (FileFsDriverPathInformation?)
 
     do_tests(ntdir);
 

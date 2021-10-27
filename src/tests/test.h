@@ -52,10 +52,23 @@ NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE 
                                PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
 
+extern "C"
+NTSTATUS __stdcall NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                      PHANDLE TokenHandle);
+
+extern "C"
+NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                           PTOKEN_PRIVILEGES NewState, ULONG BufferLength,
+                                           PTOKEN_PRIVILEGES PreviousState, PULONG ReturnLength);
+
+#define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
+
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
 #define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)63)
 
 #define FILE_WORD_ALIGNMENT 0x00000001
+
+#define SE_MANAGE_VOLUME_PRIVILEGE 28
 
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
@@ -260,6 +273,10 @@ typedef struct _FILE_ID_EXTD_BOTH_DIR_INFORMATION {
     WCHAR ShortName[12];
     WCHAR FileName[1];
 } FILE_ID_EXTD_BOTH_DIR_INFORMATION, *PFILE_ID_EXTD_BOTH_DIR_INFORMATION;
+
+typedef struct _FILE_VALID_DATA_LENGTH_INFORMATION {
+    LARGE_INTEGER ValidDataLength;
+} FILE_VALID_DATA_LENGTH_INFORMATION, *PFILE_VALID_DATA_LENGTH_INFORMATION;
 
 class handle_closer {
 public:
