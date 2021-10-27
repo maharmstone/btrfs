@@ -1628,7 +1628,51 @@ static void test_io(HANDLE token, const u16string& dir) {
             }, STATUS_INVALID_PARAMETER);
         });
 
-        // FIXME - truncating file
+        test("Truncate file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+        });
+
+        test("Set position to start", [&]() {
+            set_position(h.get(), 0);
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 0) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, 0);
+            }
+        });
+
+        test("Read whole file", [&]() {
+            auto ret = read_file(h.get(), random.size());
+
+            if (ret.size() != 4096)
+                throw formatted_error("{} bytes read, expected {}", ret.size(), 4096);
+
+            if (memcmp(ret.data(), random.data(), 4096))
+                throw runtime_error("Data read did not match data written");
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 4096) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, random.size());
+            }
+        });
+
         // FIXME - setting allocation
 
         // FIXME - files less than 1 sector
