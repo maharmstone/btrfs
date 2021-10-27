@@ -1379,6 +1379,36 @@ static void disable_token_privileges(HANDLE token) {
         throw ntstatus_error(Status);
 }
 
+static void set_allocation(HANDLE h, uint64_t alloc) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    FILE_ALLOCATION_INFORMATION fai;
+
+    fai.AllocationSize.QuadPart = alloc;
+
+    Status = NtSetInformationFile(h, &iosb, &fai, sizeof(fai), FileAllocationInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
+static vector<uint8_t> random_data(size_t len) {
+    vector<uint8_t> random(len);
+
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> distrib(0, 0xffffffff);
+
+    for (auto& s : span((uint32_t*)random.data(), random.size() / sizeof(uint32_t))) {
+        s = distrib(gen);
+    }
+
+    return random;
+}
+
 static void test_io(HANDLE token, const u16string& dir) {
     unique_handle h;
 
@@ -1394,15 +1424,7 @@ static void test_io(HANDLE token, const u16string& dir) {
     });
 
     auto write_check = [&](uint64_t multiple) {
-        vector<uint8_t> random(multiple * 2);
-
-        random_device rd;
-        mt19937 gen(rd());
-        uniform_int_distribution<> distrib(0, 0xffffffff);
-
-        for (auto& s : span((uint32_t*)random.data(), random.size() / sizeof(uint32_t))) {
-            s = distrib(gen);
-        }
+        auto random = random_data(multiple * 2);
 
         test("Write file", [&]() {
             write_file(h.get(), random, nullopt);
@@ -1666,8 +1688,6 @@ static void test_io(HANDLE token, const u16string& dir) {
                                       fpi.CurrentByteOffset.QuadPart, random.size());
             }
         });
-
-        // FIXME - setting allocation
     };
 
     test("Create file (long)", [&]() {
@@ -1711,6 +1731,72 @@ static void test_io(HANDLE token, const u16string& dir) {
             exp_status([&]() {
                 set_valid_data_length(h.get(), 4096);
             }, STATUS_PRIVILEGE_NOT_HELD);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\ioalloc", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set allocation to 4096", [&]() {
+            set_allocation(h.get(), 4096);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 4096) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 0) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+        });
+
+        auto random = random_data(4096);
+
+        test("Write data", [&]() {
+            write_file(h.get(), random, nullopt);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 4096) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 4096);
+            }
+        });
+
+        test("Set allocation to 0", [&]() {
+            set_allocation(h.get(), 0);
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if ((uint64_t)fsi.AllocationSize.QuadPart != 0) {
+                throw formatted_error("AllocationSize was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
+
+            if ((uint64_t)fsi.EndOfFile.QuadPart != 0) {
+                throw formatted_error("EndOfFile was {}, expected {}",
+                                      fsi.EndOfFile.QuadPart, 0);
+            }
         });
 
         h.reset();
