@@ -25,6 +25,8 @@
 
 using namespace std;
 
+unsigned int num_tests_run, num_tests_passed;
+
 static unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
                                  ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation = nullopt) {
     NTSTATUS Status;
@@ -68,6 +70,8 @@ static void test(const string& msg, const function<void()>& func) {
     string err;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
 
+    num_tests_run++;
+
     try {
         func();
     } catch (const exception& e) {
@@ -92,6 +96,8 @@ static void test(const string& msg, const function<void()>& func) {
 
     if (!err.empty())
         fmt::print(" ({})", err);
+    else
+        num_tests_passed++;
 
     fmt::print("\n");
 }
@@ -2557,6 +2563,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     };
 
     bool first = true;
+    unsigned int total_tests_run = 0, total_tests_passed = 0;
 
     for (const auto& tf : testfuncs) {
         if (name == u"all" || tf.name == name) {
@@ -2579,7 +2586,15 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
             if (col)
                 SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), csbi.wAttributes);
 
+            num_tests_run = 0;
+            num_tests_passed = 0;
+
             tf.func();
+
+            total_tests_run += num_tests_run;
+            total_tests_passed += num_tests_passed;
+
+            fmt::print("Passed {}/{}\n", num_tests_passed, num_tests_run);
 
             first = false;
 
@@ -2652,6 +2667,9 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     if (name != u"all" && first)
         throw runtime_error("Test not supported.");
+
+    if (name == u"all")
+        fmt::print("\nTotal passed {}/{}\n", total_tests_passed, total_tests_run);
 }
 
 static u16string to_u16string(time_t n) {
