@@ -1802,11 +1802,32 @@ static void test_io(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\iodir", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try setting end of file", [&]() {
+            exp_status([&]() {
+                set_end_of_file(h.get(), 0);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Try setting allocation", [&]() {
+            exp_status([&]() {
+                set_allocation(h.get(), 0);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
     // FIXME - IO that doesn't change cursor position (not FILE_SYNCHRONOUS_IO_ALERT or FILE_SYNCHRONOUS_IO_NONALERT)
     // FIXME - FILE_APPEND_DATA
     // FIXME - preallocation
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
-    // FIXME - try setting end of file etc. on directories
     // FIXME - async I/O
     // FIXME - DASD I/O
 }
