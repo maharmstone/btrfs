@@ -1294,7 +1294,7 @@ static void test_io(const u16string& dir) {
         test("Check position", [&]() {
             auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
 
-            if (fpi.CurrentByteOffset.QuadPart != random.size()) {
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != random.size()) {
                 throw formatted_error("CurrentByteOffset was {}, expected {}",
                                       fpi.CurrentByteOffset.QuadPart, random.size());
             }
@@ -1303,12 +1303,12 @@ static void test_io(const u16string& dir) {
         test("Check standard information", [&]() {
             auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
-            if (fsi.AllocationSize.QuadPart != random.size()) {
+            if ((uint64_t)fsi.AllocationSize.QuadPart != random.size()) {
                 throw formatted_error("AllocationSize was {}, expected {}",
                                       fsi.AllocationSize.QuadPart, random.size());
             }
 
-            if (fsi.EndOfFile.QuadPart != random.size()) {
+            if ((uint64_t)fsi.EndOfFile.QuadPart != random.size()) {
                 throw formatted_error("EndOfFile was {}, expected {}",
                                       fsi.EndOfFile.QuadPart, random.size());
             }
