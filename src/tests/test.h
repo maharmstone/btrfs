@@ -61,6 +61,16 @@ NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAl
                                            PTOKEN_PRIVILEGES NewState, ULONG BufferLength,
                                            PTOKEN_PRIVILEGES PreviousState, PULONG ReturnLength);
 
+typedef enum _EVENT_TYPE {
+    NotificationEvent,
+    SynchronizationEvent
+} EVENT_TYPE;
+
+extern "C"
+NTSTATUS __stdcall NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
+                                 BOOLEAN InitialState);
+
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
