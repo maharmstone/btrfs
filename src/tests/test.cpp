@@ -1725,17 +1725,56 @@ static void test_io(HANDLE token, const u16string& dir) {
     // FIXME - DASD I/O
 }
 
-static void do_tests(const u16string& dir) {
-    // FIXME - allow user to specify test on command line
+static void write_console(const u16string_view& str) {
+    WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), str.data(), str.length(), nullptr, nullptr);
+}
 
+static void do_tests(const u16string_view& name, const u16string& dir) {
     auto token = open_process_token(NtCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY);
 
     disable_token_privileges(token.get());
 
-    test_create(dir);
-    test_supersede(dir);
-    test_overwrite(dir);
-    test_io(token.get(), dir);
+    static const struct {
+        u16string_view name;
+        function<void()> func;
+    } testfuncs[] = {
+        { u"create", [&]() { test_create(dir); } },
+        { u"supersede", [&]() { test_supersede(dir); } },
+        { u"overwrite", [&]() { test_overwrite(dir); } },
+        { u"io", [&]() { test_io(token.get(), dir); } },
+    };
+
+    bool first = true;
+
+    for (const auto& tf : testfuncs) {
+        if (name == u"all" || tf.name == name) {
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+
+            auto col = GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+
+            if (col) {
+                SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),
+                                        FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY);
+            }
+
+            if (!first)
+                write_console(u"\n");
+
+            write_console(u"Running test ");
+            write_console(tf.name);
+            write_console(u"\n");
+
+            if (col)
+                SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), csbi.wAttributes);
+
+            tf.func();
+
+            first = false;
+
+            if (name != u"all")
+                break;
+        }
+    }
 
     // FIXME - check with case-sensitive flag set
 
@@ -1796,6 +1835,9 @@ static void do_tests(const u16string& dir) {
     // FIXME - snapshots
     // FIXME - sending and receiving(?)
     // FIXME - using mknod etc. to test mapping between Linux and Windows concepts?
+
+    if (name != u"all" && first)
+        throw runtime_error("Test not supported.");
 }
 
 static u16string to_u16string(time_t n) {
@@ -1811,18 +1853,27 @@ static u16string to_u16string(time_t n) {
 
 int wmain(int argc, wchar_t* argv[]) {
     if (argc < 2) {
-        fmt::print(stderr, "Usage: test.exe dir\n");
+        fmt::print(stderr, "Usage: test.exe <dir>\n       test.exe <test> <dir>");
         return 1;
     }
 
-    u16string ntdir = u"\\??\\"s + u16string((char16_t*)argv[1]);
-    ntdir += u"\\" + to_u16string(time(nullptr));
+    try {
+        u16string_view dirarg = (char16_t*)(argc < 3 ? argv[1] : argv[2]);
 
-    create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        u16string ntdir = u"\\??\\"s + u16string(dirarg);
+        ntdir += u"\\" + to_u16string(time(nullptr));
 
-    // FIXME - can we print name and version of FS driver? (FileFsDriverPathInformation?)
+        create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
 
-    do_tests(ntdir);
+        // FIXME - can we print name and version of FS driver? (FileFsDriverPathInformation?)
+
+        u16string_view testarg = argc < 3 ? u"all" : (char16_t*)argv[1];
+
+        do_tests(testarg, ntdir);
+    } catch (const exception& e) {
+        fmt::print(stderr, "{}\n", e.what());
+        return 1;
+    }
 
     return 0;
 }
