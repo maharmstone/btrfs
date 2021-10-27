@@ -43,6 +43,11 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
                                         BOOLEAN RestartScan);
 
 extern "C"
+NTSTATUS __stdcall NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                              PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                              ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
+
+extern "C"
 NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                                PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
