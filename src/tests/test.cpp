@@ -1393,14 +1393,8 @@ static void test_io(HANDLE token, const u16string& dir) {
         adjust_token_privileges(token, array{ laa });
     });
 
-    test("Create file", [&]() {
-        h = create_file(dir + u"\\io", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
-                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
-                        FILE_CREATED);
-    });
-
-    if (h) {
-        vector<uint8_t> random(4096 * 2);
+    auto write_check = [&](uint64_t multiple) {
+        vector<uint8_t> random(multiple * 2);
 
         random_device rd;
         mt19937 gen(rd());
@@ -1426,8 +1420,8 @@ static void test_io(HANDLE token, const u16string& dir) {
         test("Check standard information", [&]() {
             auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
-            if ((uint64_t)fsi.AllocationSize.QuadPart != random.size()) {
-                throw formatted_error("AllocationSize was {}, expected {}",
+            if ((uint64_t)fsi.AllocationSize.QuadPart < random.size()) {
+                throw formatted_error("AllocationSize was {}, expected at least {}",
                                       fsi.AllocationSize.QuadPart, random.size());
             }
 
@@ -1586,23 +1580,23 @@ static void test_io(HANDLE token, const u16string& dir) {
         });
 
         test("Extend file", [&]() {
-            set_end_of_file(h.get(), 4096 * 3);
+            set_end_of_file(h.get(), multiple * 3);
         });
 
         test("Check standard information", [&]() {
             auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
-            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096 * 3) {
+            if ((uint64_t)fsi.EndOfFile.QuadPart != multiple * 3) {
                 throw formatted_error("EndOfFile was {}, expected {}",
                                       fsi.EndOfFile.QuadPart, random.size());
             }
         });
 
         test("Read new end of file", [&]() {
-            auto ret = read_file(h.get(), 4096 * 2);
+            auto ret = read_file(h.get(), multiple * 2);
 
-            if (ret.size() != 4096)
-                throw formatted_error("{} bytes read, expected {}", ret.size(), 4096);
+            if (ret.size() != multiple)
+                throw formatted_error("{} bytes read, expected {}", ret.size(), multiple);
 
             auto it = ranges::find_if(ret, [](uint8_t c) {
                 return c != 0;
@@ -1619,25 +1613,25 @@ static void test_io(HANDLE token, const u16string& dir) {
         });
 
         test("Set valid data length to end of file", [&]() {
-            set_valid_data_length(h.get(), 4096 * 3);
+            set_valid_data_length(h.get(), multiple * 3);
         });
 
         test("Try setting valid data length to after end of file", [&]() {
             exp_status([&]() {
-                set_valid_data_length(h.get(), 4096 * 4);
+                set_valid_data_length(h.get(), multiple * 4);
             }, STATUS_INVALID_PARAMETER);
         });
 
         test("Truncate file", [&]() {
-            set_end_of_file(h.get(), 4096);
+            set_end_of_file(h.get(), multiple);
         });
 
         test("Check standard information", [&]() {
             auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
 
-            if ((uint64_t)fsi.EndOfFile.QuadPart != 4096) {
+            if ((uint64_t)fsi.EndOfFile.QuadPart != multiple) {
                 throw formatted_error("EndOfFile was {}, expected {}",
-                                      fsi.EndOfFile.QuadPart, 4096);
+                                      fsi.EndOfFile.QuadPart, multiple);
             }
         });
 
@@ -1657,25 +1651,47 @@ static void test_io(HANDLE token, const u16string& dir) {
         test("Read whole file", [&]() {
             auto ret = read_file(h.get(), random.size());
 
-            if (ret.size() != 4096)
-                throw formatted_error("{} bytes read, expected {}", ret.size(), 4096);
+            if (ret.size() != multiple)
+                throw formatted_error("{} bytes read, expected {}", ret.size(), multiple);
 
-            if (memcmp(ret.data(), random.data(), 4096))
+            if (memcmp(ret.data(), random.data(), multiple))
                 throw runtime_error("Data read did not match data written");
         });
 
         test("Check position", [&]() {
             auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
 
-            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 4096) {
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != multiple) {
                 throw formatted_error("CurrentByteOffset was {}, expected {}",
                                       fpi.CurrentByteOffset.QuadPart, random.size());
             }
         });
 
         // FIXME - setting allocation
+    };
 
-        // FIXME - files less than 1 sector
+    test("Create file (long)", [&]() {
+        h = create_file(dir + u"\\io", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        write_check(4096);
+
+        h.reset();
+    }
+
+    test("Create file (short)", [&]() {
+        h = create_file(dir + u"\\ioshort", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        write_check(200);
+
+        h.reset();
     }
 
     disable_token_privileges(token);
