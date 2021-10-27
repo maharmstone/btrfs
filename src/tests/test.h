@@ -70,6 +70,9 @@ NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAl
 
 #define SE_MANAGE_VOLUME_PRIVILEGE 28
 
+#define FILE_USE_FILE_POINTER_POSITION 0xfffffffe
+#define FILE_WRITE_TO_END_OF_FILE 0xffffffff
+
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
 #define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)
