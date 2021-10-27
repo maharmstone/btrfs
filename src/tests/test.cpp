@@ -2260,9 +2260,158 @@ static void test_io(HANDLE token, const u16string& dir) {
         });
     }
 
-    // FIXME - FILE_APPEND_DATA
+    test("Create file for FILE_APPEND_DATA", [&]() {
+        h = create_file(dir + u"\\io5", SYNCHRONIZE | FILE_READ_DATA | FILE_APPEND_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        vector<uint8_t> data = {'a','b','c','d','e','f'};
+
+        test("Write to file", [&]() {
+            write_file(h.get(), data);
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != data.size()) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, data.size());
+            }
+        });
+
+        test("Read from file specifying offset", [&]() {
+            auto buf = read_file(h.get(), 2, 0);
+
+            if (buf.size() != 2)
+                throw formatted_error("Read {} bytes, expected {}", buf.size(), 2);
+
+            if (buf[0] != data[0] || buf[1] != data[1])
+                throw runtime_error("Data read did not match data written");
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 2) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, 2);
+            }
+        });
+
+        test("Read from file specifying offset as FILE_USE_FILE_POINTER_POSITION", [&]() {
+            LARGE_INTEGER li;
+
+            li.HighPart = -1;
+            li.LowPart = FILE_USE_FILE_POINTER_POSITION;
+
+            auto buf = read_file(h.get(), 2, li.QuadPart);
+
+            if (buf.size() != 2)
+                throw formatted_error("Read {} bytes, expected {}", buf.size(), 2);
+
+            if (buf[0] != data[2] || buf[1] != data[3])
+                throw runtime_error("Data read did not match data written");
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 4) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, 4);
+            }
+        });
+
+        vector<uint8_t> data2 = {'g','h'};
+
+        test("Write to file specifying offset as FILE_USE_FILE_POINTER_POSITION", [&]() {
+            LARGE_INTEGER li;
+
+            li.HighPart = -1;
+            li.LowPart = FILE_USE_FILE_POINTER_POSITION;
+
+            write_file(h.get(), data2, li.QuadPart);
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 8) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, 8);
+            }
+        });
+
+        test("Set position to 0", [&]() {
+            set_position(h.get(), 0);
+        });
+
+        vector<uint8_t> data3 = {'i','j'};
+
+        test("Write to file specifying offset as 0", [&]() {
+            write_file(h.get(), data3, 0);
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 10) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, 10);
+            }
+        });
+
+        test("Write to file specifying offset as FILE_WRITE_TO_END_OF_FILE", [&]() {
+            LARGE_INTEGER li;
+
+            li.HighPart = -1;
+            li.LowPart = FILE_WRITE_TO_END_OF_FILE;
+
+            write_file(h.get(), data3, li.QuadPart);
+        });
+
+        test("Check position", [&]() {
+            auto fpi = query_information<FILE_POSITION_INFORMATION>(h.get());
+
+            if ((uint64_t)fpi.CurrentByteOffset.QuadPart != 12) {
+                throw formatted_error("CurrentByteOffset was {}, expected {}",
+                                      fpi.CurrentByteOffset.QuadPart, 12);
+            }
+        });
+
+        test("Try reading from file specifying offset as FILE_WRITE_TO_END_OF_FILE", [&]() {
+            LARGE_INTEGER li;
+
+            li.HighPart = -1;
+            li.LowPart = FILE_WRITE_TO_END_OF_FILE;
+
+            exp_status([&]() {
+                read_file(h.get(), 2, li.QuadPart);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Set position to 0", [&]() {
+            set_position(h.get(), 0);
+        });
+
+        test("Check file contents", [&]() {
+            auto buf = read_file(h.get(), 12);
+
+            if (buf.size() != 12)
+                throw formatted_error("Read {} bytes, expected {}", buf.size(), 12);
+
+            if (buf[0] != data[0] || buf[1] != data[1] || buf[2] != data[2] || buf[3] != data[3] ||
+                buf[4] != data[4] || buf[5] != data[5] || buf[6] != data2[0] || buf[7] != data2[1] ||
+                buf[8] != data3[0] || buf[9] != data3[1] || buf[10] != data3[0] || buf[11] != data3[1]) {
+                throw runtime_error("Data read did not match data written");
+            }
+        });
+    }
+
     // FIXME - FILE_NO_INTERMEDIATE_BUFFERING
-    // FIXME - async I/O
     // FIXME - DASD I/O
 }
 
@@ -2318,6 +2467,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     }
 
     // FIXME - check with case-sensitive flag set
+
+    // FIXME - memory mapping (inc. attempted delete, truncate, etc.)
 
     // FIXME - reparse points (opening, opening following link, creating, setting, querying tag)
 
