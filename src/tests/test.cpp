@@ -25,7 +25,8 @@
 
 using namespace std;
 
-unsigned int num_tests_run, num_tests_passed;
+static enum fs_type fstype;
+static unsigned int num_tests_run, num_tests_passed;
 
 static unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
                                  ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation = nullopt) {
@@ -2683,6 +2684,28 @@ static u16string to_u16string(time_t n) {
     return u16string(s.rbegin(), s.rend());
 }
 
+static bool fs_driver_path(HANDLE h, const u16string_view& driver) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf(offsetof(FILE_FS_DRIVER_PATH_INFORMATION, DriverName) + (driver.size() * sizeof(char16_t)));
+
+    auto& ffdpi = *(FILE_FS_DRIVER_PATH_INFORMATION*)buf.data();
+
+    ffdpi.DriverInPath = false;
+    ffdpi.DriverNameLength = driver.size() * sizeof(char16_t);
+    memcpy(&ffdpi.DriverName, driver.data(), ffdpi.DriverNameLength);
+
+    Status = NtQueryVolumeInformationFile(h, &iosb, &ffdpi, buf.size(), FileFsDriverPathInformation);
+
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND) // driver not loaded
+        return false;
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    return ffdpi.DriverInPath;
+}
+
 int wmain(int argc, wchar_t* argv[]) {
     if (argc < 2) {
         fmt::print(stderr, "Usage: test.exe <dir>\n       test.exe <test> <dir>");
@@ -2695,9 +2718,49 @@ int wmain(int argc, wchar_t* argv[]) {
         u16string ntdir = u"\\??\\"s + u16string(dirarg);
         ntdir += u"\\" + to_u16string(time(nullptr));
 
-        create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        unique_handle dirh;
 
-        // FIXME - can we print name and version of FS driver? (FileFsDriverPathInformation?)
+        try {
+            dirh = create_file(ntdir, GENERIC_WRITE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        } catch (const exception& e) {
+            throw runtime_error("Error creating directory: "s + e.what());
+        }
+
+        bool type_lookup_failed = false;
+
+        fstype = fs_type::unknown;
+
+        try {
+            /* See lie_about_fs_type() for why we can't use FileFsAttributeInformation. */
+
+            if (fs_driver_path(dirh.get(), u"\\FileSystem\\NTFS"))
+                fstype = fs_type::ntfs;
+            else if (fs_driver_path(dirh.get(), u"\\Driver\\btrfs"))
+                fstype = fs_type::btrfs;
+        } catch (const exception& e) {
+            fmt::print(stderr, "Error getting filesystem type: {}\n", e.what());
+            type_lookup_failed = true;
+        }
+
+        dirh.reset();
+
+        if (!type_lookup_failed) {
+            switch (fstype) {
+                case fs_type::ntfs:
+                    fmt::print("Testing on NTFS.\n");
+                    break;
+
+                case fs_type::btrfs:
+                    fmt::print("Testing on Btrfs.\n");
+                    break;
+
+                default:
+                    fmt::print("Testing on unknown filesystem.\n");
+                    break;
+            }
+        }
+
+        // FIXME - print version of FS driver?
 
         u16string_view testarg = argc < 3 ? u"all" : (char16_t*)argv[1];
 

@@ -34,6 +34,12 @@
 #include <fmt/format.h>
 #include <fmt/compile.h>
 
+enum class fs_type {
+    unknown,
+    ntfs,
+    btrfs
+};
+
 extern "C"
 NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                                         PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock,
@@ -82,6 +88,12 @@ NTSTATUS __stdcall NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 
 #define FILE_USE_FILE_POINTER_POSITION 0xfffffffe
 #define FILE_WRITE_TO_END_OF_FILE 0xffffffff
+
+typedef struct _FILE_FS_DRIVER_PATH_INFORMATION {
+    BOOLEAN DriverInPath;
+    ULONG DriverNameLength;
+    WCHAR DriverName[1];
+} FILE_FS_DRIVER_PATH_INFORMATION, *PFILE_FS_DRIVER_PATH_INFORMATION;
 
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
