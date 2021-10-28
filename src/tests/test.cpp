@@ -1254,8 +1254,66 @@ static void test_create(const u16string& dir) {
         });
     }
 
+    test("Create file with long name", [&]() {
+        u16string longname(256, u'x');
+
+        exp_status([&]() {
+            create_file(dir + u"\\" + longname, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create file with emoji", [&]() {
+        create_file(dir + u"\\\U0001f525", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    /* The limits for Btrfs are more stringent than NTFS, to make sure we don't
+     * create a filename that will confuse Linux. */
+    bool is_ntfs = fstype == fs_type::ntfs;
+
+    test("Create file with more than 255 UTF-8 characters", [&]() {
+        auto fn = dir + u"\\";
+
+        for (unsigned int i = 0; i < 64; i++) {
+            fn += u"\U0001f525";
+        }
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create file with WTF-16 (1)", [&]() {
+        auto fn = dir + u"\\";
+
+        fn += (char16_t)0xd83d;
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create file with WTF-16 (2)", [&]() {
+        auto fn = dir + u"\\";
+
+        fn += (char16_t)0xdd25;
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create file with WTF-16 (3)", [&]() {
+        auto fn = dir + u"\\";
+
+        fn += (char16_t)0xdd25;
+        fn += (char16_t)0xd83d;
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
     // FIXME - FILE_OPEN_BY_FILE_ID
-    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
     // FIXME - test all the variations of NtQueryInformationFile
     // FIXME - test NtOpenFile
 }
