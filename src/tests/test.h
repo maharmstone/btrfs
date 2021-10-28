@@ -31,6 +31,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <optional>
 #include <fmt/format.h>
 #include <fmt/compile.h>
 
@@ -3918,3 +3919,259 @@ private:
 };
 
 #define formatted_error(s, ...) _formatted_error(FMT_COMPILE(s), ##__VA_ARGS__)
+
+template<typename T>
+static T query_information(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    T t;
+    FILE_INFORMATION_CLASS fic;
+
+    if constexpr (std::is_same_v<T, FILE_BASIC_INFORMATION>)
+        fic = FileBasicInformation;
+    else if constexpr (std::is_same_v<T, FILE_STANDARD_INFORMATION>)
+        fic = FileStandardInformation;
+    else if constexpr (std::is_same_v<T, FILE_ACCESS_INFORMATION>)
+        fic = FileAccessInformation;
+    else if constexpr (std::is_same_v<T, FILE_MODE_INFORMATION>)
+        fic = FileModeInformation;
+    else if constexpr (std::is_same_v<T, FILE_ALIGNMENT_INFORMATION>)
+        fic = FileAlignmentInformation;
+    else if constexpr (std::is_same_v<T, FILE_POSITION_INFORMATION>)
+        fic = FilePositionInformation;
+    else
+        throw std::runtime_error("Unrecognized file information class.");
+
+    Status = NtQueryInformationFile(h, &iosb, &t, sizeof(t), fic);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != sizeof(t))
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(t));
+
+    return t;
+}
+
+
+template<typename T>
+class varbuf {
+public:
+    T* operator*() {
+        return (T*)buf.data();
+    }
+
+    operator T*() {
+        return (T*)buf.data();
+    }
+
+    operator const T*() const {
+        return (const T*)buf.data();
+    }
+
+    std::vector<uint8_t> buf;
+};
+
+// test.cpp
+unique_handle create_file(const std::u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+                          ULONG dispo, ULONG options, ULONG_PTR exp_info, std::optional<uint64_t> allocation = std::nullopt);
+
+template<typename T>
+static std::vector<varbuf<T>> query_dir(const std::u16string& dir, std::u16string_view filter) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    unique_handle dh;
+    std::vector<uint8_t> buf(sizeof(T) + 7);
+    bool first = true;
+    std::vector<varbuf<T>> ret;
+    FILE_INFORMATION_CLASS fic;
+    UNICODE_STRING us;
+    size_t off;
+
+    if constexpr (std::is_same_v<T, FILE_DIRECTORY_INFORMATION>)
+        fic = FileDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_BOTH_DIR_INFORMATION>)
+        fic = FileBothDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_FULL_DIR_INFORMATION>)
+        fic = FileFullDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_ID_BOTH_DIR_INFORMATION>)
+        fic = FileIdBothDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_ID_FULL_DIR_INFORMATION>)
+        fic = FileIdFullDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_ID_EXTD_DIR_INFORMATION>)
+        fic = FileIdExtdDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_ID_EXTD_BOTH_DIR_INFORMATION>)
+        fic = FileIdExtdBothDirectoryInformation;
+    else if constexpr (std::is_same_v<T, FILE_NAMES_INFORMATION>)
+        fic = FileNamesInformation;
+    else
+        throw std::runtime_error("Unrecognized file information class.");
+
+    // buffer needs to be aligned to 8 bytes
+    off = 8 - ((uintptr_t)buf.data() % 8);
+
+    if (off == 8)
+        off = 0;
+
+    if (!filter.empty()) {
+        us.Buffer = (WCHAR*)filter.data();
+        us.Length = us.MaximumLength = filter.size() * sizeof(char16_t);
+    }
+
+    dh = create_file(dir, SYNCHRONIZE | FILE_LIST_DIRECTORY, 0, 0, FILE_OPEN,
+                     FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                     FILE_OPENED);
+
+    while (true) {
+        Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
+                                      buf.data() + off, buf.size() - off, fic, false,
+                                      !filter.empty() ? &us : nullptr, first);
+
+        if (Status == STATUS_BUFFER_OVERFLOW) {
+            size_t new_size;
+
+            new_size = offsetof(T, FileName);
+            new_size += ((T*)buf.data())->FileNameLength * sizeof(WCHAR);
+
+            buf.resize(new_size + 7);
+
+            off = 8 - ((uintptr_t)buf.data() % 8);
+
+            if (off == 8)
+                off = 0;
+
+            Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
+                                          buf.data() + off, buf.size() - off, fic, false,
+                                          !filter.empty() ? &us : nullptr, first);
+        }
+
+        if (Status == STATUS_NO_MORE_FILES)
+            break;
+
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        auto ptr = (T*)buf.data();
+
+        do {
+            varbuf<T> item;
+
+            item.buf.resize(offsetof(T, FileName) + (ptr->FileNameLength * sizeof(WCHAR)));
+            memcpy(item.buf.data(), ptr, item.buf.size());
+
+            ret.emplace_back(item);
+
+            if (ptr->NextEntryOffset == 0)
+                break;
+
+            ptr = (T*)((uint8_t*)ptr + ptr->NextEntryOffset);
+        } while (true);
+
+        first = false;
+    }
+
+    return ret;
+}
+
+template<typename T>
+concept has_CreationTime = requires { T::CreationTime; };
+
+template<typename T>
+concept has_LastAccessTime = requires { T::LastAccessTime; };
+
+template<typename T>
+concept has_LastWriteTime = requires { T::LastWriteTime; };
+
+template<typename T>
+concept has_ChangeTime = requires { T::ChangeTime; };
+
+template<typename T>
+concept has_EndOfFile = requires { T::EndOfFile; };
+
+template<typename T>
+concept has_AllocationSize = requires { T::AllocationSize; };
+
+template<typename T>
+concept has_FileAttributes = requires { T::FileAttributes; };
+
+template<typename T>
+concept has_FileNameLength = requires { T::FileNameLength; };
+
+template<typename T>
+static void check_dir_entry(const std::u16string& dir, const std::u16string_view& name,
+                            const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi) {
+    auto items = query_dir<T>(dir, name);
+
+    if (items.size() != 1)
+        throw formatted_error("{} entries returned, expected 1.", items.size());
+
+    auto& fdi = *static_cast<const T*>(items.front());
+
+    if constexpr (has_CreationTime<T>) {
+        if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+            throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+    }
+
+    if constexpr (has_LastAccessTime<T>) {
+        if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+            throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+    }
+
+    if constexpr (has_LastWriteTime<T>) {
+        if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+            throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+    }
+
+    if constexpr (has_ChangeTime<T>) {
+        if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+            throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+    }
+
+    if constexpr (has_EndOfFile<T>) {
+        if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+            throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+    }
+
+    if constexpr (has_AllocationSize<T>) {
+        if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+            throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+    }
+
+    if constexpr (has_FileAttributes<T>) {
+        if (fdi.FileAttributes != fbi.FileAttributes)
+            throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
+    }
+
+    if constexpr (has_FileNameLength<T>) {
+        if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+            throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+        if (name != std::u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+            throw std::runtime_error("FileName did not match.");
+    }
+
+    // FIXME - EaSize
+    // FIXME - ShortNameLength / ShortName
+    // FIXME - FileId (two different possible lengths)
+    // FIXME - ReparsePointTag
+}
+
+// test.cpp
+extern enum fs_type fstype;
+
+void test(const std::string& msg, const std::function<void()>& func);
+void exp_status(const std::function<void()>& func, NTSTATUS Status);
+std::u16string query_file_name_information(HANDLE h);
+void disable_token_privileges(HANDLE token);
+
+// create.cpp
+void test_create(const std::u16string& dir);
+
+// supersede.cpp
+void test_supersede(const std::u16string& dir);
+
+// overwrite.cpp
+void test_overwrite(const std::u16string& dir);
+
+// io.cpp
+void test_io(HANDLE token, const std::u16string& dir);
