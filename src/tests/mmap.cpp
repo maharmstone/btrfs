@@ -246,6 +246,40 @@ void test_mmap(const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap6", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        unique_handle sect;
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
+        });
+
+        test("Extend file", [&]() {
+            set_end_of_file(h.get(), 8192);
+        });
+
+        test("Try clearing file", [&]() {
+            exp_status([&]() {
+                set_end_of_file(h.get(), 0);
+            }, STATUS_USER_MAPPED_FILE);
+        });
+
+        test("Try setting file to original size", [&]() {
+            exp_status([&]() {
+                set_end_of_file(h.get(), 4096);
+            }, STATUS_USER_MAPPED_FILE);
+        });
+
+        h.reset();
+    }
+
     // FIXME - attempted delete
-    // FIXME - attempted truncate
 }
