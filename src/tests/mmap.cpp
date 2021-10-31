@@ -113,8 +113,22 @@ void test_mmap(const u16string& dir) {
         }
     }
 
-    // FIXME - create one-sector file
-    // FIXME - try to map two sectors
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap2", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Try to create section larger than file", [&]() {
+            exp_status([&]() {
+                create_section(SECTION_ALL_ACCESS, 8192, PAGE_READONLY, SEC_COMMIT, h.get());
+            }, STATUS_SECTION_TOO_BIG);
+        });
+    }
 
     // FIXME - editing file through mapping
 

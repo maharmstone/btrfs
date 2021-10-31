@@ -209,7 +209,7 @@ static void set_valid_data_length(HANDLE h, uint64_t vdl) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_end_of_file(HANDLE h, uint64_t eof) {
+void set_end_of_file(HANDLE h, uint64_t eof) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     FILE_END_OF_FILE_INFORMATION feofi;
