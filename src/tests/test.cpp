@@ -17,6 +17,7 @@
 
 #include "test.h"
 #include <wincon.h>
+#include <winsvc.h>
 #include <functional>
 
 using namespace std;
@@ -332,6 +333,113 @@ static bool fs_driver_path(HANDLE h, const u16string_view& driver) {
     return ffdpi.DriverInPath;
 }
 
+class sc_handle_closer {
+public:
+    typedef SC_HANDLE pointer;
+
+    void operator()(SC_HANDLE h) {
+        CloseServiceHandle(h);
+    }
+};
+
+static optional<u16string> get_environment_variable(const u16string& name) {
+   auto len = GetEnvironmentVariableW((WCHAR*)name.c_str(), nullptr, 0);
+
+   if (len == 0) {
+       if (GetLastError() == ERROR_ENVVAR_NOT_FOUND)
+           return nullopt;
+
+       return u"";
+   }
+
+   u16string ret(len, 0);
+
+   if (GetEnvironmentVariableW((WCHAR*)name.c_str(), (WCHAR*)ret.data(), len) == 0)
+       throw formatted_error("GetEnvironmentVariable failed (error {})", GetLastError());
+
+   while (!ret.empty() && ret.back() == 0) {
+       ret.pop_back();
+   }
+
+   return ret;
+}
+
+static u16string get_driver_path(const u16string& driver) {
+    unique_ptr<SC_HANDLE, sc_handle_closer> sc_manager, service;
+
+    sc_manager.reset(OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT));
+    if (!sc_manager)
+        throw formatted_error("OpenSCManager failed (error {})", GetLastError());
+
+    service.reset(OpenServiceW(sc_manager.get(), (WCHAR*)driver.c_str(), SERVICE_QUERY_CONFIG));
+    if (!service)
+        throw formatted_error("OpenService failed (error {})", GetLastError());
+
+    vector<uint8_t> buf(sizeof(QUERY_SERVICE_CONFIGW));
+    DWORD needed;
+
+    if (!QueryServiceConfigW(service.get(), (QUERY_SERVICE_CONFIGW*)buf.data(), buf.size(), &needed)) {
+        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            throw formatted_error("QueryServiceConfig failed (error {})", GetLastError());
+
+        buf.resize(needed);
+
+        if (!QueryServiceConfigW(service.get(), (QUERY_SERVICE_CONFIGW*)buf.data(), buf.size(), &needed))
+            throw formatted_error("QueryServiceConfig failed (error {})", GetLastError());
+    }
+
+    auto& qsc = *(QUERY_SERVICE_CONFIGW*)buf.data();
+
+    u16string path = (char16_t*)qsc.lpBinaryPathName;
+
+    if (path.empty()) // if the bootloader has sorted it out
+        path = u"\\SystemRoot\\System32\\drivers\\" + driver + u".sys";
+
+    if (path.substr(0, 12) == u"\\SystemRoot\\") { // FIXME - case-insensitive?
+        auto sr = get_environment_variable(u"SystemRoot");
+
+        // FIXME - get from \\SystemRoot symlink instead?
+
+        if (!sr.has_value())
+            throw runtime_error("SystemRoot environment variable not set.");
+
+        path = sr.value() + u"\\" + path.substr(12);
+    }
+
+    if (path.substr(0, 4) == u"\\??\\")
+        path = path.substr(4);
+
+    return path;
+}
+
+static string u16string_to_string(const u16string_view& sv) {
+    if (sv.empty())
+        return "";
+
+    auto len = WideCharToMultiByte(CP_ACP, 0, (WCHAR*)sv.data(), sv.length(), nullptr, 0, nullptr, nullptr);
+    if (len == 0)
+        throw formatted_error("WideCharToMultiByte failed (error {})", GetLastError());
+
+    string s(len, 0);
+
+    if (WideCharToMultiByte(CP_ACP, 0, (WCHAR*)sv.data(), sv.length(), s.data(), s.length(), nullptr, nullptr) == 0)
+        throw formatted_error("WideCharToMultiByte failed (error {})", GetLastError());
+
+    return s;
+}
+
+static string driver_string(const u16string& driver) {
+    try {
+        auto path = get_driver_path(driver);
+
+        // FIXME - print version of driver
+
+        return u16string_to_string(path);
+    } catch (const exception& e) {
+        return e.what();
+    }
+}
+
 int wmain(int argc, wchar_t* argv[]) {
     if (argc < 2) {
         fmt::print(stderr, "Usage: test.exe <dir>\n       test.exe <test> <dir>");
@@ -373,11 +481,11 @@ int wmain(int argc, wchar_t* argv[]) {
         if (!type_lookup_failed) {
             switch (fstype) {
                 case fs_type::ntfs:
-                    fmt::print("Testing on NTFS.\n");
+                    fmt::print("Testing on NTFS ({}).\n", driver_string(u"ntfs"));
                     break;
 
                 case fs_type::btrfs:
-                    fmt::print("Testing on Btrfs.\n");
+                    fmt::print("Testing on Btrfs.\n", driver_string(u"btrfs"));
                     break;
 
                 default:
@@ -385,8 +493,6 @@ int wmain(int argc, wchar_t* argv[]) {
                     break;
             }
         }
-
-        // FIXME - print version of FS driver?
 
         u16string_view testarg = argc < 3 ? u"all" : (char16_t*)argv[1];
 
