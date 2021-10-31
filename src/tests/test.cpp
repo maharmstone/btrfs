@@ -18,6 +18,7 @@
 #include "test.h"
 #include <wincon.h>
 #include <winsvc.h>
+#include <winver.h>
 #include <functional>
 
 using namespace std;
@@ -428,13 +429,37 @@ static string u16string_to_string(const u16string_view& sv) {
     return s;
 }
 
+static string get_version(const u16string& fn) {
+    DWORD dummy;
+
+    auto len = GetFileVersionInfoSizeW((WCHAR*)fn.c_str(), &dummy);
+    if (len == 0)
+        throw formatted_error("GetFileVersionInfoSize failed (error {})", GetLastError());
+
+    vector<uint8_t> buf(len);
+
+    if (!GetFileVersionInfoW((WCHAR*)fn.c_str(), 0, buf.size(), buf.data()))
+        throw formatted_error("GetFileVersionInfo failed (error {})", GetLastError());
+
+    VS_FIXEDFILEINFO* ver;
+    UINT verlen;
+
+    if (!VerQueryValueW(buf.data(), L"\\", (void**)&ver, &verlen))
+        throw runtime_error("VerQueryValue failed");
+
+    // dwFileVersionMS gets munged by supportedOS compatibility logic
+
+    return fmt::format("{}.{}.{}.{}", ver->dwProductVersionMS >> 16, ver->dwProductVersionMS & 0xffff,
+                       ver->dwProductVersionLS >> 16, ver->dwProductVersionLS & 0xffff);
+}
+
 static string driver_string(const u16string& driver) {
     try {
         auto path = get_driver_path(driver);
 
-        // FIXME - print version of driver
+        auto version = get_version(path);
 
-        return u16string_to_string(path);
+        return u16string_to_string(path) + ", " + version;
     } catch (const exception& e) {
         return e.what();
     }
@@ -485,7 +510,7 @@ int wmain(int argc, wchar_t* argv[]) {
                     break;
 
                 case fs_type::btrfs:
-                    fmt::print("Testing on Btrfs.\n", driver_string(u"btrfs"));
+                    fmt::print("Testing on Btrfs ({}).\n", driver_string(u"btrfs"));
                     break;
 
                 default:
