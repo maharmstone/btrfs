@@ -32,6 +32,7 @@
 #include <stdexcept>
 #include <string>
 #include <optional>
+#include <span>
 #include <fmt/format.h>
 #include <fmt/compile.h>
 
@@ -77,6 +78,23 @@ extern "C"
 NTSTATUS __stdcall NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                                  POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
                                  BOOLEAN InitialState);
+
+extern "C"
+NTSTATUS __stdcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
+                                   POBJECT_ATTRIBUTES ObjectAttributes, PLARGE_INTEGER MaximumSize,
+                                   ULONG SectionPageProtection, ULONG AllocationAttributes,
+                                   HANDLE FileHandle);
+
+typedef enum _SECTION_INHERIT {
+    ViewShare = 1,
+    ViewUnmap
+} SECTION_INHERIT;
+
+extern "C"
+NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress,
+                                      ULONG_PTR ZeroBits, SIZE_T CommitSize, PLARGE_INTEGER SectionOffset,
+                                      PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                                      ULONG AllocationType, ULONG Protect);
 
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
@@ -4175,3 +4193,8 @@ void test_overwrite(const std::u16string& dir);
 
 // io.cpp
 void test_io(HANDLE token, const std::u16string& dir);
+std::vector<uint8_t> random_data(size_t len);
+void write_file(HANDLE h, std::span<uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
+
+// mmap.cpp
+void test_mmap(const std::u16string& dir);

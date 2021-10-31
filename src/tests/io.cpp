@@ -39,7 +39,7 @@ static void set_allocation(HANDLE h, uint64_t alloc) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static vector<uint8_t> random_data(size_t len) {
+vector<uint8_t> random_data(size_t len) {
     vector<uint8_t> random(len);
 
     random_device rd;
@@ -53,7 +53,7 @@ static vector<uint8_t> random_data(size_t len) {
     return random;
 }
 
-static void write_file(HANDLE h, span<uint8_t> data, optional<uint64_t> offset = nullopt) {
+void write_file(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;

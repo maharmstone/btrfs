@@ -189,6 +189,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"supersede", [&]() { test_supersede(dir); } },
         { u"overwrite", [&]() { test_overwrite(dir); } },
         { u"io", [&]() { test_io(token.get(), dir); } },
+        { u"mmap", [&]() { test_mmap(dir); } }
     };
 
     bool first = true;
@@ -233,8 +234,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     }
 
     // FIXME - check with case-sensitive flag set
-
-    // FIXME - memory mapping (inc. attempted delete, truncate, etc.)
 
     // FIXME - reparse points (opening, opening following link, creating, setting, querying tag)
 
