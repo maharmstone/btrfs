@@ -130,6 +130,30 @@ void test_mmap(const u16string& dir) {
         });
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap3", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        h.reset();
+
+        test("Reopen file without FILE_WRITE_DATA", [&]() {
+            h = create_file(dir + u"\\mmap3", SYNCHRONIZE | FILE_READ_DATA, 0, 0,
+                            FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT, FILE_OPENED);
+        });
+
+        test("Try to create RW section on RO file", [&]() {
+            exp_status([&]() {
+                create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
     // FIXME - editing file through mapping
 
     // FIXME - try mapping when file locked
