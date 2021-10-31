@@ -668,6 +668,36 @@ void test_create(const u16string& dir) {
         }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
     });
 
+    struct {
+        u16string name;
+        string desc;
+    } invalid_names[] = {
+        { u"/", "slash" },
+        { u":", "colon" },
+        { u"<", "less than" },
+        { u">", "greater than" },
+        { u"\"", "quote" },
+        { u"|", "pipe" },
+        { u"?", "question mark" },
+        { u"*", "asterisk" }
+    };
+
+    for (const auto& n : invalid_names) {
+        test("Create file with invalid name (" + n.desc + ")", [&]() {
+            auto fn = dir + u"\\" + n.name;
+
+            exp_status([&]() {
+                create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            }, STATUS_OBJECT_NAME_INVALID);
+        });
+    }
+
+    test("Create file called CON", [&]() { // allowed by NT API, not allowed by Win32 API
+        create_file(dir + u"\\CON", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    // FIXME - if we try to open file with invalid name, do we get NOT_FOUND or INVALID?
+
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - test all the variations of NtQueryInformationFile
     // FIXME - test NtOpenFile
