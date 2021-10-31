@@ -96,6 +96,12 @@ NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle
                                       PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                       ULONG AllocationType, ULONG Protect);
 
+extern "C"
+NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event OPTIONAL, PIO_APC_ROUTINE ApcRoutine,
+                              PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                              PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,
+                              BOOLEAN ExclusiveLock);
+
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)

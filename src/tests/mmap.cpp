@@ -39,6 +39,21 @@ static void* map_view(HANDLE sect, uint64_t off, uint64_t len, ULONG prot) {
     return addr;
 }
 
+static void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER offli, lenli;
+
+    offli.QuadPart = offset;
+    lenli.QuadPart = length;
+
+    Status = NtLockFile(h, nullptr, nullptr, nullptr, &iosb, &offli, &lenli,
+                        0, false, exclusive);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
 void test_mmap(const u16string& dir) {
     unique_handle h;
 
@@ -204,7 +219,33 @@ void test_mmap(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - try mapping when file locked
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap5", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Lock file", [&]() {
+            lock_file(h.get(), 0, 4096, true);
+        });
+
+        unique_handle sect;
+
+        test("Create section on locked file", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
+        });
+
+        test("Map view", [&]() {
+            map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+        });
+
+        h.reset();
+    }
+
     // FIXME - attempted delete
     // FIXME - attempted truncate
 }
