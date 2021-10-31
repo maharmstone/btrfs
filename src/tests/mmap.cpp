@@ -19,7 +19,7 @@ static unique_handle create_section(ACCESS_MASK access, optional<uint64_t> max_s
     return unique_handle(h);
 }
 
-static void* map_view(HANDLE sect, uint64_t off, uint64_t len) {
+static void* map_view(HANDLE sect, uint64_t off, uint64_t len, ULONG prot) {
     NTSTATUS Status;
     void* addr = nullptr;
     LARGE_INTEGER li;
@@ -28,7 +28,7 @@ static void* map_view(HANDLE sect, uint64_t off, uint64_t len) {
     li.QuadPart = off;
 
     Status = NtMapViewOfSection(sect, NtCurrentProcess(), &addr, 0, 0, &li, &size,
-                                ViewUnmap, 0, PAGE_READONLY);
+                                ViewUnmap, 0, prot);
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
@@ -91,7 +91,7 @@ void test_mmap(const u16string& dir) {
         void* addr = nullptr;
 
         test("Map view", [&]() {
-            addr = map_view(sect.get(), 0, data.size());
+            addr = map_view(sect.get(), 0, data.size(), PAGE_READONLY);
         });
 
         if (addr) {
@@ -111,6 +111,8 @@ void test_mmap(const u16string& dir) {
                     throw runtime_error("Data in mapping did not match was written.");
             });
         }
+
+        h.reset();
     }
 
     test("Create file", [&]() {
@@ -154,7 +156,53 @@ void test_mmap(const u16string& dir) {
         });
     }
 
-    // FIXME - editing file through mapping
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap4", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        auto data = random_data(4096);
+
+        test("Write to file", [&]() {
+            write_file(h.get(), data);
+        });
+
+        unique_handle sect;
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_COMMIT, h.get());
+        });
+
+        void* addr = nullptr;
+
+        test("Map view", [&]() {
+            addr = map_view(sect.get(), 0, data.size(), PAGE_READWRITE);
+        });
+
+        if (addr) {
+            test("Check data in mapping", [&]() {
+                if (memcmp(addr, data.data(), data.size()))
+                    throw runtime_error("Data in mapping did not match was written.");
+            });
+
+            *(uint32_t*)addr = 0xdeadbeef;
+
+            test("Read from file", [&]() {
+                auto buf = read_file(h.get(), sizeof(uint32_t), 0);
+
+                if (buf.size() != sizeof(uint32_t))
+                    throw formatted_error("Read {} bytes, expected {}.", buf.size(), sizeof(uint32_t));
+
+                auto& num = *(uint32_t*)buf.data();
+
+                if (num != 0xdeadbeef)
+                    throw runtime_error("Data read did not match was written to mapping.");
+            });
+        }
+
+        h.reset();
+    }
 
     // FIXME - try mapping when file locked
     // FIXME - attempted delete

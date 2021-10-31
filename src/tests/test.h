@@ -4196,6 +4196,7 @@ void test_io(HANDLE token, const std::u16string& dir);
 std::vector<uint8_t> random_data(size_t len);
 void write_file(HANDLE h, std::span<uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
 void set_end_of_file(HANDLE h, uint64_t eof);
+std::vector<uint8_t> read_file(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
 
 // mmap.cpp
 void test_mmap(const std::u16string& dir);

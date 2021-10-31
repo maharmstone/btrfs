@@ -113,7 +113,7 @@ static void write_file_wait(HANDLE h, span<uint8_t> data, optional<uint64_t> off
         throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, data.size());
 }
 
-static vector<uint8_t> read_file(HANDLE h, ULONG len, optional<uint64_t> offset = nullopt) {
+vector<uint8_t> read_file(HANDLE h, ULONG len, optional<uint64_t> offset) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(len);
