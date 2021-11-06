@@ -3945,38 +3945,7 @@ private:
 #define formatted_error(s, ...) _formatted_error(FMT_COMPILE(s), ##__VA_ARGS__)
 
 template<typename T>
-static T query_information(HANDLE h) {
-    IO_STATUS_BLOCK iosb;
-    NTSTATUS Status;
-    T t;
-    FILE_INFORMATION_CLASS fic;
-
-    if constexpr (std::is_same_v<T, FILE_BASIC_INFORMATION>)
-        fic = FileBasicInformation;
-    else if constexpr (std::is_same_v<T, FILE_STANDARD_INFORMATION>)
-        fic = FileStandardInformation;
-    else if constexpr (std::is_same_v<T, FILE_ACCESS_INFORMATION>)
-        fic = FileAccessInformation;
-    else if constexpr (std::is_same_v<T, FILE_MODE_INFORMATION>)
-        fic = FileModeInformation;
-    else if constexpr (std::is_same_v<T, FILE_ALIGNMENT_INFORMATION>)
-        fic = FileAlignmentInformation;
-    else if constexpr (std::is_same_v<T, FILE_POSITION_INFORMATION>)
-        fic = FilePositionInformation;
-    else
-        throw std::runtime_error("Unrecognized file information class.");
-
-    Status = NtQueryInformationFile(h, &iosb, &t, sizeof(t), fic);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != sizeof(t))
-        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(t));
-
-    return t;
-}
-
+T query_information(HANDLE h);
 
 template<typename T>
 class varbuf {

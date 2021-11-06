@@ -66,6 +66,46 @@ unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG 
     return unique_handle(h);
 }
 
+template<typename T>
+T query_information(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    T t;
+    FILE_INFORMATION_CLASS fic;
+
+    if constexpr (std::is_same_v<T, FILE_BASIC_INFORMATION>)
+        fic = FileBasicInformation;
+    else if constexpr (std::is_same_v<T, FILE_STANDARD_INFORMATION>)
+        fic = FileStandardInformation;
+    else if constexpr (std::is_same_v<T, FILE_ACCESS_INFORMATION>)
+        fic = FileAccessInformation;
+    else if constexpr (std::is_same_v<T, FILE_MODE_INFORMATION>)
+        fic = FileModeInformation;
+    else if constexpr (std::is_same_v<T, FILE_ALIGNMENT_INFORMATION>)
+        fic = FileAlignmentInformation;
+    else if constexpr (std::is_same_v<T, FILE_POSITION_INFORMATION>)
+        fic = FilePositionInformation;
+    else
+        throw std::runtime_error("Unrecognized file information class.");
+
+    Status = NtQueryInformationFile(h, &iosb, &t, sizeof(t), fic);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != sizeof(t))
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, sizeof(t));
+
+    return t;
+}
+
+template FILE_BASIC_INFORMATION query_information<FILE_BASIC_INFORMATION>(HANDLE h);
+template FILE_STANDARD_INFORMATION query_information<FILE_STANDARD_INFORMATION>(HANDLE h);
+template FILE_ACCESS_INFORMATION query_information<FILE_ACCESS_INFORMATION>(HANDLE h);
+template FILE_MODE_INFORMATION query_information<FILE_MODE_INFORMATION>(HANDLE h);
+template FILE_ALIGNMENT_INFORMATION query_information<FILE_ALIGNMENT_INFORMATION>(HANDLE h);
+template FILE_POSITION_INFORMATION query_information<FILE_POSITION_INFORMATION>(HANDLE h);
+
 void test(const string& msg, const function<void()>& func) {
     string err;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
