@@ -373,6 +373,54 @@ void test_rename(const u16string& dir) {
 
     h2.reset();
 
+    test("Create file 1", [&]() {
+        create_file(dir + u"\\renamefile6a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\renamefile6b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming file 2 to file 1 uppercase without ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\RENAMEFILE6A");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Rename file 2 to file 1 uppercase", [&]() {
+            set_rename_information(h.get(), true, nullptr, dir + u"\\RENAMEFILE6A");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\RENAMEFILE6A";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\RENAMEFILE6A\".");
+        });
+
+        test("Check directory entry", [&]() {
+            u16string_view name = u"RENAMEFILE6A";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        h.reset();
+    }
+
     // FIXME - RootDirectory
     // FIXME - permissions
     // FIXME - moving
