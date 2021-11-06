@@ -5,7 +5,7 @@
 
 using namespace std;
 
-template<unsigned N>
+template<size_t N>
 static void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& privs) {
     NTSTATUS Status;
     array<uint8_t, offsetof(TOKEN_PRIVILEGES, Privileges) + (N * sizeof(LUID_AND_ATTRIBUTES))> buf;
