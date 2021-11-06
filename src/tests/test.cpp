@@ -683,10 +683,8 @@ static string get_version(const u16string& fn) {
     if (!VerQueryValueW(buf.data(), L"\\", (void**)&ver, &verlen))
         throw runtime_error("VerQueryValue failed");
 
-    // dwFileVersionMS gets munged by supportedOS compatibility logic
-
-    return fmt::format("{}.{}.{}.{}", ver->dwProductVersionMS >> 16, ver->dwProductVersionMS & 0xffff,
-                       ver->dwProductVersionLS >> 16, ver->dwProductVersionLS & 0xffff);
+    return fmt::format("{}.{}.{}.{}", ver->dwFileVersionMS >> 16, ver->dwFileVersionMS & 0xffff,
+                       ver->dwFileVersionLS >> 16, ver->dwFileVersionLS & 0xffff);
 }
 
 static string driver_string(const u16string& driver) {
