@@ -95,10 +95,83 @@ void test_rename(const u16string& dir) {
                 query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
             }, STATUS_NO_SUCH_FILE);
         });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\renamedir1", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir1";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamefile1\".");
+        });
+
+        test("Check directory entry", [&]() {
+            u16string_view name = u"renamedir1";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Rename file", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir1b");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir1b";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir1b\".");
+        });
+
+        test("Check directory entry", [&]() {
+            u16string_view name = u"renamedir1b";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check old directory entry not there", [&]() {
+            u16string_view name = u"renamedir1";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+
+        h.reset();
     }
 
     // FIXME - RootDirectory
-    // FIXME - rename directories
     // FIXME - renaming changing case
     // FIXME - permissions
     // FIXME - moving
