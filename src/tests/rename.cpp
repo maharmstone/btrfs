@@ -25,7 +25,7 @@ static void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root
 }
 
 void test_rename(const u16string& dir) {
-    unique_handle h;
+    unique_handle h, h2;
 
     test("Create file", [&]() {
         h = create_file(dir + u"\\renamefile1", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
@@ -346,6 +346,32 @@ void test_rename(const u16string& dir) {
 
         h.reset();
     }
+
+    test("Create file 1", [&]() {
+        h2 = create_file(dir + u"\\renamefile5a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\renamefile5b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming file 2 to file 1 without ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamefile5a");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Try renaming file 2 to file 1 with file 1 open", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, dir + u"\\renamefile5a");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    h2.reset();
 
     // FIXME - RootDirectory
     // FIXME - permissions
