@@ -334,7 +334,8 @@ if(WITH_TEST)
         src/tests/supersede.cpp
         src/tests/overwrite.cpp
         src/tests/io.cpp
-        src/tests/mmap.cpp)
+        src/tests/mmap.cpp
+        src/tests/rename.cpp)
 
     add_executable(test ${TEST_SRC_FILES})
 

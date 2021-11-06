@@ -107,7 +107,7 @@ template FILE_ALIGNMENT_INFORMATION query_information<FILE_ALIGNMENT_INFORMATION
 template FILE_POSITION_INFORMATION query_information<FILE_POSITION_INFORMATION>(HANDLE h);
 
 template<typename T>
-static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
+vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     unique_handle dh;
@@ -160,8 +160,8 @@ static vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) 
         if (Status == STATUS_BUFFER_OVERFLOW) {
             size_t new_size;
 
-            new_size = offsetof(T, FileName);
-            new_size += ((T*)buf.data())->FileNameLength * sizeof(WCHAR);
+            new_size = offsetof(T, FileName) + (256 * sizeof(WCHAR));
+            new_size += ((T*)(buf.data() + off))->FileNameLength * sizeof(WCHAR);
 
             buf.resize(new_size + 7);
 
@@ -426,7 +426,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"supersede", [&]() { test_supersede(dir); } },
         { u"overwrite", [&]() { test_overwrite(dir); } },
         { u"io", [&]() { test_io(token.get(), dir); } },
-        { u"mmap", [&]() { test_mmap(dir); } }
+        { u"mmap", [&]() { test_mmap(dir); } },
+        { u"rename", [&]() { test_rename(dir); } }
     };
 
     bool first = true;
@@ -478,13 +479,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     // FIXME - EAs
     // FIXME - FILE_NO_EA_KNOWLEDGE
-
-    // FIXME - renaming (check names before and after)
-    // FIXME - moving
-    // FIXME - renaming by overwrite (if different case, will be filename be old or new?)
-    // FIXME - POSIX renames
-    // FIXME - FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
-    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
     // FIXME - POSIX deletion

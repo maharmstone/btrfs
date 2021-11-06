@@ -3972,6 +3972,8 @@ unique_handle create_file(const std::u16string_view& path, ACCESS_MASK access, U
 template<typename T>
 void check_dir_entry(const std::u16string& dir, const std::u16string_view& name,
                      const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
+template<typename T>
+std::vector<varbuf<T>> query_dir(const std::u16string& dir, std::u16string_view filter);
 
 void test(const std::string& msg, const std::function<void()>& func);
 void exp_status(const std::function<void()>& func, NTSTATUS Status);
@@ -3998,3 +4000,6 @@ std::vector<uint8_t> read_file(HANDLE h, ULONG len, std::optional<uint64_t> offs
 
 // mmap.cpp
 void test_mmap(const std::u16string& dir);
+
+// rename.cpp
+void test_rename(const std::u16string& dir);
