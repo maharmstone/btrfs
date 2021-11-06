@@ -24,6 +24,26 @@ static void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
+static void set_rename_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, const u16string_view& filename) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf(offsetof(FILE_RENAME_INFORMATION_EX, FileName) + (filename.length() * sizeof(char16_t)));
+    auto& fri = *(FILE_RENAME_INFORMATION_EX*)buf.data();
+
+    fri.Flags = flags;
+    fri.RootDirectory = root_dir;
+    fri.FileNameLength = filename.length() * sizeof(char16_t);
+    memcpy(fri.FileName, filename.data(), fri.FileNameLength);
+
+    Status = NtSetInformationFile(h, &iosb, &fri, buf.size(), FileRenameInformationEx);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
 void test_rename(const u16string& dir) {
     unique_handle h, h2;
 
@@ -425,8 +445,136 @@ void test_rename(const u16string& dir) {
     // FIXME - permissions
     // FIXME - moving
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+}
+
+void test_rename_ex(const u16string& dir) {
+    unique_handle h, h2;
+
+    // FileRenameInformationEx introduced with Windows 10 1709
+
+    test("Create file 1", [&]() {
+        create_file(dir + u"\\renamefile7a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\renamefile7b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming file 2 to file 1 without FILE_RENAME_REPLACE_IF_EXISTS set", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\renamefile7a");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Rename file 2 to file 1 with FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefile7a");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamefile7a";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamefile7a\".");
+        });
+
+        test("Check directory entry", [&]() {
+            u16string_view name = u"renamefile4a";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        h.reset();
+    }
+
+    test("Create file 1", [&]() {
+        h2 = create_file(dir + u"\\renamefile8a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\renamefile8b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming file 2 to file 1 without FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\renamefile8a");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Try renaming file 2 to file 1 with FILE_RENAME_REPLACE_IF_EXISTS and file 1 open", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefile8a");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    h2.reset();
+
+    test("Create file 1", [&]() {
+        create_file(dir + u"\\renamefile9a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\renamefile9b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming file 2 to file 1 uppercase without FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\RENAMEFILE9A");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Rename file 2 to file 1 uppercase with FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\RENAMEFILE9A");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\RENAMEFILE9A";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\RENAMEFILE9A\".");
+        });
+
+        test("Check directory entry", [&]() {
+            u16string_view name = u"RENAMEFILE9A";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        h.reset();
+    }
+
     // FIXME - FILE_RENAME_POSIX_SEMANTICS
-    // FIXME - FILE_RENAME_REPLACE_IF_EXISTS
     // FIXME - FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
 
     // FIXME - FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE

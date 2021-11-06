@@ -114,11 +114,26 @@ NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event OPTIONAL, PIO_APC_
 #define FILE_USE_FILE_POINTER_POSITION 0xfffffffe
 #define FILE_WRITE_TO_END_OF_FILE 0xffffffff
 
+#define FILE_RENAME_REPLACE_IF_EXISTS 0x00000001
+
 typedef struct _FILE_FS_DRIVER_PATH_INFORMATION {
     BOOLEAN DriverInPath;
     ULONG DriverNameLength;
     WCHAR DriverName[1];
 } FILE_FS_DRIVER_PATH_INFORMATION, *PFILE_FS_DRIVER_PATH_INFORMATION;
+
+// should be called FILE_RENAME_INFORMATION, version in mingw is outdated
+typedef struct _FILE_RENAME_INFORMATION_EX {
+    union {
+        BOOLEAN ReplaceIfExists;
+        ULONG Flags;
+    };
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
+
+#define FileRenameInformationEx ((FILE_INFORMATION_CLASS)65)
 
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
@@ -4003,3 +4018,4 @@ void test_mmap(const std::u16string& dir);
 
 // rename.cpp
 void test_rename(const std::u16string& dir);
+void test_rename_ex(const std::u16string& dir);
