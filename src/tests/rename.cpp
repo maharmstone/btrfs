@@ -1116,7 +1116,40 @@ void test_rename(const u16string& dir) {
         }
     }
 
-    // FIXME - overwriting readonly file
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefile22a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create readonly file", [&]() {
+            create_file(dir + u"\\renamefile22b", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Try to overwrite readonly file", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, dir + u"\\renamefile22b");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefile23a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create system file", [&]() {
+            create_file(dir + u"\\renamefile23b", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_SYSTEM, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Overwrite system file", [&]() {
+            set_rename_information(h.get(), true, nullptr, dir + u"\\renamefile23b");
+        });
+
+        h.reset();
+    }
+
     // FIXME - overwriting mapped file
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
