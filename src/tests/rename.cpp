@@ -1151,6 +1151,82 @@ void test_rename(const u16string& dir) {
     }
 
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefile24", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        struct {
+            u16string name;
+            string desc;
+        } invalid_names[] = {
+            { u"/", "slash" },
+            { u":", "colon" },
+            { u"<", "less than" },
+            { u">", "greater than" },
+            { u"\"", "quote" },
+            { u"|", "pipe" },
+            { u"?", "question mark" },
+            { u"*", "asterisk" }
+        };
+
+        for (const auto& n : invalid_names) {
+            test("Try renaming to invalid name (" + n.desc + ")", [&]() {
+                auto fn = dir + u"\\renamefile24" + n.name;
+
+                exp_status([&]() {
+                    set_rename_information(h.get(), false, nullptr, fn);
+                }, STATUS_OBJECT_NAME_INVALID);
+            });
+        }
+
+        bool is_ntfs = fstype == fs_type::ntfs;
+
+        test("Rename to file with more than 255 UTF-8 characters", [&]() {
+            auto fn = dir + u"\\rename24";
+
+            for (unsigned int i = 0; i < 64; i++) {
+                fn += u"\U0001f525";
+            }
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        test("Rename to file with WTF-16 (1)", [&]() {
+            auto fn = dir + u"\\rename24";
+
+            fn += (char16_t)0xd83d;
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        test("Rename to file with WTF-16 (2)", [&]() {
+            auto fn = dir + u"\\rename24";
+
+            fn += (char16_t)0xdd25;
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        test("Rename to file with WTF-16 (3)", [&]() {
+            auto fn = dir + u"\\rename24";
+
+            fn += (char16_t)0xdd25;
+            fn += (char16_t)0xd83d;
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        h.reset();
+    }
 
     // FIXME - does SD change when file moved across directories?
     // FIXME - check can't rename root directory?
