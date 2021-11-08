@@ -4023,3 +4023,4 @@ void test_mmap(const std::u16string& dir);
 // rename.cpp
 void test_rename(const std::u16string& dir);
 void test_rename_ex(const std::u16string& dir);
+void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);

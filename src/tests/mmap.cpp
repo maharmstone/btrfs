@@ -323,4 +323,39 @@ void test_mmap(const u16string& dir) {
 
         h.reset();
     }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap8", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA | DELETE,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        unique_handle sect;
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
+        });
+
+        if (sect) {
+            test("Map view", [&]() {
+                map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+            });
+        }
+
+        h.reset();
+
+        test("Create file 2", [&]() {
+            h = create_file(dir + u"\\mmap8a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        if (h) {
+            test("Overwrite mapped file", [&]() {
+                set_rename_information(h.get(), true, nullptr, dir + u"\\mmap8");
+            });
+        }
+    }
 }

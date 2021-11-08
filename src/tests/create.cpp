@@ -705,4 +705,5 @@ void test_create(const u16string& dir) {
     // FIXME - permissions needed to create file or subdirectory
     // FIXME - permissions needed when overwriting
     // FIXME - what exactly does FILE_DELETE_CHILD do?
+    // FIXME - overwriting mapped file
 }
