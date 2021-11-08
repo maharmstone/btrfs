@@ -1006,10 +1006,121 @@ void test_rename(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - permissions on destination when overwriting
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\renamedir19", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set directory permissions", [&]() {
+            set_dacl(h.get(), SYNCHRONIZE | FILE_TRAVERSE | FILE_ADD_FILE);
+        });
+
+        h.reset();
+
+        test("Create file 1", [&]() {
+            h = create_file(dir + u"\\renamedir19\\file1", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        if (h) {
+            test("Create file 2", [&]() {
+                h2 = create_file(dir + u"\\renamedir19\\file2", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            });
+
+            if (h2) {
+                test("Clear file 2 permissions", [&]() {
+                    set_dacl(h2.get(), 0);
+                });
+
+                h2.reset();
+
+                test("Try to overwrite file 2 with file 1", [&]() {
+                    exp_status([&]() {
+                        set_rename_information(h.get(), true, nullptr, dir + u"\\renamedir19\\file2");
+                    }, STATUS_ACCESS_DENIED);
+                });
+            }
+
+            h.reset();
+        }
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\renamedir20", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set directory permissions (inc. FILE_DELETE_CHILD)", [&]() {
+            set_dacl(h.get(), SYNCHRONIZE | FILE_TRAVERSE | FILE_ADD_FILE | FILE_DELETE_CHILD);
+        });
+
+        h.reset();
+
+        test("Create file 1", [&]() {
+            h = create_file(dir + u"\\renamedir20\\file1", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        if (h) {
+            test("Create file 2", [&]() {
+                h2 = create_file(dir + u"\\renamedir20\\file2", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            });
+
+            if (h2) {
+                test("Clear file 2 permissions", [&]() {
+                    set_dacl(h2.get(), 0);
+                });
+
+                h2.reset();
+
+                test("Overwrite file 2 with file 1", [&]() {
+                    set_rename_information(h.get(), true, nullptr, dir + u"\\renamedir20\\file2");
+                });
+            }
+
+            h.reset();
+        }
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\renamedir21", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set directory permissions", [&]() {
+            set_dacl(h.get(), SYNCHRONIZE | FILE_TRAVERSE | FILE_ADD_FILE);
+        });
+
+        h.reset();
+
+        test("Create file 1", [&]() {
+            h = create_file(dir + u"\\renamedir21\\file1", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        if (h) {
+            test("Create file 2", [&]() {
+                h2 = create_file(dir + u"\\renamedir21\\file2", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            });
+
+            if (h2) {
+                test("Set file 2 permissions to DELETE", [&]() {
+                    set_dacl(h2.get(), DELETE);
+                });
+
+                h2.reset();
+
+                test("Overwrite file 2 with file 1", [&]() {
+                    set_rename_information(h.get(), true, nullptr, dir + u"\\renamedir21\\file2");
+                });
+            }
+
+            h.reset();
+        }
+    }
+
     // FIXME - overwriting readonly file
+    // FIXME - overwriting mapped file
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
+    // FIXME - does SD change when file moved across directories?
     // FIXME - check can't rename root directory?
 }
 
