@@ -472,6 +472,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         }
     }
 
+    // FIXME - opening file by ID
+
     // FIXME - check with case-sensitive flag set
 
     // FIXME - reparse points (opening, opening following link, creating, setting, querying tag)
@@ -516,6 +518,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - setting volume label
 
     // FIXME - locking
+
+    // FIXME - object IDs
 
     // FIXME - traverse checking
 
