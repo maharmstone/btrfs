@@ -450,6 +450,15 @@ void test_rename(const u16string& dir) {
     });
 
     if (h) {
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamefile7";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamefile7\".");
+        });
+
         test("Check directory entry", [&]() {
             u16string_view name = u"renamefile7";
 
@@ -469,6 +478,15 @@ void test_rename(const u16string& dir) {
 
         test("Move file to subdir", [&]() {
             set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir7\\renamefile7a");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir7\\renamefile7a";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir7\\renamefile7a\".");
         });
 
         test("Check old directory entry gone", [&]() {
@@ -523,7 +541,7 @@ void test_rename(const u16string& dir) {
 
     if (h) {
         test("Check directory entry", [&]() {
-            u16string_view name = u"renamedir8";
+            u16string_view name = u"renamedir8a";
 
             auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
 
@@ -539,8 +557,26 @@ void test_rename(const u16string& dir) {
                 throw runtime_error("FileName did not match.");
         });
 
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir8a";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir8a\".");
+        });
+
         test("Move directory to subdir", [&]() {
             set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir8\\renamedir8b");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir8\\renamedir8b";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir8\\renamedir8b\".");
         });
 
         test("Check old directory entry gone", [&]() {
@@ -579,11 +615,167 @@ void test_rename(const u16string& dir) {
                 set_rename_information(h.get(), true, nullptr, dir + u"\\renamefile8");
             }, STATUS_ACCESS_DENIED);
         });
+
+        h.reset();
     }
 
-    // FIXME - RootDirectory
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefile9", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\renamedir9", FILE_LIST_DIRECTORY | FILE_ADD_FILE, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Check directory entry", [&]() {
+            u16string_view name = u"renamefile9";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamefile9";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamefile9\".");
+        });
+
+        test("Move file via RootDirectory handle", [&]() {
+            set_rename_information(h.get(), false, h2.get(), u"renamefile9");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir9\\renamefile9";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir9\\renamefile9\".");
+        });
+
+        test("Check old directory entry gone", [&]() {
+            u16string_view name = u"renamefile9";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+
+        test("Try checking new directory entry with handle still open", [&]() {
+            u16string_view name = u"renamefile9";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir9", name);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h2.reset();
+
+        test("Check new directory entry", [&]() {
+            u16string_view name = u"renamefile9";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir9", name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\renamedir10", FILE_LIST_DIRECTORY | FILE_ADD_FILE, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamedir10\\renamefile10", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try checking directory entry with handle open", [&]() {
+            u16string_view name = u"renamefile10";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir10", name);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir10\\renamefile10";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir10\\renamefile10\".");
+        });
+
+        test("Rename file via RootDirectory handle", [&]() {
+            set_rename_information(h.get(), false, h2.get(), u"renamefile10a");
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamedir10\\renamefile10a";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamedir10\\renamefile10a\".");
+        });
+
+        h2.reset();
+
+        test("Check old directory entry gone", [&]() {
+            u16string_view name = u"renamefile10";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir10", name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+
+        test("Check new directory entry", [&]() {
+            u16string_view name = u"renamefile10a";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir10", name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+    }
+
     // FIXME - permissions
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+
+    // FIXME - check can't rename root directory?
 }
 
 void test_rename_ex(const u16string& dir) {
