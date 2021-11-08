@@ -2,7 +2,7 @@
 
 using namespace std;
 
-string u16string_to_string(const u16string_view& sv);
+static const uint8_t sid_everyone[] = { 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 }; // S-1-1-0
 
 static void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const u16string_view& filename) {
     NTSTATUS Status;
@@ -42,6 +42,40 @@ static void set_rename_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, co
 
     if (iosb.Information != 0)
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
+static void set_dacl(HANDLE h, ACCESS_MASK access) {
+    NTSTATUS Status;
+    SECURITY_DESCRIPTOR sd;
+    array<uint8_t, sizeof(ACL) + offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone)> aclbuf;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+        throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+    auto& acl = *(ACL*)aclbuf.data();
+
+    if (!InitializeAcl(&acl, aclbuf.size(), ACL_REVISION))
+        throw formatted_error("InitializeAcl failed (error {})", GetLastError());
+
+    if (access != 0) {
+        acl.AceCount = 1;
+
+        auto& ace = *(ACCESS_ALLOWED_ACE*)((uint8_t*)aclbuf.data() + sizeof(ACL));
+
+        ace.Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+        ace.Header.AceFlags = 0;
+        ace.Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone);
+        ace.Mask = access;
+        memcpy(&ace.SidStart, sid_everyone, sizeof(sid_everyone));
+    }
+
+    if (!SetSecurityDescriptorDacl(&sd, true, &acl, false))
+        throw formatted_error("SetSecurityDescriptorDacl failed (error {})", GetLastError());
+
+    Status = NtSetSecurityObject(h, DACL_SECURITY_INFORMATION, &sd);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
 }
 
 void test_rename(const u16string& dir) {
@@ -772,7 +806,131 @@ void test_rename(const u16string& dir) {
         });
     }
 
-    // FIXME - permissions
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\renamedir11", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamedir11\\renamefile11", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Set directory permissions", [&]() {
+            set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_FILE);
+        });
+
+        h2.reset();
+
+        test("Rename file", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir11\\renamefile11a");
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\renamedir12", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamedir12\\renamefile12", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Clear directory permissions", [&]() {
+            set_dacl(h2.get(), 0);
+        });
+
+        h2.reset();
+
+        test("Try to rename file", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir12\\renamefile12a");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\renamedir13", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create subdir", [&]() {
+        h = create_file(dir + u"\\renamedir13\\renamesubdir13", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Set directory permissions", [&]() {
+            set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_SUBDIRECTORY);
+        });
+
+        h2.reset();
+
+        test("Rename subdir", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir13\\renamesubdir13a");
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\renamedir14", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create subdir", [&]() {
+        h = create_file(dir + u"\\renamedir14\\renamesubdir14", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Clear directory permissions", [&]() {
+            set_dacl(h2.get(), 0);
+        });
+
+        h2.reset();
+
+        test("Try to rename subdir", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir14\\renamefile14a");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefile15", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming file without DELETE access", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamefile15a");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\renamedir16", FILE_LIST_DIRECTORY, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try renaming directory without DELETE access", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir16a");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - moving directory with permissions
+    // FIXME - moving directory without permissions on parents
+    // FIXME - moving directory when not opened with correct permissions
+    // FIXME - permissions on destination when overwriting
+
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - check can't rename root directory?

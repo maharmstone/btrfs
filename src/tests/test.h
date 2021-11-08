@@ -102,6 +102,10 @@ NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event OPTIONAL, PIO_APC_
                               PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,
                               BOOLEAN ExclusiveLock);
 
+extern "C"
+NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                       PSECURITY_DESCRIPTOR SecurityDescriptor);
+
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
