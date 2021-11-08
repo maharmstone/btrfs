@@ -701,4 +701,8 @@ void test_create(const u16string& dir) {
     // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - test all the variations of NtQueryInformationFile
     // FIXME - test NtOpenFile
+
+    // FIXME - permissions needed to create file or subdirectory
+    // FIXME - permissions needed when overwriting
+    // FIXME - what exactly does FILE_DELETE_CHILD do?
 }
