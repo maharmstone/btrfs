@@ -441,9 +441,148 @@ void test_rename(const u16string& dir) {
         h.reset();
     }
 
+    test("Create directory", [&]() {
+        create_file(dir + u"\\renamedir7", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefile7", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check directory entry", [&]() {
+            u16string_view name = u"renamefile7";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Move file to subdir", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir7\\renamefile7a");
+        });
+
+        test("Check old directory entry gone", [&]() {
+            u16string_view name = u"renamefile7";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+
+        test("Check new directory entry", [&]() {
+            u16string_view name = u"renamefile7a";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir7", name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Try overwriting directory with file without ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir7");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Try overwriting directory with file with ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, dir + u"\\renamedir7");
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Create directory 1", [&]() {
+        create_file(dir + u"\\renamedir8", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create directory 2", [&]() {
+        h = create_file(dir + u"\\renamedir8a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        create_file(dir + u"\\renamefile8", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check directory entry", [&]() {
+            u16string_view name = u"renamedir8";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Move directory to subdir", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir8\\renamedir8b");
+        });
+
+        test("Check old directory entry gone", [&]() {
+            u16string_view name = u"renamedir8a";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+
+        test("Check new directory entry", [&]() {
+            u16string_view name = u"renamedir8b";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir + u"\\renamedir8", name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Try overwriting file with directory without ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamefile8");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Try overwriting file with directory with ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, dir + u"\\renamefile8");
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
     // FIXME - RootDirectory
     // FIXME - permissions
-    // FIXME - moving
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 }
 
