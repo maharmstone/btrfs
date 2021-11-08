@@ -453,35 +453,35 @@ void test_rename_ex(const u16string& dir) {
     // FileRenameInformationEx introduced with Windows 10 1709
 
     test("Create file 1", [&]() {
-        create_file(dir + u"\\renamefile7a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        create_file(dir + u"\\renamefileex1a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     test("Create file 2", [&]() {
-        h = create_file(dir + u"\\renamefile7b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        h = create_file(dir + u"\\renamefileex1b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h) {
         test("Try renaming file 2 to file 1 without FILE_RENAME_REPLACE_IF_EXISTS set", [&]() {
             exp_status([&]() {
-                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\renamefile7a");
+                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\renamefileex1a");
             }, STATUS_OBJECT_NAME_COLLISION);
         });
 
         test("Rename file 2 to file 1 with FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
-            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefile7a");
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefileex1a");
         });
 
         test("Check name", [&]() {
             auto fn = query_file_name_information(h.get());
 
-            static const u16string_view ends_with = u"\\renamefile7a";
+            static const u16string_view ends_with = u"\\renamefileex1a";
 
             if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
-                throw runtime_error("Name did not end with \"\\renamefile7a\".");
+                throw runtime_error("Name did not end with \"\\renamefileex1a\".");
         });
 
         test("Check directory entry", [&]() {
-            u16string_view name = u"renamefile4a";
+            u16string_view name = u"renamefileex1a";
 
             auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
 
@@ -501,23 +501,23 @@ void test_rename_ex(const u16string& dir) {
     }
 
     test("Create file 1", [&]() {
-        h2 = create_file(dir + u"\\renamefile8a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        h2 = create_file(dir + u"\\renamefileex2a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     test("Create file 2", [&]() {
-        h = create_file(dir + u"\\renamefile8b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        h = create_file(dir + u"\\renamefileex2b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h) {
         test("Try renaming file 2 to file 1 without FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
             exp_status([&]() {
-                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\renamefile8a");
+                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\renamefileex2a");
             }, STATUS_OBJECT_NAME_COLLISION);
         });
 
         test("Try renaming file 2 to file 1 with FILE_RENAME_REPLACE_IF_EXISTS and file 1 open", [&]() {
             exp_status([&]() {
-                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefile8a");
+                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefileex2a");
             }, STATUS_ACCESS_DENIED);
         });
 
@@ -527,35 +527,35 @@ void test_rename_ex(const u16string& dir) {
     h2.reset();
 
     test("Create file 1", [&]() {
-        create_file(dir + u"\\renamefile9a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        create_file(dir + u"\\renamefileex3a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     test("Create file 2", [&]() {
-        h = create_file(dir + u"\\renamefile9b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        h = create_file(dir + u"\\renamefileex3b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h) {
         test("Try renaming file 2 to file 1 uppercase without FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
             exp_status([&]() {
-                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\RENAMEFILE9A");
+                set_rename_information_ex(h.get(), 0, nullptr, dir + u"\\RENAMEFILEEX3A");
             }, STATUS_OBJECT_NAME_COLLISION);
         });
 
         test("Rename file 2 to file 1 uppercase with FILE_RENAME_REPLACE_IF_EXISTS", [&]() {
-            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\RENAMEFILE9A");
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\RENAMEFILEEX3A");
         });
 
         test("Check name", [&]() {
             auto fn = query_file_name_information(h.get());
 
-            static const u16string_view ends_with = u"\\RENAMEFILE9A";
+            static const u16string_view ends_with = u"\\RENAMEFILEEX3A";
 
             if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
-                throw runtime_error("Name did not end with \"\\RENAMEFILE9A\".");
+                throw runtime_error("Name did not end with \"\\RENAMEFILEEX3A\".");
         });
 
         test("Check directory entry", [&]() {
-            u16string_view name = u"RENAMEFILE9A";
+            u16string_view name = u"RENAMEFILEEX3A";
 
             auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
 
