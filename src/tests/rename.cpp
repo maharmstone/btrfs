@@ -926,11 +926,88 @@ void test_rename(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - moving directory with permissions
-    // FIXME - moving directory without permissions on parents
-    // FIXME - moving directory when not opened with correct permissions
-    // FIXME - permissions on destination when overwriting
+    test("Create directory 1", [&]() {
+        h2 = create_file(dir + u"\\renamedir17a", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamedir17a\\file", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Clear directory 1 permissions", [&]() {
+            set_dacl(h2.get(), 0);
+        });
+
+        h2.reset();
+
+        test("Create directory 2", [&]() {
+            h2 = create_file(dir + u"\\renamedir17b", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        if (h2) {
+            test("Set directory 2 permissions", [&]() {
+                set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_FILE);
+            });
+
+            h2.reset();
+        }
+
+        test("Move file to directory 2", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir17b\\file");
+        });
+
+        test("Try to move back to directory 1", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir17a\\file");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create directory 1", [&]() {
+        h2 = create_file(dir + u"\\renamedir18a", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create subdir", [&]() {
+        h = create_file(dir + u"\\renamedir18a\\subdir", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Clear directory 1 permissions", [&]() {
+            set_dacl(h2.get(), 0);
+        });
+
+        h2.reset();
+
+        test("Create directory 2", [&]() {
+            h2 = create_file(dir + u"\\renamedir18b", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        if (h2) {
+            test("Set directory 2 permissions", [&]() {
+                set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_SUBDIRECTORY);
+            });
+
+            h2.reset();
+        }
+
+        test("Move file to directory 2", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir18b\\subdir");
+        });
+
+        test("Try to move back to directory 1", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamedir18a\\subdir");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - permissions on destination when overwriting
+    // FIXME - overwriting readonly file
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - check can't rename root directory?
