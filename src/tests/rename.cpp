@@ -1359,8 +1359,42 @@ void test_rename_ex(const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefileex4a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create readonly file", [&]() {
+            create_file(dir + u"\\renamefileex4b", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Try to overwrite readonly file", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefileex4b");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\renamefileex5a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create readonly file", [&]() {
+            create_file(dir + u"\\renamefileex5b", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Overwrite readonly file using FILE_RENAME_IGNORE_READONLY_ATTRIBUTE", [&]() {
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_IGNORE_READONLY_ATTRIBUTE,
+                                        nullptr, dir + u"\\renamefileex5b");
+        });
+
+        h.reset();
+    }
+
     // FIXME - FILE_RENAME_POSIX_SEMANTICS
-    // FIXME - FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
 
     // FIXME - FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE
     // FIXME - FILE_RENAME_SUPPRESS_STORAGE_RESERVE_INHERITANCE
