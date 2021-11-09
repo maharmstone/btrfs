@@ -409,8 +409,20 @@ void disable_token_privileges(HANDLE token) {
         throw ntstatus_error(Status);
 }
 
-static void write_console(const u16string_view& str) {
-    WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), str.data(), str.length(), nullptr, nullptr);
+static string u16string_to_string(const u16string_view& sv) {
+    if (sv.empty())
+        return "";
+
+    auto len = WideCharToMultiByte(CP_ACP, 0, (WCHAR*)sv.data(), sv.length(), nullptr, 0, nullptr, nullptr);
+    if (len == 0)
+        throw formatted_error("WideCharToMultiByte failed (error {})", GetLastError());
+
+    string s(len, 0);
+
+    if (WideCharToMultiByte(CP_ACP, 0, (WCHAR*)sv.data(), sv.length(), s.data(), s.length(), nullptr, nullptr) == 0)
+        throw formatted_error("WideCharToMultiByte failed (error {})", GetLastError());
+
+    return s;
 }
 
 static void do_tests(const u16string_view& name, const u16string& dir) {
@@ -446,11 +458,9 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
             }
 
             if (!first)
-                write_console(u"\n");
+                fmt::print("\n");
 
-            write_console(u"Running test ");
-            write_console(tf.name);
-            write_console(u"\n");
+            fmt::print("Running test {}\n", u16string_to_string(tf.name));
 
             if (col)
                 SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), csbi.wAttributes);
@@ -646,22 +656,6 @@ static u16string get_driver_path(const u16string& driver) {
         path = path.substr(4);
 
     return path;
-}
-
-static string u16string_to_string(const u16string_view& sv) {
-    if (sv.empty())
-        return "";
-
-    auto len = WideCharToMultiByte(CP_ACP, 0, (WCHAR*)sv.data(), sv.length(), nullptr, 0, nullptr, nullptr);
-    if (len == 0)
-        throw formatted_error("WideCharToMultiByte failed (error {})", GetLastError());
-
-    string s(len, 0);
-
-    if (WideCharToMultiByte(CP_ACP, 0, (WCHAR*)sv.data(), sv.length(), s.data(), s.length(), nullptr, nullptr) == 0)
-        throw formatted_error("WideCharToMultiByte failed (error {})", GetLastError());
-
-    return s;
 }
 
 static string get_version(const u16string& fn) {
