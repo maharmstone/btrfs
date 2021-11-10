@@ -1227,6 +1227,26 @@ void test_rename(const u16string& dir) {
         h.reset();
     }
 
+    test("Create directory 1", [&]() {
+        h = create_file(dir + u"\\renamedir25a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create directory 2", [&]() {
+        h2 = create_file(dir + u"\\renamedir25b", MAXIMUM_ALLOWED, 0, FILE_SHARE_DELETE,
+                         FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try to overwrite directory 2", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, dir + u"\\renamedir25b");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
     // FIXME - does SD change when file moved across directories?
     // FIXME - check can't rename root directory?
 }
