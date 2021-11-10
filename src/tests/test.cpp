@@ -494,7 +494,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - EAs
     // FIXME - FILE_NO_EA_KNOWLEDGE
 
-    // FIXME - hard links
+    // FIXME - hard links (inc. deletion)
     // FIXME - linking by overwrite
     // FIXME - POSIX hard links
     // FIXME - FILE_LINK_IGNORE_READONLY_ATTRIBUTE

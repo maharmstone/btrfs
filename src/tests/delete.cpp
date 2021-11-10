@@ -164,7 +164,7 @@ void test_delete(const u16string& dir) {
     });
 
     test("Create file", [&]() {
-        h2 = create_file(dir + u"\\deletedir3\\file", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        h2 = create_file(dir + u"\\deletedir3\\file", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h && h2) {
@@ -201,7 +201,96 @@ void test_delete(const u16string& dir) {
         });
     }
 
-    // FIXME - deletion (opening doomed file, commuting sentence)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\deletefile4", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set deletion flag on file", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        test("Try to reopen file marked for deletion", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\deletefile4", DELETE, 0, FILE_SHARE_DELETE, FILE_OPEN, 0, FILE_OPENED);
+            }, STATUS_DELETE_PENDING);
+        });
+
+        test("Clear deletion flag on file", [&]() {
+            set_disposition_information(h.get(), false);
+        });
+
+        test("Reopen file now no longer marked for deletion", [&]() {
+            h2 = create_file(dir + u"\\deletefile4", DELETE, 0, FILE_SHARE_DELETE, FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        test("Set deletion flag again", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        h.reset();
+
+        test("Check directory entry after first handle closed", [&]() {
+            u16string_view name = u"deletefile4";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        h2.reset();
+
+        test("Check directory entry gone after second handle closed", [&]() {
+            u16string_view name = u"deletefile4";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\deletefile5", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set deletion flag on file", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        test("Clear deletion flag on file", [&]() {
+            set_disposition_information(h.get(), false);
+        });
+
+        h.reset();
+
+        test("Check directory entry", [&]() {
+            u16string_view name = u"deletefile5";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+    }
+
     // FIXME - permissions
     // FIXME - what happens if ADS still open?
     // FIXME - FILE_SHARE_DELETE
