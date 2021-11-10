@@ -484,6 +484,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     }
 
     // FIXME - opening file by ID
+    // FIXME - check can't delete files opened by ID
 
     // FIXME - check with case-sensitive flag set
 

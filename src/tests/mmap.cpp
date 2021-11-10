@@ -340,4 +340,35 @@ void test_mmap(const u16string& dir) {
             });
         }
     }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap9", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA | DELETE,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Mark file for deletion", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        unique_handle sect;
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
+        });
+
+        if (sect) {
+            test("Map view", [&]() {
+                map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+            });
+        }
+
+        h.reset();
+    }
+
+    // FIXME - test deletion and overwrite with SEC_IMAGE mappings (will need to create minimal PE file)
 }

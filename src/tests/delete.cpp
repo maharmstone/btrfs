@@ -600,8 +600,6 @@ void test_delete(const u16string& dir) {
         });
     }
 
-    // FIXME - can we map file marked for deletion?
-    // FIXME - check can't delete files opened by ID
     // FIXME - POSIX deletion (inc. on mapped file)
     // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
     // FIXME - FILE_DISPOSITION_ON_CLOSE
