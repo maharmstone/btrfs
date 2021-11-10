@@ -220,6 +220,13 @@ void test_delete(const u16string& dir) {
             set_disposition_information(h.get(), false);
         });
 
+        test("Check standard information again", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
         test("Reopen file now no longer marked for deletion", [&]() {
             h2 = create_file(dir + u"\\deletefile4", DELETE, 0, FILE_SHARE_DELETE, FILE_OPEN, 0, FILE_OPENED);
         });
@@ -391,8 +398,140 @@ void test_delete(const u16string& dir) {
         });
     }
 
-    // FIXME - FILE_DELETE_ON_CLOSE
+    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\deletefile8", DELETE, 0, 0, FILE_CREATE,
+                        FILE_DELETE_ON_CLOSE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check standard information on file", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        h.reset();
+
+        test("Check directory entry gone after file closed", [&]() {
+            u16string_view name = u"deletefile8";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
+    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\deletefile9", DELETE, 0, 0, FILE_CREATE,
+                        FILE_DELETE_ON_CLOSE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        h.reset();
+
+        test("Check directory entry gone after handle closed", [&]() {
+            u16string_view name = u"deletefile9";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
+    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\deletefile10", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE,
+                        FILE_DELETE_ON_CLOSE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to open second handle to file without FILE_SHARE_DELETE", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\deletefile10", FILE_READ_DATA, 0, 0, FILE_OPEN,
+                            0, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        test("Open second handle to file with FILE_SHARE_DELETE", [&]() {
+            h2 = create_file(dir + u"\\deletefile10", DELETE, 0, FILE_SHARE_DELETE,
+                             FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        test("Check standard information on second handle", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        h.reset();
+
+        test("Check standard information after first handle closed", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Clear deletion flag", [&]() {
+            set_disposition_information(h2.get(), false); // ignored
+        });
+
+        test("Check standard information again", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Try to open third handle to file", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\deletefile10", FILE_READ_DATA, 0, 0, FILE_OPEN,
+                            FILE_SHARE_DELETE, FILE_OPENED);
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h2.reset();
+
+        test("Check directory entry still there after both handles closed", [&]() {
+            u16string_view name = u"deletefile10";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+    }
+
+    test("Create readonly file", [&]() {
+        create_file(dir + u"\\deletefile11", FILE_READ_DATA, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                    0, FILE_CREATED);
+    });
+
+    test("Try to open readonly file with FILE_DELETE_ON_CLOSE", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\deletefile11", DELETE, 0, 0, FILE_OPEN,
+                        FILE_DELETE_ON_CLOSE, FILE_OPENED);
+        }, STATUS_CANNOT_DELETE);
+    });
+
     // FIXME - can we map file marked for deletion?
+    // FIXME - check can't delete files opened by ID
     // FIXME - POSIX deletion (inc. on mapped file)
     // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
     // FIXME - FILE_DISPOSITION_ON_CLOSE
