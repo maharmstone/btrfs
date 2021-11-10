@@ -4045,3 +4045,7 @@ void set_disposition_information(HANDLE h, bool delete_file);
 void test_rename(const std::u16string& dir);
 void test_rename_ex(HANDLE token, const std::u16string& dir);
 void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
+
+// delete.cpp
+void test_delete(const std::u16string& dir);
+void set_disposition_information(HANDLE h, bool delete_file);

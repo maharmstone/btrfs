@@ -440,7 +440,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"io", [&]() { test_io(token.get(), dir); } },
         { u"mmap", [&]() { test_mmap(dir); } },
         { u"rename", [&]() { test_rename(dir); } },
-        { u"rename_ex", [&]() { test_rename_ex(token.get(), dir); } }
+        { u"rename_ex", [&]() { test_rename_ex(token.get(), dir); } },
+        { u"delete", [&]() { test_delete(dir); } }
     };
 
     bool first = true;
@@ -493,13 +494,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - EAs
     // FIXME - FILE_NO_EA_KNOWLEDGE
 
-    // FIXME - deletion (file, empty directory, non-empty directory, opening doomed file, commuting sentence)
-    // FIXME - POSIX deletion
-    // FIXME - FILE_DELETE_ON_CLOSE
-    // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
-    // FIXME - FILE_DISPOSITION_ON_CLOSE
-    // FIXME - FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE
-
     // FIXME - hard links
     // FIXME - linking by overwrite
     // FIXME - POSIX hard links
@@ -532,6 +526,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - object IDs
 
     // FIXME - traverse checking
+
+    // FIXME - IO completions?
 
     // FIXME - reflink copies
     // FIXME - creating subvols

@@ -54,24 +54,6 @@ static void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive
         throw ntstatus_error(Status);
 }
 
-void set_disposition_information(HANDLE h, bool delete_file) {
-    NTSTATUS Status;
-    IO_STATUS_BLOCK iosb;
-    FILE_DISPOSITION_INFORMATION fdi;
-
-    fdi.DoDeleteFile = delete_file;
-
-    iosb.Information = 0xdeadbeef;
-
-    Status = NtSetInformationFile(h, &iosb, &fdi, sizeof(fdi), FileDispositionInformation);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != 0)
-        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
-}
-
 void test_mmap(const u16string& dir) {
     unique_handle h;
 
