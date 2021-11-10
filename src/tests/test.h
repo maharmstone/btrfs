@@ -113,12 +113,14 @@ NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION Secur
 
 #define FILE_WORD_ALIGNMENT 0x00000001
 
-#define SE_MANAGE_VOLUME_PRIVILEGE 28
+#define SE_CHANGE_NOTIFY_PRIVILEGE      23
+#define SE_MANAGE_VOLUME_PRIVILEGE      28
 
 #define FILE_USE_FILE_POINTER_POSITION 0xfffffffe
 #define FILE_WRITE_TO_END_OF_FILE 0xffffffff
 
 #define FILE_RENAME_REPLACE_IF_EXISTS         0x00000001
+#define FILE_RENAME_POSIX_SEMANTICS           0x00000002
 #define FILE_RENAME_IGNORE_READONLY_ATTRIBUTE 0x00000040
 
 typedef struct _FILE_FS_DRIVER_PATH_INFORMATION {
@@ -139,6 +141,19 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
 } FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
 
 #define FileRenameInformationEx ((FILE_INFORMATION_CLASS)65)
+
+typedef struct _FILE_LINK_ENTRY_INFORMATION {
+    ULONG NextEntryOffset;
+    LONGLONG ParentFileId;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_LINK_ENTRY_INFORMATION, *PFILE_LINK_ENTRY_INFORMATION;
+
+typedef struct _FILE_LINKS_INFORMATION {
+    ULONG BytesNeeded;
+    ULONG EntriesReturned;
+    FILE_LINK_ENTRY_INFORMATION Entry;
+} FILE_LINKS_INFORMATION, *PFILE_LINKS_INFORMATION;
 
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
@@ -3999,6 +4014,7 @@ void test(const std::string& msg, const std::function<void()>& func);
 void exp_status(const std::function<void()>& func, NTSTATUS Status);
 std::u16string query_file_name_information(HANDLE h);
 void disable_token_privileges(HANDLE token);
+std::string u16string_to_string(const std::u16string_view& sv);
 
 extern enum fs_type fstype;
 
@@ -4014,14 +4030,18 @@ void test_overwrite(const std::u16string& dir);
 // io.cpp
 void test_io(HANDLE token, const std::u16string& dir);
 std::vector<uint8_t> random_data(size_t len);
-void write_file(HANDLE h, std::span<uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
+void write_file(HANDLE h, std::span<const uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
 void set_end_of_file(HANDLE h, uint64_t eof);
 std::vector<uint8_t> read_file(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
 
+template<size_t N>
+void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES, N>& privs);
+
 // mmap.cpp
 void test_mmap(const std::u16string& dir);
+void set_disposition_information(HANDLE h, bool delete_file);
 
 // rename.cpp
 void test_rename(const std::u16string& dir);
-void test_rename_ex(const std::u16string& dir);
+void test_rename_ex(HANDLE token, const std::u16string& dir);
 void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);

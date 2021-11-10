@@ -54,7 +54,7 @@ static void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive
         throw ntstatus_error(Status);
 }
 
-static void set_disposition_information(HANDLE h, bool delete_file) {
+void set_disposition_information(HANDLE h, bool delete_file) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     FILE_DISPOSITION_INFORMATION fdi;

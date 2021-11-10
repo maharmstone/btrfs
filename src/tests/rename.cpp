@@ -1150,7 +1150,6 @@ void test_rename(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
     test("Create file", [&]() {
         h = create_file(dir + u"\\renamefile24", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
@@ -1232,7 +1231,55 @@ void test_rename(const u16string& dir) {
     // FIXME - check can't rename root directory?
 }
 
-void test_rename_ex(const u16string& dir) {
+vector<pair<int64_t, u16string>> query_links(HANDLE h) {
+    IO_STATUS_BLOCK iosb;
+    NTSTATUS Status;
+    FILE_LINKS_INFORMATION fli;
+    vector<pair<int64_t, u16string>> ret;
+
+    fli.BytesNeeded = 0;
+
+    Status = NtQueryInformationFile(h, &iosb, &fli, sizeof(fli), FileHardLinkInformation);
+
+    if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW)
+        throw ntstatus_error(Status);
+
+    if (fli.BytesNeeded == 0)
+        throw runtime_error("fli.BytesNeeded was 0");
+
+    vector<uint8_t> buf(fli.BytesNeeded);
+
+    auto& fli2 = *reinterpret_cast<FILE_LINKS_INFORMATION*>(buf.data());
+
+    Status = NtQueryInformationFile(h, &iosb, &fli2, buf.size(), FileHardLinkInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != buf.size())
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, buf.size());
+
+    ret.resize(fli2.EntriesReturned);
+
+    auto flei = &fli2.Entry;
+    for (unsigned int i = 0; i < fli2.EntriesReturned; i++) {
+        auto& p = ret[i];
+
+        p.first = flei->ParentFileId;
+
+        p.second.resize(flei->FileNameLength);
+        memcpy(p.second.data(), flei->FileName, flei->FileNameLength * sizeof(char16_t));
+
+        if (flei->NextEntryOffset == 0)
+            break;
+
+        flei = (FILE_LINK_ENTRY_INFORMATION*)((uint8_t*)flei + flei->NextEntryOffset);
+    }
+
+    return ret;
+}
+
+void test_rename_ex(HANDLE token, const u16string& dir) {
     unique_handle h, h2;
 
     // FileRenameInformationEx introduced with Windows 10 1709
@@ -1388,13 +1435,167 @@ void test_rename_ex(const u16string& dir) {
 
         test("Overwrite readonly file using FILE_RENAME_IGNORE_READONLY_ATTRIBUTE", [&]() {
             set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_IGNORE_READONLY_ATTRIBUTE,
-                                        nullptr, dir + u"\\renamefileex5b");
+                                      nullptr, dir + u"\\renamefileex5b");
         });
 
         h.reset();
     }
 
-    // FIXME - FILE_RENAME_POSIX_SEMANTICS
+    // traverse privilege needed to query hard links
+    test("Add SeChangeNotifyPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Create file 1", [&]() {
+        h = create_file(dir + u"\\renamefileex6a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h2 = create_file(dir + u"\\renamefileex6b", SYNCHRONIZE | DELETE | FILE_READ_DATA | FILE_WRITE_DATA, 0,
+                         FILE_SHARE_DELETE, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Overwrite file2 using FILE_RENAME_POSIX_SEMANTICS", [&]() {
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+                                      nullptr, dir + u"\\renamefileex6b");
+        });
+
+        test("Check name of file 1", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\renamefileex6b";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\renamefileex6b\".");
+        });
+
+        test("Check name of file 2", [&]() {
+            auto fn = query_file_name_information(h2.get());
+
+            static const u16string_view ends_with = u"\\renamefileex6b";
+
+            // NTFS moves this to \$Extend\$Deleted directory
+
+            if (fn.size() >= ends_with.size() && fn.substr(fn.size() - ends_with.size()) == ends_with)
+                throw runtime_error("Name ended with \"\\renamefileex6b\".");
+        });
+
+        test("Check standard information of file 1", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Check standard information of file 2", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (fsi.NumberOfLinks != 0)
+                throw formatted_error("NumberOfLinks was {}, expected 0", fsi.NumberOfLinks);
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Check new directory entry", [&]() {
+            u16string_view name = u"renamefileex6b";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check old directory entry gone", [&]() {
+            u16string_view name = u"renamefileex6a";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+
+        test("Try to clear delete bit on file 2", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h2.get(), false);
+            }, STATUS_FILE_DELETED);
+        });
+
+        test("Write to file 2", [&]() {
+            static const vector<uint8_t> data = {'h','e','l','l','o'};
+
+            write_file(h2.get(), data);
+        });
+
+        test("Read from file 2", [&]() {
+            static const vector<uint8_t> exp = {'h','e','l','l','o'};
+
+            auto buf = read_file(h2.get(), exp.size(), 0);
+
+            if (buf.size() != exp.size())
+                throw formatted_error("Read {} bytes, expected {}", buf.size(), exp.size());
+
+            if (buf != exp)
+                throw runtime_error("Data read did not match data written");
+        });
+
+        int64_t dir_id;
+
+        test("Check file 1 hardlinks", [&]() {
+            auto items = query_links(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& item = items.front();
+
+            if (item.second != u"renamefileex6b")
+                throw formatted_error("Link was called {}, expected renamefileex6b", u16string_to_string(item.second));
+
+            dir_id = item.first;
+        });
+
+        test("Check file 2 hardlinks", [&]() {
+            auto items = query_links(h2.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& item = items.front();
+
+            if (item.second == u"renamefileex6b")
+                throw formatted_error("Link was called renamefileex6b, expected something else", u16string_to_string(item.second));
+
+            if (item.first == dir_id)
+                throw runtime_error("Dir ID of orphaned inode is same as before");
+        });
+
+        h.reset();
+    }
+
+    test("Disable token privileges", [&]() {
+        disable_token_privileges(token);
+    });
+
+    // FIXME - also try with directory
+    // FIXME - check STATUS_SHARING_VIOLATION when POSIX rename and FILE_SHARE_DELETE not set
 
     // FIXME - FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE
     // FIXME - FILE_RENAME_SUPPRESS_STORAGE_RESERVE_INHERITANCE
@@ -1402,5 +1603,4 @@ void test_rename_ex(const u16string& dir) {
     // FIXME - FILE_RENAME_NO_DECREASE_AVAILABLE_SPACE
     // FIXME - FILE_RENAME_FORCE_RESIZE_TARGET_SR
     // FIXME - FILE_RENAME_FORCE_RESIZE_SOURCE_SR
-    // FIXME - FILE_RENAME_FORCE_RESIZE_SR
 }

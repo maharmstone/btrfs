@@ -6,7 +6,7 @@
 using namespace std;
 
 template<size_t N>
-static void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& privs) {
+void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& privs) {
     NTSTATUS Status;
     array<uint8_t, offsetof(TOKEN_PRIVILEGES, Privileges) + (N * sizeof(LUID_AND_ATTRIBUTES))> buf;
     auto& tp = *(TOKEN_PRIVILEGES*)buf.data();
@@ -53,7 +53,7 @@ vector<uint8_t> random_data(size_t len) {
     return random;
 }
 
-void write_file(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
+void write_file(HANDLE h, span<const uint8_t> data, optional<uint64_t> offset) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -61,7 +61,7 @@ void write_file(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
     if (offset)
         off.QuadPart = *offset;
 
-    Status = NtWriteFile(h, nullptr, nullptr, nullptr, &iosb, data.data(),
+    Status = NtWriteFile(h, nullptr, nullptr, nullptr, &iosb, (void*)data.data(),
                          data.size(), offset ? &off : nullptr,
                          nullptr);
 
