@@ -1600,8 +1600,8 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
     });
 
     test("Create file 2 without FILE_SHARE_DELETE", [&]() {
-        h2 = create_file(dir + u"\\renamefileex7b", SYNCHRONIZE | DELETE | FILE_READ_DATA | FILE_WRITE_DATA, 0,
-                         0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+        h2 = create_file(dir + u"\\renamefileex7b", MAXIMUM_ALLOWED, 0,
+                         0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h && h2) {
@@ -1616,7 +1616,71 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
         h2.reset();
     }
 
-    // FIXME - also try with directory
+    test("Create directory 1", [&]() {
+        h = create_file(dir + u"\\renamedirex8a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create directory 2", [&]() {
+        h2 = create_file(dir + u"\\renamedirex8b", MAXIMUM_ALLOWED, 0, FILE_SHARE_DELETE,
+                         FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try to overwrite directory 2", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS,
+                                          nullptr, dir + u"\\renamedirex8b");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
+    test("Create directory 1", [&]() {
+        h = create_file(dir + u"\\renamedirex9a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create directory 2", [&]() {
+        h2 = create_file(dir + u"\\renamedirex9b", MAXIMUM_ALLOWED, 0, FILE_SHARE_DELETE,
+                         FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Overwrite directory 2 using FILE_RENAME_POSIX_SEMANTICS", [&]() {
+            set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+                                      nullptr, dir + u"\\renamedirex9b");
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
+    test("Create directory 1", [&]() {
+        h = create_file(dir + u"\\renamedirex10a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create directory 2", [&]() {
+        h2 = create_file(dir + u"\\renamedirex10b", MAXIMUM_ALLOWED, 0, FILE_SHARE_DELETE,
+                         FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file in directory 2", [&]() {
+        create_file(dir + u"\\renamedirex10b\\file", MAXIMUM_ALLOWED, 0, FILE_SHARE_DELETE,
+                    FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try overwriting non-empty directory using FILE_RENAME_POSIX_SEMANTICS", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+                                          nullptr, dir + u"\\renamedirex10b");
+            }, STATUS_DIRECTORY_NOT_EMPTY);
+        });
+
+        h.reset();
+        h2.reset();
+    }
 
     // FIXME - FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE
     // FIXME - FILE_RENAME_SUPPRESS_STORAGE_RESERVE_INHERITANCE
