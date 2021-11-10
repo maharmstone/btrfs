@@ -1462,7 +1462,7 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
     });
 
     if (h && h2) {
-        test("Overwrite file2 using FILE_RENAME_POSIX_SEMANTICS", [&]() {
+        test("Overwrite file 2 using FILE_RENAME_POSIX_SEMANTICS", [&]() {
             set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
                                       nullptr, dir + u"\\renamefileex6b");
         });
@@ -1588,14 +1588,35 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
         });
 
         h.reset();
+        h2.reset();
     }
 
     test("Disable token privileges", [&]() {
         disable_token_privileges(token);
     });
 
+    test("Create file 1", [&]() {
+        h = create_file(dir + u"\\renamefileex7a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2 without FILE_SHARE_DELETE", [&]() {
+        h2 = create_file(dir + u"\\renamefileex7b", SYNCHRONIZE | DELETE | FILE_READ_DATA | FILE_WRITE_DATA, 0,
+                         0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try to overwrite file 2 using FILE_RENAME_POSIX_SEMANTICS", [&]() {
+            exp_status([&]() {
+                set_rename_information_ex(h.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+                                          nullptr, dir + u"\\renamefileex7b");
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
     // FIXME - also try with directory
-    // FIXME - check STATUS_SHARING_VIOLATION when POSIX rename and FILE_SHARE_DELETE not set
 
     // FIXME - FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE
     // FIXME - FILE_RENAME_SUPPRESS_STORAGE_RESERVE_INHERITANCE
