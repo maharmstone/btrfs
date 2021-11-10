@@ -21,7 +21,7 @@ void set_disposition_information(HANDLE h, bool delete_file) {
 }
 
 void test_delete(const u16string& dir) {
-    unique_handle h;
+    unique_handle h, h2;
 
     test("Create file", [&]() {
         h = create_file(dir + u"\\deletefile1", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
@@ -159,7 +159,49 @@ void test_delete(const u16string& dir) {
         });
     }
 
-    // FIXME - deletion (non-empty directory, opening doomed file, commuting sentence)
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\deletedir3", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\deletedir3\\file", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try to set disposition on directory", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h.get(), true);
+            }, STATUS_DIRECTORY_NOT_EMPTY);
+        });
+
+        test("Set disposition on file", [&]() {
+            set_disposition_information(h2.get(), true);
+        });
+
+        test("Try to set disposition on directory again", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h.get(), true);
+            }, STATUS_DIRECTORY_NOT_EMPTY);
+        });
+
+        h2.reset();
+
+        test("Set disposition on directory now empty", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        h.reset();
+
+        test("Check directory entry gone after close", [&]() {
+            u16string_view name = u"deletedir3";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
+    // FIXME - deletion (opening doomed file, commuting sentence)
     // FIXME - permissions
     // FIXME - what happens if ADS still open?
     // FIXME - FILE_SHARE_DELETE
