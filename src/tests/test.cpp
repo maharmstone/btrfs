@@ -529,6 +529,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     // FIXME - IO completions?
 
+    // FIXME - share access
+
     // FIXME - reflink copies
     // FIXME - creating subvols
     // FIXME - snapshots

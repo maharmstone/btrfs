@@ -291,10 +291,22 @@ void test_delete(const u16string& dir) {
         });
     }
 
-    // FIXME - permissions
+    test("Create file without DELETE flag", [&]() {
+        h = create_file(dir + u"\\deletefile6", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to set deletion flag on file", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h.get(), true);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
     // FIXME - what happens if ADS still open?
-    // FIXME - FILE_SHARE_DELETE
-    // FIXME - POSIX deletion
+    // FIXME - POSIX deletion (inc. on mapped file)
     // FIXME - FILE_DELETE_ON_CLOSE
     // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
     // FIXME - FILE_DISPOSITION_ON_CLOSE
