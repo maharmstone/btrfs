@@ -305,9 +305,95 @@ void test_delete(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - what happens if ADS still open?
-    // FIXME - POSIX deletion (inc. on mapped file)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\deletefile7", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create stream on file", [&]() {
+            h2 = create_file(dir + u"\\deletefile7:ads", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Set deletion flag on file", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        test("Check standard information on file", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Check standard information on stream", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Clear deletion flag on stream", [&]() {
+            set_disposition_information(h2.get(), false); // gets ignored
+        });
+
+        test("Check standard information on file", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Check standard information on stream", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        h.reset();
+
+        test("Check directory entry still there after file handle closed", [&]() {
+            u16string_view name = u"deletefile7";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Clear deletion flag on stream", [&]() {
+            set_disposition_information(h2.get(), false); // still ignored
+        });
+
+        test("Check standard information on stream", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        h2.reset();
+
+        test("Check directory entry gone after stream handle closed", [&]() {
+            u16string_view name = u"deletefile7";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
     // FIXME - FILE_DELETE_ON_CLOSE
+    // FIXME - can we map file marked for deletion?
+    // FIXME - POSIX deletion (inc. on mapped file)
     // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
     // FIXME - FILE_DISPOSITION_ON_CLOSE
     // FIXME - FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE
