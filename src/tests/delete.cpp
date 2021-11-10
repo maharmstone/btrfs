@@ -530,6 +530,21 @@ void test_delete(const u16string& dir) {
         }, STATUS_CANNOT_DELETE);
     });
 
+    test("Create readonly file", [&]() {
+        h = create_file(dir + u"\\deletefile12", DELETE, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to set deletion flag on readonly file", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h.get(), true);
+            }, STATUS_CANNOT_DELETE);
+        });
+
+        h.reset();
+    }
+
     // FIXME - can we map file marked for deletion?
     // FIXME - check can't delete files opened by ID
     // FIXME - POSIX deletion (inc. on mapped file)
