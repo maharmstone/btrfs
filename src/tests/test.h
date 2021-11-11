@@ -97,6 +97,9 @@ NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle
                                       ULONG AllocationType, ULONG Protect);
 
 extern "C"
+NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
+
+extern "C"
 NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event OPTIONAL, PIO_APC_ROUTINE ApcRoutine,
                               PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
                               PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,

@@ -39,6 +39,15 @@ static void* map_view(HANDLE sect, uint64_t off, uint64_t len, ULONG prot) {
     return addr;
 }
 
+static void unmap_view(void* addr) {
+    NTSTATUS Status;
+
+    Status = NtUnmapViewOfSection(NtCurrentProcess(), addr);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
 static void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -207,6 +216,10 @@ void test_mmap(const u16string& dir) {
                 if (*(uint32_t*)addr != num)
                     throw runtime_error("Data in mapping did not match was written.");
             });
+
+            test("Unmap view", [&]() {
+                unmap_view(addr);
+            });
         }
 
         h.reset();
@@ -296,6 +309,10 @@ void test_mmap(const u16string& dir) {
                 if (num != 0xdeadbeef)
                     throw runtime_error("Data read did not match was written to mapping.");
             });
+
+            test("Unmap view", [&]() {
+                unmap_view(addr);
+            });
         }
 
         h.reset();
@@ -321,9 +338,17 @@ void test_mmap(const u16string& dir) {
             sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
         });
 
+        void* addr = nullptr;
+
         test("Map view", [&]() {
-            map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+            addr = map_view(sect.get(), 0, 4096, PAGE_READWRITE);
         });
+
+        if (addr) {
+            test("Unmap view", [&]() {
+                unmap_view(addr);
+            });
+        }
 
         h.reset();
     }
@@ -399,6 +424,7 @@ void test_mmap(const u16string& dir) {
         });
 
         unique_handle sect;
+        void* addr = nullptr;
 
         test("Create section", [&]() {
             sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
@@ -406,7 +432,7 @@ void test_mmap(const u16string& dir) {
 
         if (sect) {
             test("Map view", [&]() {
-                map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+                addr = map_view(sect.get(), 0, 4096, PAGE_READWRITE);
             });
         }
 
@@ -419,6 +445,12 @@ void test_mmap(const u16string& dir) {
         if (h) {
             test("Overwrite mapped file", [&]() {
                 set_rename_information(h.get(), true, nullptr, dir + u"\\mmap8");
+            });
+        }
+
+        if (addr) {
+            test("Unmap view", [&]() {
+                unmap_view(addr);
             });
         }
     }
@@ -444,9 +476,17 @@ void test_mmap(const u16string& dir) {
         });
 
         if (sect) {
+            void* addr = nullptr;
+
             test("Map view", [&]() {
-                map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+                addr = map_view(sect.get(), 0, 4096, PAGE_READWRITE);
             });
+
+            if (addr) {
+                test("Unmap view", [&]() {
+                    unmap_view(addr);
+                });
+            }
         }
 
         h.reset();
@@ -485,6 +525,10 @@ void test_mmap(const u16string& dir) {
                 test("Check mapped data", [&]() {
                     if (memcmp((uint8_t*)pe + 0x1000, imgdata.data(), imgdata.size()))
                         throw runtime_error("Data mapped did not match data written.");
+                });
+
+                test("Unmap view", [&]() {
+                    unmap_view(pe);
                 });
             }
         }
