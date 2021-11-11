@@ -30,7 +30,7 @@ static void* map_view(HANDLE sect, uint64_t off, uint64_t len, ULONG prot) {
     Status = NtMapViewOfSection(sect, NtCurrentProcess(), &addr, 0, 0, &li, &size,
                                 ViewUnmap, 0, prot);
 
-    if (Status != STATUS_SUCCESS)
+    if (Status != STATUS_SUCCESS && Status != STATUS_IMAGE_NOT_AT_BASE)
         throw ntstatus_error(Status);
 
     if (!addr)
@@ -52,6 +52,88 @@ static void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
+}
+
+static constexpr unsigned int align(unsigned int x, unsigned int a) {
+    return (x + a - 1) & ~(a - 1);
+}
+
+static vector<uint8_t> pe_image(span<const std::byte> data) {
+
+    static const char stub[] = "\x0e\x1f\xba\x0e\x00\xb4\x09\xcd\x21\xb8\x01\x4c\xcd\x21This program cannot be run in DOS mode.\r\r\n\x24\x00\x00\x00\x00\x00\x00\x00";
+    static const unsigned int SECTION_ALIGNMENT = 0x1000;
+    static const unsigned int FILE_ALIGNMENT = 0x200;
+    static constexpr unsigned int header_size = align(sizeof(IMAGE_DOS_HEADER) + sizeof(stub) - 1 + sizeof(IMAGE_NT_HEADERS32) + sizeof(IMAGE_SECTION_HEADER),
+                                                      FILE_ALIGNMENT);
+
+    vector<uint8_t> buf(header_size + align(data.size(), FILE_ALIGNMENT));
+    memset(buf.data(), 0, buf.size());
+
+    auto& h = *(IMAGE_DOS_HEADER*)buf.data();
+    h.e_magic = IMAGE_DOS_SIGNATURE;
+    h.e_cblp = 0x90;
+    h.e_cp = 0x3;
+    h.e_cparhdr = 0x4;
+    h.e_maxalloc = 0xffff;
+    h.e_sp = 0xb8;
+    h.e_lfarlc = 0x40;
+    h.e_lfanew = sizeof(h) + sizeof(stub) - 1;
+
+    memcpy(buf.data() + sizeof(h), stub, sizeof(stub) - 1);
+
+    auto& nth = *(IMAGE_NT_HEADERS32*)(buf.data() + h.e_lfanew);
+
+    nth.Signature = IMAGE_NT_SIGNATURE;
+    nth.FileHeader.Machine = IMAGE_FILE_MACHINE_I386;
+    nth.FileHeader.NumberOfSections = 1;
+    nth.FileHeader.SizeOfOptionalHeader = sizeof(IMAGE_OPTIONAL_HEADER32);
+    nth.FileHeader.Characteristics = IMAGE_FILE_EXECUTABLE_IMAGE;
+
+    nth.OptionalHeader.Magic = IMAGE_NT_OPTIONAL_HDR32_MAGIC;
+    nth.OptionalHeader.MajorLinkerVersion = 0x2;
+    nth.OptionalHeader.MinorLinkerVersion = 0x23;
+    nth.OptionalHeader.SizeOfCode = 0;
+    nth.OptionalHeader.SizeOfInitializedData = align(data.size(), SECTION_ALIGNMENT);
+    nth.OptionalHeader.SizeOfUninitializedData = 0;
+    nth.OptionalHeader.AddressOfEntryPoint = 0;
+    nth.OptionalHeader.BaseOfCode = 0x1000;
+    nth.OptionalHeader.BaseOfData = 0x1000;
+    nth.OptionalHeader.ImageBase = 0x10000000;
+    nth.OptionalHeader.SectionAlignment = SECTION_ALIGNMENT;
+    nth.OptionalHeader.FileAlignment = FILE_ALIGNMENT;
+    nth.OptionalHeader.MajorOperatingSystemVersion = 4;
+    nth.OptionalHeader.MinorOperatingSystemVersion = 0;
+    nth.OptionalHeader.MajorImageVersion = 0;
+    nth.OptionalHeader.MinorImageVersion = 0;
+    nth.OptionalHeader.MajorSubsystemVersion = 5;
+    nth.OptionalHeader.MinorSubsystemVersion = 2;
+    nth.OptionalHeader.Win32VersionValue = 0;
+    nth.OptionalHeader.SizeOfImage = align(header_size, SECTION_ALIGNMENT) + align(data.size(), SECTION_ALIGNMENT);
+    nth.OptionalHeader.SizeOfHeaders = header_size;
+    nth.OptionalHeader.Subsystem = IMAGE_SUBSYSTEM_WINDOWS_GUI;
+    nth.OptionalHeader.DllCharacteristics = 0;
+    nth.OptionalHeader.SizeOfStackReserve = 0x100000;
+    nth.OptionalHeader.SizeOfStackCommit = 0x1000;
+    nth.OptionalHeader.SizeOfHeapReserve = 0x100000;
+    nth.OptionalHeader.SizeOfHeapCommit = 0x1000;
+    nth.OptionalHeader.LoaderFlags = 0;
+    nth.OptionalHeader.NumberOfRvaAndSizes = IMAGE_NUMBEROF_DIRECTORY_ENTRIES;
+
+    auto& sect = *(IMAGE_SECTION_HEADER*)(&nth + 1);
+    memcpy(sect.Name, ".data\0\0\0", 8);
+    sect.Misc.VirtualSize = align(data.size(), SECTION_ALIGNMENT);
+    sect.VirtualAddress = align(header_size, SECTION_ALIGNMENT);
+    sect.SizeOfRawData = align(data.size(), FILE_ALIGNMENT);
+    sect.PointerToRawData = header_size;
+    sect.PointerToRelocations = 0;
+    sect.PointerToLinenumbers = 0;
+    sect.NumberOfRelocations = 0;
+    sect.NumberOfLinenumbers = 0;
+    sect.Characteristics = IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA;
+
+    memcpy(buf.data() + header_size, data.data(), data.size());
+
+    return buf;
 }
 
 void test_mmap(const u16string& dir) {
@@ -370,5 +452,45 @@ void test_mmap(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - test deletion and overwrite with SEC_IMAGE mappings (will need to create minimal PE file)
+    auto imgdata = as_bytes(span("hello"));
+    auto img = pe_image(imgdata);
+
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\mmap10", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        if (sect) {
+            void* pe = nullptr;
+
+            test("Map view", [&]() {
+                pe = map_view(sect.get(), 0, 0, PAGE_READWRITE);
+
+                if (!pe)
+                    throw runtime_error("Address returned was NULL.");
+            });
+
+            if (pe) {
+                test("Check mapped data", [&]() {
+                    if (memcmp((uint8_t*)pe + 0x1000, imgdata.data(), imgdata.size()))
+                        throw runtime_error("Data mapped did not match data written.");
+                });
+            }
+        }
+
+        h.reset();
+    }
+
+    // FIXME - test deletion and overwrite with SEC_IMAGE mappings
 }
