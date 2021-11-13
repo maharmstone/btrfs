@@ -146,7 +146,7 @@ static vector<uint8_t> pe_image(span<const std::byte> data) {
 }
 
 void test_mmap(const u16string& dir) {
-    unique_handle h;
+    unique_handle h, h2;
 
     test("Create empty file", [&]() {
         h = create_file(dir + u"\\mmapempty", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
@@ -605,32 +605,51 @@ void test_mmap(const u16string& dir) {
             sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
         });
 
-        if (sect) {
-            void* pe = nullptr;
-
-            test("Map view", [&]() {
-                pe = map_view(sect.get(), 0, 0, PAGE_READWRITE);
-
-                if (!pe)
-                    throw runtime_error("Address returned was NULL.");
-            });
-
-            if (pe) {
-                test("Try overwriting mapped image file", [&]() {
-                    exp_status([&]() {
-                        create_file(dir + u"\\mmap12", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                    FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
-                    }, STATUS_SHARING_VIOLATION);
-                });
-
-                test("Unmap view", [&]() {
-                    unmap_view(pe);
-                });
-            }
-        }
-
         h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file", [&]() {
+                exp_status([&]() {
+                    create_file(dir + u"\\mmap12", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+                }, STATUS_SHARING_VIOLATION);
+            });
+        }
     }
 
-    // FIXME - test deletion and overwrite with SEC_IMAGE mappings
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\mmap13a", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\mmap13b", MAXIMUM_ALLOWED,
+                         0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file by rename", [&]() {
+                exp_status([&]() {
+                    set_rename_information(h2.get(), true, nullptr, dir + u"\\mmap13a");
+                }, STATUS_ACCESS_DENIED);
+            });
+        }
+
+        h2.reset();
+    }
+
+    // FIXME - test deletion with SEC_IMAGE mappings
 }
