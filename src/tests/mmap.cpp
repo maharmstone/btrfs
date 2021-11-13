@@ -588,5 +588,49 @@ void test_mmap(const u16string& dir) {
         h.reset();
     }
 
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\mmap12", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        if (sect) {
+            void* pe = nullptr;
+
+            test("Map view", [&]() {
+                pe = map_view(sect.get(), 0, 0, PAGE_READWRITE);
+
+                if (!pe)
+                    throw runtime_error("Address returned was NULL.");
+            });
+
+            if (pe) {
+                test("Try overwriting mapped image file", [&]() {
+                    exp_status([&]() {
+                        create_file(dir + u"\\mmap12", MAXIMUM_ALLOWED, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+                    }, STATUS_SHARING_VIOLATION);
+                });
+
+                test("Unmap view", [&]() {
+                    unmap_view(pe);
+                });
+            }
+        }
+
+        h.reset();
+    }
+
     // FIXME - test deletion and overwrite with SEC_IMAGE mappings
 }
