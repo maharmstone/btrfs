@@ -441,44 +441,20 @@ void test_delete(const u16string& dir) {
     }
 
     test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
-        h = create_file(dir + u"\\deletefile9", DELETE, 0, 0, FILE_CREATE,
-                        FILE_DELETE_ON_CLOSE, FILE_CREATED);
-    });
-
-    if (h) {
-        test("Check standard information", [&]() {
-            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
-
-            if (fsi.DeletePending)
-                throw runtime_error("DeletePending was true, expected false");
-        });
-
-        h.reset();
-
-        test("Check directory entry gone after handle closed", [&]() {
-            u16string_view name = u"deletefile9";
-
-            exp_status([&]() {
-                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
-            }, STATUS_NO_SUCH_FILE);
-        });
-    }
-
-    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
-        h = create_file(dir + u"\\deletefile10", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE,
+        h = create_file(dir + u"\\deletefile9", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE,
                         FILE_DELETE_ON_CLOSE, FILE_CREATED);
     });
 
     if (h) {
         test("Try to open second handle to file without FILE_SHARE_DELETE", [&]() {
             exp_status([&]() {
-                create_file(dir + u"\\deletefile10", FILE_READ_DATA, 0, 0, FILE_OPEN,
+                create_file(dir + u"\\deletefile9", FILE_READ_DATA, 0, 0, FILE_OPEN,
                             0, FILE_OPENED);
             }, STATUS_SHARING_VIOLATION);
         });
 
         test("Open second handle to file with FILE_SHARE_DELETE", [&]() {
-            h2 = create_file(dir + u"\\deletefile10", DELETE, 0, FILE_SHARE_DELETE,
+            h2 = create_file(dir + u"\\deletefile9", DELETE, 0, FILE_SHARE_DELETE,
                              FILE_OPEN, 0, FILE_OPENED);
         });
 
@@ -511,7 +487,7 @@ void test_delete(const u16string& dir) {
 
         test("Try to open third handle to file", [&]() {
             exp_status([&]() {
-                create_file(dir + u"\\deletefile10", FILE_READ_DATA, 0, 0, FILE_OPEN,
+                create_file(dir + u"\\deletefile9", FILE_READ_DATA, 0, 0, FILE_OPEN,
                             FILE_SHARE_DELETE, FILE_OPENED);
             }, STATUS_SHARING_VIOLATION);
         });
@@ -519,7 +495,7 @@ void test_delete(const u16string& dir) {
         h2.reset();
 
         test("Check directory entry still there after both handles closed", [&]() {
-            u16string_view name = u"deletefile10";
+            u16string_view name = u"deletefile9";
 
             auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
 
@@ -537,19 +513,19 @@ void test_delete(const u16string& dir) {
     }
 
     test("Create readonly file", [&]() {
-        create_file(dir + u"\\deletefile11", FILE_READ_DATA, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+        create_file(dir + u"\\deletefile10", FILE_READ_DATA, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
                     0, FILE_CREATED);
     });
 
     test("Try to open readonly file with FILE_DELETE_ON_CLOSE", [&]() {
         exp_status([&]() {
-            create_file(dir + u"\\deletefile11", DELETE, 0, 0, FILE_OPEN,
+            create_file(dir + u"\\deletefile10", DELETE, 0, 0, FILE_OPEN,
                         FILE_DELETE_ON_CLOSE, FILE_OPENED);
         }, STATUS_CANNOT_DELETE);
     });
 
     test("Create readonly file", [&]() {
-        h = create_file(dir + u"\\deletefile12", DELETE, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+        h = create_file(dir + u"\\deletefile11", DELETE, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
                         0, FILE_CREATED);
     });
 
@@ -564,7 +540,7 @@ void test_delete(const u16string& dir) {
     }
 
     test("Create directory with FILE_DELETE_ON_CLOSE", [&]() {
-        h = create_file(dir + u"\\deletedir13", DELETE, 0, 0, FILE_CREATE,
+        h = create_file(dir + u"\\deletedir12", DELETE, 0, 0, FILE_CREATE,
                         FILE_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE, FILE_CREATED);
     });
 
@@ -579,7 +555,7 @@ void test_delete(const u16string& dir) {
         h.reset();
 
         test("Check directory entry gone after handle closed", [&]() {
-            u16string_view name = u"deletedir13";
+            u16string_view name = u"deletedir12";
 
             exp_status([&]() {
                 query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
@@ -588,20 +564,20 @@ void test_delete(const u16string& dir) {
     }
 
     test("Create directory with FILE_DELETE_ON_CLOSE", [&]() {
-        h = create_file(dir + u"\\deletedir14", DELETE, 0, 0, FILE_CREATE,
+        h = create_file(dir + u"\\deletedir13", DELETE, 0, 0, FILE_CREATE,
                         FILE_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE, FILE_CREATED);
     });
 
     if (h) {
         test("Create file in directory", [&]() {
-            create_file(dir + u"\\deletedir14\\file", FILE_READ_DATA, 0, 0, FILE_CREATE,
+            create_file(dir + u"\\deletedir13\\file", FILE_READ_DATA, 0, 0, FILE_CREATE,
                         0, FILE_CREATED);
         });
 
         h.reset();
 
         test("Check directory entry still there after handle closed", [&]() {
-            u16string_view name = u"deletedir14";
+            u16string_view name = u"deletedir13";
 
             auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
 
