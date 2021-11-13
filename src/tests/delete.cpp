@@ -1047,5 +1047,72 @@ void test_delete_ex(HANDLE token, const u16string& dir) {
 
     disable_token_privileges(token);
 
-    // FIXME - FILE_DISPOSITION_ON_CLOSE
+    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\deleteexfile7", DELETE, 0, 0, FILE_CREATE,
+                        FILE_DELETE_ON_CLOSE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check standard information on file", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Clear delete on close flag", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DO_NOT_DELETE | FILE_DISPOSITION_ON_CLOSE);
+        });
+
+        test("Check standard information on file", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        h.reset();
+
+        test("Check directory entry still there after file closed", [&]() {
+            u16string_view name = u"deleteexfile7";
+
+            query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+        });
+    }
+
+    test("Create file without FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\deleteexfile8", DELETE, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check standard information on file", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        // see https://community.osr.com/discussion/comment/302155/#Comment_302155
+        test("Try to set delete on close flag", [&]() {
+            exp_status([&]() {
+                set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE | FILE_DISPOSITION_ON_CLOSE);
+            }, STATUS_NOT_SUPPORTED);
+        });
+
+        h.reset();
+    }
+
+    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\deleteexfile9", DELETE, 0, 0, FILE_CREATE,
+                        FILE_DELETE_ON_CLOSE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set delete on close flag", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE | FILE_DISPOSITION_ON_CLOSE);
+        });
+
+        h.reset();
+    }
 }
