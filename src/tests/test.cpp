@@ -442,7 +442,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"rename", [&]() { test_rename(dir); } },
         { u"rename_ex", [&]() { test_rename_ex(token.get(), dir); } },
         { u"delete", [&]() { test_delete(dir); } },
-        { u"delete_ex", [&]() { test_delete_ex(dir); } }
+        { u"delete_ex", [&]() { test_delete_ex(token.get(), dir); } }
     };
 
     bool first = true;

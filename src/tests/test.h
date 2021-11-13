@@ -4063,8 +4063,9 @@ std::vector<uint8_t> pe_image(std::span<const std::byte> data);
 void test_rename(const std::u16string& dir);
 void test_rename_ex(HANDLE token, const std::u16string& dir);
 void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
+std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 
 // delete.cpp
 void test_delete(const std::u16string& dir);
-void test_delete_ex(const std::u16string& dir);
+void test_delete_ex(HANDLE token, const std::u16string& dir);
 void set_disposition_information(HANDLE h, bool delete_file);
