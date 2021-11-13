@@ -892,7 +892,25 @@ void test_delete_ex(const u16string& dir) {
         h.reset();
     }
 
+    test("Create readonly file", [&]() {
+        h = create_file(dir + u"\\deleteexfile5", DELETE, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to set deletion flag on readonly file", [&]() {
+            exp_status([&]() {
+                set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+            }, STATUS_CANNOT_DELETE);
+        });
+
+        test("Set deletion flag on readonly file with FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE | FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE);
+        });
+
+        h.reset();
+    }
+
     // FIXME - POSIX deletion (inc. on mapped file)
     // FIXME - FILE_DISPOSITION_ON_CLOSE
-    // FIXME - FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE
 }
