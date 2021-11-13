@@ -158,6 +158,19 @@ typedef struct _FILE_LINKS_INFORMATION {
     FILE_LINK_ENTRY_INFORMATION Entry;
 } FILE_LINKS_INFORMATION, *PFILE_LINKS_INFORMATION;
 
+typedef struct _FILE_DISPOSITION_INFORMATION_EX {
+    ULONG Flags;
+} FILE_DISPOSITION_INFORMATION_EX, *PFILE_DISPOSITION_INFORMATION_EX;
+
+#define FileDispositionInformationEx ((FILE_INFORMATION_CLASS)64)
+
+#define FILE_DISPOSITION_DO_NOT_DELETE              0x00000000
+#define FILE_DISPOSITION_DELETE                     0x00000001
+#define FILE_DISPOSITION_POSIX_SEMANTICS            0x00000002
+#define FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK  0x00000004
+#define FILE_DISPOSITION_ON_CLOSE                   0x00000008
+#define FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE  0x00000010
+
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
 #define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)
@@ -4042,7 +4055,6 @@ void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES,
 
 // mmap.cpp
 void test_mmap(const std::u16string& dir);
-void set_disposition_information(HANDLE h, bool delete_file);
 unique_handle create_section(ACCESS_MASK access, std::optional<uint64_t> max_size, ULONG prot,
                              ULONG atts, HANDLE file);
 std::vector<uint8_t> pe_image(std::span<const std::byte> data);
@@ -4054,4 +4066,5 @@ void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, c
 
 // delete.cpp
 void test_delete(const std::u16string& dir);
+void test_delete_ex(const std::u16string& dir);
 void set_disposition_information(HANDLE h, bool delete_file);

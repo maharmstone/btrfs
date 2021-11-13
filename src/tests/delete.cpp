@@ -20,6 +20,24 @@ void set_disposition_information(HANDLE h, bool delete_file) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
+static void set_disposition_information_ex(HANDLE h, uint32_t flags) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    FILE_DISPOSITION_INFORMATION_EX fdie;
+
+    fdie.Flags = flags;
+
+    iosb.Information = 0xdeadbeef;
+
+    Status = NtSetInformationFile(h, &iosb, &fdie, sizeof(fdie), FileDispositionInformationEx);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
 void test_delete(const u16string& dir) {
     unique_handle h, h2;
 
@@ -597,6 +615,210 @@ void test_delete(const u16string& dir) {
 
             if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
                 throw runtime_error("FileName did not match.");
+        });
+    }
+}
+
+void test_delete_ex(const u16string& dir) {
+    unique_handle h, h2;
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\deletefileex1", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check directory entry", [&]() {
+            u16string_view name = u"deletefileex1";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Set disposition", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+        });
+
+        test("Check directory entry still there", [&]() {
+            u16string_view name = u"deletefileex1";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check standard information again", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        h.reset();
+
+        test("Check directory entry gone after close", [&]() {
+            u16string_view name = u"deletefileex1";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\deleteexdir2", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Check directory entry", [&]() {
+            u16string_view name = u"deleteexdir2";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Set disposition", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+        });
+
+        test("Check directory entry still there", [&]() {
+            u16string_view name = u"deleteexdir2";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check standard information again", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        h.reset();
+
+        test("Check directory entry gone after close", [&]() {
+            u16string_view name = u"deleteexdir2";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\deleteexfile3", DELETE, 0, FILE_SHARE_DELETE, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set deletion flag on file", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+        });
+
+        test("Try to reopen file marked for deletion", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\deleteexfile3", DELETE, 0, FILE_SHARE_DELETE, FILE_OPEN, 0, FILE_OPENED);
+            }, STATUS_DELETE_PENDING);
+        });
+
+        test("Clear deletion flag on file", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DO_NOT_DELETE);
+        });
+
+        test("Check standard information again", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Reopen file now no longer marked for deletion", [&]() {
+            h2 = create_file(dir + u"\\deleteexfile3", DELETE, 0, FILE_SHARE_DELETE, FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        test("Set deletion flag again", [&]() {
+            set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+        });
+
+        h.reset();
+
+        test("Check directory entry after first handle closed", [&]() {
+            u16string_view name = u"deleteexfile3";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        h2.reset();
+
+        test("Check directory entry gone after second handle closed", [&]() {
+            u16string_view name = u"deleteexfile3";
+
+            exp_status([&]() {
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
         });
     }
 
