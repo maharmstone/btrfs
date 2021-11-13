@@ -651,5 +651,30 @@ void test_mmap(const u16string& dir) {
         h2.reset();
     }
 
-    // FIXME - test deletion with SEC_IMAGE mappings
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\mmap14", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA | DELETE,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        if (sect) {
+            test("Try deleting mapped image file", [&]() {
+                exp_status([&]() {
+                    set_disposition_information(h.get(), true);
+                }, STATUS_CANNOT_DELETE);
+            });
+        }
+
+        h.reset();
+    }
 }
