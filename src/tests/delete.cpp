@@ -619,6 +619,26 @@ void test_delete(const u16string& dir) {
     }
 }
 
+static void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const u16string_view& filename) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf(offsetof(FILE_LINK_INFORMATION, FileName) + (filename.length() * sizeof(char16_t)));
+    auto& fli = *(FILE_LINK_INFORMATION*)buf.data();
+
+    fli.ReplaceIfExists = replace_if_exists;
+    fli.RootDirectory = root_dir;
+    fli.FileNameLength = filename.length() * sizeof(char16_t);
+    memcpy(fli.FileName, filename.data(), fli.FileNameLength);
+
+    Status = NtSetInformationFile(h, &iosb, &fli, buf.size(), FileLinkInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
 void test_delete_ex(const u16string& dir) {
     unique_handle h, h2;
 
@@ -822,8 +842,57 @@ void test_delete_ex(const u16string& dir) {
         });
     }
 
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\deleteexfile4",
+                        SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA | DELETE,
+                        0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            auto img = pe_image(as_bytes(span("hello")));
+
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        if (sect) {
+            test("Try deleting mapped image file with 1 link and FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK", [&]() {
+                exp_status([&]() {
+                    set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE | FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK);
+                }, STATUS_CANNOT_DELETE);
+            });
+
+            test("Try deleting mapped image file with 1 link", [&]() {
+                exp_status([&]() {
+                    set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+                }, STATUS_CANNOT_DELETE);
+            });
+
+            test("Create hard link", [&]() {
+                set_link_information(h.get(), false, nullptr, dir + u"\\deleteexfile4a");
+            });
+
+            test("Try deleting mapped image file with 2 links and FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK", [&]() {
+                exp_status([&]() {
+                    set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE | FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK);
+                }, STATUS_CANNOT_DELETE);
+            });
+
+            test("Delete mapped image file with 2 links", [&]() {
+                set_disposition_information_ex(h.get(), FILE_DISPOSITION_DELETE);
+            });
+        }
+
+        h.reset();
+    }
+
     // FIXME - POSIX deletion (inc. on mapped file)
-    // FIXME - FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK
     // FIXME - FILE_DISPOSITION_ON_CLOSE
     // FIXME - FILE_DISPOSITION_IGNORE_READONLY_ATTRIBUTE
 }
