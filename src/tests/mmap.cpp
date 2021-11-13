@@ -2,8 +2,8 @@
 
 using namespace std;
 
-static unique_handle create_section(ACCESS_MASK access, optional<uint64_t> max_size, ULONG prot,
-                                    ULONG atts, HANDLE file) {
+unique_handle create_section(ACCESS_MASK access, optional<uint64_t> max_size, ULONG prot,
+                             ULONG atts, HANDLE file) {
     NTSTATUS Status;
     HANDLE h;
     LARGE_INTEGER li;
@@ -67,8 +67,7 @@ static constexpr unsigned int align(unsigned int x, unsigned int a) {
     return (x + a - 1) & ~(a - 1);
 }
 
-static vector<uint8_t> pe_image(span<const std::byte> data) {
-
+vector<uint8_t> pe_image(span<const std::byte> data) {
     static const char stub[] = "\x0e\x1f\xba\x0e\x00\xb4\x09\xcd\x21\xb8\x01\x4c\xcd\x21This program cannot be run in DOS mode.\r\r\n\x24\x00\x00\x00\x00\x00\x00\x00";
     static const unsigned int SECTION_ALIGNMENT = 0x1000;
     static const unsigned int FILE_ALIGNMENT = 0x200;

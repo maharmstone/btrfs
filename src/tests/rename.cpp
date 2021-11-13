@@ -1702,6 +1702,75 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
         h2.reset();
     }
 
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\renamefile11a", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\renamefile11b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    auto img = pe_image(as_bytes(span("hello")));
+
+    if (h && h2) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file by rename", [&]() {
+                exp_status([&]() {
+                    set_rename_information_ex(h2.get(), FILE_RENAME_REPLACE_IF_EXISTS, nullptr, dir + u"\\renamefile11a");
+                }, STATUS_ACCESS_DENIED);
+            });
+        }
+
+        h2.reset();
+    }
+
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\renamefile12a", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\renamefile12b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file by POSIX rename", [&]() {
+                exp_status([&]() {
+                    set_rename_information_ex(h2.get(), FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+                                              nullptr, dir + u"\\renamefile12a");
+                }, STATUS_ACCESS_DENIED);
+            });
+        }
+
+        h2.reset();
+    }
+
     // FIXME - FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE
     // FIXME - FILE_RENAME_SUPPRESS_STORAGE_RESERVE_INHERITANCE
     // FIXME - FILE_RENAME_NO_INCREASE_AVAILABLE_SPACE

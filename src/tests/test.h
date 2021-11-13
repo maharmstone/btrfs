@@ -4043,6 +4043,9 @@ void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES,
 // mmap.cpp
 void test_mmap(const std::u16string& dir);
 void set_disposition_information(HANDLE h, bool delete_file);
+unique_handle create_section(ACCESS_MASK access, std::optional<uint64_t> max_size, ULONG prot,
+                             ULONG atts, HANDLE file);
+std::vector<uint8_t> pe_image(std::span<const std::byte> data);
 
 // rename.cpp
 void test_rename(const std::u16string& dir);
