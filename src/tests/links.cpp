@@ -320,7 +320,7 @@ void test_links(HANDLE token, const std::u16string& dir) {
                 throw runtime_error("DeletePending was true, expected false");
 
             if (fsi.NumberOfLinks != 2)
-                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+                throw formatted_error("NumberOfLinks was {}, expected 2", fsi.NumberOfLinks);
         });
 
         h.reset();
@@ -398,9 +398,112 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
-    // FIXME - linking by overwrite
-    // FIXME - check link to same file
-    // FIXME - check link to same file but different case
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link6a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create second file", [&]() {
+            create_file(dir + u"\\link6b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Overwrite second file by link", [&]() {
+            set_link_information(h.get(), true, nullptr, dir + u"\\link6b");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link7a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create directory", [&]() {
+            create_file(dir + u"\\link7b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Try overwriting directory by link", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), true, nullptr, dir + u"\\link7b");
+            }, STATUS_ACCESS_DENIED);
+        });
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link8a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create second file", [&]() {
+            h2 = create_file(dir + u"\\link8b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        if (h2) {
+            test("Try to overwrite open file by link", [&]() {
+                exp_status([&]() {
+                    set_link_information(h.get(), true, nullptr, dir + u"\\link8b");
+                }, STATUS_ACCESS_DENIED);
+            });
+
+            h2.reset();
+        }
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link9", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try creating link with same name without ReplaceIfExists", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, dir + u"\\link9");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Create link with same name with ReplaceIfExists", [&]() {
+            set_link_information(h.get(), true, nullptr, dir + u"\\link9"); // nop
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\link9";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\link9\".");
+        });
+
+        test("Create link with same name but different case", [&]() {
+            set_link_information(h.get(), true, nullptr, dir + u"\\LINK9");
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+        });
+
+        test("Check name", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\LINK9";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\LINK9\".");
+        });
+    }
+
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
