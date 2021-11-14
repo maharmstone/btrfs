@@ -70,6 +70,26 @@ void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, con
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
+static void set_link_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, const u16string_view& filename) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf(offsetof(FILE_LINK_INFORMATION_EX, FileName) + (filename.length() * sizeof(char16_t)));
+    auto& fli = *(FILE_LINK_INFORMATION_EX*)buf.data();
+
+    fli.Flags = flags;
+    fli.RootDirectory = root_dir;
+    fli.FileNameLength = filename.length() * sizeof(char16_t);
+    memcpy(fli.FileName, filename.data(), fli.FileNameLength);
+
+    Status = NtSetInformationFile(h, &iosb, &fli, buf.size(), FileLinkInformationEx);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
 void test_links(HANDLE token, const std::u16string& dir) {
     unique_handle h, h2;
 
@@ -791,7 +811,34 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
-    // FIXME - FILE_LINK_REPLACE_IF_EXISTS
+    disable_token_privileges(token);
+}
+
+void test_links_ex(const u16string& dir) {
+    unique_handle h;
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\linkex1a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create second file", [&]() {
+            create_file(dir + u"\\linkex1b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Try overwrite by link without FILE_LINK_REPLACE_IF_EXISTS", [&]() {
+            exp_status([&]() {
+                set_link_information_ex(h.get(), 0, nullptr, dir + u"\\linkex1b");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Overwrite by link with FILE_LINK_REPLACE_IF_EXISTS", [&]() {
+            set_link_information_ex(h.get(), FILE_LINK_REPLACE_IF_EXISTS, nullptr, dir + u"\\linkex1b");
+        });
+
+        h.reset();
+    }
+
     // FIXME - FILE_LINK_POSIX_SEMANTICS
     // FIXME - FILE_LINK_IGNORE_READONLY_ATTRIBUTE
 
@@ -800,6 +847,4 @@ void test_links(HANDLE token, const std::u16string& dir) {
     // FIXME - FILE_LINK_NO_DECREASE_AVAILABLE_SPACE
     // FIXME - FILE_LINK_FORCE_RESIZE_TARGET_SR
     // FIXME - FILE_LINK_FORCE_RESIZE_SOURCE_SR
-
-    disable_token_privileges(token);
 }

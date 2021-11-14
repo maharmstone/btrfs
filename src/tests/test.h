@@ -126,6 +126,10 @@ NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION Secur
 #define FILE_RENAME_POSIX_SEMANTICS           0x00000002
 #define FILE_RENAME_IGNORE_READONLY_ATTRIBUTE 0x00000040
 
+#define FILE_LINK_REPLACE_IF_EXISTS           0x00000001
+#define FILE_LINK_POSIX_SEMANTICS             0x00000002
+#define FILE_LINK_IGNORE_READONLY_ATTRIBUTE   0x00000040
+
 typedef struct _FILE_FS_DRIVER_PATH_INFORMATION {
     BOOLEAN DriverInPath;
     ULONG DriverNameLength;
@@ -144,6 +148,19 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
 } FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
 
 #define FileRenameInformationEx ((FILE_INFORMATION_CLASS)65)
+
+// should be called FILE_RENAME_INFORMATION_EX, version in mingw is outdated
+typedef struct _FILE_LINK_INFORMATION_EX {
+    union {
+        BOOLEAN ReplaceIfExists;
+        ULONG Flags;
+    };
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_LINK_INFORMATION_EX, *PFILE_LINK_INFORMATION_EX;
+
+#define FileLinkInformationEx ((FILE_INFORMATION_CLASS)72)
 
 typedef struct _FILE_LINK_ENTRY_INFORMATION {
     ULONG NextEntryOffset;
@@ -4072,5 +4089,6 @@ void set_disposition_information(HANDLE h, bool delete_file);
 
 // links.cpp
 void test_links(HANDLE token, const std::u16string& dir);
+void test_links_ex(const std::u16string& dir);
 std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
