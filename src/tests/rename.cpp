@@ -44,7 +44,7 @@ static void set_rename_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, co
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_dacl(HANDLE h, ACCESS_MASK access) {
+void set_dacl(HANDLE h, ACCESS_MASK access) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
     array<uint8_t, sizeof(ACL) + offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone)> aclbuf;

@@ -613,7 +613,46 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
-    // FIXME - test security (nothing on source, need FILE_ADD_FILE on destination?)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link13", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create directory 1", [&]() {
+            h2 = create_file(dir + u"\\link13dir1", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Set directory 1 ACL to SYNCHRONIZE | FILE_ADD_FILE", [&]() {
+            set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_FILE);
+        });
+
+        h2.reset();
+
+        test("Create link", [&]() {
+            set_link_information(h.get(), false, nullptr, dir + u"\\link13dir1\\file");
+        });
+
+        test("Create directory 2", [&]() {
+            h2 = create_file(dir + u"\\link13dir2", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Clear directory 2 ACL", [&]() {
+            set_dacl(h2.get(), 0);
+        });
+
+        h2.reset();
+
+        test("Try to create link", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, dir + u"\\link13dir2\\file");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - DELETE required on destination if overwriting? Or will FILE_DELETE_CHILD do?
+    // FIXME - try to create link using file as if directory
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
     // FIXME - FILE_LINK_POSIX_SEMANTICS
