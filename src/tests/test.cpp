@@ -85,6 +85,8 @@ T query_information(HANDLE h) {
         fic = FileAlignmentInformation;
     else if constexpr (is_same_v<T, FILE_POSITION_INFORMATION>)
         fic = FilePositionInformation;
+    else if constexpr (is_same_v<T, FILE_INTERNAL_INFORMATION>)
+        fic = FileInternalInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -105,6 +107,7 @@ template FILE_ACCESS_INFORMATION query_information<FILE_ACCESS_INFORMATION>(HAND
 template FILE_MODE_INFORMATION query_information<FILE_MODE_INFORMATION>(HANDLE h);
 template FILE_ALIGNMENT_INFORMATION query_information<FILE_ALIGNMENT_INFORMATION>(HANDLE h);
 template FILE_POSITION_INFORMATION query_information<FILE_POSITION_INFORMATION>(HANDLE h);
+template FILE_INTERNAL_INFORMATION query_information<FILE_INTERNAL_INFORMATION>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
@@ -442,7 +445,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"rename", [&]() { test_rename(dir); } },
         { u"rename_ex", [&]() { test_rename_ex(token.get(), dir); } },
         { u"delete", [&]() { test_delete(dir); } },
-        { u"delete_ex", [&]() { test_delete_ex(token.get(), dir); } }
+        { u"delete_ex", [&]() { test_delete_ex(token.get(), dir); } },
+        { u"links", [&]() { test_links(token.get(), dir); } }
     };
 
     bool first = true;
@@ -495,12 +499,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     // FIXME - EAs
     // FIXME - FILE_NO_EA_KNOWLEDGE
-
-    // FIXME - hard links (inc. deletion)
-    // FIXME - linking by overwrite
-    // FIXME - POSIX hard links
-    // FIXME - FILE_LINK_IGNORE_READONLY_ATTRIBUTE
-    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - setting file information
 

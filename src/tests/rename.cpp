@@ -1251,54 +1251,6 @@ void test_rename(const u16string& dir) {
     // FIXME - check can't rename root directory?
 }
 
-vector<pair<int64_t, u16string>> query_links(HANDLE h) {
-    IO_STATUS_BLOCK iosb;
-    NTSTATUS Status;
-    FILE_LINKS_INFORMATION fli;
-    vector<pair<int64_t, u16string>> ret;
-
-    fli.BytesNeeded = 0;
-
-    Status = NtQueryInformationFile(h, &iosb, &fli, sizeof(fli), FileHardLinkInformation);
-
-    if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW)
-        throw ntstatus_error(Status);
-
-    if (fli.BytesNeeded == 0)
-        throw runtime_error("fli.BytesNeeded was 0");
-
-    vector<uint8_t> buf(fli.BytesNeeded);
-
-    auto& fli2 = *reinterpret_cast<FILE_LINKS_INFORMATION*>(buf.data());
-
-    Status = NtQueryInformationFile(h, &iosb, &fli2, buf.size(), FileHardLinkInformation);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != buf.size())
-        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, buf.size());
-
-    ret.resize(fli2.EntriesReturned);
-
-    auto flei = &fli2.Entry;
-    for (unsigned int i = 0; i < fli2.EntriesReturned; i++) {
-        auto& p = ret[i];
-
-        p.first = flei->ParentFileId;
-
-        p.second.resize(flei->FileNameLength);
-        memcpy(p.second.data(), flei->FileName, flei->FileNameLength * sizeof(char16_t));
-
-        if (flei->NextEntryOffset == 0)
-            break;
-
-        flei = (FILE_LINK_ENTRY_INFORMATION*)((uint8_t*)flei + flei->NextEntryOffset);
-    }
-
-    return ret;
-}
-
 void test_rename_ex(HANDLE token, const u16string& dir) {
     unique_handle h, h2;
 

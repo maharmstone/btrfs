@@ -595,26 +595,6 @@ void test_delete(const u16string& dir) {
     }
 }
 
-static void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const u16string_view& filename) {
-    NTSTATUS Status;
-    IO_STATUS_BLOCK iosb;
-    vector<uint8_t> buf(offsetof(FILE_LINK_INFORMATION, FileName) + (filename.length() * sizeof(char16_t)));
-    auto& fli = *(FILE_LINK_INFORMATION*)buf.data();
-
-    fli.ReplaceIfExists = replace_if_exists;
-    fli.RootDirectory = root_dir;
-    fli.FileNameLength = filename.length() * sizeof(char16_t);
-    memcpy(fli.FileName, filename.data(), fli.FileNameLength);
-
-    Status = NtSetInformationFile(h, &iosb, &fli, buf.size(), FileLinkInformation);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != 0)
-        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
-}
-
 void test_delete_ex(HANDLE token, const u16string& dir) {
     unique_handle h, h2;
 
