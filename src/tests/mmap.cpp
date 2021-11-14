@@ -676,4 +676,80 @@ void test_mmap(const u16string& dir) {
 
         h.reset();
     }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\mmap15", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA | DELETE,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        unique_handle sect;
+        void* addr = nullptr;
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, 4096, PAGE_READWRITE, SEC_COMMIT, h.get());
+        });
+
+        if (sect) {
+            test("Map view", [&]() {
+                addr = map_view(sect.get(), 0, 4096, PAGE_READWRITE);
+            });
+        }
+
+        h.reset();
+
+        test("Create file 2", [&]() {
+            h = create_file(dir + u"\\mmap15a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        if (h) {
+            test("Overwrite mapped file by linking", [&]() {
+                set_link_information(h.get(), true, nullptr, dir + u"\\mmap15");
+            });
+        }
+
+        if (addr) {
+            test("Unmap view", [&]() {
+                unmap_view(addr);
+            });
+        }
+    }
+
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\mmap16a", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\mmap16b", MAXIMUM_ALLOWED,
+                         0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file by linking", [&]() {
+                exp_status([&]() {
+                    set_link_information(h2.get(), true, nullptr, dir + u"\\mmap16a");
+                }, STATUS_ACCESS_DENIED);
+            });
+        }
+
+        h2.reset();
+    }
 }
