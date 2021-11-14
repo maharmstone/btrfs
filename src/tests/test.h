@@ -4089,6 +4089,6 @@ void set_disposition_information(HANDLE h, bool delete_file);
 
 // links.cpp
 void test_links(HANDLE token, const std::u16string& dir);
-void test_links_ex(const std::u16string& dir);
+void test_links_ex(HANDLE token, const std::u16string& dir);
 std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);

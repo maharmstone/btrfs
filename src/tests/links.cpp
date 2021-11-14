@@ -814,8 +814,8 @@ void test_links(HANDLE token, const std::u16string& dir) {
     disable_token_privileges(token);
 }
 
-void test_links_ex(const u16string& dir) {
-    unique_handle h;
+void test_links_ex(HANDLE token, const u16string& dir) {
+    unique_handle h, h2;
 
     test("Create file", [&]() {
         h = create_file(dir + u"\\linkex1a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
@@ -863,6 +863,263 @@ void test_links_ex(const u16string& dir) {
     }
 
     // FIXME - FILE_LINK_POSIX_SEMANTICS
+
+    // traverse privilege needed to query hard links
+    test("Add SeChangeNotifyPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Create file 1", [&]() {
+        h = create_file(dir + u"\\linkex3a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h2 = create_file(dir + u"\\linkex3b", SYNCHRONIZE | DELETE | FILE_READ_DATA | FILE_WRITE_DATA, 0,
+                         FILE_SHARE_DELETE, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Overwrite file 2 using FILE_LINK_POSIX_SEMANTICS", [&]() {
+            set_link_information_ex(h.get(), FILE_LINK_REPLACE_IF_EXISTS | FILE_LINK_POSIX_SEMANTICS,
+                                    nullptr, dir + u"\\linkex3b");
+        });
+
+        test("Check name of file 1", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\linkex3a";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\linkex3a\".");
+        });
+
+        test("Check name of file 2", [&]() {
+            auto fn = query_file_name_information(h2.get());
+
+            static const u16string_view ends_with = u"\\linkex3b";
+
+            // NTFS moves this to \$Extend\$Deleted directory
+
+            if (fn.size() >= ends_with.size() && fn.substr(fn.size() - ends_with.size()) == ends_with)
+                throw runtime_error("Name ended with \"\\linkex3b\".");
+        });
+
+        test("Check standard information of file 1", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.NumberOfLinks != 2)
+                throw formatted_error("NumberOfLinks was {}, expected 2", fsi.NumberOfLinks);
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+        });
+
+        test("Check standard information of file 2", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
+
+            if (fsi.NumberOfLinks != 0)
+                throw formatted_error("NumberOfLinks was {}, expected 0", fsi.NumberOfLinks);
+
+            if (!fsi.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Check new directory entry", [&]() {
+            u16string_view name = u"linkex3b";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Check old directory entry", [&]() {
+            u16string_view name = u"linkex3a";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+
+        test("Try to clear delete bit on file 2", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h2.get(), false);
+            }, STATUS_FILE_DELETED);
+        });
+
+        test("Write to file 2", [&]() {
+            static const vector<uint8_t> data = {'h','e','l','l','o'};
+
+            write_file(h2.get(), data);
+        });
+
+        test("Read from file 2", [&]() {
+            static const vector<uint8_t> exp = {'h','e','l','l','o'};
+
+            auto buf = read_file(h2.get(), exp.size(), 0);
+
+            if (buf.size() != exp.size())
+                throw formatted_error("Read {} bytes, expected {}", buf.size(), exp.size());
+
+            if (buf != exp)
+                throw runtime_error("Data read did not match data written");
+        });
+
+        int64_t dir_id;
+
+        test("Check file 1 hardlinks", [&]() {
+            auto items = query_links(h.get());
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2.", items.size());
+
+            auto& item1 = items[0];
+            auto& item2 = items[1];
+
+            if (item1.first != item2.first)
+                throw runtime_error("Links were in different directories");
+
+            if (!(item1.second == u"linkex3a" && item2.second == u"linkex3b") && !(item1.second == u"linkex3b" && item2.second == u"linkex3a"))
+                throw runtime_error("Link names were not what was expected");
+
+            dir_id = item1.first;
+        });
+
+        test("Check file 2 hardlinks", [&]() {
+            auto items = query_links(h2.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& item = items.front();
+
+            if (item.second == u"linkex3b")
+                throw formatted_error("Link was called linkex3b, expected something else", u16string_to_string(item.second));
+
+            if (item.first == dir_id)
+                throw runtime_error("Dir ID of orphaned inode is same as before");
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
+    test("Disable token privileges", [&]() {
+        disable_token_privileges(token);
+    });
+
+    test("Create file 1", [&]() {
+        h = create_file(dir + u"\\linkex4a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2 without FILE_SHARE_DELETE", [&]() {
+        h2 = create_file(dir + u"\\linkex4b", MAXIMUM_ALLOWED, 0,
+                         0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try to overwrite file 2 using FILE_LINK_POSIX_SEMANTICS", [&]() {
+            exp_status([&]() {
+                set_link_information_ex(h.get(), FILE_LINK_REPLACE_IF_EXISTS | FILE_LINK_POSIX_SEMANTICS,
+                                        nullptr, dir + u"\\linkex4b");
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\linkex5a", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\linkex5b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    auto img = pe_image(as_bytes(span("hello")));
+
+    if (h && h2) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file by link", [&]() {
+                exp_status([&]() {
+                    set_link_information_ex(h2.get(), FILE_LINK_REPLACE_IF_EXISTS, nullptr, dir + u"\\linkex5a");
+                }, STATUS_ACCESS_DENIED);
+            });
+        }
+
+        h2.reset();
+    }
+
+    test("Create image file", [&]() {
+        h = create_file(dir + u"\\linkex6a", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA,
+                        0, 0, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    test("Create file", [&]() {
+        h2 = create_file(dir + u"\\linkex6b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        unique_handle sect;
+
+        test("Write to file", [&]() {
+            write_file(h.get(), img);
+        });
+
+        test("Create section", [&]() {
+            sect = create_section(SECTION_ALL_ACCESS, nullopt, PAGE_READWRITE, SEC_IMAGE, h.get());
+        });
+
+        h.reset();
+
+        if (sect) {
+            test("Try overwriting mapped image file by POSIX link", [&]() {
+                exp_status([&]() {
+                    set_link_information_ex(h2.get(), FILE_LINK_REPLACE_IF_EXISTS | FILE_LINK_POSIX_SEMANTICS,
+                                            nullptr, dir + u"\\linkex6a");
+                }, STATUS_ACCESS_DENIED);
+            });
+        }
+
+        h2.reset();
+    }
 
     // FIXME - FILE_LINK_SUPPRESS_STORAGE_RESERVE_INHERITANCE
     // FIXME - FILE_LINK_NO_INCREASE_AVAILABLE_SPACE

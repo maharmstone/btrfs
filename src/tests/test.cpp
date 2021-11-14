@@ -447,7 +447,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"delete", [&]() { test_delete(dir); } },
         { u"delete_ex", [&]() { test_delete_ex(token.get(), dir); } },
         { u"links", [&]() { test_links(token.get(), dir); } },
-        { u"links_ex", [&]() { test_links_ex(dir); } }
+        { u"links_ex", [&]() { test_links_ex(token.get(), dir); } }
     };
 
     bool first = true;
