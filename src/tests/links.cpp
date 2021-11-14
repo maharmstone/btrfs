@@ -595,8 +595,25 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link12a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create readonly file", [&]() {
+            create_file(dir + u"\\link12b", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Try overwriting readonly file by linking", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), true, nullptr, dir + u"\\link12b");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
     // FIXME - test security (nothing on source, need FILE_ADD_FILE on destination?)
-    // FIXME - test overwriting readonly file by link
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
     // FIXME - FILE_LINK_POSIX_SEMANTICS
