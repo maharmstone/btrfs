@@ -453,7 +453,7 @@ void test_links(HANDLE token, const std::u16string& dir) {
     }
 
     test("Create file", [&]() {
-        h = create_file(dir + u"\\link9", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        h = create_file(dir + u"\\link9", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
     if (h) {
@@ -504,7 +504,84 @@ void test_links(HANDLE token, const std::u16string& dir) {
         });
     }
 
-    // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link10", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        struct {
+            u16string name;
+            string desc;
+        } invalid_names[] = {
+            { u"/", "slash" },
+            { u":", "colon" },
+            { u"<", "less than" },
+            { u">", "greater than" },
+            { u"\"", "quote" },
+            { u"|", "pipe" },
+            { u"?", "question mark" },
+            { u"*", "asterisk" }
+        };
+
+        for (const auto& n : invalid_names) {
+            test("Try creating link to invalid name (" + n.desc + ")", [&]() {
+                auto fn = dir + u"\\link10" + n.name;
+
+                exp_status([&]() {
+                    set_link_information(h.get(), false, nullptr, fn);
+                }, STATUS_OBJECT_NAME_INVALID);
+            });
+        }
+
+        bool is_ntfs = fstype == fs_type::ntfs;
+
+        test("Create link with more than 255 UTF-8 characters", [&]() {
+            auto fn = dir + u"\\link10";
+
+            for (unsigned int i = 0; i < 64; i++) {
+                fn += u"\U0001f525";
+            }
+
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        test("Create link with WTF-16 (1)", [&]() {
+            auto fn = dir + u"\\link10";
+
+            fn += (char16_t)0xd83d;
+
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        test("Create link with WTF-16 (2)", [&]() {
+            auto fn = dir + u"\\link10";
+
+            fn += (char16_t)0xdd25;
+
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        test("Create link with WTF-16 (3)", [&]() {
+            auto fn = dir + u"\\link10";
+
+            fn += (char16_t)0xdd25;
+            fn += (char16_t)0xd83d;
+
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - test security (nothing on source, need FILE_ADD_FILE on destination?)
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
     // FIXME - FILE_LINK_POSIX_SEMANTICS
