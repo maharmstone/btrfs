@@ -839,8 +839,30 @@ void test_links_ex(const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\linkex2a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create readonly file", [&]() {
+            create_file(dir + u"\\linkex2b", MAXIMUM_ALLOWED, FILE_ATTRIBUTE_READONLY,
+                        0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Try overwrite by link without FILE_LINK_IGNORE_READONLY_ATTRIBUTE", [&]() {
+            exp_status([&]() {
+                set_link_information_ex(h.get(), FILE_LINK_REPLACE_IF_EXISTS, nullptr, dir + u"\\linkex2b");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Overwrite by link with FILE_LINK_IGNORE_READONLY_ATTRIBUTE", [&]() {
+            set_link_information_ex(h.get(), FILE_LINK_REPLACE_IF_EXISTS | FILE_LINK_IGNORE_READONLY_ATTRIBUTE, nullptr, dir + u"\\linkex2b");
+        });
+
+        h.reset();
+    }
+
     // FIXME - FILE_LINK_POSIX_SEMANTICS
-    // FIXME - FILE_LINK_IGNORE_READONLY_ATTRIBUTE
 
     // FIXME - FILE_LINK_SUPPRESS_STORAGE_RESERVE_INHERITANCE
     // FIXME - FILE_LINK_NO_INCREASE_AVAILABLE_SPACE
