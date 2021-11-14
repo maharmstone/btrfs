@@ -274,7 +274,20 @@ void test_links(HANDLE token, const std::u16string& dir) {
         });
     }
 
-    // FIXME - test can't hardlink directory
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\link2dir", DELETE, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create link", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, dir + u"\\link2dira");
+            }, STATUS_FILE_IS_A_DIRECTORY);
+        });
+
+        h.reset();
+    }
+
     // FIXME - check link to same file
     // FIXME - check link to same file but different case
     // FIXME - root_dir
