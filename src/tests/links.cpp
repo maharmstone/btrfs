@@ -581,7 +581,22 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link11", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try linking into non-existent directory", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, dir + u"\\linknonsuch\\file");
+            }, STATUS_OBJECT_PATH_NOT_FOUND);
+        });
+
+        h.reset();
+    }
+
     // FIXME - test security (nothing on source, need FILE_ADD_FILE on destination?)
+    // FIXME - test overwriting readonly file by link
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
     // FIXME - FILE_LINK_POSIX_SEMANTICS
