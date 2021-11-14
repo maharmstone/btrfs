@@ -304,8 +304,46 @@ void test_links(HANDLE token, const std::u16string& dir) {
         });
     }
 
+    test("Create file with FILE_DELETE_ON_CLOSE", [&]() {
+        h = create_file(dir + u"\\link4a", DELETE, 0, 0, FILE_CREATE, FILE_DELETE_ON_CLOSE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create link", [&]() {
+            set_link_information(h.get(), false, nullptr, dir + u"\\link4b");
+        });
+
+        test("Check standard information", [&]() {
+            auto fsi = query_information<FILE_STANDARD_INFORMATION>(h.get());
+
+            if (fsi.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsi.NumberOfLinks != 2)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi.NumberOfLinks);
+        });
+
+        h.reset();
+
+        test("Check directory entry of created link after close", [&]() {
+            u16string_view name = u"link4b";
+
+            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+    }
+
     // FIXME - root_dir
-    // FIXME - create link when file has FILE_DELETE_ON_CLOSE set
 
     // FIXME - linking by overwrite
     // FIXME - check link to same file
