@@ -497,6 +497,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     // FIXME - ADSes (including prohibited names)
 
+    // FIXME - test what happens when we use filename in path as if it were a directory (creating, renaming, linking)
+
     // FIXME - EAs
     // FIXME - FILE_NO_EA_KNOWLEDGE
 

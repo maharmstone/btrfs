@@ -651,8 +651,145 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
-    // FIXME - DELETE required on destination if overwriting? Or will FILE_DELETE_CHILD do?
-    // FIXME - try to create link using file as if directory
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link14", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle h3;
+
+        test("Create directory", [&]() {
+            h2 = create_file(dir + u"\\link14dir", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Create file in directory", [&]() {
+            h3 = create_file(dir + u"\\link14dir\\file", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Clear directory ACL", [&]() {
+            set_dacl(h2.get(), 0);
+        });
+
+        h2.reset();
+
+        test("Set file ACL to DELETE", [&]() {
+            set_dacl(h3.get(), DELETE);
+        });
+
+        h3.reset();
+
+        test("Try to create link", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), true, nullptr, dir + u"\\link14dir\\file");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link15", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle h3;
+
+        test("Create directory", [&]() {
+            h2 = create_file(dir + u"\\link15dir", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Create file in directory", [&]() {
+            h3 = create_file(dir + u"\\link15dir\\file", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Set directory ACL to SYNCHRONIZE | FILE_ADD_FILE", [&]() {
+            set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_FILE);
+        });
+
+        h2.reset();
+
+        test("Clear file ACL", [&]() {
+            set_dacl(h3.get(), 0);
+        });
+
+        h3.reset();
+
+        test("Try to create link", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), true, nullptr, dir + u"\\link15dir\\file");
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link16", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle h3;
+
+        test("Create directory", [&]() {
+            h2 = create_file(dir + u"\\link16dir", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Create file in directory", [&]() {
+            h3 = create_file(dir + u"\\link16dir\\file", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Set directory ACL to SYNCHRONIZE | FILE_ADD_FILE", [&]() {
+            set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_FILE);
+        });
+
+        h2.reset();
+
+        test("Set file ACL to DELETE", [&]() {
+            set_dacl(h3.get(), DELETE);
+        });
+
+        h3.reset();
+
+        test("Create link", [&]() {
+            set_link_information(h.get(), true, nullptr, dir + u"\\link16dir\\file");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link17", FILE_READ_DATA, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle h3;
+
+        test("Create directory", [&]() {
+            h2 = create_file(dir + u"\\link17dir", WRITE_DAC, 0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+        });
+
+        test("Create file in directory", [&]() {
+            h3 = create_file(dir + u"\\link17dir\\file", WRITE_DAC, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Set directory ACL to SYNCHRONIZE | FILE_ADD_FILE | FILE_DELETE_CHILD", [&]() {
+            set_dacl(h2.get(), SYNCHRONIZE | FILE_ADD_FILE | FILE_DELETE_CHILD);
+        });
+
+        h2.reset();
+
+        test("Clear file ACL", [&]() {
+            set_dacl(h3.get(), 0);
+        });
+
+        h3.reset();
+
+        test("Create link", [&]() {
+            set_link_information(h.get(), true, nullptr, dir + u"\\link17dir\\file");
+        });
+
+        h.reset();
+    }
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
     // FIXME - FILE_LINK_POSIX_SEMANTICS
