@@ -343,7 +343,60 @@ void test_links(HANDLE token, const std::u16string& dir) {
         });
     }
 
-    // FIXME - root_dir
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link5file", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create directory without FILE_SHARE_WRITE", [&]() {
+        h2 = create_file(dir + u"\\link5dir", FILE_READ_DATA, 0, 0,
+                         FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Try create link through directory handle", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), false, h2.get(), u"file");
+            }, STATUS_SHARING_VIOLATION);
+        });
+
+        h.reset();
+        h2.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link6file", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create directory", [&]() {
+        h2 = create_file(dir + u"\\link6dir", FILE_READ_DATA, 0, FILE_SHARE_WRITE,
+                         FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h && h2) {
+        test("Create link", [&]() {
+            set_link_information(h.get(), false, h2.get(), u"file");
+        });
+
+        h2.reset();
+
+        test("Check links", [&]() {
+            auto items = query_links(h.get());
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2.", items.size());
+
+            auto& item1 = items[0];
+            auto& item2 = items[1];
+
+            if (item1.first == item2.first)
+                throw runtime_error("Links were in same directory");
+
+            if (!(item1.second == u"link6file" && item2.second == u"file") && !(item1.second == u"file" && item2.second == u"link6file"))
+                throw runtime_error("Link names were not what was expected");
+        });
+
+        h.reset();
+    }
 
     // FIXME - linking by overwrite
     // FIXME - check link to same file
