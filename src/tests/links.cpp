@@ -288,12 +288,28 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
-    // FIXME - check link to same file
-    // FIXME - check link to same file but different case
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\link3a", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Create second file", [&]() {
+            create_file(dir + u"\\link3b", DELETE, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        });
+
+        test("Try overwrite by link without ReplaceIfExists set", [&]() {
+            exp_status([&]() {
+                set_link_information(h.get(), false, nullptr, dir + u"\\link3b");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+    }
+
     // FIXME - root_dir
     // FIXME - create link when file has FILE_DELETE_ON_CLOSE set
 
     // FIXME - linking by overwrite
+    // FIXME - check link to same file
+    // FIXME - check link to same file but different case
     // FIXME - check invalid names (invalid characters, > 255 UTF-16, > 255 UTF-8, invalid UTF-16)
 
     // FIXME - FILE_LINK_REPLACE_IF_EXISTS
