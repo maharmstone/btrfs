@@ -257,7 +257,21 @@ void test_oplocks(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - test no level 2 oplock granted for directory
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\oplock4", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to get level 2 oplock", [&]() {
+            exp_status([&]() {
+                req_oplock_level2(h.get(), iosb);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
     // FIXME - test granted if level 2 / read oplocks already there
     // FIXME - test not granted (STATUS_OPLOCK_NOT_GRANTED) if any other sort of oplock there
 
