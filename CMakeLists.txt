@@ -337,7 +337,8 @@ if(WITH_TEST)
         src/tests/mmap.cpp
         src/tests/rename.cpp
         src/tests/delete.cpp
-        src/tests/links.cpp)
+        src/tests/links.cpp
+        src/tests/oplock.cpp)
 
     add_executable(test ${TEST_SRC_FILES})
 

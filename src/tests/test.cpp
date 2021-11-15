@@ -447,7 +447,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"delete", [&]() { test_delete(dir); } },
         { u"delete_ex", [&]() { test_delete_ex(token.get(), dir); } },
         { u"links", [&]() { test_links(token.get(), dir); } },
-        { u"links_ex", [&]() { test_links_ex(token.get(), dir); } }
+        { u"links_ex", [&]() { test_links_ex(token.get(), dir); } },
+        { u"oplock", [&]() { test_oplocks(dir); } }
     };
 
     bool first = true;
@@ -513,11 +514,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     // FIXME - querying directory (inc. specific files)
     // FIXME - directory notifications
-
-    // FIXME - oplocks
-    // FIXME - FILE_RESERVE_OPFILTER
-    // FIXME - FILE_OPEN_REQUIRING_OPLOCK
-    // FIXME - FILE_COMPLETE_IF_OPLOCKED
 
     // FIXME - IOCTLs and FSCTLs
 

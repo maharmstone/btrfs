@@ -109,6 +109,20 @@ extern "C"
 NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                        PSECURITY_DESCRIPTOR SecurityDescriptor);
 
+typedef enum _EVENT_INFORMATION_CLASS {
+    EventBasicInformation
+} EVENT_INFORMATION_CLASS, *PEVENT_INFORMATION_CLASS;
+
+typedef struct _EVENT_BASIC_INFORMATION {
+    EVENT_TYPE EventType;
+    LONG EventState;
+} EVENT_BASIC_INFORMATION, *PEVENT_BASIC_INFORMATION;
+
+extern "C"
+NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
+                                PVOID EventInformation, ULONG EventInformationLength,
+                                PULONG ReturnLength);
+
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
@@ -4092,3 +4106,6 @@ void test_links(HANDLE token, const std::u16string& dir);
 void test_links_ex(HANDLE token, const std::u16string& dir);
 std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
+
+// oplock.cpp
+void test_oplocks(const std::u16string& dir);
