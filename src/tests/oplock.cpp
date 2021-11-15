@@ -218,7 +218,7 @@ void test_oplocks(const u16string& dir) {
         h.reset();
     }
 
-    test("Open file", [&]() {
+    test("Create file", [&]() {
         h = create_file(dir + u"\\oplock2", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                         FILE_CREATE, 0, FILE_CREATED);
     });
@@ -241,8 +241,23 @@ void test_oplocks(const u16string& dir) {
         h.reset();
     }
 
+    test("Create file with FILE_SYNCHRONOUS_IO_NONALERT", [&]() {
+        h = create_file(dir + u"\\oplock3", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to get level 2 oplock", [&]() {
+            exp_status([&]() {
+                req_oplock_level2(h.get(), iosb);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        h.reset();
+    }
+
     // FIXME - test no level 2 oplock granted for directory
-    // FIXME - test no level 2 oplock granted if synchronous
     // FIXME - test granted if level 2 / read oplocks already there
     // FIXME - test not granted (STATUS_OPLOCK_NOT_GRANTED) if any other sort of oplock there
 
