@@ -4091,6 +4091,7 @@ void test_mmap(const std::u16string& dir);
 unique_handle create_section(ACCESS_MASK access, std::optional<uint64_t> max_size, ULONG prot,
                              ULONG atts, HANDLE file);
 std::vector<uint8_t> pe_image(std::span<const std::byte> data);
+void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive);
 
 // rename.cpp
 void test_rename(const std::u16string& dir);

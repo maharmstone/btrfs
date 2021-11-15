@@ -11,6 +11,8 @@ static unique_handle req_oplock_level2(HANDLE h, IO_STATUS_BLOCK& iosb) {
     NTSTATUS Status;
     HANDLE ev;
 
+    iosb.Information = 0;
+
     Status = NtCreateEvent(&ev, MAXIMUM_ALLOWED, nullptr, NotificationEvent, false);
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
@@ -39,6 +41,7 @@ static bool check_event(HANDLE h) {
 
 void test_oplocks(const u16string& dir) {
     unique_handle h, h2;
+    IO_STATUS_BLOCK iosb;
     auto data = random_data(4096);
 
     test("Create file", [&]() {
@@ -61,7 +64,6 @@ void test_oplocks(const u16string& dir) {
 
     if (h) {
         unique_handle ev;
-        IO_STATUS_BLOCK iosb;
 
         test("Get level 2 oplock", [&]() {
             ev = req_oplock_level2(h.get(), iosb);
@@ -190,18 +192,60 @@ void test_oplocks(const u16string& dir) {
             });
 
             h2.reset();
+
+            test("Get level 2 oplock", [&]() {
+                ev = req_oplock_level2(h.get(), iosb);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Lock file", [&]() {
+                lock_file(h.get(), 0, 4096, false);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
         }
+
+        h.reset();
+    }
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\oplock2", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), data, 0);
+        });
+
+        test("Lock file", [&]() {
+            lock_file(h.get(), 0, 4096, false);
+        });
+
+        test("Try to get level 2 oplock", [&]() {
+            exp_status([&]() {
+                req_oplock_level2(h.get(), iosb);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         h.reset();
     }
 
     // FIXME - test no level 2 oplock granted for directory
     // FIXME - test no level 2 oplock granted if synchronous
-    // FIXME - test no level 2 oplock granted if any byte-range locks
     // FIXME - test granted if level 2 / read oplocks already there
     // FIXME - test not granted (STATUS_OPLOCK_NOT_GRANTED) if any other sort of oplock there
 
-    // FIXME - lock
     // FIXME - FileEndOfFileInformation
     // FIXME - FileAllocationInformation
     // FIXME - FileValidDataLengthInformation
@@ -209,6 +253,14 @@ void test_oplocks(const u16string& dir) {
     // FIXME - FileLinkInformation
     // FIXME - FileDispositionInformation
     // FIXME - FSCTL_SET_ZERO_DATA
+
+    // FIXME - level 1 oplocks
+    // FIXME - batch oplocks
+    // FIXME - filter oplocks
+    // FIXME - read oplocks
+    // FIXME - read-handle oplocks
+    // FIXME - read-write oplocks
+    // FIXME - read-write-handle oplocks
 
     // FIXME - FILE_RESERVE_OPFILTER
     // FIXME - FILE_OPEN_REQUIRING_OPLOCK
