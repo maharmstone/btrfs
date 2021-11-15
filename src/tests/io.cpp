@@ -84,7 +84,7 @@ static unique_handle create_event() {
     return unique_handle(h);
 }
 
-static void write_file_wait(HANDLE h, span<uint8_t> data, optional<uint64_t> offset = nullopt) {
+void write_file_wait(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -139,7 +139,7 @@ vector<uint8_t> read_file(HANDLE h, ULONG len, optional<uint64_t> offset) {
     return buf;
 }
 
-static vector<uint8_t> read_file_wait(HANDLE h, ULONG len, optional<uint64_t> offset = nullopt) {
+vector<uint8_t> read_file_wait(HANDLE h, ULONG len, optional<uint64_t> offset) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(len);
