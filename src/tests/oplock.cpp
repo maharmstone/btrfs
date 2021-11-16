@@ -731,7 +731,172 @@ void test_oplocks_ii(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // level1, filter, batch, RW, and RWH oplocks break if second handle opened
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockii8", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get level 1 oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::level1);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get level 2 oplock", [&]() {
+            IO_STATUS_BLOCK iosb2;
+
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::level2);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockii9", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get level 2 oplock", [&]() {
+            IO_STATUS_BLOCK iosb2;
+
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::level2);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockii10", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get batch oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::batch);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get level 2 oplock", [&]() {
+            IO_STATUS_BLOCK iosb2;
+
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::level2);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockii11", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+
+        test("Get read-write oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_write, roob);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get level 2 oplock", [&]() {
+            IO_STATUS_BLOCK iosb2;
+
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::level2);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockii12", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+
+        test("Get read-write-handle oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_write_handle, roob);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get level 2 oplock", [&]() {
+            IO_STATUS_BLOCK iosb2;
+
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::level2);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
 
     disable_token_privileges(token);
 }
