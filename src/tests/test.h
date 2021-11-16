@@ -415,6 +415,23 @@ typedef struct _FILE_VALID_DATA_LENGTH_INFORMATION {
     LARGE_INTEGER ValidDataLength;
 } FILE_VALID_DATA_LENGTH_INFORMATION, *PFILE_VALID_DATA_LENGTH_INFORMATION;
 
+typedef struct _REQUEST_OPLOCK_INPUT_BUFFER {
+    WORD StructureVersion;
+    WORD StructureLength;
+    DWORD RequestedOplockLevel;
+    DWORD Flags;
+} REQUEST_OPLOCK_INPUT_BUFFER, *PREQUEST_OPLOCK_INPUT_BUFFER;
+
+typedef struct _REQUEST_OPLOCK_OUTPUT_BUFFER {
+    WORD StructureVersion;
+    WORD StructureLength;
+    DWORD OriginalOplockLevel;
+    DWORD NewOplockLevel;
+    DWORD Flags;
+    ACCESS_MASK AccessMode;
+    WORD ShareMode;
+} REQUEST_OPLOCK_OUTPUT_BUFFER, *PREQUEST_OPLOCK_OUTPUT_BUFFER;
+
 class handle_closer {
 public:
     typedef HANDLE pointer;

@@ -2,12 +2,37 @@
 
 using namespace std;
 
+#define FSCTL_REQUEST_OPLOCK_LEVEL_1 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 0, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_REQUEST_OPLOCK_LEVEL_2 CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 1, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_REQUEST_BATCH_OPLOCK CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 2, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_REQUEST_FILTER_OPLOCK CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 23, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define FSCTL_REQUEST_OPLOCK CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 144, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define FILE_OPLOCK_BROKEN_TO_LEVEL_2       0x00000007
 #define FILE_OPLOCK_BROKEN_TO_NONE          0x00000008
 
-static unique_handle req_oplock_level2(HANDLE h, IO_STATUS_BLOCK& iosb) {
+#define OPLOCK_LEVEL_CACHE_READ         0x00000001
+#define OPLOCK_LEVEL_CACHE_HANDLE       0x00000002
+#define OPLOCK_LEVEL_CACHE_WRITE        0x00000004
+
+#define REQUEST_OPLOCK_INPUT_FLAG_REQUEST               0x00000001
+#define REQUEST_OPLOCK_INPUT_FLAG_ACK                   0x00000002
+#define REQUEST_OPLOCK_INPUT_FLAG_COMPLETE_ACK_ON_CLOSE 0x00000004
+
+#define REQUEST_OPLOCK_CURRENT_VERSION          1
+
+enum oplock_type {
+    level1,
+    level2,
+    batch,
+    filter,
+    read_oplock,
+    read_handle,
+    read_write,
+    read_write_handle
+};
+
+static unique_handle req_oplock(HANDLE h, IO_STATUS_BLOCK& iosb, enum oplock_type type) {
     NTSTATUS Status;
     HANDLE ev;
 
@@ -17,9 +42,73 @@ static unique_handle req_oplock_level2(HANDLE h, IO_STATUS_BLOCK& iosb) {
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
 
-    Status = NtFsControlFile(h, ev, nullptr, nullptr, &iosb,
-                             FSCTL_REQUEST_OPLOCK_LEVEL_2,
-                             nullptr, 0, nullptr, 0);
+    switch (type) {
+        case oplock_type::level1:
+            Status = NtFsControlFile(h, ev, nullptr, nullptr, &iosb,
+                                     FSCTL_REQUEST_OPLOCK_LEVEL_1,
+                                     nullptr, 0, nullptr, 0);
+        break;
+
+        case oplock_type::level2:
+            Status = NtFsControlFile(h, ev, nullptr, nullptr, &iosb,
+                                     FSCTL_REQUEST_OPLOCK_LEVEL_2,
+                                     nullptr, 0, nullptr, 0);
+        break;
+
+        case oplock_type::batch:
+            Status = NtFsControlFile(h, ev, nullptr, nullptr, &iosb,
+                                     FSCTL_REQUEST_BATCH_OPLOCK,
+                                     nullptr, 0, nullptr, 0);
+        break;
+
+        case oplock_type::filter:
+            Status = NtFsControlFile(h, ev, nullptr, nullptr, &iosb,
+                                     FSCTL_REQUEST_FILTER_OPLOCK,
+                                     nullptr, 0, nullptr, 0);
+        break;
+
+        case oplock_type::read_oplock:
+        case oplock_type::read_handle:
+        case oplock_type::read_write:
+        case oplock_type::read_write_handle: {
+            REQUEST_OPLOCK_INPUT_BUFFER roib;
+            REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+
+            roib.StructureVersion = REQUEST_OPLOCK_CURRENT_VERSION;
+            roib.StructureLength = sizeof(roib);
+            roib.Flags = REQUEST_OPLOCK_INPUT_FLAG_REQUEST;
+
+            switch (type) {
+                case oplock_type::read_oplock:
+                    roib.RequestedOplockLevel = OPLOCK_LEVEL_CACHE_READ;
+                break;
+
+                case oplock_type::read_handle:
+                    roib.RequestedOplockLevel = OPLOCK_LEVEL_CACHE_READ | OPLOCK_LEVEL_CACHE_HANDLE;
+                break;
+
+                case oplock_type::read_write:
+                    roib.RequestedOplockLevel = OPLOCK_LEVEL_CACHE_READ | OPLOCK_LEVEL_CACHE_WRITE;
+                break;
+
+                case oplock_type::read_write_handle:
+                    roib.RequestedOplockLevel = OPLOCK_LEVEL_CACHE_READ | OPLOCK_LEVEL_CACHE_WRITE | OPLOCK_LEVEL_CACHE_HANDLE;
+                break;
+
+                default:
+                break;
+            }
+
+            roob.StructureVersion = REQUEST_OPLOCK_CURRENT_VERSION;
+            roob.StructureLength = sizeof(roob);
+
+            Status = NtFsControlFile(h, ev, nullptr, nullptr, &iosb,
+                                     FSCTL_REQUEST_OPLOCK,
+                                     &roib, sizeof(roib),
+                                     &roob, sizeof(roob));
+            break;
+        }
+    }
 
     if (Status != STATUS_PENDING)
         throw ntstatus_error(Status);
@@ -77,7 +166,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
         unique_handle ev;
 
         test("Get level 2 oplock", [&]() {
-            ev = req_oplock_level2(h.get(), iosb);
+            ev = req_oplock(h.get(), iosb, oplock_type::level2);
         });
 
         if (ev) {
@@ -116,7 +205,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             h2.reset();
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -140,7 +229,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             h2.reset();
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -168,7 +257,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -210,7 +299,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -239,7 +328,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -260,7 +349,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -281,7 +370,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -302,7 +391,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -341,7 +430,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             });
 
             test("Get level 2 oplock", [&]() {
-                ev = req_oplock_level2(h.get(), iosb);
+                ev = req_oplock(h.get(), iosb, oplock_type::level2);
             });
 
             test("Check oplock not broken", [&]() {
@@ -380,7 +469,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
 
         test("Try to get level 2 oplock", [&]() {
             exp_status([&]() {
-                req_oplock_level2(h.get(), iosb);
+                req_oplock(h.get(), iosb, oplock_type::level2);
             }, STATUS_OPLOCK_NOT_GRANTED);
         });
 
@@ -396,7 +485,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
     if (h) {
         test("Try to get level 2 oplock", [&]() {
             exp_status([&]() {
-                req_oplock_level2(h.get(), iosb);
+                req_oplock(h.get(), iosb, oplock_type::level2);
             }, STATUS_OPLOCK_NOT_GRANTED);
         });
 
@@ -411,7 +500,7 @@ void test_oplocks(HANDLE token, const u16string& dir) {
     if (h) {
         test("Try to get level 2 oplock", [&]() {
             exp_status([&]() {
-                req_oplock_level2(h.get(), iosb);
+                req_oplock(h.get(), iosb, oplock_type::level2);
             }, STATUS_INVALID_PARAMETER);
         });
 
