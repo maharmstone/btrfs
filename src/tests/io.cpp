@@ -5,6 +5,8 @@
 
 using namespace std;
 
+#define FSCTL_SET_ZERO_DATA CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 50, METHOD_BUFFERED, FILE_WRITE_DATA)
+
 template<size_t N>
 void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& privs) {
     NTSTATUS Status;
@@ -223,6 +225,22 @@ void set_end_of_file(HANDLE h, uint64_t eof) {
 
     if (iosb.Information != 0)
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
+static void set_zero_data(HANDLE h, uint64_t start, uint64_t end) {
+    NTSTATUS Status;
+    FILE_ZERO_DATA_INFORMATION fzdi;
+    IO_STATUS_BLOCK iosb;
+
+    fzdi.FileOffset.QuadPart = start;
+    fzdi.BeyondFinalZero.QuadPart = end;
+
+    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb,
+                             FSCTL_SET_ZERO_DATA, &fzdi, sizeof(fzdi),
+                             nullptr, 0);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
 }
 
 void test_io(HANDLE token, const u16string& dir) {
@@ -1260,6 +1278,66 @@ void test_io(HANDLE token, const u16string& dir) {
                 throw formatted_error("EndOfFile was {}, expected {}",
                                       fsi.EndOfFile.QuadPart, 4096);
             }
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\io7", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        auto random = random_data(150);
+
+        test("Write file", [&]() {
+            write_file(h.get(), random);
+        });
+
+        test("Set zero data", [&]() {
+            set_zero_data(h.get(), 25, 125);
+        });
+
+        test("Read file", [&]() {
+            auto ret = read_file(h.get(), random.size(), 0);
+            auto exp = random;
+
+            memset(exp.data() + 25, 0, 100);
+
+            if (memcmp(ret.data(), exp.data(), exp.size()))
+                throw runtime_error("Data read did not match data written");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\io8", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0, 0,
+                        FILE_CREATE, FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+                        FILE_CREATED);
+    });
+
+    if (h) {
+        auto random = random_data(4096 * 3);
+
+        test("Write file", [&]() {
+            write_file(h.get(), random);
+        });
+
+        test("Set zero data", [&]() {
+            set_zero_data(h.get(), 4096, 4096 * 2);
+        });
+
+        test("Read file", [&]() {
+            auto ret = read_file(h.get(), random.size(), 0);
+            auto exp = random;
+
+            memset(exp.data() + 4096, 0, 4096);
+
+            if (memcmp(ret.data(), exp.data(), exp.size()))
+                throw runtime_error("Data read did not match data written");
         });
 
         h.reset();
