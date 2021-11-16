@@ -48,7 +48,7 @@ static void unmap_view(void* addr) {
         throw ntstatus_error(Status);
 }
 
-void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive) {
+static void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER offli, lenli;

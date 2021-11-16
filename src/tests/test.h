@@ -4107,6 +4107,7 @@ std::vector<uint8_t> read_file_wait(HANDLE h, ULONG len, std::optional<uint64_t>
 void set_allocation(HANDLE h, uint64_t alloc);
 void set_valid_data_length(HANDLE h, uint64_t vdl);
 void set_zero_data(HANDLE h, uint64_t start, uint64_t end);
+unique_handle create_event();
 
 template<size_t N>
 void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES, N>& privs);
@@ -4116,7 +4117,6 @@ void test_mmap(const std::u16string& dir);
 unique_handle create_section(ACCESS_MASK access, std::optional<uint64_t> max_size, ULONG prot,
                              ULONG atts, HANDLE file);
 std::vector<uint8_t> pe_image(std::span<const std::byte> data);
-void lock_file(HANDLE h, uint64_t offset, uint64_t length, bool exclusive);
 
 // rename.cpp
 void test_rename(const std::u16string& dir);
@@ -4136,4 +4136,5 @@ std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
 
 // oplock.cpp
-void test_oplocks(HANDLE token, const std::u16string& dir);
+void test_oplocks_ii(HANDLE token, const std::u16string& dir);
+void test_oplocks_r(HANDLE token, const std::u16string& dir);

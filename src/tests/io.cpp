@@ -74,7 +74,7 @@ void write_file(HANDLE h, span<const uint8_t> data, optional<uint64_t> offset) {
         throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, data.size());
 }
 
-static unique_handle create_event() {
+unique_handle create_event() {
     NTSTATUS Status;
     HANDLE h;
 
