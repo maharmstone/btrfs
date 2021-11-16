@@ -1100,12 +1100,32 @@ void test_oplocks_r(HANDLE token, const u16string& dir) {
     });
 
     if (h) {
-        /* Succeeds on Windows 10. According to
-         * https://docs.microsoft.com/en-us/windows-hardware/drivers/ifs/granting-oplocks
-         * it should fail with STATUS_INVALID_PARAMETER, which is what happens on Windows 7. */
-        test("Try to get read oplock", [&]() {
-            req_oplock_win7(h.get(), iosb, oplock_type::read_oplock, roob);
+        unique_handle ev;
+
+        // Succeeds on Windows 8 and above (see https://docs.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_request_oplock)
+        test("Get read oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_oplock, roob);
         });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Create file in directory", [&]() {
+                create_file(dir + u"\\oplockr4\\file", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (roob.NewOplockLevel != 0)
+                    throw formatted_error("NewOplockLevel was {}, expected 0", iosb.Information);
+            });
+        }
 
         h.reset();
     }
