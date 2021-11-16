@@ -106,6 +106,10 @@ NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event OPTIONAL, PIO_APC_
                               BOOLEAN ExclusiveLock);
 
 extern "C"
+NTSTATUS __stdcall NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                                PLARGE_INTEGER Length, ULONG Key);
+
+extern "C"
 NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                        PSECURITY_DESCRIPTOR SecurityDescriptor);
 
@@ -4136,5 +4140,6 @@ std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
 
 // oplock.cpp
+void test_oplocks_i(HANDLE token, const std::u16string& dir);
 void test_oplocks_ii(HANDLE token, const std::u16string& dir);
 void test_oplocks_r(HANDLE token, const std::u16string& dir);

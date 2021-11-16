@@ -235,9 +235,19 @@ void set_zero_data(HANDLE h, uint64_t start, uint64_t end) {
     fzdi.FileOffset.QuadPart = start;
     fzdi.BeyondFinalZero.QuadPart = end;
 
-    Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb,
+    auto ev = create_event();
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
                              FSCTL_SET_ZERO_DATA, &fzdi, sizeof(fzdi),
                              nullptr, 0);
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
