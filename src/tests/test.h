@@ -4089,6 +4089,7 @@ void write_file_wait(HANDLE h, std::span<uint8_t> data, std::optional<uint64_t> 
 std::vector<uint8_t> read_file_wait(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
 void set_allocation(HANDLE h, uint64_t alloc);
 void set_valid_data_length(HANDLE h, uint64_t vdl);
+void set_zero_data(HANDLE h, uint64_t start, uint64_t end);
 
 template<size_t N>
 void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES, N>& privs);

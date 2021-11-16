@@ -227,7 +227,7 @@ void set_end_of_file(HANDLE h, uint64_t eof) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_zero_data(HANDLE h, uint64_t start, uint64_t end) {
+void set_zero_data(HANDLE h, uint64_t start, uint64_t end) {
     NTSTATUS Status;
     FILE_ZERO_DATA_INFORMATION fzdi;
     IO_STATUS_BLOCK iosb;

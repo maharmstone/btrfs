@@ -233,8 +233,9 @@ void test_oplocks(HANDLE token, const u16string& dir) {
             h2.reset();
 
             test("Open second handle (FILE_OPEN)", [&]() {
-                h2 = create_file(dir + u"\\oplock1", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                 FILE_OPEN, 0, FILE_OPENED);
+                h2 = create_file(dir + u"\\oplock1", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA | DELETE, 0,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT, FILE_OPENED);
             });
 
             test("Get level 2 oplock", [&]() {
@@ -300,10 +301,62 @@ void test_oplocks(HANDLE token, const u16string& dir) {
                     throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
             });
 
-            // FIXME - FileRenameInformation
-            // FIXME - FileLinkInformation
-            // FIXME - FileDispositionInformation
-            // FIXME - FSCTL_SET_ZERO_DATA
+            test("Get level 2 oplock", [&]() {
+                ev = req_oplock_level2(h.get(), iosb);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Rename file", [&]() {
+                set_rename_information(h2.get(), false, nullptr, dir + u"\\oplock1a");
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Create hardlink", [&]() {
+                set_link_information(h2.get(), false, nullptr, dir + u"\\oplock1b");
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Set zero data", [&]() {
+                set_zero_data(h2.get(), 0, 100);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            test("Get level 2 oplock", [&]() {
+                ev = req_oplock_level2(h.get(), iosb);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Set disposition information", [&]() {
+                set_disposition_information(h2.get(), true);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
 
             h2.reset();
         }
