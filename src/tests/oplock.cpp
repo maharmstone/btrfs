@@ -507,8 +507,156 @@ void test_oplocks(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - test granted if level 2 / read oplocks already there
-    // FIXME - test not granted (STATUS_OPLOCK_NOT_GRANTED) if any other sort of oplock there
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplock5", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get level 2 oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::level2);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Open second handle on file", [&]() {
+            h2 = create_file(dir + u"\\oplock5", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        if (h2) {
+            unique_handle ev2;
+            IO_STATUS_BLOCK iosb2;
+
+            test("Get level 2 oplock on second handle", [&]() {
+                ev2 = req_oplock(h.get(), iosb2, oplock_type::level2);
+            });
+
+            test("Check first oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Check second oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            h2.reset();
+        }
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplock6", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get read oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::read_oplock);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Open second handle on file", [&]() {
+            h2 = create_file(dir + u"\\oplock6", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        if (h2) {
+            unique_handle ev2;
+            IO_STATUS_BLOCK iosb2;
+
+            test("Get level 2 oplock on second handle", [&]() {
+                ev2 = req_oplock(h2.get(), iosb2, oplock_type::level2);
+            });
+
+            test("Check first oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Check second oplock not broken", [&]() {
+                if (check_event(ev2.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            h2.reset();
+        }
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplock7", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get read-handle oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::read_handle);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Open second handle on file", [&]() {
+            h2 = create_file(dir + u"\\oplock7", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        if (h2) {
+            test("Try to get level 2 oplock on second handle", [&]() {
+                IO_STATUS_BLOCK iosb2;
+
+                exp_status([&]() {
+                    req_oplock(h2.get(), iosb2, oplock_type::level2);
+                }, STATUS_OPLOCK_NOT_GRANTED);
+            });
+
+            test("Check first oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            h2.reset();
+        }
+
+        h.reset();
+    }
+
+    // level1, filter, batch, RW, and RWH oplocks break if second handle opened
 
     // FIXME - level 1 oplocks
     // FIXME - batch oplocks
