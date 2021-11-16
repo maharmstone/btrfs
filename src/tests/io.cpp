@@ -23,7 +23,7 @@ void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& 
         throw ntstatus_error(Status);
 }
 
-static void set_allocation(HANDLE h, uint64_t alloc) {
+void set_allocation(HANDLE h, uint64_t alloc) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     FILE_ALLOCATION_INFORMATION fai;
@@ -193,7 +193,7 @@ static void set_position(HANDLE h, uint64_t pos) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_valid_data_length(HANDLE h, uint64_t vdl) {
+void set_valid_data_length(HANDLE h, uint64_t vdl) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     FILE_VALID_DATA_LENGTH_INFORMATION fvdli;

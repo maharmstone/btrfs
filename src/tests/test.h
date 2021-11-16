@@ -4082,6 +4082,8 @@ void set_end_of_file(HANDLE h, uint64_t eof);
 std::vector<uint8_t> read_file(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
 void write_file_wait(HANDLE h, std::span<uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
 std::vector<uint8_t> read_file_wait(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
+void set_allocation(HANDLE h, uint64_t alloc);
+void set_valid_data_length(HANDLE h, uint64_t vdl);
 
 template<size_t N>
 void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES, N>& privs);
@@ -4111,4 +4113,4 @@ std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
 void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
 
 // oplock.cpp
-void test_oplocks(const std::u16string& dir);
+void test_oplocks(HANDLE token, const std::u16string& dir);

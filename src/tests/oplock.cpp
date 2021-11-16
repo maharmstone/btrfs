@@ -39,10 +39,21 @@ static bool check_event(HANDLE h) {
     return ebi.EventState;
 }
 
-void test_oplocks(const u16string& dir) {
+void test_oplocks(HANDLE token, const u16string& dir) {
     unique_handle h, h2;
     IO_STATUS_BLOCK iosb;
     auto data = random_data(4096);
+
+    // needed to set valid data length
+    test("Add SeManageVolumePrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_MANAGE_VOLUME_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
 
     test("Create file", [&]() {
         h = create_file(dir + u"\\oplock1", FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -193,6 +204,11 @@ void test_oplocks(const u16string& dir) {
 
             h2.reset();
 
+            test("Open second handle (FILE_OPEN)", [&]() {
+                h2 = create_file(dir + u"\\oplock1", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OPEN, 0, FILE_OPENED);
+            });
+
             test("Get level 2 oplock", [&]() {
                 ev = req_oplock_level2(h.get(), iosb);
             });
@@ -203,7 +219,7 @@ void test_oplocks(const u16string& dir) {
             });
 
             test("Lock file", [&]() {
-                lock_file(h.get(), 0, 4096, false);
+                lock_file(h2.get(), 0, 4096, false);
             });
 
             test("Check oplock broken", [&]() {
@@ -213,6 +229,83 @@ void test_oplocks(const u16string& dir) {
                 if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
                     throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
             });
+
+            h2.reset();
+
+            test("Open second handle (FILE_OPEN)", [&]() {
+                h2 = create_file(dir + u"\\oplock1", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OPEN, 0, FILE_OPENED);
+            });
+
+            test("Get level 2 oplock", [&]() {
+                ev = req_oplock_level2(h.get(), iosb);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Set end of file", [&]() {
+                set_end_of_file(h2.get(), 4096);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            test("Get level 2 oplock", [&]() {
+                ev = req_oplock_level2(h.get(), iosb);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Set allocation", [&]() {
+                set_allocation(h2.get(), 4096);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            test("Get level 2 oplock", [&]() {
+                ev = req_oplock_level2(h.get(), iosb);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Set valid data length", [&]() {
+                set_valid_data_length(h2.get(), 4096);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            // FIXME - FileRenameInformation
+            // FIXME - FileLinkInformation
+            // FIXME - FileDispositionInformation
+            // FIXME - FSCTL_SET_ZERO_DATA
+
+            h2.reset();
         }
 
         h.reset();
@@ -275,14 +368,6 @@ void test_oplocks(const u16string& dir) {
     // FIXME - test granted if level 2 / read oplocks already there
     // FIXME - test not granted (STATUS_OPLOCK_NOT_GRANTED) if any other sort of oplock there
 
-    // FIXME - FileEndOfFileInformation
-    // FIXME - FileAllocationInformation
-    // FIXME - FileValidDataLengthInformation
-    // FIXME - FileRenameInformation
-    // FIXME - FileLinkInformation
-    // FIXME - FileDispositionInformation
-    // FIXME - FSCTL_SET_ZERO_DATA
-
     // FIXME - level 1 oplocks
     // FIXME - batch oplocks
     // FIXME - filter oplocks
@@ -291,7 +376,15 @@ void test_oplocks(const u16string& dir) {
     // FIXME - read-write oplocks
     // FIXME - read-write-handle oplocks
 
+    // FIXME - FSCTL_OPLOCK_BREAK_ACKNOWLEDGE
+    // FIXME - FSCTL_OPLOCK_BREAK_ACK_NO_2
+    // FIXME - FSCTL_OPBATCH_ACK_CLOSE_PENDING
+    // FIXME - FSCTL_OPLOCK_BREAK_NOTIFY
+    // FIXME - FSCTL_REQUEST_OPLOCK (request and ack)
+
     // FIXME - FILE_RESERVE_OPFILTER
     // FIXME - FILE_OPEN_REQUIRING_OPLOCK
     // FIXME - FILE_COMPLETE_IF_OPLOCKED
+
+    disable_token_privileges(token);
 }
