@@ -450,6 +450,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"links_ex", [&]() { test_links_ex(token.get(), dir); } },
         { u"oplock_i", [&]() { test_oplocks_i(token.get(), dir); } },
         { u"oplock_ii", [&]() { test_oplocks_ii(token.get(), dir); } },
+        { u"oplock_batch", [&]() { test_oplocks_batch(token.get(), dir); } },
         { u"oplock_r", [&]() { test_oplocks_r(token.get(), dir); } },
         { u"oplock_rw", [&]() { test_oplocks_rw(token.get(), dir); } }
     };
