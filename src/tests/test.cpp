@@ -495,6 +495,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
 
     // FIXME - opening file by ID
     // FIXME - check can't delete files opened by ID
+    // FIXME - can we open orphaned inodes by ID?
+    // FIXME - what does FileNameInformation return?
 
     // FIXME - check with case-sensitive flag set
 
