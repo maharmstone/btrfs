@@ -239,8 +239,6 @@ void test_oplocks_ii(HANDLE token, const u16string& dir) {
 
             h2.reset();
 
-            // FIXME - test level 2 oplock broken if file reopened with FILE_RESERVE_OPFILTER
-
             test("Open second handle (FILE_SUPERSEDE)", [&]() {
                 h2 = create_file(dir + u"\\oplockii1", FILE_READ_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                  FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
@@ -279,6 +277,13 @@ void test_oplocks_ii(HANDLE token, const u16string& dir) {
             });
 
             h2.reset();
+
+            test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+                exp_status([&]() {
+                    create_file(dir + u"\\oplockii1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+                }, STATUS_OPLOCK_NOT_GRANTED);
+            });
 
             test("Get level 2 oplock", [&]() {
                 ev = req_oplock(h.get(), iosb, oplock_type::level2);
@@ -961,7 +966,12 @@ void test_oplocks_r(HANDLE token, const u16string& dir) {
 
             h2.reset();
 
-            // FIXME - test read oplock broken if file reopened with FILE_RESERVE_OPFILTER
+            test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+                exp_status([&]() {
+                    create_file(dir + u"\\oplockr1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+                }, STATUS_OPLOCK_NOT_GRANTED);
+            });
 
             test("Open second handle (FILE_SUPERSEDE)", [&]() {
                 h2 = create_file(dir + u"\\oplockr1", FILE_READ_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -1782,7 +1792,12 @@ void test_oplocks_i(HANDLE token, const u16string& dir) {
             h2.reset();
         }
 
-        // FIXME - test level 1 oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+        test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\oplocki1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         test("Get level 1 oplock", [&]() {
             ev = req_oplock(h.get(), iosb, oplock_type::level1);
@@ -2397,7 +2412,12 @@ void test_oplocks_rw(HANDLE token, const u16string& dir) {
             h2.reset();
         }
 
-        // FIXME - test read-write oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+        test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\oplockrw1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         test("Get read-write oplock", [&]() {
             ev = req_oplock_win7(h.get(), iosb, oplock_type::read_write, roob);
@@ -3017,7 +3037,12 @@ void test_oplocks_batch(HANDLE token, const u16string& dir) {
             h2.reset();
         }
 
-        // FIXME - test batch oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+        test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\oplockb1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         test("Get batch oplock", [&]() {
             ev = req_oplock(h.get(), iosb, oplock_type::batch);
@@ -3632,7 +3657,12 @@ void test_oplocks_rwh(HANDLE token, const u16string& dir) {
             h2.reset();
         }
 
-        // FIXME - test read-write-handle oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+        test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\oplockrwh1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         test("Get read-write-handle oplock", [&]() {
             ev = req_oplock_win7(h.get(), iosb, oplock_type::read_write_handle, roob);
@@ -4274,7 +4304,12 @@ void test_oplocks_filter(HANDLE token, const u16string& dir) {
             h2.reset();
         }
 
-        // FIXME - test filter oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+        test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\oplockf1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         test("Get filter oplock", [&]() {
             ev = req_oplock(h.get(), iosb, oplock_type::filter);
@@ -4886,7 +4921,12 @@ void test_oplocks_rh(HANDLE token, const u16string& dir) {
             h2.reset();
         }
 
-        // FIXME - test read-handle oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+        test("Try to open second handle with FILE_RESERVE_OPFILTER", [&]() {
+            exp_status([&]() {
+                create_file(dir + u"\\oplockrh1", FILE_READ_ATTRIBUTES, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, FILE_RESERVE_OPFILTER, FILE_OPENED);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
 
         test("Get read-handle oplock", [&]() {
             ev = req_oplock_win7(h.get(), iosb, oplock_type::read_handle, roob);
@@ -5460,13 +5500,10 @@ void test_oplocks_rh(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - FSCTL_OPLOCK_BREAK_ACKNOWLEDGE
     // FIXME - FSCTL_OPLOCK_BREAK_ACK_NO_2
     // FIXME - FSCTL_OPBATCH_ACK_CLOSE_PENDING
     // FIXME - FSCTL_OPLOCK_BREAK_NOTIFY
-    // FIXME - FSCTL_REQUEST_OPLOCK (request and ack)
 
-    // FIXME - FILE_RESERVE_OPFILTER
     // FIXME - FILE_OPEN_REQUIRING_OPLOCK
     // FIXME - FILE_COMPLETE_IF_OPLOCKED
 
