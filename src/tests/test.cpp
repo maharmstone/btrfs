@@ -57,8 +57,12 @@ unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG 
     Status = NtCreateFile(&h, access, &oa, &iosb, allocation ? &alloc_size : nullptr,
                           atts, share, dispo, options, nullptr, 0);
 
-    if (Status != STATUS_SUCCESS)
+    if (Status != STATUS_SUCCESS) {
+        if (NT_SUCCESS(Status)) // STATUS_OPLOCK_BREAK_IN_PROGRESS etc.
+            NtClose(h);
+
         throw ntstatus_error(Status);
+    }
 
     if (iosb.Information != exp_info)
         throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
