@@ -454,6 +454,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"oplock_filter", [&]() { test_oplocks_filter(token.get(), dir); } },
         { u"oplock_r", [&]() { test_oplocks_r(token.get(), dir); } },
         { u"oplock_rw", [&]() { test_oplocks_rw(token.get(), dir); } },
+        { u"oplock_rh", [&]() { test_oplocks_rh(token.get(), dir); } },
         { u"oplock_rwh", [&]() { test_oplocks_rwh(token.get(), dir); } }
     };
 

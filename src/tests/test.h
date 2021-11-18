@@ -4146,4 +4146,5 @@ void test_oplocks_batch(HANDLE token, const std::u16string& dir);
 void test_oplocks_filter(HANDLE token, const std::u16string& dir);
 void test_oplocks_r(HANDLE token, const std::u16string& dir);
 void test_oplocks_rw(HANDLE token, const std::u16string& dir);
+void test_oplocks_rh(HANDLE token, const std::u16string& dir);
 void test_oplocks_rwh(HANDLE token, const std::u16string& dir);
