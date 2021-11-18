@@ -4143,6 +4143,7 @@ void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, con
 void test_oplocks_i(HANDLE token, const std::u16string& dir);
 void test_oplocks_ii(HANDLE token, const std::u16string& dir);
 void test_oplocks_batch(HANDLE token, const std::u16string& dir);
+void test_oplocks_filter(HANDLE token, const std::u16string& dir);
 void test_oplocks_r(HANDLE token, const std::u16string& dir);
 void test_oplocks_rw(HANDLE token, const std::u16string& dir);
 void test_oplocks_rwh(HANDLE token, const std::u16string& dir);

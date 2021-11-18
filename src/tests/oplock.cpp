@@ -4195,7 +4195,630 @@ void test_oplocks_rwh(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - filter oplocks
+    disable_token_privileges(token);
+}
+
+void test_oplocks_filter(HANDLE token, const u16string& dir) {
+    unique_handle h, h2;
+    IO_STATUS_BLOCK iosb;
+    auto data = random_data(4096);
+
+    // needed to set valid data length
+    test("Add SeManageVolumePrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_MANAGE_VOLUME_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf1", FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), data, 0);
+        });
+
+        h.reset();
+    }
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\oplockf1", FILE_READ_DATA | FILE_WRITE_DATA | DELETE, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock(ev.get(), h.get());
+
+            test("Open second handle (FILE_OPEN, FILE_READ_DATA)", [&]() {
+                h2 = create_file(dir + u"\\oplockf1", FILE_READ_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OPEN, 0, FILE_OPENED);
+            });
+
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            test("Open second handle (FILE_OPEN, FILE_WRITE_DATA)", [&]() {
+                h2 = create_file(dir + u"\\oplockf1", FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OPEN, 0, FILE_OPENED);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            h2.reset();
+        }
+
+        // FIXME - test filter oplock broken to none if file reopened with FILE_RESERVE_OPFILTER
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock(ev.get(), h.get());
+
+            test("Open second handle (FILE_SUPERSEDE)", [&]() {
+                h2 = create_file(dir + u"\\oplockf1", FILE_READ_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_SUPERSEDE, 0, FILE_SUPERSEDED);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            h2.reset();
+        }
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock(ev.get(), h.get());
+
+            test("Open second handle (FILE_OVERWRITE)", [&]() {
+                h2 = create_file(dir + u"\\oplockf1", FILE_READ_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OVERWRITE, 0, FILE_OVERWRITTEN);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            h2.reset();
+        }
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock(ev.get(), h.get());
+
+            test("Open second handle (FILE_OVERWRITE_IF)", [&]() {
+                h2 = create_file(dir + u"\\oplockf1", FILE_READ_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 FILE_OVERWRITE_IF, 0, FILE_OVERWRITTEN);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+
+                if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                    throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+            });
+
+            h2.reset();
+        }
+
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), data, 0);
+        });
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Read from file", [&]() {
+            read_file_wait(h.get(), 4096, 0);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), data, 0);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Lock file", [&]() {
+            lock_file_wait(h.get(), 0, 4096, false);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Unlock file", [&]() {
+            unlock_file(h.get(), 0, 4096);
+        });
+
+        test("Set end of file", [&]() {
+            set_end_of_file(h.get(), 4096);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Set allocation", [&]() {
+            set_allocation(h.get(), 4096);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Set valid data length", [&]() {
+            set_valid_data_length(h.get(), 4096);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Rename file", [&]() {
+            set_rename_information(h.get(), false, nullptr, dir + u"\\oplockf1a");
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Create hardlink", [&]() {
+            set_link_information(h.get(), false, nullptr, dir + u"\\oplockf1b");
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Set zero data", [&]() {
+            set_zero_data(h.get(), 0, 100);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Set disposition information", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf2", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), data, 0);
+        });
+
+        test("Lock file", [&]() {
+            lock_file_wait(h.get(), 0, 4096, false);
+        });
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file with FILE_SYNCHRONOUS_IO_NONALERT", [&]() {
+        h = create_file(dir + u"\\oplockf3", SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\oplockf4", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb, oplock_type::filter);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf5", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Open second handle on file", [&]() {
+            h2 = create_file(dir + u"\\oplockf5", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             FILE_OPEN, 0, FILE_OPENED);
+        });
+
+        if (h2) {
+            test("Try to get filter oplock with two handles open", [&]() {
+                exp_status([&]() {
+                    req_oplock(h2.get(), iosb, oplock_type::batch);
+                }, STATUS_OPLOCK_NOT_GRANTED);
+            });
+
+            h2.reset();
+        }
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf6", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev, ev2;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get level 2 oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::level2);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Get filter oplock", [&]() {
+            ev2 = req_oplock(h.get(), iosb2, oplock_type::filter);
+        });
+
+        test("Check first oplock broken", [&]() {
+            if (!check_event(ev.get()))
+                throw runtime_error("Oplock is not broken");
+
+            if (iosb.Information != FILE_OPLOCK_BROKEN_TO_NONE)
+                throw formatted_error("iosb.Information was {}, expected FILE_OPLOCK_BROKEN_TO_NONE", iosb.Information);
+        });
+
+        test("Check second oplock not broken", [&]() {
+            if (check_event(ev2.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf7", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get read oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_oplock, roob);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf8", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get read-handle oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_handle, roob);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf9", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get read-write oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_write, roob);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf10", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get read-write-handle oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_write_handle, roob);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf11", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get level 1 oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::level1);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf12", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get filter oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::filter);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockf13", FILE_READ_DATA | FILE_WRITE_DATA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle ev;
+        IO_STATUS_BLOCK iosb2;
+
+        test("Get batch oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::batch);
+        });
+
+        test("Check oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        test("Try to get filter oplock", [&]() {
+            exp_status([&]() {
+                req_oplock(h.get(), iosb2, oplock_type::filter);
+            }, STATUS_OPLOCK_NOT_GRANTED);
+        });
+
+        test("Check first oplock not broken", [&]() {
+            if (check_event(ev.get()))
+                throw runtime_error("Oplock is broken");
+        });
+
+        h.reset();
+    }
+
     // FIXME - read-handle oplocks
 
     // FIXME - FSCTL_OPLOCK_BREAK_ACKNOWLEDGE
