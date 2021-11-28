@@ -932,8 +932,110 @@ void test_open_id(HANDLE token, const u16string& dir) {
         });
     }
 
-    // FIXME - what happens if invalid ID?
-    // FIXME - creating, overwriting, superseding
+    test("Open directory", [&]() {
+        dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Open by ID with FILE_OPEN_IF", [&]() {
+        open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN_IF,
+                   0, FILE_OPENED);
+    });
+
+    test("Open by ID with FILE_OVERWRITE_IF", [&]() {
+        open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE_IF,
+                   0, FILE_OVERWRITTEN);
+    });
+
+    test("Open by ID with FILE_SUPERSEDE", [&]() {
+        open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                   0, FILE_SUPERSEDED);
+    });
+
+    test("Try open by ID with FILE_CREATE", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                       0, FILE_CREATED);
+        }, STATUS_OBJECT_NAME_COLLISION);
+    });
+
+    test("Try open by ID with FILE_OVERWRITE", [&]() {
+        open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                    0, FILE_OVERWRITTEN);
+    });
+
+    dirh.reset();
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\id2", FILE_READ_ATTRIBUTES | DELETE, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file_id = fii.IndexNumber.QuadPart;
+        });
+
+        test("Delete file", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        h.reset();
+    }
+
+    test("Open directory", [&]() {
+        dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Try to open invalid ID with FILE_OPEN", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       0, FILE_OPENED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Try to open invalid ID with FILE_OPEN_IF", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN_IF,
+                       0, FILE_OPENED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Try to open invalid ID with FILE_CREATE", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                       0, FILE_CREATED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Try to open invalid ID with FILE_OVERWRITE", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                       0, FILE_OVERWRITTEN);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Try to open invalid ID with FILE_OVERWRITE_IF", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE_IF,
+                       0, FILE_OVERWRITTEN);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Try to open invalid ID with FILE_SUPERSEDE", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                       0, FILE_SUPERSEDED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    dirh.reset();
+
     // FIXME - directories
     // FIXME - can we open orphaned inodes by ID?
     // FIXME - need traverse privilege to query filename?
