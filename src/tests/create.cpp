@@ -874,7 +874,64 @@ void test_open_id(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - does FILE_DELETE_ON_CLOSE work?
+    test("Open directory", [&]() {
+        dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Open by ID with FILE_DELETE_ON_CLOSE", [&]() {
+        h = open_by_id(dirh.get(), file_id, SYNCHRONIZE | DELETE, 0, 0, FILE_OPEN,
+                       FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE | FILE_DELETE_ON_CLOSE,
+                       FILE_OPENED);
+    });
+
+    dirh.reset();
+
+    if (h) {
+        h.reset();
+
+        test("Check directory entry 1 still there", [&]() {
+            u16string_view name = u"id1";
+
+            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+
+            if ((uint64_t)fdi.FileId.QuadPart != file_id)
+                throw runtime_error("File IDs did not match.");
+        });
+
+        test("Check directory entry 2 still there", [&]() {
+            u16string_view name = u"id1a";
+
+            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+
+            if ((uint64_t)fdi.FileId.QuadPart != file_id)
+                throw runtime_error("File IDs did not match.");
+        });
+    }
+
     // FIXME - what happens if invalid ID?
     // FIXME - creating, overwriting, superseding
     // FIXME - directories
