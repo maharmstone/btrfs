@@ -698,7 +698,6 @@ void test_create(const u16string& dir) {
 
     // FIXME - if we try to open file with invalid name, do we get NOT_FOUND or INVALID?
 
-    // FIXME - FILE_OPEN_BY_FILE_ID
     // FIXME - test all the variations of NtQueryInformationFile
     // FIXME - test NtOpenFile
 
@@ -706,4 +705,180 @@ void test_create(const u16string& dir) {
     // FIXME - permissions needed when overwriting
     // FIXME - what exactly does FILE_DELETE_CHILD do?
     // FIXME - overwriting mapped file
+}
+
+static unique_handle open_by_id(HANDLE dir, uint64_t id, ACCESS_MASK access, ULONG atts, ULONG share,
+                                ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation = nullopt) {
+    NTSTATUS Status;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES oa;
+    LARGE_INTEGER alloc_size;
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = dir;
+
+    us.Length = us.MaximumLength = sizeof(id);
+    us.Buffer = (WCHAR*)&id;
+    oa.ObjectName = &us;
+
+    oa.Attributes = 0;
+    oa.SecurityDescriptor = nullptr;
+    oa.SecurityQualityOfService = nullptr;
+
+    if (allocation)
+        alloc_size.QuadPart = allocation.value();
+
+    iosb.Information = 0xdeadbeef;
+
+    Status = NtCreateFile(&h, access, &oa, &iosb, allocation ? &alloc_size : nullptr,
+                          atts, share, dispo, options | FILE_OPEN_BY_FILE_ID, nullptr, 0);
+
+    if (Status != STATUS_SUCCESS) {
+        if (NT_SUCCESS(Status)) // STATUS_OPLOCK_BREAK_IN_PROGRESS etc.
+            NtClose(h);
+
+        throw ntstatus_error(Status);
+    }
+
+    if (iosb.Information != exp_info)
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
+
+    return unique_handle(h);
+}
+
+void test_open_id(HANDLE token, const u16string& dir) {
+    unique_handle h, dirh;
+    uint64_t file_id = 0;
+    auto random = random_data(4096);
+
+    // traverse privilege needed to query filename and hard links
+    test("Add SeChangeNotifyPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\id1", SYNCHRONIZE | FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_SYNCHRONOUS_IO_NONALERT, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Write to file", [&]() {
+            write_file(h.get(), random, 0);
+        });
+
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file_id = fii.IndexNumber.QuadPart;
+        });
+
+        h.reset();
+    }
+
+    test("Check directory entry", [&]() {
+        u16string_view name = u"id1";
+
+        auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+
+        if (items.size() != 1)
+            throw formatted_error("{} entries returned, expected 1.", items.size());
+
+        auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+
+        if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+            throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+        if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+            throw runtime_error("FileName did not match.");
+
+        if ((uint64_t)fdi.FileId.QuadPart != file_id)
+            throw runtime_error("File IDs did not match.");
+    });
+
+    test("Try opening by ID without RootDirectory value", [&]() {
+        exp_status([&]() {
+            open_by_id(nullptr, file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       FILE_SYNCHRONOUS_IO_NONALERT, FILE_OPENED);
+        }, STATUS_INVALID_PARAMETER);
+    });
+
+    test("Open directory", [&]() {
+        dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Open by ID", [&]() {
+        h = open_by_id(dirh.get(), file_id, SYNCHRONIZE | MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    dirh.reset();
+
+    if (h) {
+        test("Read file", [&]() {
+            auto data = read_file(h.get(), random.size(), 0);
+
+            if (data.size() != random.size())
+                throw formatted_error("Read {} bytes, {} expected.", data.size(), random.size());
+
+            if (memcmp(data.data(), random.data(), random.size()))
+                throw runtime_error("Data read did not match data written");
+        });
+
+        test("Check filename", [&]() {
+            auto fn = query_file_name_information(h.get());
+
+            static const u16string_view ends_with = u"\\id1";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\id1\".");
+        });
+
+        test("Check links", [&]() {
+            auto items = query_links(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& item = items.front();
+
+            if (item.second != u"id1")
+                throw formatted_error("Link was called {}, expected id1", u16string_to_string(item.second));
+        });
+
+        test("Create hardlink", [&]() {
+            set_link_information(h.get(), false, nullptr, dir + u"\\id1a");
+        });
+
+        test("Try renaming", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\id1b");
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Try deleting", [&]() {
+            exp_status([&]() {
+                set_disposition_information(h.get(), true);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - does FILE_DELETE_ON_CLOSE work?
+    // FIXME - what happens if invalid ID?
+    // FIXME - creating, overwriting, superseding
+    // FIXME - directories
+    // FIXME - can we open orphaned inodes by ID?
+    // FIXME - need traverse privilege to query filename?
+    // FIXME - does this work with object ID?
 }

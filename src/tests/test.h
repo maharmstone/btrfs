@@ -4093,6 +4093,7 @@ extern enum fs_type fstype;
 
 // create.cpp
 void test_create(const std::u16string& dir);
+void test_open_id(HANDLE token, const std::u16string& dir);
 
 // supersede.cpp
 void test_supersede(const std::u16string& dir);

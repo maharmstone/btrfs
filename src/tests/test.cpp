@@ -444,6 +444,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"create", [&]() { test_create(dir); } },
         { u"supersede", [&]() { test_supersede(dir); } },
         { u"overwrite", [&]() { test_overwrite(dir); } },
+        { u"open_id", [&]() { test_open_id(token.get(), dir); } },
         { u"io", [&]() { test_io(token.get(), dir); } },
         { u"mmap", [&]() { test_mmap(dir); } },
         { u"rename", [&]() { test_rename(dir); } },
@@ -500,11 +501,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
                 break;
         }
     }
-
-    // FIXME - opening file by ID
-    // FIXME - check can't delete files opened by ID
-    // FIXME - can we open orphaned inodes by ID?
-    // FIXME - what does FileNameInformation return?
 
     // FIXME - check with case-sensitive flag set
 
