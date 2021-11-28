@@ -1078,7 +1078,49 @@ void test_open_id(HANDLE token, const u16string& dir) {
         dirh.reset();
     }
 
-    // FIXME - can we open orphaned inodes by ID?
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\id4", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle h2;
+
+        test("Open second handle to file", [&]() {
+            h2 = create_file(dir + u"\\id4", DELETE, 0, 0, FILE_OPEN,
+                             0, FILE_OPENED);
+        });
+
+        test("Do POSIX deletion", [&]() {
+            set_disposition_information_ex(h2.get(), FILE_DISPOSITION_DELETE | FILE_DISPOSITION_POSIX_SEMANTICS);
+        });
+
+        h2.reset();
+
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file_id = fii.IndexNumber.QuadPart;
+        });
+
+        test("Open directory", [&]() {
+            dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+        });
+
+        test("Try to open orphaned inode by file ID", [&]() {
+            exp_status([&]() {
+                open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                           0, FILE_OPENED);
+            }, STATUS_DELETE_PENDING);
+        });
+
+        dirh.reset();
+
+        h.reset();
+    }
+
     // FIXME - need traverse privilege to query filename?
     // FIXME - does this work with object ID?
 }

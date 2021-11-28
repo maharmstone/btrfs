@@ -20,7 +20,7 @@ void set_disposition_information(HANDLE h, bool delete_file) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_disposition_information_ex(HANDLE h, uint32_t flags) {
+void set_disposition_information_ex(HANDLE h, uint32_t flags) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     FILE_DISPOSITION_INFORMATION_EX fdie;

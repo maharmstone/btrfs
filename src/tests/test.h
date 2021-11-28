@@ -4133,6 +4133,7 @@ void set_dacl(HANDLE h, ACCESS_MASK access);
 void test_delete(const std::u16string& dir);
 void test_delete_ex(HANDLE token, const std::u16string& dir);
 void set_disposition_information(HANDLE h, bool delete_file);
+void set_disposition_information_ex(HANDLE h, uint32_t flags);
 
 // links.cpp
 void test_links(HANDLE token, const std::u16string& dir);
