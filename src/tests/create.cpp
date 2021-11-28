@@ -1187,5 +1187,41 @@ void test_open_id(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - need traverse privilege to query filename?
+    disable_token_privileges(token);
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\id6", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        unique_handle h2;
+
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file_id = fii.IndexNumber.QuadPart;
+        });
+
+        h.reset();
+
+        test("Open directory", [&]() {
+            dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+        });
+
+        test("Open file by ID", [&]() {
+            h2 = open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                            0, FILE_OPENED);
+        });
+
+        test("Try to query filename without traverse privilege", [&]() {
+            exp_status([&]() {
+                query_file_name_information(h2.get());
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        dirh.reset();
+    }
 }
