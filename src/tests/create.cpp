@@ -1,5 +1,7 @@
 #include "test.h"
 
+#define FSCTL_CREATE_OR_GET_OBJECT_ID CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 48, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 using namespace std;
 
 static OBJECT_BASIC_INFORMATION query_object_basic_information(HANDLE h) {
@@ -707,7 +709,9 @@ void test_create(const u16string& dir) {
     // FIXME - overwriting mapped file
 }
 
-static unique_handle open_by_id(HANDLE dir, uint64_t id, ACCESS_MASK access, ULONG atts, ULONG share,
+template<typename T>
+requires (is_same_v<T, uint64_t> || is_same_v<T, array<uint8_t, 16>>)
+static unique_handle open_by_id(HANDLE dir, const T& id, ACCESS_MASK access, ULONG atts, ULONG share,
                                 ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation = nullopt) {
     NTSTATUS Status;
     HANDLE h;
@@ -719,8 +723,14 @@ static unique_handle open_by_id(HANDLE dir, uint64_t id, ACCESS_MASK access, ULO
     oa.Length = sizeof(oa);
     oa.RootDirectory = dir;
 
-    us.Length = us.MaximumLength = sizeof(id);
-    us.Buffer = (WCHAR*)&id;
+    if constexpr (is_same_v<T, array<uint8_t, 16>>) {
+        us.Length = us.MaximumLength = id.size();
+        us.Buffer = (WCHAR*)id.data();
+    } else {
+        us.Length = us.MaximumLength = sizeof(id);
+        us.Buffer = (WCHAR*)&id;
+    }
+
     oa.ObjectName = &us;
 
     oa.Attributes = 0;
@@ -746,6 +756,35 @@ static unique_handle open_by_id(HANDLE dir, uint64_t id, ACCESS_MASK access, ULO
         throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
 
     return unique_handle(h);
+}
+
+static array<uint8_t, 16> create_or_get_object_id(HANDLE h) {
+    NTSTATUS Status;
+    FILE_OBJECTID_BUFFER foib;
+    IO_STATUS_BLOCK iosb;
+
+    auto ev = create_event();
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
+                             FSCTL_CREATE_OR_GET_OBJECT_ID, nullptr, 0,
+                             &foib, sizeof(foib));
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    array<uint8_t, 16> ret;
+
+    memcpy(ret.data(), foib.ObjectId, 16);
+
+    return ret;
 }
 
 void test_open_id(HANDLE token, const u16string& dir) {
@@ -1121,6 +1160,32 @@ void test_open_id(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\id5", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        array<uint8_t, 16> obj_id;
+
+        test("Get object ID", [&]() {
+            obj_id = create_or_get_object_id(h.get());
+        });
+
+        test("Open directory", [&]() {
+            dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+        });
+
+        test("Open by object ID", [&]() {
+            open_by_id(dirh.get(), obj_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       0, FILE_OPENED);
+        });
+
+        dirh.reset();
+        h.reset();
+    }
+
     // FIXME - need traverse privilege to query filename?
-    // FIXME - does this work with object ID?
 }

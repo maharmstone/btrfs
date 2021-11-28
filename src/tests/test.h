@@ -211,6 +211,18 @@ typedef struct _FILE_ZERO_DATA_INFORMATION {
     LARGE_INTEGER BeyondFinalZero;
 } FILE_ZERO_DATA_INFORMATION,*PFILE_ZERO_DATA_INFORMATION;
 
+typedef struct _FILE_OBJECTID_BUFFER {
+    BYTE ObjectId[16];
+    union {
+        struct {
+            BYTE BirthVolumeId[16];
+            BYTE BirthObjectId[16];
+            BYTE DomainId[16];
+        };
+        BYTE ExtendedInfo[48];
+    };
+} FILE_OBJECTID_BUFFER, *PFILE_OBJECTID_BUFFER;
+
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
 #define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)
