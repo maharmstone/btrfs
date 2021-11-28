@@ -816,9 +816,16 @@ void test_open_id(HANDLE token, const u16string& dir) {
                            FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
     });
 
+    test("Try to open by ID with FILE_DIRECTORY_FILE", [&]() {
+        exp_status([&]() {
+            open_by_id(dirh.get(), file_id, SYNCHRONIZE | MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE, FILE_OPENED);
+        }, STATUS_NOT_A_DIRECTORY);
+    });
+
     test("Open by ID", [&]() {
         h = open_by_id(dirh.get(), file_id, SYNCHRONIZE | MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
-                       FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+                       FILE_SYNCHRONOUS_IO_NONALERT, FILE_OPENED);
     });
 
     dirh.reset();
@@ -1036,7 +1043,41 @@ void test_open_id(HANDLE token, const u16string& dir) {
 
     dirh.reset();
 
-    // FIXME - directories
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\id3", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file_id = fii.IndexNumber.QuadPart;
+        });
+
+        h.reset();
+
+        test("Open directory", [&]() {
+            dirh = create_file(dir, MAXIMUM_ALLOWED, 0,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+        });
+
+        test("Try to open subdirectory by ID with FILE_NON_DIRECTORY_FILE", [&]() {
+            exp_status([&]() {
+                open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                           FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+            }, STATUS_FILE_IS_A_DIRECTORY);
+        });
+
+        test("Open subdirectory by ID", [&]() {
+            open_by_id(dirh.get(), file_id, MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       0, FILE_OPENED);
+        });
+
+        dirh.reset();
+    }
+
     // FIXME - can we open orphaned inodes by ID?
     // FIXME - need traverse privilege to query filename?
     // FIXME - does this work with object ID?
