@@ -91,6 +91,8 @@ T query_information(HANDLE h) {
         fic = FilePositionInformation;
     else if constexpr (is_same_v<T, FILE_INTERNAL_INFORMATION>)
         fic = FileInternalInformation;
+    else if constexpr (is_same_v<T, FILE_CASE_SENSITIVE_INFORMATION>)
+        fic = FileCaseSensitiveInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -112,6 +114,7 @@ template FILE_MODE_INFORMATION query_information<FILE_MODE_INFORMATION>(HANDLE h
 template FILE_ALIGNMENT_INFORMATION query_information<FILE_ALIGNMENT_INFORMATION>(HANDLE h);
 template FILE_POSITION_INFORMATION query_information<FILE_POSITION_INFORMATION>(HANDLE h);
 template FILE_INTERNAL_INFORMATION query_information<FILE_INTERNAL_INFORMATION>(HANDLE h);
+template FILE_CASE_SENSITIVE_INFORMATION query_information<FILE_CASE_SENSITIVE_INFORMATION>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
@@ -460,7 +463,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"oplock_r", [&]() { test_oplocks_r(token.get(), dir); } },
         { u"oplock_rw", [&]() { test_oplocks_rw(token.get(), dir); } },
         { u"oplock_rh", [&]() { test_oplocks_rh(token.get(), dir); } },
-        { u"oplock_rwh", [&]() { test_oplocks_rwh(token.get(), dir); } }
+        { u"oplock_rwh", [&]() { test_oplocks_rwh(token.get(), dir); } },
+        { u"cs", [&]() { test_cs(dir); } }
     };
 
     bool first = true;
@@ -501,8 +505,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
                 break;
         }
     }
-
-    // FIXME - check with case-sensitive flag set
 
     // FIXME - reparse points (opening, opening following link, creating, setting, querying tag)
 

@@ -131,6 +131,7 @@ NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS Even
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
 #define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)63)
+#define FileCaseSensitiveInformation ((FILE_INFORMATION_CLASS)71)
 
 #define FILE_WORD_ALIGNMENT 0x00000001
 
@@ -222,6 +223,12 @@ typedef struct _FILE_OBJECTID_BUFFER {
         BYTE ExtendedInfo[48];
     };
 } FILE_OBJECTID_BUFFER, *PFILE_OBJECTID_BUFFER;
+
+#define FILE_CS_FLAG_CASE_SENSITIVE_DIR             0x00000001
+
+typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
+    ULONG Flags;
+} FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
 
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
@@ -461,6 +468,8 @@ public:
 };
 
 typedef std::unique_ptr<HANDLE, handle_closer> unique_handle;
+
+#define STATUS_CASE_DIFFERING_NAMES_IN_DIR ((NTSTATUS)0xc00004b3)
 
 static __inline std::string ntstatus_to_string(NTSTATUS s) {
     switch (s) {
@@ -4028,6 +4037,8 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
             return "STATUS_VHD_DIFFERENCING_CHAIN_CYCLE_DETECTED";
         case STATUS_VHD_DIFFERENCING_CHAIN_ERROR_IN_PARENT:
             return "STATUS_VHD_DIFFERENCING_CHAIN_ERROR_IN_PARENT";
+        case STATUS_CASE_DIFFERING_NAMES_IN_DIR:
+            return "STATUS_CASE_DIFFERING_NAMES_IN_DIR";
         default:
             return fmt::format("Status {:08x}", (uint32_t)s);
     }
@@ -4162,3 +4173,6 @@ void test_oplocks_r(HANDLE token, const std::u16string& dir);
 void test_oplocks_rw(HANDLE token, const std::u16string& dir);
 void test_oplocks_rh(HANDLE token, const std::u16string& dir);
 void test_oplocks_rwh(HANDLE token, const std::u16string& dir);
+
+// cs.cpp
+void test_cs(const std::u16string& dir);
