@@ -464,7 +464,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"oplock_rw", [&]() { test_oplocks_rw(token.get(), dir); } },
         { u"oplock_rh", [&]() { test_oplocks_rh(token.get(), dir); } },
         { u"oplock_rwh", [&]() { test_oplocks_rwh(token.get(), dir); } },
-        { u"cs", [&]() { test_cs(dir); } }
+        { u"cs", [&]() { test_cs(dir); } },
+        { u"reparse", [&]() { test_reparse(token.get(), dir); } }
     };
 
     bool first = true;
@@ -505,8 +506,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
                 break;
         }
     }
-
-    // FIXME - reparse points (opening, opening following link, creating, setting, querying tag)
 
     // FIXME - ADSes (including prohibited names)
 

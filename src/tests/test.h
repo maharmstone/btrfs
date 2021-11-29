@@ -135,8 +135,9 @@ NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS Even
 
 #define FILE_WORD_ALIGNMENT 0x00000001
 
-#define SE_CHANGE_NOTIFY_PRIVILEGE      23
-#define SE_MANAGE_VOLUME_PRIVILEGE      28
+#define SE_CHANGE_NOTIFY_PRIVILEGE          23
+#define SE_MANAGE_VOLUME_PRIVILEGE          28
+#define SE_CREATE_SYMBOLIC_LINK_PRIVILEGE   35
 
 #define FILE_USE_FILE_POINTER_POSITION 0xfffffffe
 #define FILE_WRITE_TO_END_OF_FILE 0xffffffff
@@ -229,6 +230,32 @@ typedef struct _FILE_OBJECTID_BUFFER {
 typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
     ULONG Flags;
 } FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
+
+typedef struct _REPARSE_DATA_BUFFER {
+    ULONG ReparseTag;
+    USHORT ReparseDataLength;
+    USHORT Reserved;
+    union {
+        struct {
+            USHORT SubstituteNameOffset;
+            USHORT SubstituteNameLength;
+            USHORT PrintNameOffset;
+            USHORT PrintNameLength;
+            ULONG Flags;
+            WCHAR PathBuffer[1];
+        } SymbolicLinkReparseBuffer;
+        struct {
+            USHORT SubstituteNameOffset;
+            USHORT SubstituteNameLength;
+            USHORT PrintNameOffset;
+            USHORT PrintNameLength;
+            WCHAR PathBuffer[1];
+        } MountPointReparseBuffer;
+        struct {
+            UCHAR DataBuffer[1];
+        } GenericReparseBuffer;
+    };
+} REPARSE_DATA_BUFFER, *PREPARSE_DATA_BUFFER;
 
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
@@ -4176,3 +4203,6 @@ void test_oplocks_rwh(HANDLE token, const std::u16string& dir);
 
 // cs.cpp
 void test_cs(const std::u16string& dir);
+
+// reparse.cpp
+void test_reparse(HANDLE token, const std::u16string& dir);
