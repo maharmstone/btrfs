@@ -43,7 +43,7 @@ unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG 
     us.Buffer = (WCHAR*)path.data();
     oa.ObjectName = &us;
 
-    oa.Attributes = OBJ_CASE_INSENSITIVE; // FIXME - test
+    oa.Attributes = OBJ_CASE_INSENSITIVE;
     oa.SecurityDescriptor = nullptr; // FIXME - test
     oa.SecurityQualityOfService = nullptr; // FIXME - test(?)
 

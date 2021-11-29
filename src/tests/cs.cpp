@@ -18,6 +18,50 @@ static void set_case_sensitive(HANDLE h, bool case_sensitive) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
+static unique_handle create_file_cs(const u16string_view& path, ACCESS_MASK access, ULONG atts,
+                                    ULONG share, ULONG dispo, ULONG options, ULONG_PTR exp_info,
+                                    optional<uint64_t> allocation = nullopt) {
+    NTSTATUS Status;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES oa;
+    LARGE_INTEGER alloc_size;
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = nullptr; // FIXME - test
+
+    us.Length = us.MaximumLength = path.length() * sizeof(char16_t);
+    us.Buffer = (WCHAR*)path.data();
+    oa.ObjectName = &us;
+
+    oa.Attributes = 0; // not OBJ_CASE_INSENSITIVE
+    oa.SecurityDescriptor = nullptr; // FIXME - test
+    oa.SecurityQualityOfService = nullptr; // FIXME - test(?)
+
+    if (allocation)
+        alloc_size.QuadPart = allocation.value();
+
+    // FIXME - EaBuffer and EaLength
+
+    iosb.Information = 0xdeadbeef;
+
+    Status = NtCreateFile(&h, access, &oa, &iosb, allocation ? &alloc_size : nullptr,
+                          atts, share, dispo, options, nullptr, 0);
+
+    if (Status != STATUS_SUCCESS) {
+        if (NT_SUCCESS(Status)) // STATUS_OPLOCK_BREAK_IN_PROGRESS etc.
+            NtClose(h);
+
+        throw ntstatus_error(Status);
+    }
+
+    if (iosb.Information != exp_info)
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
+
+    return unique_handle(h);
+}
+
 void test_cs(const u16string& dir) {
     unique_handle h;
     int64_t lc_id = 0, uc_id = 0;
@@ -297,5 +341,22 @@ void test_cs(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - test opening files in normal dir without OBJ_CASE_INSENSITIVE
+    test("Create file in normal dir without OBJ_CASE_INSENSITIVE", [&]() {
+        create_file_cs(dir + u"\\cs7", MAXIMUM_ALLOWED, 0, 0, FILE_CREATED,
+                       FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open file in normal dir without OBJ_CASE_INSENSITIVE", [&]() {
+        create_file_cs(dir + u"\\cs7", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                       FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    // succeeds unless HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel\ObCaseInsensitive set to 0
+
+    test("Open file in normal dir without OBJ_CASE_INSENSITIVE with wrong case", [&]() {
+        exp_status([&]() {
+            create_file_cs(dir + u"\\CS7", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                           FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+        }, STATUS_OBJECT_NAME_NOT_FOUND);
+    });
 }
