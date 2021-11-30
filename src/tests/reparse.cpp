@@ -458,7 +458,49 @@ void test_reparse(HANDLE token, const u16string& dir) {
         }, STATUS_OBJECT_NAME_NOT_FOUND);
     });
 
-    // FIXME - absolute symlinks
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse9a", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file1id = fii.IndexNumber.QuadPart;
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse9b", FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as absolute symlink", [&]() {
+            set_symlink(h.get(), dir + u"\\reparse9a", u"reparse9a", false);
+        });
+
+        h.reset();
+    }
+
+    test("Open file through absolute symlink", [&]() {
+        h = create_file(dir + u"\\reparse9b", FILE_READ_ATTRIBUTES, 0, 0, FILE_OPEN,
+                        FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            if (fii.IndexNumber.QuadPart != file1id)
+                throw runtime_error("File ID had unexpected value");
+        });
+
+        h.reset();
+    }
 
     // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
     // FIXME - making a file a mount point
