@@ -205,6 +205,27 @@ static void write_ea(HANDLE h, string_view name, string_view value) {
         throw ntstatus_error(Status);
 }
 
+static void set_basic_information(HANDLE h, int64_t creation_time, int64_t last_access_time,
+                                  int64_t last_write_time, int64_t change_time, uint32_t attributes) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    FILE_BASIC_INFORMATION fbi;
+
+    fbi.CreationTime.QuadPart = creation_time;
+    fbi.LastAccessTime.QuadPart = last_access_time;
+    fbi.LastWriteTime.QuadPart = last_write_time;
+    fbi.ChangeTime.QuadPart = change_time;
+    fbi.FileAttributes = attributes;
+
+    Status = NtSetInformationFile(h, &iosb, &fbi, sizeof(fbi), FileBasicInformation);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (iosb.Information != 0)
+        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
+}
+
 void test_reparse(HANDLE token, const u16string& dir) {
     unique_handle h;
     int64_t file1id = 0, file2id = 0;
@@ -246,8 +267,26 @@ void test_reparse(HANDLE token, const u16string& dir) {
             file2id = fii.IndexNumber.QuadPart;
         });
 
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
         test("Set as symlink", [&]() {
             set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_REPARSE_POINT)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
         });
 
         test("Query reparse point", [&]() {
@@ -343,7 +382,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
     });
 
     test("Open file with FILE_OPEN_REPARSE_POINT", [&]() {
-        h = create_file(dir + u"\\reparse2", FILE_WRITE_ATTRIBUTES, 0, 0, FILE_OPEN,
+        h = create_file(dir + u"\\reparse2", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, 0, 0, FILE_OPEN,
                         FILE_OPEN_REPARSE_POINT, FILE_OPENED);
     });
 
@@ -361,8 +400,26 @@ void test_reparse(HANDLE token, const u16string& dir) {
             }, STATUS_IO_REPARSE_TAG_MISMATCH);
         });
 
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_REPARSE_POINT)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
         test("Delete reparse point", [&]() {
             delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
         });
 
         test("Try to delete reparse point again", [&]() {
@@ -576,7 +633,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
     });
 
     test("Create directory", [&]() {
-        h = create_file(dir + u"\\reparse10b", FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+        h = create_file(dir + u"\\reparse10b", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
                         0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
     });
 
@@ -587,8 +644,26 @@ void test_reparse(HANDLE token, const u16string& dir) {
             file2id = fii.IndexNumber.QuadPart;
         });
 
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
         test("Set as mount point", [&]() {
             set_mount_point(h.get(), dir + u"\\reparse10a", u"reparse10a");
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
         });
 
         test("Query reparse point", [&]() {
@@ -700,13 +775,31 @@ void test_reparse(HANDLE token, const u16string& dir) {
     });
 
     test("Open mount point with FILE_OPEN_REPARSE_POINT", [&]() {
-        h = create_file(dir + u"\\reparse10b", FILE_WRITE_DATA,
+        h = create_file(dir + u"\\reparse10b", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
                         0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
     });
 
     if (h) {
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
         test("Delete reparse point", [&]() {
             delete_reparse_point(h.get(), IO_REPARSE_TAG_MOUNT_POINT);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
         });
 
         test("Try to delete reparse point again", [&]() {
@@ -733,15 +826,12 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - check attributes for FILE_ATTRIBUTE_REPARSE_POINT (and gone when reparse point deleted)
-
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
     // FIXME - setting reparse tag on non-empty directory (D bit)
     // FIXME - test validating InputBuffer size
     // FIXME - test without SeCreateSymbolicLinkPrivilege
     // FIXME - should return STATUS_IO_REPARSE_TAG_INVALID if IO_REPARSE_TAG_RESERVED_ZERO or IO_REPARSE_TAG_RESERVED_ONE
-    // FIXME - setting or deleting reparse point sets archive flag?
 
     // FIXME - FSCTL_SET_REPARSE_POINT_EX
 }
