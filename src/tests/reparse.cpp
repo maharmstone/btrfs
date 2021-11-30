@@ -313,7 +313,36 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - what happens if we try to overwrite symlink?
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse3", FILE_WRITE_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        h.reset();
+    }
+
+    test("Overwrite file through symlink", [&]() {
+        create_file(dir + u"\\reparse3", FILE_WRITE_ATTRIBUTES, 0, 0, FILE_OVERWRITE,
+                    FILE_NON_DIRECTORY_FILE, FILE_OVERWRITTEN);
+    });
+
+    test("Check target rather than symlink overwritten", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse3", IO_REPARSE_TAG_SYMLINK);
+    });
+
+    test("Overwrite symlink", [&]() {
+        create_file(dir + u"\\reparse3", FILE_WRITE_ATTRIBUTES, 0, 0, FILE_OVERWRITE,
+                    FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT, FILE_OVERWRITTEN);
+    });
+
+    test("Check symlink overwritten", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse3", 0);
+    });
 
     // FIXME - test with non-empty file
     // FIXME - absolute symlinks
