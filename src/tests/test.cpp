@@ -93,6 +93,12 @@ T query_information(HANDLE h) {
         fic = FileInternalInformation;
     else if constexpr (is_same_v<T, FILE_CASE_SENSITIVE_INFORMATION>)
         fic = FileCaseSensitiveInformation;
+    else if constexpr (is_same_v<T, FILE_EA_INFORMATION>)
+        fic = FileEaInformation;
+    else if constexpr (is_same_v<T, FILE_STAT_INFORMATION>)
+        fic = FileStatInformation;
+    else if constexpr (is_same_v<T, FILE_STAT_LX_INFORMATION>)
+        fic = FileStatLxInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -115,6 +121,9 @@ template FILE_ALIGNMENT_INFORMATION query_information<FILE_ALIGNMENT_INFORMATION
 template FILE_POSITION_INFORMATION query_information<FILE_POSITION_INFORMATION>(HANDLE h);
 template FILE_INTERNAL_INFORMATION query_information<FILE_INTERNAL_INFORMATION>(HANDLE h);
 template FILE_CASE_SENSITIVE_INFORMATION query_information<FILE_CASE_SENSITIVE_INFORMATION>(HANDLE h);
+template FILE_EA_INFORMATION query_information<FILE_EA_INFORMATION>(HANDLE h);
+template FILE_STAT_INFORMATION query_information<FILE_STAT_INFORMATION>(HANDLE h);
+template FILE_STAT_LX_INFORMATION query_information<FILE_STAT_LX_INFORMATION>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {

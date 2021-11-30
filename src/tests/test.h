@@ -487,6 +487,44 @@ typedef struct _REQUEST_OPLOCK_OUTPUT_BUFFER {
     WORD ShareMode;
 } REQUEST_OPLOCK_OUTPUT_BUFFER, *PREQUEST_OPLOCK_OUTPUT_BUFFER;
 
+#define FileStatInformation ((FILE_INFORMATION_CLASS)68)
+
+typedef struct _FILE_STAT_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+    ULONG ReparseTag;
+    ULONG NumberOfLinks;
+    ACCESS_MASK EffectiveAccess;
+} FILE_STAT_INFORMATION, *PFILE_STAT_INFORMATION;
+
+#define FileStatLxInformation ((FILE_INFORMATION_CLASS)70)
+
+typedef struct _FILE_STAT_LX_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+    ULONG ReparseTag;
+    ULONG NumberOfLinks;
+    ACCESS_MASK EffectiveAccess;
+    ULONG LxFlags;
+    ULONG LxUid;
+    ULONG LxGid;
+    ULONG LxMode;
+    ULONG LxDeviceIdMajor;
+    ULONG LxDeviceIdMinor;
+} FILE_STAT_LX_INFORMATION, *PFILE_STAT_LX_INFORMATION;
+
 class handle_closer {
 public:
     typedef HANDLE pointer;

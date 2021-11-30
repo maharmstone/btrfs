@@ -164,8 +164,8 @@ void test_reparse(HANDLE token, const u16string& dir) {
     }
 
     test("Create file", [&]() {
-        h = create_file(dir + u"\\reparse2", FILE_WRITE_ATTRIBUTES, 0, 0, FILE_CREATE,
-                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+        h = create_file(dir + u"\\reparse2", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_CREATED);
     });
 
     if (h) {
@@ -203,6 +203,29 @@ void test_reparse(HANDLE token, const u16string& dir) {
             exp_status([&]() {
                 query_dir<FILE_REPARSE_POINT_INFORMATION>(dir, u"reparse2");
             }, STATUS_INVALID_INFO_CLASS);
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_SYMLINK)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_SYMLINK", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_SYMLINK)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_SYMLINK", fsli.ReparseTag);
         });
 
         h.reset();
@@ -290,16 +313,19 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - querying information?
     // FIXME - what happens if we try to overwrite symlink?
 
+    // FIXME - test with non-empty file
     // FIXME - absolute symlinks
     // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
     // FIXME - what happens if we try to make a file a mount point, or a directory a symlink?
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - setting reparse tag on non-empty directory (D bit)
-    // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point?
+    // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
+    // FIXME - test validating InputBuffer size
     // FIXME - test without SeCreateSymbolicLinkPrivilege
+    // FIXME - should return STATUS_IO_REPARSE_TAG_INVALID if IO_REPARSE_TAG_RESERVED_ZERO or IO_REPARSE_TAG_RESERVED_ONE
+    // FIXME - deleting reparse point sets archive flag?
 
     // FIXME - FSCTL_SET_REPARSE_POINT_EX
 }
