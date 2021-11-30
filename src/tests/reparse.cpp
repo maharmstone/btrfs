@@ -718,12 +718,26 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - making a file a mount point
-    // FIXME - setting reparse tag on non-empty directory (D bit)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse11", FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to set as mount point", [&]() {
+            exp_status([&]() {
+                set_mount_point(h.get(), dir + u"\\reparse10a", u"reparse10a");
+            }, STATUS_NOT_A_DIRECTORY);
+        });
+
+        h.reset();
+    }
 
     // FIXME - check attributes for FILE_ATTRIBUTE_REPARSE_POINT (and gone when reparse point deleted)
+
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
+    // FIXME - setting reparse tag on non-empty directory (D bit)
     // FIXME - test validating InputBuffer size
     // FIXME - test without SeCreateSymbolicLinkPrivilege
     // FIXME - should return STATUS_IO_REPARSE_TAG_INVALID if IO_REPARSE_TAG_RESERVED_ZERO or IO_REPARSE_TAG_RESERVED_ONE
