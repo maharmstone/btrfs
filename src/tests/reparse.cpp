@@ -107,6 +107,33 @@ static void delete_reparse_point(HANDLE h, uint32_t tag) {
         throw ntstatus_error(Status);
 }
 
+template<typename T>
+static void check_reparse_dirent(const u16string& dir, u16string_view name, uint32_t tag) {
+    auto items = query_dir<T>(dir, name);
+
+    if (items.size() != 1)
+        throw formatted_error("{} entries returned, expected 1.", items.size());
+
+    auto& fdi = *static_cast<const T*>(items.front());
+
+    if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+        throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+    if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+        throw runtime_error("FileName did not match.");
+
+    if constexpr (requires { T::ReparsePointTag; }) {
+        if (fdi.EaSize != 0)
+            throw formatted_error("EaSize was {:08x}, expected 0", fdi.EaSize);
+
+        if (fdi.ReparsePointTag != tag)
+            throw formatted_error("ReparsePointTag was {:08x}, expected {:08x}", fdi.ReparsePointTag, tag);
+    } else {
+        if (fdi.EaSize != tag)
+            throw formatted_error("EaSize was {:08x}, expected {:08x}", fdi.EaSize, tag);
+    }
+}
+
 void test_reparse(HANDLE token, const u16string& dir) {
     unique_handle h;
     int64_t file1id = 0, file2id = 0;
@@ -190,6 +217,30 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse2", IO_REPARSE_TAG_SYMLINK);
+    });
+
+    test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"reparse2", IO_REPARSE_TAG_SYMLINK);
+    });
+
+    test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"reparse2", IO_REPARSE_TAG_SYMLINK);
+    });
+
+    test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"reparse2", IO_REPARSE_TAG_SYMLINK);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"reparse2", IO_REPARSE_TAG_SYMLINK);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"reparse2", IO_REPARSE_TAG_SYMLINK);
+    });
+
     test("Open file with FILE_OPEN_REPARSE_POINT", [&]() {
         h = create_file(dir + u"\\reparse2", FILE_WRITE_ATTRIBUTES, 0, 0, FILE_OPEN,
                         FILE_OPEN_REPARSE_POINT, FILE_OPENED);
@@ -232,13 +283,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - dir entries
     // FIXME - querying information?
     // FIXME - FILE_REPARSE_POINT_INFORMATION
     // FIXME - what happens if we try to overwrite symlink?
 
     // FIXME - absolute symlinks
-    // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT)
+    // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
+    // FIXME - what happens if we try to make a file a mount point, or a directory a symlink?
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - setting reparse tag on non-empty directory (D bit)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point?
