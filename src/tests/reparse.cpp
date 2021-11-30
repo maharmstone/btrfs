@@ -380,10 +380,23 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\reparse6", FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        h.reset();
+    }
+
     // FIXME - test with file with EAs
     // FIXME - absolute symlinks
     // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
-    // FIXME - what happens if we try to make a file a mount point, or a directory a symlink?
+    // FIXME - making a file a mount point
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - setting reparse tag on non-empty directory (D bit)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
