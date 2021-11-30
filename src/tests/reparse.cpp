@@ -198,6 +198,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
                 throw formatted_error("Flags value was {}, expected SYMLINK_FLAG_RELATIVE", slrb.Flags);
         });
 
+        // Only works on specific NTFS metadata file - see section 2.1.5.5.2 of [MS-FSA]
+        test("Try checking FileReparsePointInformation", [&]() {
+            exp_status([&]() {
+                query_dir<FILE_REPARSE_POINT_INFORMATION>(dir, u"reparse2");
+            }, STATUS_INVALID_INFO_CLASS);
+        });
+
         h.reset();
     }
 
@@ -284,7 +291,6 @@ void test_reparse(HANDLE token, const u16string& dir) {
     }
 
     // FIXME - querying information?
-    // FIXME - FILE_REPARSE_POINT_INFORMATION
     // FIXME - what happens if we try to overwrite symlink?
 
     // FIXME - absolute symlinks

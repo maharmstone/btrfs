@@ -144,6 +144,8 @@ vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
         fic = FileIdExtdBothDirectoryInformation;
     else if constexpr (is_same_v<T, FILE_NAMES_INFORMATION>)
         fic = FileNamesInformation;
+    else if constexpr (is_same_v<T, FILE_REPARSE_POINT_INFORMATION>)
+        fic = FileReparsePointInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -167,22 +169,24 @@ vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
                                       buf.data() + off, buf.size() - off, fic, false,
                                       !filter.empty() ? &us : nullptr, first);
 
-        if (Status == STATUS_BUFFER_OVERFLOW) {
-            size_t new_size;
+        if constexpr (!is_same_v<T, FILE_REPARSE_POINT_INFORMATION>) {
+            if (Status == STATUS_BUFFER_OVERFLOW) {
+                size_t new_size;
 
-            new_size = offsetof(T, FileName) + (256 * sizeof(WCHAR));
-            new_size += ((T*)(buf.data() + off))->FileNameLength * sizeof(WCHAR);
+                new_size = offsetof(T, FileName) + (256 * sizeof(WCHAR));
+                new_size += ((T*)(buf.data() + off))->FileNameLength * sizeof(WCHAR);
 
-            buf.resize(new_size + 7);
+                buf.resize(new_size + 7);
 
-            off = 8 - ((uintptr_t)buf.data() % 8);
+                off = 8 - ((uintptr_t)buf.data() % 8);
 
-            if (off == 8)
-                off = 0;
+                if (off == 8)
+                    off = 0;
 
-            Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
-                                          buf.data() + off, buf.size() - off, fic, false,
-                                          !filter.empty() ? &us : nullptr, first);
+                Status = NtQueryDirectoryFile(dh.get(), nullptr, nullptr, nullptr, &iosb,
+                                              buf.data() + off, buf.size() - off, fic, false,
+                                              !filter.empty() ? &us : nullptr, first);
+            }
         }
 
         if (Status == STATUS_NO_MORE_FILES)
@@ -196,15 +200,23 @@ vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
         do {
             varbuf<T> item;
 
-            item.buf.resize(offsetof(T, FileName) + (ptr->FileNameLength * sizeof(WCHAR)));
+            if constexpr (is_same_v<T, FILE_REPARSE_POINT_INFORMATION>)
+                item.buf.resize(sizeof(T));
+            else
+                item.buf.resize(offsetof(T, FileName) + (ptr->FileNameLength * sizeof(WCHAR)));
+
             memcpy(item.buf.data(), ptr, item.buf.size());
 
             ret.emplace_back(item);
 
-            if (ptr->NextEntryOffset == 0)
+            if constexpr (is_same_v<T, FILE_REPARSE_POINT_INFORMATION>)
                 break;
+            else {
+                if (ptr->NextEntryOffset == 0)
+                    break;
 
-            ptr = (T*)((uint8_t*)ptr + ptr->NextEntryOffset);
+                ptr = (T*)((uint8_t*)ptr + ptr->NextEntryOffset);
+            }
         } while (true);
 
         first = false;
@@ -212,6 +224,8 @@ vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
 
     return ret;
 }
+
+template vector<varbuf<FILE_REPARSE_POINT_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
 
 template<typename T>
 concept has_CreationTime = requires { T::CreationTime; };
