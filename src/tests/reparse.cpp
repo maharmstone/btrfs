@@ -438,6 +438,26 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse8", FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as symlink with invalid target", [&]() {
+            set_symlink(h.get(), u"reparsenonsuch", u"reparsenonsuch", true);
+        });
+
+        h.reset();
+    }
+
+    test("Try to open invalid file through symlink", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse8", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                        FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+        }, STATUS_OBJECT_NAME_NOT_FOUND);
+    });
+
     // FIXME - absolute symlinks
 
     // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
