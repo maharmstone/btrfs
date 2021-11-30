@@ -47,6 +47,53 @@ static void set_symlink(HANDLE h, u16string_view substitute_name, u16string_view
         throw ntstatus_error(Status);
 }
 
+static void set_mount_point(HANDLE h, u16string_view substitute_name, u16string_view print_name) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf;
+
+    // both substitute and print strings need to be null-terminated
+
+    buf.resize(offsetof(REPARSE_DATA_BUFFER, MountPointReparseBuffer.PathBuffer) + ((substitute_name.length() + 1 + print_name.length() + 1) * sizeof(char16_t)));
+
+    auto& rdb = *(REPARSE_DATA_BUFFER*)buf.data();
+
+    rdb.ReparseTag = IO_REPARSE_TAG_MOUNT_POINT;
+    rdb.ReparseDataLength = buf.size() - offsetof(REPARSE_DATA_BUFFER, MountPointReparseBuffer);
+    rdb.Reserved = 0;
+
+    auto& mprb = rdb.MountPointReparseBuffer;
+
+    mprb.SubstituteNameOffset = 0;
+    mprb.SubstituteNameLength = substitute_name.length() * sizeof(char16_t);
+    mprb.PrintNameOffset = mprb.SubstituteNameLength + sizeof(char16_t);
+    mprb.PrintNameLength = print_name.length() * sizeof(char16_t);
+
+    memcpy((char*)mprb.PathBuffer + mprb.SubstituteNameOffset,
+           substitute_name.data(), mprb.SubstituteNameLength);
+    mprb.PathBuffer[(mprb.SubstituteNameOffset + mprb.SubstituteNameLength) / sizeof(char16_t)] = 0;
+    memcpy((char*)mprb.PathBuffer + mprb.PrintNameOffset,
+           print_name.data(), mprb.PrintNameLength);
+    mprb.PathBuffer[(mprb.PrintNameOffset + mprb.PrintNameLength) / sizeof(char16_t)] = 0;
+
+    auto ev = create_event();
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
+                             FSCTL_SET_REPARSE_POINT, buf.data(), buf.size(),
+                             nullptr, 0);
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
 static varbuf<REPARSE_DATA_BUFFER> query_reparse_point(HANDLE h) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -208,7 +255,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
             auto& rdb = *static_cast<REPARSE_DATA_BUFFER*>(buf);
 
             if (rdb.ReparseTag != IO_REPARSE_TAG_SYMLINK)
-                throw formatted_error("Reparse Tag was {:08x}, expected IO_REPARSE_TAG_SYMLINK", rdb.ReparseTag);
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_SYMLINK", rdb.ReparseTag);
 
             auto& slrb = rdb.SymbolicLinkReparseBuffer;
 
@@ -316,6 +363,12 @@ void test_reparse(HANDLE token, const u16string& dir) {
 
         test("Delete reparse point", [&]() {
             delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+        });
+
+        test("Try to delete reparse point again", [&]() {
+            exp_status([&]() {
+                delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+            }, STATUS_NOT_A_REPARSE_POINT);
         });
 
         h.reset();
@@ -502,16 +555,179 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
-    // FIXME - making a file a mount point
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\reparse10a", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
 
-    // FIXME - generic (i.e. non-Microsoft)
+    if (h) {
+        test("Get directory ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file1id = fii.IndexNumber.QuadPart;
+        });
+
+        h.reset();
+    }
+
+    test("Create file within directory", [&]() {
+        create_file(dir + u"\\reparse10a\\file", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\reparse10b", FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Get directory ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file2id = fii.IndexNumber.QuadPart;
+        });
+
+        test("Set as mount point", [&]() {
+            set_mount_point(h.get(), dir + u"\\reparse10a", u"reparse10a");
+        });
+
+        test("Query reparse point", [&]() {
+            auto buf = query_reparse_point(h.get());
+            auto& rdb = *static_cast<REPARSE_DATA_BUFFER*>(buf);
+
+            if (rdb.ReparseTag != IO_REPARSE_TAG_MOUNT_POINT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_MOUNT_POINT", rdb.ReparseTag);
+
+            auto& mprb = rdb.MountPointReparseBuffer;
+
+            auto dest = u16string_view((char16_t*)((char*)mprb.PathBuffer + mprb.SubstituteNameOffset),
+                                       mprb.SubstituteNameLength / sizeof(char16_t));
+
+            if (dest != dir + u"\\reparse10a")
+                throw formatted_error("Destination was \"{}\", expected \"{}\"", u16string_to_string(dest), u16string_to_string(dir + u"\\reparse10a"));
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_MOUNT_POINT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_MOUNT_POINT", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_MOUNT_POINT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_MOUNT_POINT", fsli.ReparseTag);
+        });
+
+        h.reset();
+    }
+
+    test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse10b", IO_REPARSE_TAG_MOUNT_POINT);
+    });
+
+    test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"reparse10b", IO_REPARSE_TAG_MOUNT_POINT);
+    });
+
+    test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"reparse10b", IO_REPARSE_TAG_MOUNT_POINT);
+    });
+
+    test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"reparse10b", IO_REPARSE_TAG_MOUNT_POINT);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"reparse10b", IO_REPARSE_TAG_MOUNT_POINT);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"reparse10b", IO_REPARSE_TAG_MOUNT_POINT);
+    });
+
+    test("Open mount point without FILE_OPEN_REPARSE_POINT", [&]() {
+        h = create_file(dir + u"\\reparse10b", FILE_READ_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Get directory ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            if (fii.IndexNumber.QuadPart != file1id)
+                throw runtime_error("Directory ID had unexpected value");
+        });
+
+        h.reset();
+    }
+
+    test("Open mount point with FILE_OPEN_REPARSE_POINT", [&]() {
+        h = create_file(dir + u"\\reparse10b", FILE_READ_ATTRIBUTES,
+                        0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Get directory ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            if (fii.IndexNumber.QuadPart != file2id)
+                throw runtime_error("Directory ID had unexpected value");
+        });
+
+        h.reset();
+    }
+
+    test("Open file through mount point (without FILE_OPEN_REPARSE_POINT)", [&]() {
+        create_file(dir + u"\\reparse10b\\file", MAXIMUM_ALLOWED,
+                    0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    test("Open file through mount point (with FILE_OPEN_REPARSE_POINT)", [&]() {
+        create_file(dir + u"\\reparse10b\\file", MAXIMUM_ALLOWED,
+                    0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
+    test("Open mount point with FILE_OPEN_REPARSE_POINT", [&]() {
+        h = create_file(dir + u"\\reparse10b", FILE_WRITE_DATA,
+                        0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_MOUNT_POINT);
+        });
+
+        test("Try to delete reparse point again", [&]() {
+            exp_status([&]() {
+                delete_reparse_point(h.get(), IO_REPARSE_TAG_MOUNT_POINT);
+            }, STATUS_NOT_A_REPARSE_POINT);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - making a file a mount point
     // FIXME - setting reparse tag on non-empty directory (D bit)
+
+    // FIXME - check attributes for FILE_ATTRIBUTE_REPARSE_POINT (and gone when reparse point deleted)
+    // FIXME - generic (i.e. non-Microsoft)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
     // FIXME - test validating InputBuffer size
     // FIXME - test without SeCreateSymbolicLinkPrivilege
     // FIXME - should return STATUS_IO_REPARSE_TAG_INVALID if IO_REPARSE_TAG_RESERVED_ZERO or IO_REPARSE_TAG_RESERVED_ONE
-    // FIXME - deleting reparse point sets archive flag?
+    // FIXME - setting or deleting reparse point sets archive flag?
 
     // FIXME - FSCTL_SET_REPARSE_POINT_EX
 }
