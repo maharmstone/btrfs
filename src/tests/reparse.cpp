@@ -344,7 +344,43 @@ void test_reparse(HANDLE token, const u16string& dir) {
         check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse3", 0);
     });
 
-    // FIXME - test with non-empty file
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse4", FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), random_data(4096), 0);
+        });
+
+        test("Set as symlink", [&]() {
+            exp_status([&]() {
+                set_symlink(h.get(), u"reparse1", u"reparse1", true);
+            }, STATUS_IO_REPARSE_DATA_INVALID);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse5", FILE_WRITE_DATA, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), random_data(4096), 0);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - test with file with EAs
     // FIXME - absolute symlinks
     // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
     // FIXME - what happens if we try to make a file a mount point, or a directory a symlink?

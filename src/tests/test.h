@@ -4200,7 +4200,7 @@ std::vector<uint8_t> random_data(size_t len);
 void write_file(HANDLE h, std::span<const uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
 void set_end_of_file(HANDLE h, uint64_t eof);
 std::vector<uint8_t> read_file(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
-void write_file_wait(HANDLE h, std::span<uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
+void write_file_wait(HANDLE h, std::span<const uint8_t> data, std::optional<uint64_t> offset = std::nullopt);
 std::vector<uint8_t> read_file_wait(HANDLE h, ULONG len, std::optional<uint64_t> offset = std::nullopt);
 void set_allocation(HANDLE h, uint64_t alloc);
 void set_valid_data_length(HANDLE h, uint64_t vdl);

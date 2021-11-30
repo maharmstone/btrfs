@@ -86,7 +86,7 @@ unique_handle create_event() {
     return unique_handle(h);
 }
 
-void write_file_wait(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
+void write_file_wait(HANDLE h, span<const uint8_t> data, optional<uint64_t> offset) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -96,7 +96,7 @@ void write_file_wait(HANDLE h, span<uint8_t> data, optional<uint64_t> offset) {
 
     auto event = create_event();
 
-    Status = NtWriteFile(h, event.get(), nullptr, nullptr, &iosb, data.data(),
+    Status = NtWriteFile(h, event.get(), nullptr, nullptr, &iosb, (void*)data.data(),
                          data.size(), offset ? &off : nullptr,
                          nullptr);
 
