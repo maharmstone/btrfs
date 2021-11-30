@@ -134,6 +134,30 @@ static void check_reparse_dirent(const u16string& dir, u16string_view name, uint
     }
 }
 
+static void write_ea(HANDLE h, string_view name, string_view value) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf;
+
+    buf.resize(offsetof(FILE_FULL_EA_INFORMATION, EaName) + name.size() + value.size() + 1);
+
+    auto& ffeai = *(FILE_FULL_EA_INFORMATION*)buf.data();
+
+    ffeai.NextEntryOffset = 0;
+    ffeai.Flags = 0;
+    ffeai.EaNameLength = name.size();
+    ffeai.EaValueLength = value.size();
+
+    memcpy(ffeai.EaName, name.data(), name.size());
+    ffeai.EaName[name.size()] = 0;
+    memcpy(ffeai.EaName + name.size() + 1, value.data(), value.size());
+
+    Status = NtSetEaFile(h, &iosb, buf.data(), buf.size());
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
 void test_reparse(HANDLE token, const u16string& dir) {
     unique_handle h;
     int64_t file1id = 0, file2id = 0;
@@ -393,10 +417,32 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - test with file with EAs
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse7", FILE_WRITE_DATA | FILE_WRITE_EA, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Write EA", [&]() {
+            write_ea(h.get(), "hello", "world");
+        });
+
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Write another EA", [&]() {
+            write_ea(h.get(), "lemon", "curry");
+        });
+
+        h.reset();
+    }
+
     // FIXME - absolute symlinks
+
     // FIXME - mount points (IO_REPARSE_TAG_MOUNT_POINT) (make sure can access files within directory)
     // FIXME - making a file a mount point
+
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - setting reparse tag on non-empty directory (D bit)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
