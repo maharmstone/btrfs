@@ -488,7 +488,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"oplock_rh", [&]() { test_oplocks_rh(token.get(), dir); } },
         { u"oplock_rwh", [&]() { test_oplocks_rwh(token.get(), dir); } },
         { u"cs", [&]() { test_cs(dir); } },
-        { u"reparse", [&]() { test_reparse(token.get(), dir); } }
+        { u"reparse", [&]() { test_reparse(token.get(), dir); } },
+        { u"streams", [&]() { test_streams(dir); } }
     };
 
     bool first = true;
@@ -530,8 +531,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         }
     }
 
-    // FIXME - ADSes (including prohibited names)
-
     // FIXME - test what happens when we use filename in path as if it were a directory (creating, renaming, linking)
 
     // FIXME - EAs
@@ -544,6 +543,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - inheriting SD
     // FIXME - open files asking for too many permissions
     // FIXME - MAXIMUM_ALLOWED
+    // FIXME - traverse checking
+    // FIXME - make sure mandatory access controls etc. obeyed (inc. when traverse-checking)
 
     // FIXME - querying directory (inc. specific files)
     // FIXME - directory notifications
@@ -556,8 +557,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - locking
 
     // FIXME - object IDs
-
-    // FIXME - traverse checking
 
     // FIXME - IO completions?
 

@@ -4253,3 +4253,6 @@ void test_cs(const std::u16string& dir);
 
 // reparse.cpp
 void test_reparse(HANDLE token, const std::u16string& dir);
+
+// streams.cpp
+void test_streams(const std::u16string& dir);
