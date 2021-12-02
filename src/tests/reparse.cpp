@@ -811,6 +811,21 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Open directory with children", [&]() {
+        h = create_file(dir + u"\\reparse10a", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Try to set as mount point", [&]() {
+            exp_status([&]() {
+                set_mount_point(h.get(), dir + u"\\reparse10b", u"reparse10b");
+            }, STATUS_DIRECTORY_NOT_EMPTY);
+        });
+
+        h.reset();
+    }
+
     test("Create file", [&]() {
         h = create_file(dir + u"\\reparse11", FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA,
                         0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_CREATED);
