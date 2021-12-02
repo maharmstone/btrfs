@@ -5,6 +5,10 @@
 #define FSCTL_DELETE_REPARSE_POINT CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 43, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 #define IO_REPARSE_TAG_FAKE_MICROSOFT 0x8000DEAD
+#define IO_REPARSE_TAG_FAKE 0x0000BEEF
+
+static const uint8_t reparse_guid[] = { 0xc5, 0xcc, 0x8b, 0xf2, 0xdc, 0xc3, 0x88, 0x42, 0xa1, 0xe2, 0x50, 0x43, 0x97, 0xeb, 0x26, 0xa6 };
+static const uint8_t wrong_guid[] = { 0x61, 0x81, 0x36, 0x76, 0x32, 0xa6, 0xbc, 0x4d, 0xb7, 0xe0, 0x3a, 0xb6, 0x60, 0x03, 0x9e, 0x4e };
 
 using namespace std;
 
@@ -129,6 +133,39 @@ static void set_ms_reparse_point(HANDLE h, uint32_t tag, span<const uint8_t> dat
         throw ntstatus_error(Status);
 }
 
+static void set_generic_reparse_point(HANDLE h, uint32_t tag, const uint8_t* guid, span<const uint8_t> data) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf;
+
+    buf.resize(offsetof(REPARSE_GUID_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + data.size());
+
+    auto& rgdb = *(REPARSE_GUID_DATA_BUFFER*)buf.data();
+
+    rgdb.ReparseTag = tag;
+    rgdb.ReparseDataLength = buf.size() - offsetof(REPARSE_GUID_DATA_BUFFER, GenericReparseBuffer.DataBuffer);
+    rgdb.Reserved = 0;
+    memcpy(&rgdb.ReparseGuid, guid, sizeof(rgdb.ReparseGuid));
+    memcpy(rgdb.GenericReparseBuffer.DataBuffer, data.data(), data.size());
+
+    auto ev = create_event();
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
+                             FSCTL_SET_REPARSE_POINT, buf.data(), buf.size(),
+                             nullptr, 0);
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
 static varbuf<REPARSE_DATA_BUFFER> query_reparse_point(HANDLE h) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -162,6 +199,39 @@ static varbuf<REPARSE_DATA_BUFFER> query_reparse_point(HANDLE h) {
     return ret;
 }
 
+static varbuf<REPARSE_GUID_DATA_BUFFER> query_reparse_point_guid(HANDLE h) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf;
+
+    buf.resize(4096);
+
+    auto ev = create_event();
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
+                             FSCTL_GET_REPARSE_POINT, nullptr, 0,
+                             buf.data(), buf.size());
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    auto& rgdb = *(REPARSE_GUID_DATA_BUFFER*)buf.data();
+    varbuf<REPARSE_GUID_DATA_BUFFER> ret;
+
+    ret.buf.resize(offsetof(REPARSE_GUID_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + rgdb.ReparseDataLength);
+    memcpy(ret.buf.data(), buf.data(), ret.buf.size());
+
+    return ret;
+}
+
 static void delete_reparse_point(HANDLE h, uint32_t tag) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -174,7 +244,37 @@ static void delete_reparse_point(HANDLE h, uint32_t tag) {
     rdb.Reserved = 0;
 
     Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
-                             FSCTL_DELETE_REPARSE_POINT, &rdb, sizeof(rdb),
+                             FSCTL_DELETE_REPARSE_POINT, &rdb,
+                             offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer),
+                             nullptr, 0);
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static void delete_reparse_point_guid(HANDLE h, uint32_t tag, const uint8_t* guid) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    REPARSE_GUID_DATA_BUFFER rgdb;
+
+    auto ev = create_event();
+
+    rgdb.ReparseTag = tag;
+    rgdb.ReparseDataLength = 0;
+    rgdb.Reserved = 0;
+    memcpy(&rgdb.ReparseGuid, guid, sizeof(rgdb.ReparseGuid));
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
+                             FSCTL_DELETE_REPARSE_POINT, &rgdb,
+                             offsetof(REPARSE_GUID_DATA_BUFFER, GenericReparseBuffer),
                              nullptr, 0);
 
     if (Status == STATUS_PENDING) {
@@ -460,6 +560,12 @@ void test_reparse(HANDLE token, const u16string& dir) {
         test("Try to delete reparse point again", [&]() {
             exp_status([&]() {
                 delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+            }, STATUS_NOT_A_REPARSE_POINT);
+        });
+
+        test("Try to query reparse point", [&]() {
+            exp_status([&]() {
+                query_reparse_point_guid(h.get());
             }, STATUS_NOT_A_REPARSE_POINT);
         });
 
@@ -843,6 +949,12 @@ void test_reparse(HANDLE token, const u16string& dir) {
             }, STATUS_NOT_A_REPARSE_POINT);
         });
 
+        test("Try to query reparse point", [&]() {
+            exp_status([&]() {
+                query_reparse_point_guid(h.get());
+            }, STATUS_NOT_A_REPARSE_POINT);
+        });
+
         h.reset();
     }
 
@@ -1060,10 +1172,16 @@ void test_reparse(HANDLE token, const u16string& dir) {
             }, STATUS_NOT_A_REPARSE_POINT);
         });
 
+        test("Try to query reparse point", [&]() {
+            exp_status([&]() {
+                query_reparse_point_guid(h.get());
+            }, STATUS_NOT_A_REPARSE_POINT);
+        });
+
         h.reset();
     }
 
-    test("Create file", [&]() {
+    test("Create directory", [&]() {
         h = create_file(dir + u"\\reparse13", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
                         0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
     });
@@ -1168,7 +1286,315 @@ void test_reparse(HANDLE token, const u16string& dir) {
                     0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
     });
 
-    // FIXME - generic (i.e. non-Microsoft)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse14", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file1id = fii.IndexNumber.QuadPart;
+        });
+
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        test("Try to set with generic reparse tag without GUID", [&]() {
+            exp_status([&]() {
+                static const string_view data = "hello";
+
+                set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, span((uint8_t*)data.data(), data.size()));
+            }, STATUS_IO_REPARSE_DATA_INVALID);
+        });
+
+        test("Set with generic reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_REPARSE_POINT)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Query reparse point", [&]() {
+            auto buf = query_reparse_point_guid(h.get());
+            auto& rgdb = *static_cast<REPARSE_GUID_DATA_BUFFER*>(buf);
+
+            if (rgdb.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", rgdb.ReparseTag);
+
+            if (memcmp(&rgdb.ReparseGuid, reparse_guid, sizeof(rgdb.ReparseGuid)))
+                throw runtime_error("Returned GUID was not as expected");
+
+            auto sv = string_view((char*)rgdb.GenericReparseBuffer.DataBuffer, rgdb.ReparseDataLength);
+
+            if (sv != "hello")
+                throw runtime_error("Reparse point data was not as expected");
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fsli.ReparseTag);
+        });
+
+        h.reset();
+    }
+
+    test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse14", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"reparse14", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"reparse14", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"reparse14", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"reparse14", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"reparse14", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Open file without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse14", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Open file with FILE_OPEN_REPARSE_POINT", [&]() {
+        h = create_file(dir + u"\\reparse14", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            if (fii.IndexNumber.QuadPart != file1id)
+                throw runtime_error("File ID was not as expected.");
+        });
+
+        test("Set with same reparse tag", [&]() {
+            static const string_view data = "world";
+
+            set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Set with same reparse tag but wrong GUID", [&]() {
+            exp_status([&]() {
+                static const string_view data = "world";
+
+                set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, wrong_guid, span((uint8_t*)data.data(), data.size()));
+            }, STATUS_REPARSE_ATTRIBUTE_CONFLICT);
+        });
+
+        test("Try to set with different reparse tag", [&]() {
+            exp_status([&]() {
+                static const string_view data = "world";
+
+                set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE + 1, reparse_guid, span((uint8_t*)data.data(), data.size()));
+            }, STATUS_IO_REPARSE_TAG_MISMATCH);
+        });
+
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_REPARSE_POINT)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Try to delete reparse point without GUID", [&]() {
+            exp_status([&]() {
+                delete_reparse_point(h.get(), IO_REPARSE_TAG_FAKE);
+            }, STATUS_IO_REPARSE_DATA_INVALID);
+        });
+
+        test("Try to delete reparse point with wrong GUID", [&]() {
+            exp_status([&]() {
+                delete_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, wrong_guid);
+            }, STATUS_REPARSE_ATTRIBUTE_CONFLICT);
+        });
+
+        test("Delete reparse point with correct GUID", [&]() {
+            delete_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        test("Try to delete reparse point again", [&]() {
+            exp_status([&]() {
+                delete_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid);
+            }, STATUS_NOT_A_REPARSE_POINT);
+        });
+
+        test("Try to query reparse point", [&]() {
+            exp_status([&]() {
+                query_reparse_point_guid(h.get());
+            }, STATUS_NOT_A_REPARSE_POINT);
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\reparse15", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        test("Set with generic reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Query reparse point", [&]() {
+            auto buf = query_reparse_point_guid(h.get());
+            auto& rgdb = *static_cast<REPARSE_GUID_DATA_BUFFER*>(buf);
+
+            if (rgdb.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", rgdb.ReparseTag);
+
+            if (memcmp(&rgdb.ReparseGuid, reparse_guid, sizeof(rgdb.ReparseGuid)))
+                throw runtime_error("Returned GUID was not as expected");
+
+            auto sv = string_view((char*)rgdb.GenericReparseBuffer.DataBuffer, rgdb.ReparseDataLength);
+
+            if (sv != "hello")
+                throw runtime_error("Reparse point data was not as expected");
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fsli.ReparseTag);
+        });
+
+        h.reset();
+    }
+
+    test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse15", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"reparse15", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"reparse15", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"reparse15", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"reparse15", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"reparse15", IO_REPARSE_TAG_FAKE);
+    });
+
+    test("Open directory without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse15", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Open directory with FILE_OPEN_REPARSE_POINT", [&]() {
+        create_file(dir + u"\\reparse15", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                    0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
     // FIXME - setting reparse tag on non-empty directory (D bit)
     // FIXME - test validating InputBuffer size
