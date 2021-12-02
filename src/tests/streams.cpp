@@ -451,7 +451,62 @@ void test_streams(const u16string& dir) {
                     FILE_NON_DIRECTORY_FILE, FILE_SUPERSEDED);
     });
 
-    // FIXME - deleting streams (inc. ::$DATA)
+    test("Create stream", [&]() {
+        h = create_file(dir + u"\\stream6:stream", DELETE, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Delete stream", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        h.reset();
+
+        test("Check directory entry for file", [&]() {
+            u16string_view name = u"stream6";
+
+            auto items = query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1.", items.size());
+
+            auto& fdi = *static_cast<const FILE_DIRECTORY_INFORMATION*>(items.front());
+
+            if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+                throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+            if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+                throw runtime_error("FileName did not match.");
+        });
+    }
+
+    test("Create stream", [&]() {
+        create_file(dir + u"\\stream7:stream", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\stream7", DELETE, 0, 0, FILE_OPEN,
+                        FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Delete file", [&]() {
+            set_disposition_information(h.get(), true);
+        });
+
+        h.reset();
+
+        test("Check directory entry for file gone", [&]() {
+            exp_status([&]() {
+                u16string_view name = u"stream7";
+
+                query_dir<FILE_DIRECTORY_INFORMATION>(dir, name);
+            }, STATUS_NO_SUCH_FILE);
+        });
+    }
+
     // FIXME - renaming streams
     // FIXME - promoting ADS to main stream by rename, and vice versa
     // FIXME - name validity (inc. DOSATTRIB etc.) (test UTF-16 issues)
