@@ -826,6 +826,29 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Open old mount point directory", [&]() {
+        h = create_file(dir + u"\\reparse10b", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Set as mount point", [&]() {
+            set_mount_point(h.get(), dir + u"\\reparse10a", u"reparse10a");
+        });
+
+        test("Set as mount point again", [&]() {
+            set_mount_point(h.get(), dir + u"\\reparse10c", u"reparse10c");
+        });
+
+        test("Set as symlink", [&]() {
+            exp_status([&]() {
+                set_symlink(h.get(), dir + u"\\reparse10a", u"reparse10a", false);
+            }, STATUS_IO_REPARSE_TAG_MISMATCH);
+        });
+
+        h.reset();
+    }
+
     test("Create file", [&]() {
         h = create_file(dir + u"\\reparse11", FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA,
                         0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_CREATED);
