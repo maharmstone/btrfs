@@ -658,7 +658,7 @@ void test_streams(const u16string& dir) {
     });
 
     test("Create stream", [&]() {
-        h = create_file(dir + u"\\stream9:stream", FILE_WRITE_DATA | DELETE, 0, 0, FILE_CREATE,
+        h = create_file(dir + u"\\stream10:stream", FILE_WRITE_DATA | DELETE, 0, 0, FILE_CREATE,
                         FILE_NON_DIRECTORY_FILE, FILE_CREATED);
     });
 
@@ -672,7 +672,94 @@ void test_streams(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - demoting main stream to ADS by rename (and on dir)
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\stream11", FILE_WRITE_DATA | DELETE, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view data = "hello";
+
+        test("Write to file", [&]() {
+            write_file_wait(h.get(), span((uint8_t*)data.data(), data.size()), 0);
+        });
+
+        test("Rename file to :stream", [&]() {
+            set_rename_information(h.get(), false, nullptr, u":stream");
+        });
+
+        test("Query streams", [&]() {
+            auto items = query_streams(h.get());
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2", items.size());
+
+            auto& fsi1 = *static_cast<FILE_STREAM_INFORMATION*>(items[0]);
+
+            if (fsi1.StreamSize.QuadPart != 0)
+                throw formatted_error("StreamSize was {}, expected 0", fsi1.StreamSize.QuadPart);
+
+            if (fsi1.StreamAllocationSize.QuadPart != 0)
+                throw formatted_error("StreamAllocationSize was {}, expected 0", fsi1.StreamAllocationSize.QuadPart);
+
+            auto name1 = u16string_view((char16_t*)fsi1.StreamName, fsi1.StreamNameLength / sizeof(char16_t));
+
+            if (name1 != u"::$DATA")
+                throw formatted_error("StreamName was {}, expected ::$DATA", u16string_to_string(name1));
+
+            auto& fsi2 = *static_cast<FILE_STREAM_INFORMATION*>(items[1]);
+
+            if (fsi2.StreamSize.QuadPart != data.size())
+                throw formatted_error("StreamSize was {}, expected {}", fsi2.StreamSize.QuadPart, data.size());
+
+            if (fsi2.StreamAllocationSize.QuadPart < fsi2.StreamSize.QuadPart) {
+                throw formatted_error("StreamAllocationSize was less than StreamSize ({} < {})",
+                                      fsi2.StreamAllocationSize.QuadPart,
+                                      fsi2.StreamSize.QuadPart);
+            }
+
+            auto name2 = u16string_view((char16_t*)fsi2.StreamName, fsi2.StreamNameLength / sizeof(char16_t));
+
+            if (name2 != u":stream:$DATA")
+                throw formatted_error("StreamName was {}, expected :stream:$DATA", u16string_to_string(name2));
+        });
+
+        h.reset();
+    }
+
+    test("Open stream", [&]() {
+        h = create_file(dir + u"\\stream11:stream", FILE_READ_DATA, 0, 0, FILE_OPEN,
+                        FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Read from file", [&]() {
+            static const string_view data = "hello";
+
+            auto buf = read_file_wait(h.get(), data.size(), 0);
+
+            if (buf.size() != data.size() || memcmp(buf.data(), data.data(), data.size()))
+                throw runtime_error("Data read did not match data written");
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\stream12", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to rename directory to :stream", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, u":stream");
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
     // FIXME - name validity (inc. DOSATTRIB etc.) (test UTF-16 issues)
     // FIXME - make sure ::$DATA suffix ignored
     // FIXME - what happens if we try to set reparse point on stream?
