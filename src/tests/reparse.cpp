@@ -1595,11 +1595,57 @@ void test_reparse(HANDLE token, const u16string& dir) {
                     0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
     });
 
-    // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse16", FILE_READ_ATTRIBUTES,
+                        0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to set as symlink without permissions", [&]() {
+            exp_status([&]() {
+                set_symlink(h.get(), u"reparse1", u"reparse1", true);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Open file with FILE_WRITE_ATTRIBUTES", [&]() {
+        h = create_file(dir + u"\\reparse16", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+        });
+
+        h.reset();
+    }
+
+    test("Open file with FILE_WRITE_DATA", [&]() {
+        h = create_file(dir + u"\\reparse16", FILE_WRITE_DATA,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+        });
+
+        h.reset();
+    }
+
     // FIXME - setting reparse tag on non-empty directory (D bit)
-    // FIXME - test validating InputBuffer size
     // FIXME - test without SeCreateSymbolicLinkPrivilege
-    // FIXME - should return STATUS_IO_REPARSE_TAG_INVALID if IO_REPARSE_TAG_RESERVED_ZERO or IO_REPARSE_TAG_RESERVED_ONE
 
     // FIXME - FSCTL_SET_REPARSE_POINT_EX
 }
