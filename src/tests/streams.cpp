@@ -586,7 +586,93 @@ void test_streams(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - promoting ADS to main stream by rename, and vice versa
+    test("Create stream", [&]() {
+        h = create_file(dir + u"\\stream9:stream", FILE_WRITE_DATA | DELETE, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view data = "hello";
+
+        test("Write to stream", [&]() {
+            write_file_wait(h.get(), span((uint8_t*)data.data(), data.size()), 0);
+        });
+
+        test("Rename stream to ::$DATA without ReplaceIfExists", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, u"::$DATA");
+            }, STATUS_OBJECT_NAME_COLLISION);
+        });
+
+        test("Rename stream to ::$DATA with ReplaceIfExists", [&]() {
+            set_rename_information(h.get(), true, nullptr, u"::$DATA");
+        });
+
+        test("Query streams", [&]() {
+            auto items = query_streams(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& fsi = *static_cast<FILE_STREAM_INFORMATION*>(items.front());
+
+            if (fsi.StreamSize.QuadPart != data.size())
+                throw formatted_error("StreamSize was {}, expected {}", fsi.StreamSize.QuadPart, data.size());
+
+            if (fsi.StreamAllocationSize.QuadPart < fsi.StreamSize.QuadPart) {
+                throw formatted_error("StreamAllocationSize was less than StreamSize ({} < {})",
+                                      fsi.StreamAllocationSize.QuadPart,
+                                      fsi.StreamSize.QuadPart);
+            }
+
+            auto name = u16string_view((char16_t*)fsi.StreamName, fsi.StreamNameLength / sizeof(char16_t));
+
+            if (name != u"::$DATA")
+                throw formatted_error("StreamName was {}, expected ::$DATA", u16string_to_string(name));
+        });
+
+        h.reset();
+    }
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\stream9", FILE_READ_DATA, 0, 0, FILE_OPEN,
+                        FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Read from file", [&]() {
+            static const string_view data = "hello";
+
+            auto buf = read_file_wait(h.get(), data.size(), 0);
+
+            if (buf.size() != data.size() || memcmp(buf.data(), data.data(), data.size()))
+                throw runtime_error("Data read did not match data written");
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        create_file(dir + u"\\stream10", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create stream", [&]() {
+        h = create_file(dir + u"\\stream9:stream", FILE_WRITE_DATA | DELETE, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to rename stream on directory to ::$DATA", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), true, nullptr, u"::$DATA");
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
+    // FIXME - demoting main stream to ADS by rename (and on dir)
     // FIXME - name validity (inc. DOSATTRIB etc.) (test UTF-16 issues)
     // FIXME - make sure ::$DATA suffix ignored
     // FIXME - what happens if we try to set reparse point on stream?

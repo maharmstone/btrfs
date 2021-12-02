@@ -547,6 +547,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     // FIXME - make sure mandatory access controls etc. obeyed (inc. when traverse-checking)
 
     // FIXME - querying directory (inc. specific files)
+    // FIXME - NtQueryDirectoryFileEx
     // FIXME - directory notifications
 
     // FIXME - IOCTLs and FSCTLs
