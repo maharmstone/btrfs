@@ -1063,6 +1063,111 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse13", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        test("Set with Microsoft reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Query reparse point", [&]() {
+            auto buf = query_reparse_point(h.get());
+            auto& rdb = *static_cast<REPARSE_DATA_BUFFER*>(buf);
+
+            if (rdb.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", rdb.ReparseTag);
+
+            auto sv = string_view((char*)rdb.GenericReparseBuffer.DataBuffer, rdb.ReparseDataLength);
+
+            if (sv != "hello")
+                throw runtime_error("Reparse point data was not as expected");
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fsli.ReparseTag);
+        });
+
+        h.reset();
+    }
+
+    test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse13", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"reparse13", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"reparse13", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"reparse13", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"reparse13", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"reparse13", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Open directory without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse13", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Open directory with FILE_OPEN_REPARSE_POINT", [&]() {
+        create_file(dir + u"\\reparse13", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                    0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
     // FIXME - generic (i.e. non-Microsoft)
     // FIXME - need FILE_WRITE_DATA or FILE_WRITE_ATTRIBUTES to set or delete reparse point
     // FIXME - setting reparse tag on non-empty directory (D bit)
