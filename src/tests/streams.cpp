@@ -981,6 +981,4 @@ void test_streams(const u16string& dir) {
         create_file(dir + u"\\STREAM16:STREAM", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
                     FILE_NON_DIRECTORY_FILE, FILE_OPENED);
     });
-
-    // FIXME - what happens if we try to set reparse point on stream?
 }

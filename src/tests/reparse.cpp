@@ -1731,11 +1731,122 @@ void test_reparse(HANDLE token, const u16string& dir) {
                     0, 0, FILE_OPEN, 0, FILE_OPENED);
     });
 
+    test("Create stream", [&]() {
+        h = create_file(dir + u"\\reparse18:stream", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+        });
+
+        test("Try to set as mount point", [&]() {
+            exp_status([&]() {
+                set_mount_point(h.get(), u"reparse1", u"reparse1");
+            }, STATUS_NOT_A_DIRECTORY);
+        });
+
+        test("Set with Microsoft reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT);
+        });
+
+        test("Set with generic reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+        });
+
+        h.reset();
+    }
+
+    test("Open file without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse18", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Open stream without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse18:stream", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Create directory", [&]() {
+        create_file(dir + u"\\reparse19", FILE_WRITE_ATTRIBUTES,
+                    0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create stream on directory", [&]() {
+        h = create_file(dir + u"\\reparse19:stream", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set as symlink", [&]() {
+            set_symlink(h.get(), u"reparse1", u"reparse1", true);
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_SYMLINK);
+        });
+
+        test("Try to set as mount point", [&]() {
+            exp_status([&]() {
+                set_mount_point(h.get(), u"reparse1", u"reparse1");
+            }, STATUS_NOT_A_DIRECTORY);
+        });
+
+        test("Set with Microsoft reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT);
+        });
+
+        test("Set with generic reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+        });
+
+        h.reset();
+    }
+
+    test("Open directory without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse19", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Open stream without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse19:stream", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
     // disable SeCreateSymbolicLinkPrivilege
     disable_token_privileges(token);
 
     test("Create directory", [&]() {
-        h = create_file(dir + u"\\reparse18", FILE_WRITE_ATTRIBUTES,
+        h = create_file(dir + u"\\reparse20", FILE_WRITE_ATTRIBUTES,
                         0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
     });
 
