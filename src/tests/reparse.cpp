@@ -6,6 +6,7 @@
 
 #define IO_REPARSE_TAG_FAKE_MICROSOFT 0x8000DEAD
 #define IO_REPARSE_TAG_FAKE 0x0000BEEF
+#define IO_REPARSE_TAG_FAKE_MICROSOFT_DIR 0x9000CAFE
 
 static const uint8_t reparse_guid[] = { 0xc5, 0xcc, 0x8b, 0xf2, 0xdc, 0xc3, 0x88, 0x42, 0xa1, 0xe2, 0x50, 0x43, 0x97, 0xeb, 0x26, 0xa6 };
 static const uint8_t wrong_guid[] = { 0x61, 0x81, 0x36, 0x76, 0x32, 0xa6, 0xbc, 0x4d, 0xb7, 0xe0, 0x3a, 0xb6, 0x60, 0x03, 0x9e, 0x4e };
@@ -1644,7 +1645,92 @@ void test_reparse(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - setting reparse tag on non-empty directory (D bit)
+    test("Create directory", [&]() {
+        create_file(dir + u"\\reparse17", MAXIMUM_ALLOWED,
+                    0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create file within directory", [&]() {
+        create_file(dir + u"\\reparse17\\file", MAXIMUM_ALLOWED,
+                    0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Open directory", [&]() {
+        h = create_file(dir + u"\\reparse17", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_OPEN, FILE_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        // This works because the reparse tag has the "D bit" (0x10000000) set
+        test("Create reparse point on non-empty directory", [&]() {
+            static const string_view data = "hello";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT_DIR, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Query reparse point", [&]() {
+            auto buf = query_reparse_point(h.get());
+            auto& rdb = *static_cast<REPARSE_DATA_BUFFER*>(buf);
+
+            if (rdb.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT_DIR)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT_DIR", rdb.ReparseTag);
+
+            auto sv = string_view((char*)rdb.GenericReparseBuffer.DataBuffer, rdb.ReparseDataLength);
+
+            if (sv != "hello")
+                throw runtime_error("Reparse point data was not as expected");
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT_DIR)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT_DIR", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT_DIR)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT_DIR", fsli.ReparseTag);
+        });
+
+        h.reset();
+    }
+
+    // Succeeds rather than returning STATUS_IO_REPARSE_TAG_NOT_HANDLED, because of D bit
+    test("Open directory without FILE_OPEN_REPARSE_POINT", [&]() {
+        create_file(dir + u"\\reparse17", FILE_READ_ATTRIBUTES,
+                    0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
     // FIXME - test without SeCreateSymbolicLinkPrivilege
 
     // FIXME - FSCTL_SET_REPARSE_POINT_EX
