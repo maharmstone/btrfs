@@ -359,4 +359,14 @@ void test_cs(const u16string& dir) {
                            FILE_NON_DIRECTORY_FILE, FILE_OPENED);
         }, STATUS_OBJECT_NAME_NOT_FOUND);
     });
+
+    test("Create stream in case-sensitive directory", [&]() {
+        create_file(dir + u"\\csdir\\cs8:stream", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open stream in case-sensitive directory with wrong case", [&]() { // succeeds!
+        create_file(dir + u"\\csdir\\cs8:STREAM", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    0, FILE_OPENED);
+    });
 }

@@ -972,6 +972,15 @@ void test_streams(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - is case-sensitivity same as for directory?
+    test("Create stream", [&]() {
+        create_file(dir + u"\\stream16:stream", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open stream using wrong case", [&]() {
+        create_file(dir + u"\\STREAM16:STREAM", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
     // FIXME - what happens if we try to set reparse point on stream?
 }
