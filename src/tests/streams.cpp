@@ -780,6 +780,114 @@ void test_streams(const u16string& dir) {
                     FILE_NON_DIRECTORY_FILE, FILE_OPENED);
     });
 
-    // FIXME - name validity (inc. DOSATTRIB etc.) (test UTF-16 issues)
+    test("Create file", [&]() {
+        create_file(dir + u"\\stream14", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Create stream with long name", [&]() {
+        u16string longname(256, u'x');
+
+        exp_status([&]() {
+            create_file(dir + u"\\stream14:" + longname, MAXIMUM_ALLOWED, 0, 0,
+                        FILE_CREATE, 0, FILE_CREATED);
+        }, STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create stream with emoji", [&]() {
+        create_file(dir + u"\\stream14:\U0001f525", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    bool is_ntfs = fstype == fs_type::ntfs;
+
+    test("Create stream with more than 255 UTF-8 characters", [&]() {
+        auto fn = dir + u"\\stream14:";
+
+        for (unsigned int i = 0; i < 64; i++) {
+            fn += u"\U0001f525";
+        }
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create stream with WTF-16 (1)", [&]() {
+        auto fn = dir + u"\\stream14:";
+
+        fn += (char16_t)0xd83d;
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create stream with WTF-16 (2)", [&]() {
+        auto fn = dir + u"\\stream14:";
+
+        fn += (char16_t)0xdd25;
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    test("Create stream with WTF-16 (3)", [&]() {
+        auto fn = dir + u"\\stream14:";
+
+        fn += (char16_t)0xdd25;
+        fn += (char16_t)0xd83d;
+
+        exp_status([&]() {
+            create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+    });
+
+    struct {
+        u16string name;
+        string desc;
+        bool valid;
+    } unusual_names[] = {
+        { u"/", "slash", false },
+        { u":", "colon", false },
+        { u"<", "less than", true },
+        { u">", "greater than", true },
+        { u"\"", "quote", true },
+        { u"|", "pipe", true },
+        { u"?", "question mark", true },
+        { u"*", "asterisk", true }
+    };
+
+    for (const auto& n : unusual_names) {
+        test("Create stream with unusual name (" + n.desc + ")", [&]() {
+            auto fn = dir + u"\\stream14:" + n.name;
+
+            exp_status([&]() {
+                create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            }, n.valid ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+    }
+
+    struct {
+        u16string name;
+        string desc;
+    } btrfs_reserved[] = {
+        { u"DOSATTRIB", "DOSATTRIB" },
+        { u"reparse", "reparse" },
+        { u"EA", "EA" },
+        { u"casesensitive", "casesensitive" }
+    };
+
+    for (const auto& n : btrfs_reserved) {
+        test("Create stream with reserved name (" + n.desc + ")", [&]() {
+            auto fn = dir + u"\\stream14:" + n.name;
+
+            exp_status([&]() {
+                create_file(fn, MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_OBJECT_NAME_INVALID);
+        });
+    }
+
+    // FIXME - is case-sensitivity same as for directory?
     // FIXME - what happens if we try to set reparse point on stream?
 }
