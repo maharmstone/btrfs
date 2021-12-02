@@ -134,7 +134,7 @@ static void set_ms_reparse_point(HANDLE h, uint32_t tag, span<const uint8_t> dat
         throw ntstatus_error(Status);
 }
 
-static void set_generic_reparse_point(HANDLE h, uint32_t tag, const uint8_t* guid, span<const uint8_t> data) {
+static void set_reparse_point_guid(HANDLE h, uint32_t tag, const uint8_t* guid, span<const uint8_t> data) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf;
@@ -1321,7 +1321,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
         test("Set with generic reparse tag", [&]() {
             static const string_view data = "hello";
 
-            set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+            set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
         });
 
         test("Query attributes", [&]() {
@@ -1420,14 +1420,14 @@ void test_reparse(HANDLE token, const u16string& dir) {
         test("Set with same reparse tag", [&]() {
             static const string_view data = "world";
 
-            set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+            set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
         });
 
         test("Set with same reparse tag but wrong GUID", [&]() {
             exp_status([&]() {
                 static const string_view data = "world";
 
-                set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, wrong_guid, span((uint8_t*)data.data(), data.size()));
+                set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, wrong_guid, span((uint8_t*)data.data(), data.size()));
             }, STATUS_REPARSE_ATTRIBUTE_CONFLICT);
         });
 
@@ -1435,7 +1435,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
             exp_status([&]() {
                 static const string_view data = "world";
 
-                set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE + 1, reparse_guid, span((uint8_t*)data.data(), data.size()));
+                set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE + 1, reparse_guid, span((uint8_t*)data.data(), data.size()));
             }, STATUS_IO_REPARSE_TAG_MISMATCH);
         });
 
@@ -1508,7 +1508,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
         test("Set with generic reparse tag", [&]() {
             static const string_view data = "hello";
 
-            set_generic_reparse_point(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+            set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
         });
 
         test("Query attributes", [&]() {
@@ -1731,7 +1731,51 @@ void test_reparse(HANDLE token, const u16string& dir) {
                     0, 0, FILE_OPEN, 0, FILE_OPENED);
     });
 
-    // FIXME - test without SeCreateSymbolicLinkPrivilege
+    // disable SeCreateSymbolicLinkPrivilege
+    disable_token_privileges(token);
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\reparse18", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to set as symlink without SeCreateSymbolicLinkPrivilege", [&]() {
+            exp_status([&]() {
+                set_symlink(h.get(), u"reparse1", u"reparse1", true);
+            }, STATUS_PRIVILEGE_NOT_HELD);
+        });
+
+        test("Set as mount point without SeCreateSymbolicLinkPrivilege", [&]() {
+            set_mount_point(h.get(), u"reparse1", u"reparse1");
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_MOUNT_POINT);
+        });
+
+        test("Set with Microsoft reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT);
+        });
+
+        test("Set with generic reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point_guid(h.get(), IO_REPARSE_TAG_FAKE, reparse_guid);
+        });
+
+        h.reset();
+    }
 
     // FIXME - FSCTL_SET_REPARSE_POINT_EX
 }
