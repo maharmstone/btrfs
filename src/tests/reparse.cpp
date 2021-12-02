@@ -4,6 +4,8 @@
 #define FSCTL_GET_REPARSE_POINT CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 42, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define FSCTL_DELETE_REPARSE_POINT CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 43, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
+#define IO_REPARSE_TAG_FAKE_MICROSOFT 0x8000DEAD
+
 using namespace std;
 
 static void set_symlink(HANDLE h, u16string_view substitute_name, u16string_view print_name, bool relative) {
@@ -75,6 +77,39 @@ static void set_mount_point(HANDLE h, u16string_view substitute_name, u16string_
     memcpy((char*)mprb.PathBuffer + mprb.PrintNameOffset,
            print_name.data(), mprb.PrintNameLength);
     mprb.PathBuffer[(mprb.PrintNameOffset + mprb.PrintNameLength) / sizeof(char16_t)] = 0;
+
+    auto ev = create_event();
+
+    Status = NtFsControlFile(h, ev.get(), nullptr, nullptr, &iosb,
+                             FSCTL_SET_REPARSE_POINT, buf.data(), buf.size(),
+                             nullptr, 0);
+
+    if (Status == STATUS_PENDING) {
+        Status = NtWaitForSingleObject(ev.get(), false, nullptr);
+        if (Status != STATUS_SUCCESS)
+            throw ntstatus_error(Status);
+
+        Status = iosb.Status;
+    }
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static void set_ms_reparse_point(HANDLE h, uint32_t tag, span<const uint8_t> data) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf;
+
+    buf.resize(offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + data.size());
+
+    auto& rdb = *(REPARSE_DATA_BUFFER*)buf.data();
+
+    rdb.ReparseTag = tag;
+    rdb.ReparseDataLength = buf.size() - offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer);
+    rdb.Reserved = 0;
+
+    memcpy(rdb.GenericReparseBuffer.DataBuffer, data.data(), data.size());
 
     auto ev = create_event();
 
@@ -859,6 +894,170 @@ void test_reparse(HANDLE token, const u16string& dir) {
             exp_status([&]() {
                 set_mount_point(h.get(), dir + u"\\reparse10a", u"reparse10a");
             }, STATUS_NOT_A_DIRECTORY);
+        });
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\reparse12", FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_READ_EA,
+                        0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file1id = fii.IndexNumber.QuadPart;
+        });
+
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        test("Set with Microsoft reparse tag", [&]() {
+            static const string_view data = "hello";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_REPARSE_POINT)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Query reparse point", [&]() {
+            auto buf = query_reparse_point(h.get());
+            auto& rdb = *static_cast<REPARSE_DATA_BUFFER*>(buf);
+
+            if (rdb.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", rdb.ReparseTag);
+
+            auto sv = string_view((char*)rdb.GenericReparseBuffer.DataBuffer, rdb.ReparseDataLength);
+
+            if (sv != "hello")
+                throw runtime_error("Reparse point data was not as expected");
+        });
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {:08x}, expected 0", feai.EaSize);
+        });
+
+        // needs FILE_READ_ATTRIBUTES
+        test("Query FileStatInformation", [&]() {
+            auto fsi = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fsi.ReparseTag);
+        });
+
+        // needs FILE_READ_EA as well
+        test("Query FileStatLxInformation", [&]() {
+            auto fsli = query_information<FILE_STAT_LX_INFORMATION>(h.get());
+
+            if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fsli.ReparseTag);
+        });
+
+        h.reset();
+    }
+
+    test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"reparse12", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"reparse12", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"reparse12", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"reparse12", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"reparse12", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+        check_reparse_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"reparse12", IO_REPARSE_TAG_FAKE_MICROSOFT);
+    });
+
+    test("Open file without FILE_OPEN_REPARSE_POINT", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\reparse12", MAXIMUM_ALLOWED,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_IO_REPARSE_TAG_NOT_HANDLED);
+    });
+
+    test("Open file with FILE_OPEN_REPARSE_POINT", [&]() {
+        h = create_file(dir + u"\\reparse12", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Get file ID", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            if (fii.IndexNumber.QuadPart != file1id)
+                throw runtime_error("File ID was not as expected.");
+        });
+
+        test("Set with same Microsoft reparse tag", [&]() {
+            static const string_view data = "world";
+
+            set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT, span((uint8_t*)data.data(), data.size()));
+        });
+
+        test("Try to set with different Microsoft reparse tag", [&]() {
+            exp_status([&]() {
+                static const string_view data = "world";
+
+                set_ms_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT + 1, span((uint8_t*)data.data(), data.size()));
+            }, STATUS_IO_REPARSE_TAG_MISMATCH);
+        });
+
+        test("Clear archive flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_REPARSE_POINT)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_REPARSE_POINT", fbi.FileAttributes);
+        });
+
+        test("Delete reparse point", [&]() {
+            delete_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT);
+        });
+
+        test("Query attributes", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        test("Try to delete reparse point again", [&]() {
+            exp_status([&]() {
+                delete_reparse_point(h.get(), IO_REPARSE_TAG_FAKE_MICROSOFT);
+            }, STATUS_NOT_A_REPARSE_POINT);
         });
 
         h.reset();
