@@ -760,7 +760,26 @@ void test_streams(const u16string& dir) {
         h.reset();
     }
 
+    test("Create file", [&]() {
+        create_file(dir + u"\\stream13", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open file with ::$DATA suffix", [&]() {
+        create_file(dir + u"\\stream13::$DATA", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Create stream", [&]() {
+        create_file(dir + u"\\stream13:stream", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open stream with ::$DATA suffix", [&]() {
+        create_file(dir + u"\\stream13:stream:$DATA", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
     // FIXME - name validity (inc. DOSATTRIB etc.) (test UTF-16 issues)
-    // FIXME - make sure ::$DATA suffix ignored
     // FIXME - what happens if we try to set reparse point on stream?
 }
