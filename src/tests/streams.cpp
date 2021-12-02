@@ -421,7 +421,36 @@ void test_streams(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - overwriting and superseding streams
+    test("Create stream", [&]() {
+        create_file(dir + u"\\stream5:stream", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    test("Open stream (FILE_OPEN)", [&]() {
+        create_file(dir + u"\\stream5:stream", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Open stream (FILE_OPEN_IF)", [&]() {
+        create_file(dir + u"\\stream5:stream", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN_IF,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Overwrite stream (FILE_OVERWRITE)", [&]() {
+        create_file(dir + u"\\stream5:stream", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE,
+                    FILE_NON_DIRECTORY_FILE, FILE_OVERWRITTEN);
+    });
+
+    test("Overwrite stream (FILE_OVERWRITE_IF)", [&]() {
+        create_file(dir + u"\\stream5:stream", MAXIMUM_ALLOWED, 0, 0, FILE_OVERWRITE_IF,
+                    FILE_NON_DIRECTORY_FILE, FILE_OVERWRITTEN);
+    });
+
+    test("Supersede stream", [&]() {
+        create_file(dir + u"\\stream5:stream", MAXIMUM_ALLOWED, 0, 0, FILE_SUPERSEDE,
+                    FILE_NON_DIRECTORY_FILE, FILE_SUPERSEDED);
+    });
+
     // FIXME - deleting streams (inc. ::$DATA)
     // FIXME - renaming streams
     // FIXME - promoting ADS to main stream by rename, and vice versa
