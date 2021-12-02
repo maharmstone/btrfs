@@ -186,7 +186,85 @@ void test_streams(const u16string& dir) {
                     FILE_NON_DIRECTORY_FILE, FILE_OPENED);
     });
 
-    // FIXME - data streams on directories (can we have ::$DATA?)
+    test("Try to create stream with FILE_DIRECTORY_FILE", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\stream2:stream", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+        }, STATUS_NOT_A_DIRECTORY);
+    });
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\stream3", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Query streams", [&]() {
+            auto items = query_streams(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& fsi = *static_cast<FILE_STREAM_INFORMATION*>(items.front());
+
+            if (fsi.StreamSize.QuadPart != 0)
+                throw formatted_error("StreamSize was {}, expected 0", fsi.StreamSize.QuadPart);
+
+            if (fsi.StreamAllocationSize.QuadPart != 0)
+                throw formatted_error("StreamAllocationSize was {}, expected 0", fsi.StreamAllocationSize.QuadPart);
+
+            auto name = u16string_view((char16_t*)fsi.StreamName, fsi.StreamNameLength / sizeof(char16_t));
+
+            if (name != u"")
+                throw formatted_error("StreamName was {}, expected empty string", u16string_to_string(name));
+        });
+
+        h.reset();
+    }
+
+    test("Try to create stream with FILE_DIRECTORY_FILE", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\stream3:stream", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+        }, STATUS_NOT_A_DIRECTORY);
+    });
+
+    test("Create stream on directory", [&]() {
+        h = create_file(dir + u"\\stream3:stream", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Query streams", [&]() {
+            auto items = query_streams(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& fsi = *static_cast<FILE_STREAM_INFORMATION*>(items.front());
+
+            if (fsi.StreamSize.QuadPart != 0)
+                throw formatted_error("StreamSize was {}, expected 0", fsi.StreamSize.QuadPart);
+
+            if (fsi.StreamAllocationSize.QuadPart != 0)
+                throw formatted_error("StreamAllocationSize was {}, expected 0", fsi.StreamAllocationSize.QuadPart);
+
+            auto name = u16string_view((char16_t*)fsi.StreamName, fsi.StreamNameLength / sizeof(char16_t));
+
+            if (name != u":stream:$DATA")
+                throw formatted_error("StreamName was {}, expected :stream:$DATA", u16string_to_string(name));
+        });
+
+        h.reset();
+    }
+
+    test("Try to create ::$DATA stream on directory", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\stream3::$DATA", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+        }, STATUS_FILE_IS_A_DIRECTORY);
+    });
+
     // FIXME - overwriting and superseding streams
     // FIXME - deleting streams (inc. ::$DATA)
     // FIXME - stream I/O (check file sizes)
@@ -194,4 +272,5 @@ void test_streams(const u16string& dir) {
     // FIXME - promoting ADS to main stream by rename, and vice versa
     // FIXME - name validity (inc. DOSATTRIB etc.) (test UTF-16 issues)
     // FIXME - make sure ::$DATA suffix ignored
+    // FIXME - what happens if we try to set reparse point on stream?
 }
