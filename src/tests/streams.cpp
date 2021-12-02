@@ -888,6 +888,90 @@ void test_streams(const u16string& dir) {
         });
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\stream15", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        FILE_NON_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Rename to stream with long name", [&]() {
+            u16string longname(256, u'x');
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, u":" + longname);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Rename to stream with emoji", [&]() {
+            set_rename_information(h.get(), false, nullptr, u":\U0001f525");
+        });
+
+        test("Rename to stream with more than 255 UTF-8 characters", [&]() {
+            u16string fn = u":";
+
+            for (unsigned int i = 0; i < 64; i++) {
+                fn += u"\U0001f525";
+            }
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER);
+        });
+
+        test("Rename to stream with WTF-16 (1)", [&]() {
+            u16string fn = u":";
+
+            fn += (char16_t)0xd83d;
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER);
+        });
+
+        test("Rename to stream with WTF-16 (2)", [&]() {
+            u16string fn = u":";
+
+            fn += (char16_t)0xdd25;
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER);
+        });
+
+        test("Rename to stream with WTF-16 (3)", [&]() {
+            u16string fn = u":";
+
+            fn += (char16_t)0xdd25;
+            fn += (char16_t)0xd83d;
+
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, fn);
+            }, is_ntfs ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER);
+        });
+
+        for (const auto& n : unusual_names) {
+            test("Rename to stream with unusual name (" + n.desc + ")", [&]() {
+                auto fn = u":" + n.name;
+
+                exp_status([&]() {
+                    set_rename_information(h.get(), false, nullptr, fn);
+                }, n.valid ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER);
+            });
+        }
+
+        for (const auto& n : btrfs_reserved) {
+            test("Rename to stream with reserved name (" + n.desc + ")", [&]() {
+                auto fn = u":" + n.name;
+
+                exp_status([&]() {
+                    set_rename_information(h.get(), false, nullptr, fn);
+                }, is_ntfs ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER);
+            });
+        }
+
+        h.reset();
+    }
+
     // FIXME - is case-sensitivity same as for directory?
     // FIXME - what happens if we try to set reparse point on stream?
 }
