@@ -215,11 +215,11 @@ void test_ea(const u16string& dir) {
         static const string_view ea1_name = "HELLO", ea1_value = "world";
         static const string_view ea2_name = "fOo", ea2_value = "bar";
 
-        test("Write EA", [&]() {
+        test("Add second EA", [&]() {
             write_ea(h.get(), ea2_name, ea2_value);
         });
 
-        test("Read EA", [&]() {
+        test("Read EAs", [&]() {
             auto items = read_ea(h.get());
 
             if (items.size() != 2)
@@ -300,10 +300,240 @@ void test_ea(const u16string& dir) {
         });
     }
 
-    // FIXME - replacing EA
-    // FIXME - check everything again
-    // FIXME - delete EA
-    // FIXME - check everything again
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\ea1", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
+                        FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        static const string_view ea1_name = "FOO", ea1_value = "bar";
+        static const string_view ea2_name = "HeLlO", ea2_value = "baz";
+
+        test("Replace first EA", [&]() {
+            write_ea(h.get(), ea2_name, ea2_value);
+        });
+
+        test("Read EAs", [&]() {
+            auto items = read_ea(h.get());
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2", items.size());
+
+            auto& ffeai1 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[0]);
+
+            if (ffeai1.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai1.Flags);
+
+            auto name1 = string_view(ffeai1.EaName, ffeai1.EaNameLength);
+
+            if (name1 != ea1_name)
+                throw formatted_error("EA name was \"{}\", expected \"{}\"", name1, ea1_name);
+
+            auto value1 = string_view(ffeai1.EaName + ffeai1.EaNameLength + 1, ffeai1.EaValueLength);
+
+            if (value1 != ea1_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value1, ea1_value);
+
+            auto& ffeai2 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[1]);
+
+            if (ffeai2.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai2.Flags);
+
+            auto name2 = string_view(ffeai2.EaName, ffeai2.EaNameLength);
+
+            if (name2 != "HELLO")
+                throw formatted_error("EA name was \"{}\", expected \"HELLO\"", name2);
+
+            auto value2 = string_view(ffeai2.EaName + ffeai2.EaNameLength + 1, ffeai2.EaValueLength);
+
+            if (value2 != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value2, ea2_value);
+        });
+
+        auto exp_size = ea_size(ea1_name, ea1_value) + ea_size(ea2_name, ea2_value);
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", feai.EaSize, exp_size);
+        });
+
+        test("Query FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.EaInformation.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", fai.EaInformation.EaSize, exp_size);
+        });
+
+        h.reset();
+
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+    }
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\ea1", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
+                        FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        static const string_view ea1_name = "FOO", ea1_value = "bar";
+        static const string_view ea2_name = "HELlo";
+
+        test("Delete first EA", [&]() {
+            write_ea(h.get(), ea2_name, "");
+        });
+
+        test("Read EAs", [&]() {
+            auto items = read_ea(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai1 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[0]);
+
+            if (ffeai1.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai1.Flags);
+
+            auto name1 = string_view(ffeai1.EaName, ffeai1.EaNameLength);
+
+            if (name1 != ea1_name)
+                throw formatted_error("EA name was \"{}\", expected \"{}\"", name1, ea1_name);
+
+            auto value1 = string_view(ffeai1.EaName + ffeai1.EaNameLength + 1, ffeai1.EaValueLength);
+
+            if (value1 != ea1_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value1, ea1_value);
+        });
+
+        auto exp_size = ea_size(ea1_name, ea1_value);
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", feai.EaSize, exp_size);
+        });
+
+        test("Query FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.EaInformation.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", fai.EaInformation.EaSize, exp_size);
+        });
+
+        h.reset();
+
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+    }
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\ea1", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
+                        FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        static const string_view ea1_name = "foo";
+
+        test("Delete second EA", [&]() {
+            write_ea(h.get(), ea1_name, "");
+        });
+
+        test("Read EAs", [&]() {
+            exp_status([&]() {
+                read_ea(h.get());
+            }, STATUS_NO_EAS_ON_FILE);
+        });
+
+        uint32_t exp_size = 0;
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", feai.EaSize, exp_size);
+        });
+
+        test("Query FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.EaInformation.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", fai.EaInformation.EaSize, exp_size);
+        });
+
+        h.reset();
+
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"ea1", exp_size);
+        });
+    }
 
     // FIXME - setting two EAs at once
     // FIXME - creating files with EAs
