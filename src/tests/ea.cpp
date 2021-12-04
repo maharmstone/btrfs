@@ -837,7 +837,91 @@ void test_ea(const u16string& dir) {
         });
     }
 
-    // FIXME - EAs on directories?
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\ea4", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
+                        FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view ea_name = "hello", ea_value = "world";
+
+        test("Read EA", [&]() {
+            exp_status([&]() {
+                read_ea(h.get());
+            }, STATUS_NO_EAS_ON_FILE);
+        });
+
+        test("Write EA", [&]() {
+            write_ea(h.get(), ea_name, ea_value);
+        });
+
+        test("Read EA", [&]() {
+            auto items = read_ea(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "HELLO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"HELLO\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea_value);
+        });
+
+        auto exp_size = ea_size(ea_name, ea_value);
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", feai.EaSize, exp_size);
+        });
+
+        test("Query FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.EaInformation.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", fai.EaInformation.EaSize, exp_size);
+        });
+
+        h.reset();
+
+        // EaSize in dirents not updated until file closed?
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"ea4", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"ea4", exp_size);
+        });
+
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"ea4", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"ea4", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"ea4", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"ea4", exp_size);
+        });
+    }
+
     // FIXME - filter on NtQueryEaFile
     // FIXME - FILE_WRITE_EA and FILE_READ_EA
     // FIXME - FILE_NEED_EA
