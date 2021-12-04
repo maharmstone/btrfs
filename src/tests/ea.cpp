@@ -960,6 +960,37 @@ void test_ea(const u16string& dir) {
         }, STATUS_ACCESS_DENIED);
     });
 
+    test("Create file without FILE_WRITE_EA", [&]() {
+        h = create_file(dir + u"\\ea6", FILE_READ_EA, 0, 0,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view ea_name = "hello", ea_value = "world";
+
+        test("Try to write EA", [&]() {
+            exp_status([&]() {
+                write_ea(h.get(), ea_name, ea_value, false);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Open file without FILE_READ_EA", [&]() {
+        h = create_file(dir + u"\\ea6", FILE_WRITE_EA, 0, 0,
+                        FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Try to read EA", [&]() {
+            exp_status([&]() {
+                read_ea(h.get());
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
     // FIXME - filter on NtQueryEaFile
-    // FIXME - FILE_WRITE_EA and FILE_READ_EA
 }
