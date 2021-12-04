@@ -128,6 +128,11 @@ NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS Even
                                 PULONG ReturnLength);
 
 extern "C"
+NTSTATUS __stdcall NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                 ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList,
+                                 ULONG EaListLength, PULONG EaIndex, BOOLEAN RestartScan);
+
+extern "C"
 NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                ULONG Length);
 
@@ -4256,3 +4261,7 @@ void test_reparse(HANDLE token, const std::u16string& dir);
 
 // streams.cpp
 void test_streams(const std::u16string& dir);
+
+// ea.cpp
+void test_ea(const std::u16string& dir);
+void write_ea(HANDLE h, std::string_view name, std::string_view value);

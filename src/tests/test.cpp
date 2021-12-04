@@ -489,7 +489,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"oplock_rwh", [&]() { test_oplocks_rwh(token.get(), dir); } },
         { u"cs", [&]() { test_cs(dir); } },
         { u"reparse", [&]() { test_reparse(token.get(), dir); } },
-        { u"streams", [&]() { test_streams(dir); } }
+        { u"streams", [&]() { test_streams(dir); } },
+        { u"ea", [&]() { test_ea(dir); } }
     };
 
     bool first = true;
@@ -532,9 +533,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
     }
 
     // FIXME - test what happens when we use filename in path as if it were a directory (creating, renaming, linking)
-
-    // FIXME - EAs
-    // FIXME - FILE_NO_EA_KNOWLEDGE
 
     // FIXME - setting file information
 

@@ -317,30 +317,6 @@ static void check_reparse_dirent(const u16string& dir, u16string_view name, uint
     }
 }
 
-static void write_ea(HANDLE h, string_view name, string_view value) {
-    NTSTATUS Status;
-    IO_STATUS_BLOCK iosb;
-    vector<uint8_t> buf;
-
-    buf.resize(offsetof(FILE_FULL_EA_INFORMATION, EaName) + name.size() + value.size() + 1);
-
-    auto& ffeai = *(FILE_FULL_EA_INFORMATION*)buf.data();
-
-    ffeai.NextEntryOffset = 0;
-    ffeai.Flags = 0;
-    ffeai.EaNameLength = name.size();
-    ffeai.EaValueLength = value.size();
-
-    memcpy(ffeai.EaName, name.data(), name.size());
-    ffeai.EaName[name.size()] = 0;
-    memcpy(ffeai.EaName + name.size() + 1, value.data(), value.size());
-
-    Status = NtSetEaFile(h, &iosb, buf.data(), buf.size());
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-}
-
 static void set_basic_information(HANDLE h, int64_t creation_time, int64_t last_access_time,
                                   int64_t last_write_time, int64_t change_time, uint32_t attributes) {
     NTSTATUS Status;
