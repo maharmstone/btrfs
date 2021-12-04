@@ -138,6 +138,12 @@ NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock
 
 #define FILE_NEED_EA    0x00000080
 
+typedef struct _FILE_GET_EA_INFORMATION {
+    ULONG NextEntryOffset;
+    UCHAR EaNameLength;
+    CHAR EaName[1];
+} FILE_GET_EA_INFORMATION, *PFILE_GET_EA_INFORMATION;
+
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)

@@ -231,6 +231,77 @@ static void check_ea_dirent(const u16string& dir, u16string_view name, uint32_t 
         throw formatted_error("EaSize was {}, expected {}", fdi.EaSize, exp_size);
 }
 
+template<size_t N>
+static vector<varbuf<FILE_FULL_EA_INFORMATION>> read_eas(HANDLE h, const array<string_view, N>& arr,
+                                                         bool single_entry, ULONG* index,
+                                                         bool restart) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buflist;
+    size_t size;
+    char buf[4096];
+
+    size = 0;
+    for (unsigned int i = 0; i < N; i++) {
+        size += offsetof(FILE_GET_EA_INFORMATION, EaName) + arr[i].size() + 1;
+
+        if (i != N - 1 && size & 3)
+            size = ((size >> 2) + 1) << 2;
+    }
+
+    buflist.resize(size);
+
+    {
+        auto ptr = buflist.data();
+
+        for (unsigned int i = 0; i < N; i++) {
+            auto& fgeai = *(FILE_GET_EA_INFORMATION*)ptr;
+
+            fgeai.NextEntryOffset = 0;
+            fgeai.EaNameLength = arr[i].size();
+
+            memcpy(fgeai.EaName, arr[i].data(), arr[i].size());
+            fgeai.EaName[arr[i].size()] = 0;
+
+            if (i != N - 1) {
+                fgeai.NextEntryOffset = offsetof(FILE_GET_EA_INFORMATION, EaName) + arr[i].size() + 1;
+
+                if (fgeai.NextEntryOffset & 3)
+                    fgeai.NextEntryOffset = ((fgeai.NextEntryOffset >> 2) + 1) << 2;
+
+                ptr += fgeai.NextEntryOffset;
+            }
+        }
+    }
+
+    Status = NtQueryEaFile(h, &iosb, buf, sizeof(buf), single_entry, buflist.data(),
+                           buflist.size(), index, restart);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    vector<varbuf<FILE_FULL_EA_INFORMATION>> ret;
+    auto ptr = buf;
+
+    do {
+        auto& ffeai = *(FILE_FULL_EA_INFORMATION*)ptr;
+
+        ret.emplace_back();
+        auto& item = ret.back();
+
+        item.buf.resize(offsetof(FILE_FULL_EA_INFORMATION, EaName) + ffeai.EaNameLength + 1 + ffeai.EaValueLength);
+
+        memcpy(item.buf.data(), &ffeai, item.buf.size());
+
+        if (ffeai.NextEntryOffset == 0)
+            break;
+
+        ptr += ffeai.NextEntryOffset;
+    } while (true);
+
+    return ret;
+}
+
 void test_ea(const u16string& dir) {
     unique_handle h;
 
@@ -992,5 +1063,196 @@ void test_ea(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - filter on NtQueryEaFile
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\ea7", FILE_WRITE_EA | FILE_READ_EA, 0, 0,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view ea1_name = "hello", ea1_value = "world";
+        static const string_view ea2_name = "foo", ea2_value = "bar";
+        static const string_view ea3_name = "xyzzy", ea3_value = "plugh";
+
+        test("Write EAs", [&]() {
+            write_eas(h.get(), array{ pair(ea1_name, ea1_value), pair(ea2_name, ea2_value), pair(ea3_name, ea3_value) });
+        });
+
+        test("Read EAs with filter", [&]() {
+            auto items = read_eas(h.get(), array{ ea2_name, ea3_name }, false, nullptr, true);
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2", items.size());
+
+            auto& ffeai1 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[0]);
+
+            if (ffeai1.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai1.Flags);
+
+            auto name1 = string_view(ffeai1.EaName, ffeai1.EaNameLength);
+
+            if (name1 != "FOO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"FOO\"", name1);
+
+            auto value1 = string_view(ffeai1.EaName + ffeai1.EaNameLength + 1, ffeai1.EaValueLength);
+
+            if (value1 != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value1, ea2_value);
+
+            auto& ffeai2 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[1]);
+
+            if (ffeai2.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai2.Flags);
+
+            auto name2 = string_view(ffeai2.EaName, ffeai2.EaNameLength);
+
+            if (name2 != "XYZZY") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"FOO\"", name2);
+
+            auto value2 = string_view(ffeai2.EaName + ffeai2.EaNameLength + 1, ffeai2.EaValueLength);
+
+            if (value2 != ea3_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value2, ea3_value);
+        });
+
+        test("Read single EA", [&]() {
+            auto items = read_eas(h.get(), array{ ea2_name, ea3_name }, true, nullptr, true);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "FOO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"FOO\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea2_value);
+        });
+
+        test("Read next EA", [&]() { // still returns first entry
+            auto items = read_eas(h.get(), array{ ea2_name, ea3_name }, true, nullptr, false);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "FOO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"FOO\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea2_value);
+        });
+
+        test("Read single EA without filter", [&]() {
+            auto items = read_eas(h.get(), array<string_view, 0>{}, true, nullptr, true);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "HELLO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"HELLO\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea1_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea1_value);
+        });
+
+        test("Read single EA without filter", [&]() {
+            auto items = read_eas(h.get(), array<string_view, 0>{}, true, nullptr, false);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "FOO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"FOO\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea2_value);
+        });
+
+        test("Read single EA without filter", [&]() {
+            auto items = read_eas(h.get(), array<string_view, 0>{}, true, nullptr, false);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "XYZZY") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"XYZZY\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea3_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea3_value);
+        });
+
+        test("Read single EA without filter", [&]() {
+            exp_status([&]() {
+                read_eas(h.get(), array<string_view, 0>{}, true, nullptr, false);
+            }, STATUS_NO_MORE_EAS);
+        });
+
+        test("Read single EA with offset", [&]() {
+            ULONG index = 3; // starts at 1
+            auto items = read_eas(h.get(), array<string_view, 0>{}, true, &index, false);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "XYZZY") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"XYZZY\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea3_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea3_value);
+        });
+
+        h.reset();
+    }
 }
