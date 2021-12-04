@@ -770,6 +770,11 @@ void test_streams(const u16string& dir) {
                     FILE_NON_DIRECTORY_FILE, FILE_OPENED);
     });
 
+    test("Open file with ::$data suffix", [&]() {
+        create_file(dir + u"\\stream13::$data", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
     test("Create stream", [&]() {
         create_file(dir + u"\\stream13:stream", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
                     FILE_NON_DIRECTORY_FILE, FILE_CREATED);
@@ -777,6 +782,11 @@ void test_streams(const u16string& dir) {
 
     test("Open stream with ::$DATA suffix", [&]() {
         create_file(dir + u"\\stream13:stream:$DATA", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
+                    FILE_NON_DIRECTORY_FILE, FILE_OPENED);
+    });
+
+    test("Open stream with ::$data suffix", [&]() {
+        create_file(dir + u"\\stream13:stream:$data", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN,
                     FILE_NON_DIRECTORY_FILE, FILE_OPENED);
     });
 
