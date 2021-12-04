@@ -2,12 +2,21 @@
 
 using namespace std;
 
+static constexpr uint32_t ea_size(string_view name, string_view value) {
+    uint32_t size = offsetof(FILE_FULL_EA_INFORMATION, EaName) + name.length() + 1 + value.length();
+
+    if (size & 3)
+        size = ((size >> 2) + 1) << 2;
+
+    return size;
+}
+
 void write_ea(HANDLE h, string_view name, string_view value) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf;
 
-    buf.resize(offsetof(FILE_FULL_EA_INFORMATION, EaName) + name.size() + value.size() + 1);
+    buf.resize(ea_size(name, value));
 
     auto& ffeai = *(FILE_FULL_EA_INFORMATION*)buf.data();
 
@@ -19,6 +28,45 @@ void write_ea(HANDLE h, string_view name, string_view value) {
     memcpy(ffeai.EaName, name.data(), name.size());
     ffeai.EaName[name.size()] = 0;
     memcpy(ffeai.EaName + name.size() + 1, value.data(), value.size());
+
+    Status = NtSetEaFile(h, &iosb, buf.data(), buf.size());
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+template<size_t N>
+static void write_eas(HANDLE h, const array<pair<string_view, string_view>, N>& arr) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    vector<uint8_t> buf;
+    size_t size = 0;
+
+    for (unsigned int i = 0; i < N; i++) {
+        size += ea_size(arr[i].first, arr[i].second);
+    }
+
+    buf.resize(size);
+
+    auto ptr = buf.data();
+
+    for (unsigned int i = 0; i < N; i++) {
+        auto& ffeai = *(FILE_FULL_EA_INFORMATION*)ptr;
+
+        ffeai.NextEntryOffset = 0;
+        ffeai.Flags = 0;
+        ffeai.EaNameLength = arr[i].first.size();
+        ffeai.EaValueLength = arr[i].second.size();
+
+        memcpy(ffeai.EaName, arr[i].first.data(), arr[i].first.size());
+        ffeai.EaName[arr[i].first.size()] = 0;
+        memcpy(ffeai.EaName + arr[i].first.size() + 1, arr[i].second.data(), arr[i].second.size());
+
+        if (i != N - 1) {
+            ffeai.NextEntryOffset = ea_size(arr[i].first, arr[i].second);
+            ptr += ffeai.NextEntryOffset;
+        }
+    }
 
     Status = NtSetEaFile(h, &iosb, buf.data(), buf.size());
 
@@ -107,15 +155,6 @@ static void check_ea_dirent(const u16string& dir, u16string_view name, uint32_t 
 
     if (fdi.EaSize != exp_size)
         throw formatted_error("EaSize was {}, expected {}", fdi.EaSize, exp_size);
-}
-
-static constexpr uint32_t ea_size(string_view name, string_view value) {
-    uint32_t size = offsetof(FILE_FULL_EA_INFORMATION, EaName) + name.length() + 1 + value.length();
-
-    if (size & 3)
-        size = ((size >> 2) + 1) << 2;
-
-    return size;
 }
 
 void test_ea(const u16string& dir) {
@@ -535,7 +574,100 @@ void test_ea(const u16string& dir) {
         });
     }
 
-    // FIXME - setting two EAs at once
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\ea2", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view ea1_name = "qux", ea1_value = "xyzzy";
+        static const string_view ea2_name = "y2", ea2_value = "plugh";
+
+        test("Add two EAs", [&]() {
+            write_eas(h.get(), array{ pair(ea1_name, ea1_value), pair(ea2_name, ea2_value) });
+        });
+
+        test("Read EAs", [&]() {
+            auto items = read_ea(h.get());
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2", items.size());
+
+            auto& ffeai1 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[0]);
+
+            if (ffeai1.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai1.Flags);
+
+            auto name1 = string_view(ffeai1.EaName, ffeai1.EaNameLength);
+
+            if (name1 != "QUX")
+                throw formatted_error("EA name was \"{}\", expected \"QUX\"", name1);
+
+            auto value1 = string_view(ffeai1.EaName + ffeai1.EaNameLength + 1, ffeai1.EaValueLength);
+
+            if (value1 != ea1_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value1, ea1_value);
+
+            auto& ffeai2 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[1]);
+
+            if (ffeai2.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai2.Flags);
+
+            auto name2 = string_view(ffeai2.EaName, ffeai2.EaNameLength);
+
+            if (name2 != "Y2")
+                throw formatted_error("EA name was \"{}\", expected \"Y2\"", name2);
+
+            auto value2 = string_view(ffeai2.EaName + ffeai2.EaNameLength + 1, ffeai2.EaValueLength);
+
+            if (value2 != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value2, ea2_value);
+        });
+
+        uint32_t exp_size = ea_size(ea1_name, ea1_value) + ea_size(ea2_name, ea2_value);
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", feai.EaSize, exp_size);
+        });
+
+        test("Query FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.EaInformation.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", fai.EaInformation.EaSize, exp_size);
+        });
+
+        h.reset();
+
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"ea2", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"ea2", exp_size);
+        });
+
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"ea2", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"ea2", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"ea2", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"ea2", exp_size);
+        });
+    }
+
     // FIXME - creating files with EAs
     // FIXME - EAs on directories?
     // FIXME - filter on NtQueryEaFile
