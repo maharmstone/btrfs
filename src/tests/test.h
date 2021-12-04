@@ -136,6 +136,8 @@ extern "C"
 NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                ULONG Length);
 
+#define FILE_NEED_EA    0x00000080
+
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
@@ -4264,4 +4266,4 @@ void test_streams(const std::u16string& dir);
 
 // ea.cpp
 void test_ea(const std::u16string& dir);
-void write_ea(HANDLE h, std::string_view name, std::string_view value);
+void write_ea(HANDLE h, std::string_view name, std::string_view value, bool need_ea = false);

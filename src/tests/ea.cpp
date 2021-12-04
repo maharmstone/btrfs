@@ -11,7 +11,7 @@ static constexpr uint32_t ea_size(string_view name, string_view value) {
     return size;
 }
 
-void write_ea(HANDLE h, string_view name, string_view value) {
+void write_ea(HANDLE h, string_view name, string_view value, bool need_ea) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf;
@@ -21,7 +21,7 @@ void write_ea(HANDLE h, string_view name, string_view value) {
     auto& ffeai = *(FILE_FULL_EA_INFORMATION*)buf.data();
 
     ffeai.NextEntryOffset = 0;
-    ffeai.Flags = 0;
+    ffeai.Flags = need_ea ? FILE_NEED_EA : 0;
     ffeai.EaNameLength = name.size();
     ffeai.EaValueLength = value.size();
 
@@ -845,12 +845,6 @@ void test_ea(const u16string& dir) {
     if (h) {
         static const string_view ea_name = "hello", ea_value = "world";
 
-        test("Read EA", [&]() {
-            exp_status([&]() {
-                read_ea(h.get());
-            }, STATUS_NO_EAS_ON_FILE);
-        });
-
         test("Write EA", [&]() {
             write_ea(h.get(), ea_name, ea_value);
         });
@@ -922,8 +916,50 @@ void test_ea(const u16string& dir) {
         });
     }
 
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\ea5", FILE_WRITE_EA | FILE_READ_EA, 0, 0,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        static const string_view ea_name = "hello", ea_value = "world";
+
+        test("Write EA with FILE_NEED_EA", [&]() {
+            write_ea(h.get(), ea_name, ea_value, true);
+        });
+
+        test("Read EA", [&]() {
+            auto items = read_ea(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != FILE_NEED_EA)
+                throw formatted_error("Flags was {:x}, expected FILE_NEED_EA", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "HELLO") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"HELLO\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != ea_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea_value);
+        });
+
+        h.reset();
+    }
+
+    test("Open file with FILE_NO_EA_KNOWLEDGE", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\ea5", FILE_WRITE_EA | FILE_READ_EA, 0, 0,
+                        FILE_CREATE, FILE_NO_EA_KNOWLEDGE, FILE_CREATED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
     // FIXME - filter on NtQueryEaFile
     // FIXME - FILE_WRITE_EA and FILE_READ_EA
-    // FIXME - FILE_NEED_EA
-    // FIXME - FILE_NO_EA_KNOWLEDGE
 }
