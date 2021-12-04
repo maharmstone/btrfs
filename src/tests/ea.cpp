@@ -107,6 +107,80 @@ static vector<varbuf<FILE_FULL_EA_INFORMATION>> read_ea(HANDLE h) {
     return ret;
 }
 
+template<unsigned N>
+static unique_handle create_file_ea(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+                                    ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation,
+                                    const array<pair<string_view, string_view>, N>& eas) {
+    NTSTATUS Status;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES oa;
+    LARGE_INTEGER alloc_size;
+    vector<uint8_t> buf;
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = nullptr;
+
+    us.Length = us.MaximumLength = path.length() * sizeof(char16_t);
+    us.Buffer = (WCHAR*)path.data();
+    oa.ObjectName = &us;
+
+    oa.Attributes = OBJ_CASE_INSENSITIVE;
+    oa.SecurityDescriptor = nullptr;
+    oa.SecurityQualityOfService = nullptr;
+
+    if (allocation)
+        alloc_size.QuadPart = allocation.value();
+
+    if constexpr (N != 0) {
+        size_t size = 0;
+
+        for (unsigned int i = 0; i < N; i++) {
+            size += ea_size(eas[i].first, eas[i].second);
+        }
+
+        buf.resize(size);
+
+        auto ptr = buf.data();
+
+        for (unsigned int i = 0; i < N; i++) {
+            auto& ffeai = *(FILE_FULL_EA_INFORMATION*)ptr;
+
+            ffeai.NextEntryOffset = 0;
+            ffeai.Flags = 0;
+            ffeai.EaNameLength = eas[i].first.size();
+            ffeai.EaValueLength = eas[i].second.size();
+
+            memcpy(ffeai.EaName, eas[i].first.data(), eas[i].first.size());
+            ffeai.EaName[eas[i].first.size()] = 0;
+            memcpy(ffeai.EaName + eas[i].first.size() + 1, eas[i].second.data(), eas[i].second.size());
+
+            if (i != N - 1) {
+                ffeai.NextEntryOffset = ea_size(eas[i].first, eas[i].second);
+                ptr += ffeai.NextEntryOffset;
+            }
+        }
+    }
+
+    iosb.Information = 0xdeadbeef;
+
+    Status = NtCreateFile(&h, access, &oa, &iosb, allocation ? &alloc_size : nullptr,
+                          atts, share, dispo, options, buf.data(), buf.size());
+
+    if (Status != STATUS_SUCCESS) {
+        if (NT_SUCCESS(Status)) // STATUS_OPLOCK_BREAK_IN_PROGRESS etc.
+            NtClose(h);
+
+        throw ntstatus_error(Status);
+    }
+
+    if (iosb.Information != exp_info)
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
+
+    return unique_handle(h);
+}
+
 static varbuf<FILE_ALL_INFORMATION> query_all_information(HANDLE h) {
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
@@ -668,7 +742,101 @@ void test_ea(const u16string& dir) {
         });
     }
 
-    // FIXME - creating files with EAs
+    test("Create file with EAs", [&]() {
+        static const string_view ea1_name = "foo", ea1_value = "bar";
+        static const string_view ea2_name = "baz", ea2_value = "quux";
+
+        h = create_file_ea(dir + u"\\ea3", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
+                           FILE_CREATE, 0, FILE_CREATED, nullopt,
+                           array{ pair(ea1_name, ea1_value), pair(ea2_name, ea2_value) });
+
+    });
+
+    if (h) {
+        static const string_view ea1_name = "foo", ea1_value = "bar";
+        static const string_view ea2_name = "baz", ea2_value = "quux";
+
+        test("Read EAs", [&]() {
+            auto items = read_ea(h.get());
+
+            if (items.size() != 2)
+                throw formatted_error("{} entries returned, expected 2", items.size());
+
+            auto& ffeai1 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[0]);
+
+            if (ffeai1.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai1.Flags);
+
+            auto name1 = string_view(ffeai1.EaName, ffeai1.EaNameLength);
+
+            if (name1 != "FOO")
+                throw formatted_error("EA name was \"{}\", expected \"FOO\"", name1);
+
+            auto value1 = string_view(ffeai1.EaName + ffeai1.EaNameLength + 1, ffeai1.EaValueLength);
+
+            if (value1 != ea1_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value1, ea1_value);
+
+            auto& ffeai2 = *static_cast<FILE_FULL_EA_INFORMATION*>(items[1]);
+
+            if (ffeai2.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai2.Flags);
+
+            auto name2 = string_view(ffeai2.EaName, ffeai2.EaNameLength);
+
+            if (name2 != "BAZ")
+                throw formatted_error("EA name was \"{}\", expected \"BAZ\"", name2);
+
+            auto value2 = string_view(ffeai2.EaName + ffeai2.EaNameLength + 1, ffeai2.EaValueLength);
+
+            if (value2 != ea2_value)
+                throw formatted_error("EA value was \"{}\", expected \"{}\"", value2, ea2_value);
+        });
+
+        uint32_t exp_size = ea_size(ea1_name, ea1_value) + ea_size(ea2_name, ea2_value);
+
+        test("Query FileEaInformation", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", feai.EaSize, exp_size);
+        });
+
+        test("Query FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.EaInformation.EaSize != exp_size)
+                throw formatted_error("EaSize was {}, expected {}", fai.EaInformation.EaSize, exp_size);
+        });
+
+        h.reset();
+
+        test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_FULL_DIR_INFORMATION>(dir, u"ea3", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_FULL_DIR_INFORMATION>(dir, u"ea3", exp_size);
+        });
+
+        test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_BOTH_DIR_INFORMATION>(dir, u"ea3", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_BOTH_DIR_INFORMATION>(dir, u"ea3", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_DIR_INFORMATION>(dir, u"ea3", exp_size);
+        });
+
+        test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
+            check_ea_dirent<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, u"ea3", exp_size);
+        });
+    }
+
     // FIXME - EAs on directories?
     // FIXME - filter on NtQueryEaFile
     // FIXME - FILE_WRITE_EA and FILE_READ_EA

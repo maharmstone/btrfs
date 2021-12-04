@@ -50,8 +50,6 @@ unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG 
     if (allocation)
         alloc_size.QuadPart = allocation.value();
 
-    // FIXME - EaBuffer and EaLength
-
     iosb.Information = 0xdeadbeef;
 
     Status = NtCreateFile(&h, access, &oa, &iosb, allocation ? &alloc_size : nullptr,
