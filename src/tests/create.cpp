@@ -304,9 +304,50 @@ void test_create(HANDLE token, const u16string& dir) {
                 throw runtime_error("Directory was true, expected false");
         });
 
+        test("Check FileStatInformation", [&]() {
+            auto fsi2 = query_information<FILE_STAT_INFORMATION>(h.get());
+
+            if (fsi2.FileId.QuadPart != file_id)
+                throw formatted_error("FileId was {}, expected {}", fsi2.FileId.QuadPart, file_id);
+
+            if (fsi2.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+                throw formatted_error("CreationTime was {}, expected {}", fsi2.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+
+            if (fsi2.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+                throw formatted_error("LastAccessTime was {}, expected {}", fsi2.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+
+            if (fsi2.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+                throw formatted_error("LastWriteTime was {}, expected {}", fsi2.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+
+            if (fsi2.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+                throw formatted_error("ChangeTime was {}, expected {}", fsi2.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+
+            if (fsi2.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+                throw formatted_error("AllocationSize was {}, expected {}", fsi2.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+
+            if (fsi2.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+                throw formatted_error("EndOfFile was {}, expected {}", fsi2.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+
+            if (fsi2.FileAttributes != FILE_ATTRIBUTE_ARCHIVE)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_ARCHIVE", fsi2.FileAttributes);
+
+            if (fsi2.ReparseTag != 0)
+                throw formatted_error("ReparseTag was {:08x}, expected 0", fsi2.ReparseTag);
+
+            if (fsi2.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsi2.NumberOfLinks);
+
+            ACCESS_MASK exp = SYNCHRONIZE | WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE |
+                              FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_DELETE_CHILD |
+                              FILE_EXECUTE | FILE_WRITE_EA | FILE_READ_EA | FILE_APPEND_DATA |
+                              FILE_WRITE_DATA | FILE_READ_DATA;
+
+            if (fsi2.EffectiveAccess != exp)
+                throw formatted_error("EffectiveAccess was {:x}, expected {:x}", fsi2.EffectiveAccess, exp);
+        });
+
         // FIXME - FileAllInformation
         // FIXME - FileIdInformation
-        // FIXME - FileStatInformation
         // FIXME - FileStatLxInformation
         // FIXME - FileHardLinkFullIdInformation
         // FIXME - FILE_STANDARD_INFORMATION_EX
