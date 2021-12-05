@@ -114,8 +114,19 @@ void test_create(const u16string& dir) {
                 throw formatted_error("CurrentByteOffset was {:x}, expected 0", fpi.CurrentByteOffset.QuadPart);
         });
 
+        test("Check attribute tag information", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fati.FileAttributes);
+            }
+
+            if (fati.ReparseTag != 0)
+                throw formatted_error("ReparseTag was {:08x}, expected 0", fati.ReparseTag);
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileAttributeTagInformation
         // FIXME - FileCompressionInformation
         // FIXME - FileEaInformation
         // FIXME - FileInternalInformation
@@ -130,6 +141,7 @@ void test_create(const u16string& dir) {
         // FIXME - FileCaseSensitiveInformation
         // FIXME - FileHardLinkFullIdInformation
         // FIXME - FILE_STANDARD_INFORMATION_EX
+
         // FIXME - FileAlternateNameInformation
         // FIXME - FileSfioReserveInformation
         // FIXME - FileDesiredStorageClassInformation

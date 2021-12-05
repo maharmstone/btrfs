@@ -450,6 +450,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_SYMLINK", fsli.ReparseTag);
         });
 
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_SYMLINK)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_SYMLINK", fati.ReparseTag);
+        });
+
         h.reset();
     }
 
@@ -823,6 +830,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_MOUNT_POINT", fsli.ReparseTag);
         });
 
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_MOUNT_POINT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_MOUNT_POINT", fati.ReparseTag);
+        });
+
         h.reset();
     }
 
@@ -1060,6 +1074,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fsli.ReparseTag);
         });
 
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fati.ReparseTag);
+        });
+
         h.reset();
     }
 
@@ -1224,6 +1245,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fsli.ReparseTag);
         });
 
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT", fati.ReparseTag);
+        });
+
         h.reset();
     }
 
@@ -1344,6 +1372,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
 
             if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE)
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fsli.ReparseTag);
+        });
+
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fati.ReparseTag);
         });
 
         h.reset();
@@ -1533,6 +1568,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fsli.ReparseTag);
         });
 
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_FAKE)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE", fati.ReparseTag);
+        });
+
         h.reset();
     }
 
@@ -1696,6 +1738,13 @@ void test_reparse(HANDLE token, const u16string& dir) {
 
             if (fsli.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT_DIR)
                 throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT_DIR", fsli.ReparseTag);
+        });
+
+        test("Query FileAttributeTagInformation", [&]() {
+            auto fati = query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(h.get());
+
+            if (fati.ReparseTag != IO_REPARSE_TAG_FAKE_MICROSOFT_DIR)
+                throw formatted_error("ReparseTag was {:08x}, expected IO_REPARSE_TAG_FAKE_MICROSOFT_DIR", fati.ReparseTag);
         });
 
         h.reset();

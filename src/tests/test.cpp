@@ -97,6 +97,8 @@ T query_information(HANDLE h) {
         fic = FileStatInformation;
     else if constexpr (is_same_v<T, FILE_STAT_LX_INFORMATION>)
         fic = FileStatLxInformation;
+    else if constexpr (is_same_v<T, FILE_ATTRIBUTE_TAG_INFORMATION>)
+        fic = FileAttributeTagInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -122,6 +124,7 @@ template FILE_CASE_SENSITIVE_INFORMATION query_information<FILE_CASE_SENSITIVE_I
 template FILE_EA_INFORMATION query_information<FILE_EA_INFORMATION>(HANDLE h);
 template FILE_STAT_INFORMATION query_information<FILE_STAT_INFORMATION>(HANDLE h);
 template FILE_STAT_LX_INFORMATION query_information<FILE_STAT_LX_INFORMATION>(HANDLE h);
+template FILE_ATTRIBUTE_TAG_INFORMATION query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
