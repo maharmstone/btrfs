@@ -255,16 +255,39 @@ void test_create(const u16string& dir) {
             file_id = fii.IndexNumber.QuadPart;
         });
 
+        test("Check network open information", [&]() {
+            auto fnoi = query_information<FILE_NETWORK_OPEN_INFORMATION>(h.get());
+
+            if (fnoi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+                throw formatted_error("CreationTime was {}, expected {}", fnoi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+
+            if (fnoi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+                throw formatted_error("LastAccessTime was {}, expected {}", fnoi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+
+            if (fnoi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+                throw formatted_error("LastWriteTime was {}, expected {}", fnoi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+
+            if (fnoi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+                throw formatted_error("ChangeTime was {}, expected {}", fnoi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+
+            if (fnoi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+                throw formatted_error("AllocationSize was {}, expected {}", fnoi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+
+            if (fnoi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+                throw formatted_error("EndOfFile was {}, expected {}", fnoi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+
+            if (fnoi.FileAttributes != FILE_ATTRIBUTE_ARCHIVE) {
+                throw formatted_error("attributes were {:x}, expected FILE_ATTRIBUTE_ARCHIVE",
+                                      fnoi.FileAttributes);
+            }
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileNetworkOpenInformation
-        // FIXME - FileStreamInformation
-        // FIXME - FileHardLinkInformation
         // FIXME - FileNormalizedNameInformation
         // FIXME - FileStandardLinkInformation
         // FIXME - FileIdInformation
         // FIXME - FileStatInformation
         // FIXME - FileStatLxInformation
-        // FIXME - FileCaseSensitiveInformation
         // FIXME - FileHardLinkFullIdInformation
         // FIXME - FILE_STANDARD_INFORMATION_EX
 
