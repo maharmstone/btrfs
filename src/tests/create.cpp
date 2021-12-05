@@ -115,7 +115,7 @@ static void check_dir_entry(const u16string& dir, const u16string_view& name,
     // FIXME - ReparsePointTag
 }
 
-void test_create(const u16string& dir) {
+void test_create(HANDLE token, const u16string& dir) {
     unique_handle h;
 
     test("Create file", [&]() {
@@ -282,8 +282,13 @@ void test_create(const u16string& dir) {
             }
         });
 
+        test("Try to check normalized name", [&]() { // needs traverse privilege
+            exp_status([&]() {
+                query_file_name_information(h.get(), true);
+            }, STATUS_ACCESS_DENIED);
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileNormalizedNameInformation
         // FIXME - FileStandardLinkInformation
         // FIXME - FileIdInformation
         // FIXME - FileStatInformation
@@ -344,11 +349,35 @@ void test_create(const u16string& dir) {
         });
 
         h.reset();
+    }
 
-        test("Open file", [&]() {
-            create_file(dir + u"\\file", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    // traverse privilege needed for FileNormalizedNameInformation
+    test("Add SeChangeNotifyPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\file", FILE_READ_ATTRIBUTES, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Check normalized name", [&]() {
+            auto fn = query_file_name_information(h.get(), true);
+
+            static const u16string_view ends_with = u"\\file";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\file\".");
         });
     }
+
+    disable_token_privileges(token);
 
     test("Create file (FILE_NON_DIRECTORY_FILE)", [&]() {
         h = create_file(dir + u"\\file2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, FILE_NON_DIRECTORY_FILE,

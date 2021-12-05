@@ -4201,14 +4201,14 @@ std::vector<varbuf<T>> query_dir(const std::u16string& dir, std::u16string_view 
 
 void test(const std::string& msg, const std::function<void()>& func);
 void exp_status(const std::function<void()>& func, NTSTATUS Status);
-std::u16string query_file_name_information(HANDLE h);
+std::u16string query_file_name_information(HANDLE h, bool normalized = false);
 void disable_token_privileges(HANDLE token);
 std::string u16string_to_string(const std::u16string_view& sv);
 
 extern enum fs_type fstype;
 
 // create.cpp
-void test_create(const std::u16string& dir);
+void test_create(HANDLE token, const std::u16string& dir);
 void test_open_id(HANDLE token, const std::u16string& dir);
 
 // supersede.cpp

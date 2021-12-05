@@ -301,14 +301,15 @@ void exp_status(const function<void()>& func, NTSTATUS Status) {
         throw formatted_error("Status was STATUS_SUCCESS, expected {}", ntstatus_to_string(Status));
 }
 
-u16string query_file_name_information(HANDLE h) {
+u16string query_file_name_information(HANDLE h, bool normalized) {
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     FILE_NAME_INFORMATION fni;
 
     fni.FileNameLength = 0;
 
-    Status = NtQueryInformationFile(h, &iosb, &fni, sizeof(fni), FileNameInformation);
+    Status = NtQueryInformationFile(h, &iosb, &fni, sizeof(fni),
+                                    normalized ? FileNormalizedNameInformation : FileNameInformation);
 
     if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW)
         throw ntstatus_error(Status);
@@ -319,7 +320,8 @@ u16string query_file_name_information(HANDLE h) {
 
     fni2.FileNameLength = buf.size() - offsetof(FILE_NAME_INFORMATION, FileName);
 
-    Status = NtQueryInformationFile(h, &iosb, &fni2, buf.size(), FileNameInformation);
+    Status = NtQueryInformationFile(h, &iosb, &fni2, buf.size(),
+                                    normalized ? FileNormalizedNameInformation : FileNameInformation);
 
     if (Status != STATUS_SUCCESS)
         throw ntstatus_error(Status);
@@ -382,7 +384,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         u16string_view name;
         function<void()> func;
     } testfuncs[] = {
-        { u"create", [&]() { test_create(dir); } },
+        { u"create", [&]() { test_create(token.get(), dir); } },
         { u"supersede", [&]() { test_supersede(dir); } },
         { u"overwrite", [&]() { test_overwrite(dir); } },
         { u"open_id", [&]() { test_open_id(token.get(), dir); } },
