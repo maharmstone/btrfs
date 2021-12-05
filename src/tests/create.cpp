@@ -145,8 +145,14 @@ void test_create(const u16string& dir) {
                 throw formatted_error("ClusterShift was {}, expected 0", fci.ClusterShift);
         });
 
+        test("Check EA information", [&]() {
+            auto feai = query_information<FILE_EA_INFORMATION>(h.get());
+
+            if (feai.EaSize != 0)
+                throw formatted_error("EaSize was {}, expected 0", feai.EaSize);
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileEaInformation
         // FIXME - FileInternalInformation
         // FIXME - FileNetworkOpenInformation
         // FIXME - FileStreamInformation
