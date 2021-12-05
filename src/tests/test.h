@@ -146,9 +146,13 @@ typedef struct _FILE_GET_EA_INFORMATION {
 
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
+#define FileIdInformation ((FILE_INFORMATION_CLASS)59)
 #define FileIdExtdDirectoryInformation ((FILE_INFORMATION_CLASS)60)
 #define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)63)
+#define FileDispositionInformationEx ((FILE_INFORMATION_CLASS)64)
+#define FileRenameInformationEx ((FILE_INFORMATION_CLASS)65)
 #define FileCaseSensitiveInformation ((FILE_INFORMATION_CLASS)71)
+#define FileLinkInformationEx ((FILE_INFORMATION_CLASS)72)
 
 #define FILE_WORD_ALIGNMENT 0x00000001
 
@@ -184,8 +188,6 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
     WCHAR FileName[1];
 } FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
 
-#define FileRenameInformationEx ((FILE_INFORMATION_CLASS)65)
-
 // should be called FILE_RENAME_INFORMATION_EX, version in mingw is outdated
 typedef struct _FILE_LINK_INFORMATION_EX {
     union {
@@ -196,8 +198,6 @@ typedef struct _FILE_LINK_INFORMATION_EX {
     ULONG FileNameLength;
     WCHAR FileName[1];
 } FILE_LINK_INFORMATION_EX, *PFILE_LINK_INFORMATION_EX;
-
-#define FileLinkInformationEx ((FILE_INFORMATION_CLASS)72)
 
 typedef struct _FILE_LINK_ENTRY_INFORMATION {
     ULONG NextEntryOffset;
@@ -215,8 +215,6 @@ typedef struct _FILE_LINKS_INFORMATION {
 typedef struct _FILE_DISPOSITION_INFORMATION_EX {
     ULONG Flags;
 } FILE_DISPOSITION_INFORMATION_EX, *PFILE_DISPOSITION_INFORMATION_EX;
-
-#define FileDispositionInformationEx ((FILE_INFORMATION_CLASS)64)
 
 #define FILE_DISPOSITION_DO_NOT_DELETE              0x00000000
 #define FILE_DISPOSITION_DELETE                     0x00000001
@@ -557,6 +555,11 @@ typedef struct _FILE_STANDARD_LINK_INFORMATION {
     BOOLEAN DeletePending;
     BOOLEAN Directory;
 } FILE_STANDARD_LINK_INFORMATION, *PFILE_STANDARD_LINK_INFORMATION;
+
+typedef struct _FILE_ID_INFORMATION {
+    ULONGLONG VolumeSerialNumber;
+    FILE_ID_128 FileId;
+} FILE_ID_INFORMATION, *PFILE_ID_INFORMATION;
 
 class handle_closer {
 public:

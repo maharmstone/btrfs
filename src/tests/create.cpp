@@ -50,7 +50,7 @@ concept has_FileId = requires { T::FileId; };
 template<typename T>
 static void check_dir_entry(const u16string& dir, const u16string_view& name,
                             const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi,
-                            int64_t file_id) {
+                            int64_t file_id, const FILE_ID_128& file_id_128) {
     auto items = query_dir<T>(dir, name);
 
     if (items.size() != 1)
@@ -105,9 +105,10 @@ static void check_dir_entry(const u16string& dir, const u16string_view& name,
         if constexpr (sizeof(T::FileId) == 8) {
             if (fdi.FileId.QuadPart != file_id)
                 throw formatted_error("FileId was {:x}, expected {:x}.", fdi.FileId.QuadPart, file_id);
+        } else {
+            if (memcmp(&fdi.FileId, &file_id_128, sizeof(FILE_ID_128)))
+                throw runtime_error("FileId was not as expected.");
         }
-
-        // FIXME - 128-bit FileId
     }
 
     // FIXME - EaSize
@@ -388,8 +389,15 @@ void test_create(HANDLE token, const u16string& dir) {
                 throw formatted_error("EffectiveAccess was {:x}, expected {:x}", fsli.EffectiveAccess, exp);
         });
 
+        FILE_ID_128 file_id_128 = {};
+
+        test("Check FileIdInformation", [&]() {
+            auto fidi = query_information<FILE_ID_INFORMATION>(h.get());
+
+            file_id_128 = fidi.FileId;
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileIdInformation
         // FIXME - FileHardLinkFullIdInformation
         // FIXME - FILE_STANDARD_INFORMATION_EX
 
@@ -402,35 +410,35 @@ void test_create(HANDLE token, const u16string& dir) {
         static const u16string_view name = u"file";
 
         test("Check directory entry (FILE_DIRECTORY_INFORMATION)", [&]() {
-            check_dir_entry<FILE_DIRECTORY_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_DIRECTORY_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_FULL_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_FULL_DIR_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_ID_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_FULL_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_ID_FULL_DIR_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_EXTD_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_ID_EXTD_DIR_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check directory entry (FILE_NAMES_INFORMATION)", [&]() {
-            check_dir_entry<FILE_NAMES_INFORMATION>(dir, name, fbi, fsi, file_id);
+            check_dir_entry<FILE_NAMES_INFORMATION>(dir, name, fbi, fsi, file_id, file_id_128);
         });
 
         test("Check granted access", [&]() {
