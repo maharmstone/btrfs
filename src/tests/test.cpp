@@ -103,6 +103,8 @@ T query_information(HANDLE h) {
         fic = FileCompressionInformation;
     else if constexpr (is_same_v<T, FILE_NETWORK_OPEN_INFORMATION>)
         fic = FileNetworkOpenInformation;
+    else if constexpr (is_same_v<T, FILE_STANDARD_LINK_INFORMATION>)
+        fic = FileStandardLinkInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -131,6 +133,7 @@ template FILE_STAT_LX_INFORMATION query_information<FILE_STAT_LX_INFORMATION>(HA
 template FILE_ATTRIBUTE_TAG_INFORMATION query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(HANDLE h);
 template FILE_COMPRESSION_INFORMATION query_information<FILE_COMPRESSION_INFORMATION>(HANDLE h);
 template FILE_NETWORK_OPEN_INFORMATION query_information<FILE_NETWORK_OPEN_INFORMATION>(HANDLE h);
+template FILE_STANDARD_LINK_INFORMATION query_information<FILE_STANDARD_LINK_INFORMATION>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {

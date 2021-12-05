@@ -288,8 +288,23 @@ void test_create(HANDLE token, const u16string& dir) {
             }, STATUS_ACCESS_DENIED);
         });
 
+        test("Check standard link information", [&]() {
+            auto fsli = query_information<FILE_STANDARD_LINK_INFORMATION>(h.get());
+
+            if (fsli.NumberOfAccessibleLinks != 1)
+                throw formatted_error("NumberOfAccessibleLinks was {}, expected 1", fsli.NumberOfAccessibleLinks);
+
+            if (fsli.TotalNumberOfLinks != 1)
+                throw formatted_error("TotalNumberOfLinks was {}, expected 1", fsli.TotalNumberOfLinks);
+
+            if (fsli.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsli.Directory)
+                throw runtime_error("Directory was true, expected false");
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileStandardLinkInformation
         // FIXME - FileIdInformation
         // FIXME - FileStatInformation
         // FIXME - FileStatLxInformation

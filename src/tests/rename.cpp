@@ -1469,6 +1469,22 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
                 throw runtime_error("DeletePending was true, expected false");
         });
 
+        test("Check standard link information of file 1", [&]() {
+            auto fsli = query_information<FILE_STANDARD_LINK_INFORMATION>(h.get());
+
+            if (fsli.NumberOfAccessibleLinks != 1)
+                throw formatted_error("NumberOfAccessibleLinks was {}, expected 1", fsli.NumberOfAccessibleLinks);
+
+            if (fsli.TotalNumberOfLinks != 1)
+                throw formatted_error("TotalNumberOfLinks was {}, expected 1", fsli.TotalNumberOfLinks);
+
+            if (fsli.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsli.Directory)
+                throw runtime_error("Directory was true, expected false");
+        });
+
         test("Check standard information of file 2", [&]() {
             auto fsi = query_information<FILE_STANDARD_INFORMATION>(h2.get());
 
@@ -1477,6 +1493,22 @@ void test_rename_ex(HANDLE token, const u16string& dir) {
 
             if (!fsi.DeletePending)
                 throw runtime_error("DeletePending was false, expected true");
+        });
+
+        test("Check standard link information of file 2", [&]() {
+            auto fsli = query_information<FILE_STANDARD_LINK_INFORMATION>(h2.get());
+
+            if (fsli.NumberOfAccessibleLinks != 0)
+                throw formatted_error("NumberOfAccessibleLinks was {}, expected 0", fsli.NumberOfAccessibleLinks);
+
+            if (fsli.TotalNumberOfLinks != 1)
+                throw formatted_error("TotalNumberOfLinks was {}, expected 1", fsli.TotalNumberOfLinks);
+
+            if (!fsli.DeletePending)
+                throw runtime_error("DeletePending was false, expected true");
+
+            if (fsli.Directory)
+                throw runtime_error("Directory was true, expected false");
         });
 
         test("Check new directory entry", [&]() {

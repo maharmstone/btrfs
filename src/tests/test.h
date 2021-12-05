@@ -551,6 +551,13 @@ typedef struct _FILE_STAT_LX_INFORMATION {
     ULONG LxDeviceIdMinor;
 } FILE_STAT_LX_INFORMATION, *PFILE_STAT_LX_INFORMATION;
 
+typedef struct _FILE_STANDARD_LINK_INFORMATION {
+    ULONG NumberOfAccessibleLinks;
+    ULONG TotalNumberOfLinks;
+    BOOLEAN DeletePending;
+    BOOLEAN Directory;
+} FILE_STANDARD_LINK_INFORMATION, *PFILE_STANDARD_LINK_INFORMATION;
+
 class handle_closer {
 public:
     typedef HANDLE pointer;
