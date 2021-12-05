@@ -99,6 +99,8 @@ T query_information(HANDLE h) {
         fic = FileStatLxInformation;
     else if constexpr (is_same_v<T, FILE_ATTRIBUTE_TAG_INFORMATION>)
         fic = FileAttributeTagInformation;
+    else if constexpr (is_same_v<T, FILE_COMPRESSION_INFORMATION>)
+        fic = FileCompressionInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -125,6 +127,7 @@ template FILE_EA_INFORMATION query_information<FILE_EA_INFORMATION>(HANDLE h);
 template FILE_STAT_INFORMATION query_information<FILE_STAT_INFORMATION>(HANDLE h);
 template FILE_STAT_LX_INFORMATION query_information<FILE_STAT_LX_INFORMATION>(HANDLE h);
 template FILE_ATTRIBUTE_TAG_INFORMATION query_information<FILE_ATTRIBUTE_TAG_INFORMATION>(HANDLE h);
+template FILE_COMPRESSION_INFORMATION query_information<FILE_COMPRESSION_INFORMATION>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {

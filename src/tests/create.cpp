@@ -126,8 +126,26 @@ void test_create(const u16string& dir) {
                 throw formatted_error("ReparseTag was {:08x}, expected 0", fati.ReparseTag);
         });
 
+        test("Check compression information", [&]() {
+            auto fci = query_information<FILE_COMPRESSION_INFORMATION>(h.get());
+
+            if (fci.CompressedFileSize.QuadPart != 0)
+                throw formatted_error("CompressedFileSize was {}, expected 0", fci.CompressedFileSize.QuadPart);
+
+            if (fci.CompressionFormat != 0)
+                throw formatted_error("CompressionFormat was {}, expected 0", fci.CompressionFormat);
+
+            if (fci.CompressionUnitShift != 0)
+                throw formatted_error("CompressionUnitShift was {}, expected 0", fci.CompressionUnitShift);
+
+            if (fci.ChunkShift != 0)
+                throw formatted_error("ChunkShift was {}, expected 0", fci.ChunkShift);
+
+            if (fci.ClusterShift != 0)
+                throw formatted_error("ClusterShift was {}, expected 0", fci.ClusterShift);
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileCompressionInformation
         // FIXME - FileEaInformation
         // FIXME - FileInternalInformation
         // FIXME - FileNetworkOpenInformation

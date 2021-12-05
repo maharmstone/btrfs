@@ -297,6 +297,13 @@ void test_io(HANDLE token, const u16string& dir) {
             }
         });
 
+        test("Check compression information", [&]() {
+            auto fci = query_information<FILE_COMPRESSION_INFORMATION>(h.get());
+
+            if (fci.CompressedFileSize.QuadPart != random.size())
+                throw formatted_error("CompressedFileSize was {}, expected {}", fci.CompressedFileSize.QuadPart, random.size());
+        });
+
         test("Read file at end", [&]() {
             exp_status([&]() {
                 read_file(h.get(), sector_align ? multiple : 100);

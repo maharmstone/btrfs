@@ -274,6 +274,15 @@ typedef struct _REPARSE_DATA_BUFFER {
     };
 } REPARSE_DATA_BUFFER, *PREPARSE_DATA_BUFFER;
 
+typedef struct _FILE_COMPRESSION_INFORMATION {
+    LARGE_INTEGER CompressedFileSize;
+    USHORT CompressionFormat;
+    UCHAR CompressionUnitShift;
+    UCHAR ChunkShift;
+    UCHAR ClusterShift;
+    UCHAR Reserved[3];
+} FILE_COMPRESSION_INFORMATION, *PFILE_COMPRESSION_INFORMATION;
+
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
 #define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)
