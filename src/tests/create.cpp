@@ -398,9 +398,9 @@ void test_create(HANDLE token, const u16string& dir) {
         });
 
         // FIXME - FileAllInformation
-        // FIXME - FileHardLinkFullIdInformation
         // FIXME - FILE_STANDARD_INFORMATION_EX
 
+        // FIXME - FileHardLinkFullIdInformation (does this work? Undocumented, and seems to always return STATUS_INVALID_PARAMETER on NTFS for 21H2)
         // FIXME - FileAlternateNameInformation
         // FIXME - FileSfioReserveInformation
         // FIXME - FileDesiredStorageClassInformation
