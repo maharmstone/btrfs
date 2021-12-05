@@ -78,6 +78,13 @@ void test_streams(const u16string& dir) {
                 throw formatted_error("StreamName was {}, expected ::$DATA", u16string_to_string(name));
         });
 
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (fsix.AlternateStream)
+                throw runtime_error("AlternateStream was true, expected false");
+        });
+
         h.reset();
     }
 
@@ -92,6 +99,13 @@ void test_streams(const u16string& dir) {
 
             if (fii.IndexNumber.QuadPart != fileid)
                 throw runtime_error("File IDs did not match.");
+        });
+
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (!fsix.AlternateStream)
+                throw runtime_error("AlternateStream was false, expected true");
         });
 
         h.reset();
@@ -219,6 +233,13 @@ void test_streams(const u16string& dir) {
                 throw formatted_error("StreamName was {}, expected empty string", u16string_to_string(name));
         });
 
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (fsix.AlternateStream)
+                throw runtime_error("AlternateStream was true, expected false");
+        });
+
         h.reset();
     }
 
@@ -253,6 +274,13 @@ void test_streams(const u16string& dir) {
 
             if (name != u":stream:$DATA")
                 throw formatted_error("StreamName was {}, expected :stream:$DATA", u16string_to_string(name));
+        });
+
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (!fsix.AlternateStream)
+                throw runtime_error("AlternateStream was false, expected true");
         });
 
         h.reset();
@@ -519,6 +547,13 @@ void test_streams(const u16string& dir) {
             write_file_wait(h.get(), span((uint8_t*)data.data(), data.size()), 0);
         });
 
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (!fsix.AlternateStream)
+                throw runtime_error("AlternateStream was false, expected true");
+        });
+
         test("Try to rename stream using full path", [&]() {
             exp_status([&]() {
                 set_rename_information(h.get(), false, nullptr, dir + u"\\stream8:stream2");
@@ -527,6 +562,13 @@ void test_streams(const u16string& dir) {
 
         test("Rename stream", [&]() {
             set_rename_information(h.get(), false, nullptr, u":stream2");
+        });
+
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (!fsix.AlternateStream)
+                throw runtime_error("AlternateStream was false, expected true");
         });
 
         h.reset();
@@ -598,6 +640,13 @@ void test_streams(const u16string& dir) {
             write_file_wait(h.get(), span((uint8_t*)data.data(), data.size()), 0);
         });
 
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (!fsix.AlternateStream)
+                throw runtime_error("AlternateStream was false, expected true");
+        });
+
         test("Rename stream to ::$DATA without ReplaceIfExists", [&]() {
             exp_status([&]() {
                 set_rename_information(h.get(), false, nullptr, u"::$DATA");
@@ -606,6 +655,13 @@ void test_streams(const u16string& dir) {
 
         test("Rename stream to ::$DATA with ReplaceIfExists", [&]() {
             set_rename_information(h.get(), true, nullptr, u"::$DATA");
+        });
+
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (fsix.AlternateStream)
+                throw runtime_error("AlternateStream was true, expected false");
         });
 
         test("Query streams", [&]() {
@@ -684,6 +740,13 @@ void test_streams(const u16string& dir) {
             write_file_wait(h.get(), span((uint8_t*)data.data(), data.size()), 0);
         });
 
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (fsix.AlternateStream)
+                throw runtime_error("AlternateStream was true, expected false");
+        });
+
         test("Rename file to :stream", [&]() {
             set_rename_information(h.get(), false, nullptr, u":stream");
         });
@@ -722,6 +785,13 @@ void test_streams(const u16string& dir) {
 
             if (name2 != u":stream:$DATA")
                 throw formatted_error("StreamName was {}, expected :stream:$DATA", u16string_to_string(name2));
+        });
+
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (!fsix.AlternateStream)
+                throw runtime_error("AlternateStream was false, expected true");
         });
 
         h.reset();
