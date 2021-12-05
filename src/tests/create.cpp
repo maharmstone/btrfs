@@ -463,7 +463,30 @@ void test_create(HANDLE token, const u16string& dir) {
                 throw runtime_error("Name did not end with \"\\file\".");
         });
 
-        // FIXME - FILE_STANDARD_INFORMATION_EX
+        test("Check FILE_STANDARD_INFORMATION_EX", [&]() {
+            auto fsix = query_information<FILE_STANDARD_INFORMATION_EX>(h.get());
+
+            if (fsix.AllocationSize.QuadPart != 0)
+                throw formatted_error("AllocationSize was {}, expected 0", fsix.AllocationSize.QuadPart);
+
+            if (fsix.EndOfFile.QuadPart != 0)
+                throw formatted_error("EndOfFile was {}, expected 0", fsix.EndOfFile.QuadPart);
+
+            if (fsix.NumberOfLinks != 1)
+                throw formatted_error("NumberOfLinks was {}, expected 1", fsix.NumberOfLinks);
+
+            if (fsix.DeletePending)
+                throw runtime_error("DeletePending was true, expected false");
+
+            if (fsix.Directory)
+                throw runtime_error("Directory was true, expected false");
+
+            if (fsix.AlternateStream)
+                throw runtime_error("AlternateStream was true, expected false");
+
+            if (fsix.MetadataAttribute)
+                throw runtime_error("MetadataAttribute was true, expected false");
+        });
 
         // FIXME - FileHardLinkFullIdInformation (does this work? Undocumented, and seems to always return STATUS_INVALID_PARAMETER on NTFS for 21H2)
         // FIXME - FileAlternateNameInformation

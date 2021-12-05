@@ -138,6 +138,8 @@ T query_information(HANDLE h) {
         fic = FileStandardLinkInformation;
     else if constexpr (is_same_v<T, FILE_ID_INFORMATION>)
         fic = FileIdInformation;
+    else if constexpr (is_same_v<T, FILE_STANDARD_INFORMATION_EX>)
+        fic = FileStandardInformation;
     else
         throw runtime_error("Unrecognized file information class.");
 
@@ -168,6 +170,7 @@ template FILE_COMPRESSION_INFORMATION query_information<FILE_COMPRESSION_INFORMA
 template FILE_NETWORK_OPEN_INFORMATION query_information<FILE_NETWORK_OPEN_INFORMATION>(HANDLE h);
 template FILE_STANDARD_LINK_INFORMATION query_information<FILE_STANDARD_LINK_INFORMATION>(HANDLE h);
 template FILE_ID_INFORMATION query_information<FILE_ID_INFORMATION>(HANDLE h);
+template FILE_STANDARD_INFORMATION_EX query_information<FILE_STANDARD_INFORMATION_EX>(HANDLE h);
 
 template<typename T>
 vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
