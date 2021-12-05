@@ -238,107 +238,15 @@ vector<varbuf<T>> query_dir(const u16string& dir, u16string_view filter) {
     return ret;
 }
 
+template vector<varbuf<FILE_DIRECTORY_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_BOTH_DIR_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_FULL_DIR_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_ID_BOTH_DIR_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_ID_FULL_DIR_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_ID_EXTD_DIR_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_ID_EXTD_BOTH_DIR_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
+template vector<varbuf<FILE_NAMES_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
 template vector<varbuf<FILE_REPARSE_POINT_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
-
-template<typename T>
-concept has_CreationTime = requires { T::CreationTime; };
-
-template<typename T>
-concept has_LastAccessTime = requires { T::LastAccessTime; };
-
-template<typename T>
-concept has_LastWriteTime = requires { T::LastWriteTime; };
-
-template<typename T>
-concept has_ChangeTime = requires { T::ChangeTime; };
-
-template<typename T>
-concept has_EndOfFile = requires { T::EndOfFile; };
-
-template<typename T>
-concept has_AllocationSize = requires { T::AllocationSize; };
-
-template<typename T>
-concept has_FileAttributes = requires { T::FileAttributes; };
-
-template<typename T>
-concept has_FileNameLength = requires { T::FileNameLength; };
-
-template<typename T>
-void check_dir_entry(const u16string& dir, const u16string_view& name,
-                     const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi) {
-    auto items = query_dir<T>(dir, name);
-
-    if (items.size() != 1)
-        throw formatted_error("{} entries returned, expected 1.", items.size());
-
-    auto& fdi = *static_cast<const T*>(items.front());
-
-    if constexpr (has_CreationTime<T>) {
-        if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
-            throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
-    }
-
-    if constexpr (has_LastAccessTime<T>) {
-        if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
-            throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
-    }
-
-    if constexpr (has_LastWriteTime<T>) {
-        if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
-            throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
-    }
-
-    if constexpr (has_ChangeTime<T>) {
-        if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
-            throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
-    }
-
-    if constexpr (has_EndOfFile<T>) {
-        if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
-            throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
-    }
-
-    if constexpr (has_AllocationSize<T>) {
-        if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
-            throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
-    }
-
-    if constexpr (has_FileAttributes<T>) {
-        if (fdi.FileAttributes != fbi.FileAttributes)
-            throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
-    }
-
-    if constexpr (has_FileNameLength<T>) {
-        if (fdi.FileNameLength != name.size() * sizeof(char16_t))
-            throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
-
-        if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
-            throw runtime_error("FileName did not match.");
-    }
-
-    // FIXME - EaSize
-    // FIXME - ShortNameLength / ShortName
-    // FIXME - FileId (two different possible lengths)
-    // FIXME - ReparsePointTag
-}
-
-template void check_dir_entry<FILE_DIRECTORY_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                          const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_BOTH_DIR_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                         const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_FULL_DIR_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                         const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_ID_BOTH_DIR_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                            const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_ID_FULL_DIR_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                            const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_ID_EXTD_DIR_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                            const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                                 const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
-template void check_dir_entry<FILE_NAMES_INFORMATION>(const u16string& dir, const u16string_view& name,
-                                                      const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi);
 
 void test(const string& msg, const function<void()>& func) {
     string err;

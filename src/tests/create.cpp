@@ -20,6 +20,101 @@ static OBJECT_BASIC_INFORMATION query_object_basic_information(HANDLE h) {
     return obi;
 }
 
+template<typename T>
+concept has_CreationTime = requires { T::CreationTime; };
+
+template<typename T>
+concept has_LastAccessTime = requires { T::LastAccessTime; };
+
+template<typename T>
+concept has_LastWriteTime = requires { T::LastWriteTime; };
+
+template<typename T>
+concept has_ChangeTime = requires { T::ChangeTime; };
+
+template<typename T>
+concept has_EndOfFile = requires { T::EndOfFile; };
+
+template<typename T>
+concept has_AllocationSize = requires { T::AllocationSize; };
+
+template<typename T>
+concept has_FileAttributes = requires { T::FileAttributes; };
+
+template<typename T>
+concept has_FileNameLength = requires { T::FileNameLength; };
+
+template<typename T>
+concept has_FileId = requires { T::FileId; };
+
+template<typename T>
+static void check_dir_entry(const u16string& dir, const u16string_view& name,
+                            const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi,
+                            int64_t file_id) {
+    auto items = query_dir<T>(dir, name);
+
+    if (items.size() != 1)
+        throw formatted_error("{} entries returned, expected 1.", items.size());
+
+    auto& fdi = *static_cast<const T*>(items.front());
+
+    if constexpr (has_CreationTime<T>) {
+        if (fdi.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+            throw formatted_error("CreationTime was {}, expected {}.", fdi.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+    }
+
+    if constexpr (has_LastAccessTime<T>) {
+        if (fdi.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+            throw formatted_error("LastAccessTime was {}, expected {}.", fdi.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+    }
+
+    if constexpr (has_LastWriteTime<T>) {
+        if (fdi.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+            throw formatted_error("LastWriteTime was {}, expected {}.", fdi.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+    }
+
+    if constexpr (has_ChangeTime<T>) {
+        if (fdi.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+            throw formatted_error("ChangeTime was {}, expected {}.", fdi.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+    }
+
+    if constexpr (has_EndOfFile<T>) {
+        if (fdi.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+            throw formatted_error("EndOfFile was {}, expected {}.", fdi.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+    }
+
+    if constexpr (has_AllocationSize<T>) {
+        if (fdi.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+            throw formatted_error("AllocationSize was {}, expected {}.", fdi.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+    }
+
+    if constexpr (has_FileAttributes<T>) {
+        if (fdi.FileAttributes != fbi.FileAttributes)
+            throw formatted_error("FileAttributes was {}, expected {}.", fdi.FileAttributes, fbi.FileAttributes);
+    }
+
+    if constexpr (has_FileNameLength<T>) {
+        if (fdi.FileNameLength != name.size() * sizeof(char16_t))
+            throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
+
+        if (name != u16string_view((char16_t*)fdi.FileName, fdi.FileNameLength / sizeof(char16_t)))
+            throw runtime_error("FileName did not match.");
+    }
+
+    if constexpr (has_FileId<T>) {
+        if constexpr (sizeof(T::FileId) == 8) {
+            if (fdi.FileId.QuadPart != file_id)
+                throw formatted_error("FileId was {:x}, expected {:x}.", fdi.FileId.QuadPart, file_id);
+        }
+
+        // FIXME - 128-bit FileId
+    }
+
+    // FIXME - EaSize
+    // FIXME - ShortNameLength / ShortName
+    // FIXME - ReparsePointTag
+}
+
 void test_create(const u16string& dir) {
     unique_handle h;
 
@@ -152,8 +247,15 @@ void test_create(const u16string& dir) {
                 throw formatted_error("EaSize was {}, expected 0", feai.EaSize);
         });
 
+        int64_t file_id = 0;
+
+        test("Check internal information", [&]() {
+            auto fii = query_information<FILE_INTERNAL_INFORMATION>(h.get());
+
+            file_id = fii.IndexNumber.QuadPart;
+        });
+
         // FIXME - FileAllInformation
-        // FIXME - FileInternalInformation
         // FIXME - FileNetworkOpenInformation
         // FIXME - FileStreamInformation
         // FIXME - FileHardLinkInformation
@@ -175,40 +277,36 @@ void test_create(const u16string& dir) {
         static const u16string_view name = u"file";
 
         test("Check directory entry (FILE_DIRECTORY_INFORMATION)", [&]() {
-            check_dir_entry<FILE_DIRECTORY_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_DIRECTORY_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_BOTH_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_FULL_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_FULL_DIR_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_FULL_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_ID_BOTH_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_ID_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_ID_FULL_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_FULL_DIR_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_ID_FULL_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_ID_EXTD_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_EXTD_DIR_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_ID_EXTD_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_ID_EXTD_BOTH_DIR_INFORMATION)", [&]() {
-            check_dir_entry<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_ID_EXTD_BOTH_DIR_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
 
         test("Check directory entry (FILE_NAMES_INFORMATION)", [&]() {
-            check_dir_entry<FILE_NAMES_INFORMATION>(dir, name, fbi, fsi);
+            check_dir_entry<FILE_NAMES_INFORMATION>(dir, name, fbi, fsi, file_id);
         });
-
-        // FIXME - FileObjectIdInformation
-        // FIXME - FileQuotaInformation
-        // FIXME - FileReparsePointInformation
 
         test("Check granted access", [&]() {
             auto obi = query_object_basic_information(h.get());
