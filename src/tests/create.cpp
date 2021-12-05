@@ -1002,6 +1002,22 @@ void test_create(HANDLE token, const u16string& dir) {
         create_file(dir + u"\\\U0001f525", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
     });
 
+    test("Create file", [&]() {
+        create_file(dir + u"\\notadir", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Try to create file within other file", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\notadir\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+        }, STATUS_OBJECT_PATH_NOT_FOUND);
+    });
+
+    test("Try to open file within other file", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\notadir\\file", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_OBJECT_PATH_NOT_FOUND);
+    });
+
     /* The limits for Btrfs are more stringent than NTFS, to make sure we don't
      * create a filename that will confuse Linux. */
     bool is_ntfs = fstype == fs_type::ntfs;

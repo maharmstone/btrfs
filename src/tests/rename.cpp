@@ -1247,6 +1247,24 @@ void test_rename(const u16string& dir) {
         h2.reset();
     }
 
+    test("Create file 1", [&]() {
+        create_file(dir + u"\\renamefile26a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\renamefile26b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to move file within other file", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\renamefile26a\\file");
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
     // FIXME - does SD change when file moved across directories?
     // FIXME - check can't rename root directory?
 }

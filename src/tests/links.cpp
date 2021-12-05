@@ -923,6 +923,24 @@ void test_links(HANDLE token, const std::u16string& dir) {
         h.reset();
     }
 
+    test("Create file 1", [&]() {
+        create_file(dir + u"\\link18a", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    test("Create file 2", [&]() {
+        h = create_file(dir + u"\\link18b", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to link file within other file", [&]() {
+            exp_status([&]() {
+                set_rename_information(h.get(), false, nullptr, dir + u"\\link18a\\file");
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        h.reset();
+    }
+
     disable_token_privileges(token);
 }
 

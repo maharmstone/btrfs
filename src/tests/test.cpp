@@ -489,8 +489,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         }
     }
 
-    // FIXME - test what happens when we use filename in path as if it were a directory (creating, renaming, linking)
-
     // FIXME - setting file information
 
     // FIXME - querying SD
