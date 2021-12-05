@@ -397,7 +397,72 @@ void test_create(HANDLE token, const u16string& dir) {
             file_id_128 = fidi.FileId;
         });
 
-        // FIXME - FileAllInformation
+        test("Check FileAllInformation", [&]() {
+            auto buf = query_all_information(h.get());
+
+            auto& fai = *static_cast<FILE_ALL_INFORMATION*>(buf);
+
+            if (fai.BasicInformation.CreationTime.QuadPart != fbi.CreationTime.QuadPart)
+                throw formatted_error("BasicInformation.CreationTime was {}, expected {}", fai.BasicInformation.CreationTime.QuadPart, fbi.CreationTime.QuadPart);
+
+            if (fai.BasicInformation.LastAccessTime.QuadPart != fbi.LastAccessTime.QuadPart)
+                throw formatted_error("BasicInformation.LastAccessTime was {}, expected {}", fai.BasicInformation.LastAccessTime.QuadPart, fbi.LastAccessTime.QuadPart);
+
+            if (fai.BasicInformation.LastWriteTime.QuadPart != fbi.LastWriteTime.QuadPart)
+                throw formatted_error("BasicInformation.LastWriteTime was {}, expected {}", fai.BasicInformation.LastWriteTime.QuadPart, fbi.LastWriteTime.QuadPart);
+
+            if (fai.BasicInformation.ChangeTime.QuadPart != fbi.ChangeTime.QuadPart)
+                throw formatted_error("BasicInformation.ChangeTime was {}, expected {}", fai.BasicInformation.ChangeTime.QuadPart, fbi.ChangeTime.QuadPart);
+
+            if (fai.BasicInformation.FileAttributes != fbi.FileAttributes)
+                throw formatted_error("BasicInformation.FileAttributes was {:x}, expected {:x}", fai.BasicInformation.FileAttributes, fbi.FileAttributes);
+
+            if (fai.StandardInformation.AllocationSize.QuadPart != fsi.AllocationSize.QuadPart)
+                throw formatted_error("StandardInformation.AllocationSize was {}, expected {}", fai.StandardInformation.AllocationSize.QuadPart, fsi.AllocationSize.QuadPart);
+
+            if (fai.StandardInformation.EndOfFile.QuadPart != fsi.EndOfFile.QuadPart)
+                throw formatted_error("StandardInformation.EndOfFile was {}, expected {}", fai.StandardInformation.EndOfFile.QuadPart, fsi.EndOfFile.QuadPart);
+
+            if (fai.StandardInformation.NumberOfLinks != fsi.NumberOfLinks)
+                throw formatted_error("StandardInformation.NumberOfLinks was {}, expected {}", fai.StandardInformation.NumberOfLinks, fsi.NumberOfLinks);
+
+            if (!!fai.StandardInformation.DeletePending != !!fsi.DeletePending)
+                throw formatted_error("StandardInformation.DeletePending was {}, expected {}", fai.StandardInformation.DeletePending, fsi.DeletePending);
+
+            if (!!fai.StandardInformation.Directory != !!fsi.Directory)
+                throw formatted_error("StandardInformation.Directory was {}, expected {}", fai.StandardInformation.Directory, fsi.Directory);
+
+            if (fai.InternalInformation.IndexNumber.QuadPart != file_id)
+                throw formatted_error("InternalInformation.IndexNumber was {:x}, expected {:x}", fai.InternalInformation.IndexNumber.QuadPart, file_id);
+
+            if (fai.EaInformation.EaSize != 0)
+                throw formatted_error("EaInformation.EaSize was {:x}, expected 0", fai.EaInformation.EaSize);
+
+            ACCESS_MASK exp_access = SYNCHRONIZE | WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE |
+                                     FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | FILE_DELETE_CHILD |
+                                     FILE_EXECUTE | FILE_WRITE_EA | FILE_READ_EA | FILE_APPEND_DATA |
+                                     FILE_WRITE_DATA | FILE_READ_DATA;
+
+            if (fai.AccessInformation.AccessFlags != exp_access)
+                throw formatted_error("AccessInformation.AccessFlags was {:x}, expected {:x}", fai.AccessInformation.AccessFlags, exp_access);
+
+            if (fai.PositionInformation.CurrentByteOffset.QuadPart != 0)
+                throw formatted_error("PositionInformation.CurrentByteOffset was {:x}, expected 0", fai.PositionInformation.CurrentByteOffset.QuadPart);
+
+            if (fai.ModeInformation.Mode != 0)
+                throw formatted_error("ModeInformation.Mode was {:x}, expected 0", fai.ModeInformation.Mode);
+
+            if (fai.AlignmentInformation.AlignmentRequirement != FILE_WORD_ALIGNMENT)
+                throw formatted_error("AlignmentInformation.AlignmentRequirement was {:x}, expected FILE_WORD_ALIGNMENT", fai.AlignmentInformation.AlignmentRequirement);
+
+            auto fn = u16string_view((char16_t*)fai.NameInformation.FileName, fai.NameInformation.FileNameLength / sizeof(char16_t));
+
+            static const u16string_view ends_with = u"\\file";
+
+            if (fn.size() < ends_with.size() || fn.substr(fn.size() - ends_with.size()) != ends_with)
+                throw runtime_error("Name did not end with \"\\file\".");
+        });
+
         // FIXME - FILE_STANDARD_INFORMATION_EX
 
         // FIXME - FileHardLinkFullIdInformation (does this work? Undocumented, and seems to always return STATUS_INVALID_PARAMETER on NTFS for 21H2)

@@ -4208,7 +4208,7 @@ unique_handle create_file(const std::u16string_view& path, ACCESS_MASK access, U
 
 template<typename T>
 std::vector<varbuf<T>> query_dir(const std::u16string& dir, std::u16string_view filter);
-
+varbuf<FILE_ALL_INFORMATION> query_all_information(HANDLE h);
 void test(const std::string& msg, const std::function<void()>& func);
 void exp_status(const std::function<void()>& func, NTSTATUS Status);
 std::u16string query_file_name_information(HANDLE h, bool normalized = false);

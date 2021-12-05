@@ -181,37 +181,6 @@ static unique_handle create_file_ea(const u16string_view& path, ACCESS_MASK acce
     return unique_handle(h);
 }
 
-static varbuf<FILE_ALL_INFORMATION> query_all_information(HANDLE h) {
-    IO_STATUS_BLOCK iosb;
-    NTSTATUS Status;
-    FILE_ALL_INFORMATION fai;
-
-    fai.NameInformation.FileNameLength = 0;
-
-    Status = NtQueryInformationFile(h, &iosb, &fai, sizeof(fai), FileAllInformation);
-
-    if (Status != STATUS_SUCCESS && Status != STATUS_BUFFER_OVERFLOW)
-        throw ntstatus_error(Status);
-
-    varbuf<FILE_ALL_INFORMATION> ret;
-
-    ret.buf.resize(offsetof(FILE_ALL_INFORMATION, NameInformation.FileName) + fai.NameInformation.FileNameLength);
-
-    auto& fai2 = *reinterpret_cast<FILE_ALL_INFORMATION*>(ret.buf.data());
-
-    fai2.NameInformation.FileNameLength = ret.buf.size() - offsetof(FILE_ALL_INFORMATION, NameInformation.FileName);
-
-    Status = NtQueryInformationFile(h, &iosb, &fai2, ret.buf.size(), FileAllInformation);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != ret.buf.size())
-        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, ret.buf.size());
-
-    return ret;
-}
-
 template<typename T>
 static void check_ea_dirent(const u16string& dir, u16string_view name, uint32_t exp_size) {
     auto items = query_dir<T>(dir, name);
