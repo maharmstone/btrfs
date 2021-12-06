@@ -4266,7 +4266,6 @@ std::vector<uint8_t> pe_image(std::span<const std::byte> data);
 void test_rename(const std::u16string& dir);
 void test_rename_ex(HANDLE token, const std::u16string& dir);
 void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
-void set_dacl(HANDLE h, ACCESS_MASK access);
 
 // delete.cpp
 void test_delete(const std::u16string& dir);
@@ -4307,3 +4306,7 @@ void write_ea(HANDLE h, std::string_view name, std::string_view value, bool need
 void test_fileinfo(const std::u16string& dir);
 void set_basic_information(HANDLE h, int64_t creation_time, int64_t last_access_time,
                            int64_t last_write_time, int64_t change_time, uint32_t attributes);
+
+// security.cpp
+void test_security(const std::u16string& dir);
+void set_dacl(HANDLE h, ACCESS_MASK access);

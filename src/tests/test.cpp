@@ -448,7 +448,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"reparse", [&]() { test_reparse(token.get(), dir); } },
         { u"streams", [&]() { test_streams(dir); } },
         { u"ea", [&]() { test_ea(dir); } },
-        { u"fileinfo", [&]() { test_fileinfo(dir); } }
+        { u"fileinfo", [&]() { test_fileinfo(dir); } },
+        { u"security", [&]() { test_security(dir); } }
     };
 
     bool first = true;
@@ -490,13 +491,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         }
     }
 
-    // FIXME - querying SD
-    // FIXME - setting SD
-    // FIXME - inheriting SD
-    // FIXME - open files asking for too many permissions
-    // FIXME - MAXIMUM_ALLOWED
-    // FIXME - traverse checking
-    // FIXME - make sure mandatory access controls etc. obeyed (inc. when traverse-checking)
+    // FIXME - test that FILE_SYNCHRONOUS_IO_NONALERT and FILE_SYNCHRONOUS_IO_ALERT need SYNCHRONIZE
+    // FIXME - test opening file with RootDirectory handle
 
     // FIXME - querying directory (inc. specific files)
     // FIXME - NtQueryDirectoryFileEx

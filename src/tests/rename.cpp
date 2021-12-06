@@ -2,8 +2,6 @@
 
 using namespace std;
 
-static const uint8_t sid_everyone[] = { 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 }; // S-1-1-0
-
 void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const u16string_view& filename) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -42,40 +40,6 @@ static void set_rename_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, co
 
     if (iosb.Information != 0)
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
-}
-
-void set_dacl(HANDLE h, ACCESS_MASK access) {
-    NTSTATUS Status;
-    SECURITY_DESCRIPTOR sd;
-    array<uint8_t, sizeof(ACL) + offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone)> aclbuf;
-
-    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
-        throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
-
-    auto& acl = *(ACL*)aclbuf.data();
-
-    if (!InitializeAcl(&acl, aclbuf.size(), ACL_REVISION))
-        throw formatted_error("InitializeAcl failed (error {})", GetLastError());
-
-    if (access != 0) {
-        acl.AceCount = 1;
-
-        auto& ace = *(ACCESS_ALLOWED_ACE*)((uint8_t*)aclbuf.data() + sizeof(ACL));
-
-        ace.Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
-        ace.Header.AceFlags = 0;
-        ace.Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone);
-        ace.Mask = access;
-        memcpy(&ace.SidStart, sid_everyone, sizeof(sid_everyone));
-    }
-
-    if (!SetSecurityDescriptorDacl(&sd, true, &acl, false))
-        throw formatted_error("SetSecurityDescriptorDacl failed (error {})", GetLastError());
-
-    Status = NtSetSecurityObject(h, DACL_SECURITY_INFORMATION, &sd);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
 }
 
 void test_rename(const u16string& dir) {
