@@ -110,6 +110,11 @@ NTSTATUS __stdcall NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
                                 PLARGE_INTEGER Length, ULONG Key);
 
 extern "C"
+NTSTATUS __stdcall NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                         PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                                         PULONG LengthNeeded);
+
+extern "C"
 NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                        PSECURITY_DESCRIPTOR SecurityDescriptor);
 
