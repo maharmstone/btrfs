@@ -313,6 +313,148 @@ void test_fileinfo(const u16string& dir) {
         h.reset();
     }
 
-    // FIXME - querying and setting attributes
-    // FIXME - directories?
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\fileinfo1", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Set hidden flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_HIDDEN);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_HIDDEN)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_HIDDEN", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_NORMAL", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_READONLY", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_READONLY);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_READONLY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_READONLY", fbi.FileAttributes);
+        });
+
+        test("Try to set attributes to FILE_ATTRIBUTE_DIRECTORY", [&]() { // fails
+            exp_status([&]() {
+                set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_DIRECTORY);
+            }, STATUS_INVALID_PARAMETER);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_REPARSE_POINT", [&]() { // gets ignored
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_REPARSE_POINT);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_SPARSE_FILE", [&]() { // gets ignored
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_SPARSE_FILE);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_NORMAL)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_NORMAL", fbi.FileAttributes);
+        });
+
+        h.reset();
+    }
+
+    test("Create directory", [&]() {
+        h = create_file(dir + u"\\fileinfo2", FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_CREATE, FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Set hidden flag", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_HIDDEN);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_NORMAL", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_READONLY", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_READONLY);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY))
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_DIRECTORY", [&]() {
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_DIRECTORY);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_REPARSE_POINT", [&]() { // gets ignored
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_REPARSE_POINT);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        test("Set attributes to FILE_ATTRIBUTE_SPARSE_FILE", [&]() { // gets ignored
+            set_basic_information(h.get(), 0, 0, 0, 0, FILE_ATTRIBUTE_SPARSE_FILE);
+        });
+
+        test("Query basic information", [&]() {
+            auto fbi = query_information<FILE_BASIC_INFORMATION>(h.get());
+
+            if (fbi.FileAttributes != FILE_ATTRIBUTE_DIRECTORY)
+                throw formatted_error("FileAttributes was {:x}, expected FILE_ATTRIBUTE_DIRECTORY", fbi.FileAttributes);
+        });
+
+        h.reset();
+    }
 }
