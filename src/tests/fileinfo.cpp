@@ -283,7 +283,36 @@ void test_fileinfo(const u16string& dir) {
         h.reset();
     }
 
+    test("Open file without FILE_READ_ATTRIBUTES", [&]() {
+        h = create_file(dir + u"\\fileinfo1", FILE_WRITE_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Try to query basic information", [&]() {
+            exp_status([&]() {
+                query_information<FILE_BASIC_INFORMATION>(h.get());
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
+    test("Open file without FILE_WRITE_ATTRIBUTES", [&]() {
+        h = create_file(dir + u"\\fileinfo1", FILE_READ_ATTRIBUTES,
+                        0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Try to set basic information", [&]() {
+            exp_status([&]() {
+                set_basic_information(h.get(), 0, 0, 0, 0, 0);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
+
     // FIXME - querying and setting attributes
-    // FIXME - permissions needed to set and query FBI
     // FIXME - directories?
 }
