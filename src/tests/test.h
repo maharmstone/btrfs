@@ -291,6 +291,9 @@ typedef struct _FILE_STANDARD_INFORMATION_EX {
     BOOLEAN MetadataAttribute;
 } FILE_STANDARD_INFORMATION_EX, *PFILE_STANDARD_INFORMATION_EX;
 
+extern "C"
+NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
+
 #ifdef _MSC_VER
 #define FileDirectoryInformation ((FILE_INFORMATION_CLASS)1)
 #define FileFullDirectoryInformation ((FILE_INFORMATION_CLASS)2)
@@ -4299,3 +4302,8 @@ void test_streams(const std::u16string& dir);
 // ea.cpp
 void test_ea(const std::u16string& dir);
 void write_ea(HANDLE h, std::string_view name, std::string_view value, bool need_ea = false);
+
+// fileinfo.cpp
+void test_fileinfo(const std::u16string& dir);
+void set_basic_information(HANDLE h, int64_t creation_time, int64_t last_access_time,
+                           int64_t last_write_time, int64_t change_time, uint32_t attributes);

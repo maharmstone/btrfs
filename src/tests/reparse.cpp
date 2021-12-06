@@ -317,27 +317,6 @@ static void check_reparse_dirent(const u16string& dir, u16string_view name, uint
     }
 }
 
-static void set_basic_information(HANDLE h, int64_t creation_time, int64_t last_access_time,
-                                  int64_t last_write_time, int64_t change_time, uint32_t attributes) {
-    NTSTATUS Status;
-    IO_STATUS_BLOCK iosb;
-    FILE_BASIC_INFORMATION fbi;
-
-    fbi.CreationTime.QuadPart = creation_time;
-    fbi.LastAccessTime.QuadPart = last_access_time;
-    fbi.LastWriteTime.QuadPart = last_write_time;
-    fbi.ChangeTime.QuadPart = change_time;
-    fbi.FileAttributes = attributes;
-
-    Status = NtSetInformationFile(h, &iosb, &fbi, sizeof(fbi), FileBasicInformation);
-
-    if (Status != STATUS_SUCCESS)
-        throw ntstatus_error(Status);
-
-    if (iosb.Information != 0)
-        throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
-}
-
 void test_reparse(HANDLE token, const u16string& dir) {
     unique_handle h;
     int64_t file1id = 0, file2id = 0;

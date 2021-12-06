@@ -447,7 +447,8 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"cs", [&]() { test_cs(dir); } },
         { u"reparse", [&]() { test_reparse(token.get(), dir); } },
         { u"streams", [&]() { test_streams(dir); } },
-        { u"ea", [&]() { test_ea(dir); } }
+        { u"ea", [&]() { test_ea(dir); } },
+        { u"fileinfo", [&]() { test_fileinfo(dir); } }
     };
 
     bool first = true;
@@ -488,8 +489,6 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
                 break;
         }
     }
-
-    // FIXME - setting file information
 
     // FIXME - querying SD
     // FIXME - setting SD

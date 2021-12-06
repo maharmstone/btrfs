@@ -342,7 +342,8 @@ if(WITH_TEST)
         src/tests/cs.cpp
         src/tests/reparse.cpp
         src/tests/streams.cpp
-        src/tests/ea.cpp)
+        src/tests/ea.cpp
+        src/tests/fileinfo.cpp)
 
     add_executable(test ${TEST_SRC_FILES})
 
