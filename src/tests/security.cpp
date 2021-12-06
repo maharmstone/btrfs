@@ -2,7 +2,15 @@
 
 using namespace std;
 
-static const uint8_t sid_everyone[] = { 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 }; // S-1-1-0
+// S-1-1-0
+static const uint8_t sid_everyone[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+                                        0x00, 0x00, 0x00, 0x00 };
+
+// S-1-5-21-2463132441-2848149277-1773138504-1001
+static const uint8_t sid_test[] = { 0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
+                                    0x15, 0x00, 0x00, 0x00, 0x19, 0x6b, 0xd0, 0x92,
+                                    0x1d, 0x4f, 0xc3, 0xa9, 0x48, 0xf2, 0xaf, 0x69,
+                                    0xe9, 0x03, 0x00, 0x00 };
 
 void set_dacl(HANDLE h, ACCESS_MASK access) {
     NTSTATUS Status;
@@ -106,7 +114,7 @@ static string sid_to_string(span<const uint8_t> sid) {
     string s;
     auto& ss = *(SID*)sid.data();
 
-    if (sid.size() < offsetof(SID, SubAuthority) || ss.Revision != 1 || sid.size() < offsetof(SID, SubAuthority) + (ss.SubAuthorityCount * sizeof(ULONG))) {
+    if (sid.size() < offsetof(SID, SubAuthority) || ss.Revision != SID_REVISION || sid.size() < offsetof(SID, SubAuthority) + (ss.SubAuthorityCount * sizeof(ULONG))) {
         for (auto b : sid) {
             if (!s.empty())
                 s += " ";
@@ -156,7 +164,69 @@ static bool compare_sid(span<const uint8_t> sid1, span<const uint8_t> sid2) {
     return !memcmp(sid1.data(), sid2.data(), len1);
 }
 
-void test_security(const u16string& dir) {
+static void set_owner(HANDLE h, span<const uint8_t> sid) {
+    NTSTATUS Status;
+    SECURITY_DESCRIPTOR sd;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+        throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+    if (!SetSecurityDescriptorOwner(&sd, (PSID)sid.data(), false))
+        throw formatted_error("SetSecurityDescriptorOwner failed (error {})", GetLastError());
+
+    Status = NtSetSecurityObject(h, OWNER_SECURITY_INFORMATION, &sd);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static vector<uint8_t> get_owner(HANDLE h) {
+    NTSTATUS Status;
+    ULONG needed = 0;
+    vector<uint8_t> buf;
+
+    Status = NtQuerySecurityObject(h, OWNER_SECURITY_INFORMATION, nullptr, 0, &needed);
+
+    if (Status != STATUS_BUFFER_TOO_SMALL)
+        throw ntstatus_error(Status);
+
+    buf.resize(needed);
+
+    Status = NtQuerySecurityObject(h, OWNER_SECURITY_INFORMATION, buf.data(), buf.size(), &needed);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (buf.size() < sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+        throw formatted_error("SD was {} bytes, expected at least {}", buf.size(), sizeof(SECURITY_DESCRIPTOR_RELATIVE));
+
+    auto& sd = *(SECURITY_DESCRIPTOR_RELATIVE*)buf.data();
+
+    if (sd.Revision != 1)
+        throw formatted_error("SD revision was {}, expected 1", sd.Revision);
+
+    if (sd.Owner == 0)
+        throw runtime_error("No owner returned");
+
+    if (sd.Owner + offsetof(SID, SubAuthority) > buf.size())
+        throw runtime_error("SID extended beyond end of SD");
+
+    auto& sid = *(SID*)(buf.data() + sd.Owner);
+
+    if (sid.Revision != SID_REVISION)
+        throw formatted_error("SID revision was {}, expected {}", sid.Revision, SID_REVISION);
+
+    auto sp = span(buf.data() + sd.Owner, offsetof(SID, SubAuthority) + (sizeof(ULONG) * sid.SubAuthorityCount));
+
+    vector<uint8_t> ret;
+
+    ret.resize(sp.size());
+    memcpy(ret.data(), sp.data(), sp.size());
+
+    return ret;
+}
+
+void test_security(HANDLE token, const u16string& dir) {
     unique_handle h;
 
     test("Create file", [&]() {
@@ -254,6 +324,51 @@ void test_security(const u16string& dir) {
 
         h.reset();
     }
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\sec1", READ_CONTROL | WRITE_OWNER, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Try to set owner without SeRestorePrivilege", [&]() {
+            exp_status([&]() {
+                set_owner(h.get(), sid_test);
+            }, STATUS_INVALID_OWNER);
+        });
+
+        h.reset();
+    }
+
+    test("Add SeRestorePrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_RESTORE_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\sec1", READ_CONTROL | WRITE_OWNER, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Set owner", [&]() {
+            set_owner(h.get(), sid_test);
+        });
+
+        test("Query owner", [&]() {
+            auto sid = get_owner(h.get());
+
+            if (!compare_sid(sid, sid_test))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_test));
+        });
+
+        h.reset();
+    }
+
+    disable_token_privileges(token);
 
     // FIXME - querying SD
     // FIXME - setting SD (owner, group, SACL)

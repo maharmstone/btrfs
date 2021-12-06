@@ -449,7 +449,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         { u"streams", [&]() { test_streams(dir); } },
         { u"ea", [&]() { test_ea(dir); } },
         { u"fileinfo", [&]() { test_fileinfo(dir); } },
-        { u"security", [&]() { test_security(dir); } }
+        { u"security", [&]() { test_security(token.get(), dir); } }
     };
 
     bool first = true;

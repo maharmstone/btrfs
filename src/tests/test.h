@@ -161,6 +161,7 @@ typedef struct _FILE_GET_EA_INFORMATION {
 
 #define FILE_WORD_ALIGNMENT 0x00000001
 
+#define SE_RESTORE_PRIVILEGE                18
 #define SE_CHANGE_NOTIFY_PRIVILEGE          23
 #define SE_MANAGE_VOLUME_PRIVILEGE          28
 #define SE_CREATE_SYMBOLIC_LINK_PRIVILEGE   35
@@ -4313,5 +4314,5 @@ void set_basic_information(HANDLE h, int64_t creation_time, int64_t last_access_
                            int64_t last_write_time, int64_t change_time, uint32_t attributes);
 
 // security.cpp
-void test_security(const std::u16string& dir);
+void test_security(HANDLE token, const std::u16string& dir);
 void set_dacl(HANDLE h, ACCESS_MASK access);
