@@ -12,6 +12,12 @@ static const uint8_t sid_test[] = { 0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x
                                     0x1d, 0x4f, 0xc3, 0xa9, 0x48, 0xf2, 0xaf, 0x69,
                                     0xe9, 0x03, 0x00, 0x00 };
 
+// S-1-5-21-2463132441-2848149277-1773138504-2001
+static const uint8_t sid_test2[] = { 0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
+                                     0x15, 0x00, 0x00, 0x00, 0x19, 0x6b, 0xd0, 0x92,
+                                     0x1d, 0x4f, 0xc3, 0xa9, 0x48, 0xf2, 0xaf, 0x69,
+                                     0xd1, 0x07, 0x00, 0x00 };
+
 void set_dacl(HANDLE h, ACCESS_MASK access) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
@@ -226,6 +232,68 @@ static vector<uint8_t> get_owner(HANDLE h) {
     return ret;
 }
 
+static void set_group(HANDLE h, span<const uint8_t> sid) {
+    NTSTATUS Status;
+    SECURITY_DESCRIPTOR sd;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+        throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+    if (!SetSecurityDescriptorGroup(&sd, (PSID)sid.data(), false))
+        throw formatted_error("SetSecurityDescriptorGroup failed (error {})", GetLastError());
+
+    Status = NtSetSecurityObject(h, GROUP_SECURITY_INFORMATION, &sd);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static vector<uint8_t> get_group(HANDLE h) {
+    NTSTATUS Status;
+    ULONG needed = 0;
+    vector<uint8_t> buf;
+
+    Status = NtQuerySecurityObject(h, GROUP_SECURITY_INFORMATION, nullptr, 0, &needed);
+
+    if (Status != STATUS_BUFFER_TOO_SMALL)
+        throw ntstatus_error(Status);
+
+    buf.resize(needed);
+
+    Status = NtQuerySecurityObject(h, GROUP_SECURITY_INFORMATION, buf.data(), buf.size(), &needed);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (buf.size() < sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+        throw formatted_error("SD was {} bytes, expected at least {}", buf.size(), sizeof(SECURITY_DESCRIPTOR_RELATIVE));
+
+    auto& sd = *(SECURITY_DESCRIPTOR_RELATIVE*)buf.data();
+
+    if (sd.Revision != 1)
+        throw formatted_error("SD revision was {}, expected 1", sd.Revision);
+
+    if (sd.Group == 0)
+        throw runtime_error("No group returned");
+
+    if (sd.Group + offsetof(SID, SubAuthority) > buf.size())
+        throw runtime_error("SID extended beyond end of SD");
+
+    auto& sid = *(SID*)(buf.data() + sd.Group);
+
+    if (sid.Revision != SID_REVISION)
+        throw formatted_error("SID revision was {}, expected {}", sid.Revision, SID_REVISION);
+
+    auto sp = span(buf.data() + sd.Group, offsetof(SID, SubAuthority) + (sizeof(ULONG) * sid.SubAuthorityCount));
+
+    vector<uint8_t> ret;
+
+    ret.resize(sp.size());
+    memcpy(ret.data(), sp.data(), sp.size());
+
+    return ret;
+}
+
 void test_security(HANDLE token, const u16string& dir) {
     unique_handle h;
 
@@ -336,6 +404,17 @@ void test_security(HANDLE token, const u16string& dir) {
             }, STATUS_INVALID_OWNER);
         });
 
+        test("Set group", [&]() {
+            set_group(h.get(), sid_test2);
+        });
+
+        test("Query group", [&]() {
+            auto sid = get_group(h.get());
+
+            if (!compare_sid(sid, sid_test2))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_test2));
+        });
+
         h.reset();
     }
 
@@ -371,7 +450,7 @@ void test_security(HANDLE token, const u16string& dir) {
     disable_token_privileges(token);
 
     // FIXME - querying SD
-    // FIXME - setting SD (owner, group, SACL)
+    // FIXME - setting SD (SACL)
     // FIXME - creating file with SD
     // FIXME - inheriting SD
     // FIXME - open files asking for too many permissions
