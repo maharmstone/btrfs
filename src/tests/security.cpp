@@ -294,6 +294,105 @@ static vector<uint8_t> get_group(HANDLE h) {
     return ret;
 }
 
+template<size_t N>
+static void set_audit(HANDLE h, ACCESS_MASK access, span<const uint8_t, N> sid) {
+    NTSTATUS Status;
+    SECURITY_DESCRIPTOR sd;
+    array<uint8_t, sizeof(ACL) + offsetof(SYSTEM_AUDIT_ACE, SidStart) + sid.size()> aclbuf;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+        throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+    auto& acl = *(ACL*)aclbuf.data();
+
+    if (!InitializeAcl(&acl, aclbuf.size(), ACL_REVISION))
+        throw formatted_error("InitializeAcl failed (error {})", GetLastError());
+
+    if (access != 0) {
+        acl.AceCount = 1;
+
+        auto& ace = *(SYSTEM_AUDIT_ACE*)((uint8_t*)aclbuf.data() + sizeof(ACL));
+
+        ace.Header.AceType = SYSTEM_AUDIT_ACE_TYPE;
+        ace.Header.AceFlags = 0;
+        ace.Header.AceSize = offsetof(SYSTEM_AUDIT_ACE, SidStart) + sid.size();
+        ace.Mask = access;
+        memcpy(&ace.SidStart, sid.data(), sid.size());
+    }
+
+    if (!SetSecurityDescriptorSacl(&sd, true, &acl, false))
+        throw formatted_error("SetSecurityDescriptorSacl failed (error {})", GetLastError());
+
+    Status = NtSetSecurityObject(h, SACL_SECURITY_INFORMATION, &sd);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static vector<varbuf<ACE_HEADER>> get_sacl(HANDLE h) {
+    NTSTATUS Status;
+    ULONG needed = 0;
+    vector<uint8_t> buf;
+    vector<varbuf<ACE_HEADER>> ret;
+
+    Status = NtQuerySecurityObject(h, SACL_SECURITY_INFORMATION, nullptr, 0, &needed);
+
+    if (Status != STATUS_BUFFER_TOO_SMALL)
+        throw ntstatus_error(Status);
+
+    buf.resize(needed);
+
+    Status = NtQuerySecurityObject(h, SACL_SECURITY_INFORMATION, buf.data(), buf.size(), &needed);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    if (buf.size() < sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+        throw formatted_error("SD was {} bytes, expected at least {}", buf.size(), sizeof(SECURITY_DESCRIPTOR_RELATIVE));
+
+    auto& sd = *(SECURITY_DESCRIPTOR_RELATIVE*)buf.data();
+
+    if (sd.Revision != 1)
+        throw formatted_error("SD revision was {}, expected 1", sd.Revision);
+
+    if (sd.Sacl == 0)
+        return {};
+
+    if (sd.Sacl + sizeof(ACL) > buf.size())
+        throw runtime_error("SACL extended beyond end of SD");
+
+    auto& acl = *(ACL*)(buf.data() + sd.Sacl);
+
+    if (acl.AclRevision != ACL_REVISION)
+        throw formatted_error("ACL revision was {}, expected {}", acl.AclRevision, ACL_REVISION);
+
+    if (acl.AclSize < sizeof(ACL))
+        throw formatted_error("ACL size was {}, expected at least {}", acl.AclSize, sizeof(ACL));
+
+    ret.resize(acl.AceCount);
+
+    auto aclsp = span<const uint8_t>((uint8_t*)&acl + sizeof(ACL), acl.AclSize - sizeof(ACL));
+
+    for (unsigned int i = 0; i < acl.AceCount; i++) {
+        auto& ace = *(ACE_HEADER*)aclsp.data();
+
+        if (aclsp.size() < sizeof(ACE_HEADER))
+            throw formatted_error("Not enough bytes left for ACE ({} < {})", aclsp.size(), sizeof(ACE_HEADER));
+
+        if (aclsp.size() < ace.AceSize)
+            throw formatted_error("ACE overflowed end of SD ({} < {})", aclsp.size(), ace.AceSize);
+
+        auto& b = ret[i].buf;
+
+        b.resize(ace.AceSize);
+        memcpy(b.data(), &ace, ace.AceSize);
+
+        aclsp = aclsp.subspan(ace.AceSize);
+    }
+
+    return ret;
+}
+
 void test_security(HANDLE token, const u16string& dir) {
     unique_handle h;
 
@@ -449,8 +548,61 @@ void test_security(HANDLE token, const u16string& dir) {
 
     disable_token_privileges(token);
 
-    // FIXME - querying SD
-    // FIXME - setting SD (SACL)
+    test("Try to open file with ACCESS_SYSTEM_SECURITY without SeSecurityPrivilege", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\sec1", ACCESS_SYSTEM_SECURITY, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_PRIVILEGE_NOT_HELD);
+    });
+
+    test("Add SeSecurityPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_SECURITY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\sec1", ACCESS_SYSTEM_SECURITY, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Set audit", [&]() {
+            set_audit(h.get(), SUCCESSFUL_ACCESS_ACE_FLAG | FAILED_ACCESS_ACE_FLAG, span(sid_everyone));
+        });
+
+        test("Query SACL", [&]() {
+            auto items = get_sacl(h.get());
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != SYSTEM_AUDIT_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected SYSTEM_AUDIT_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != 0)
+                throw formatted_error("AceFlags was {:x}, expected 0", ace.AceFlags);
+
+            auto& saa = *reinterpret_cast<SYSTEM_AUDIT_ACE*>(&ace);
+
+            if (saa.Mask != (SUCCESSFUL_ACCESS_ACE_FLAG | FAILED_ACCESS_ACE_FLAG))
+                throw formatted_error("Mask was {:x}, expected {:x}", saa.Mask, SUCCESSFUL_ACCESS_ACE_FLAG | FAILED_ACCESS_ACE_FLAG);
+
+            auto sid = span<const uint8_t>((uint8_t*)&saa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
+    disable_token_privileges(token);
+
     // FIXME - creating file with SD
     // FIXME - inheriting SD
     // FIXME - open files asking for too many permissions
@@ -459,5 +611,5 @@ void test_security(HANDLE token, const u16string& dir) {
     // FIXME - backup and restore privileges
     // FIXME - traverse checking
     // FIXME - make sure empty DACL means no permissions?
-    // FIXME - make sure mandatory access controls etc. obeyed (inc. when traverse-checking)
+    // FIXME - make sure mandatory access controls etc. obeyed (inc. when traverse-checking) (and MAXIMUM_ALLOWED)
 }

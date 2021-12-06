@@ -161,6 +161,7 @@ typedef struct _FILE_GET_EA_INFORMATION {
 
 #define FILE_WORD_ALIGNMENT 0x00000001
 
+#define SE_SECURITY_PRIVILEGE               8
 #define SE_RESTORE_PRIVILEGE                18
 #define SE_CHANGE_NOTIFY_PRIVILEGE          23
 #define SE_MANAGE_VOLUME_PRIVILEGE          28
