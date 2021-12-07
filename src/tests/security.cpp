@@ -22,6 +22,10 @@ static const uint8_t sid_test2[] = { 0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0
 static const uint8_t sid_high[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
                                     0x00, 0x30, 0x00, 0x00 };
 
+// S-1-16-8192
+static const uint8_t sid_medium[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+                                      0x00, 0x20, 0x00, 0x00 };
+
 void set_dacl(HANDLE h, ACCESS_MASK access) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
@@ -370,8 +374,54 @@ static void set_mandatory_access(HANDLE h, ACCESS_MASK access, span<const uint8_
         throw ntstatus_error(Status);
 }
 
+static unique_handle duplicate_token(HANDLE token) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+    SECURITY_QUALITY_OF_SERVICE qos;
+
+    memset(&qos, 0, sizeof(qos));
+    qos.Length = sizeof(qos);
+    qos.ImpersonationLevel = SecurityImpersonation;
+
+    memset(&oa, 0, sizeof(oa));
+    oa.Length = sizeof(oa);
+    oa.SecurityQualityOfService = &qos;
+
+    Status = NtDuplicateToken(token, MAXIMUM_ALLOWED, &oa, false,
+                              TokenImpersonation, &h);
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+
+    return unique_handle{h};
+}
+
+static void adjust_token_level(HANDLE token, const void* sid) {
+    TOKEN_MANDATORY_LABEL label;
+    NTSTATUS Status;
+
+    label.Label.Sid = (PSID)sid;
+    label.Label.Attributes = 0;
+
+    Status = NtSetInformationToken(token, TokenIntegrityLevel, &label, sizeof(label));
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
+static void set_thread_token(HANDLE token) {
+    NTSTATUS Status;
+
+    Status = NtSetInformationThread(NtCurrentThread(), ThreadImpersonationToken,
+                                    &token, sizeof(token));
+
+    if (Status != STATUS_SUCCESS)
+        throw ntstatus_error(Status);
+}
+
 void test_security(HANDLE token, const u16string& dir) {
-    unique_handle h;
+    unique_handle h, medium_token;
 
     test("Create file", [&]() {
         h = create_file(dir + u"\\sec1", GENERIC_READ, 0, 0, FILE_CREATE, 0, FILE_CREATED);
@@ -662,13 +712,59 @@ void test_security(HANDLE token, const u16string& dir) {
 
     disable_token_privileges(token);
 
+    test("Duplicate token", [&]() {
+        medium_token = duplicate_token(token);
+    });
+
+    if (medium_token) {
+        test("Adjust token label", [&]() {
+            adjust_token_level(medium_token.get(), sid_medium);
+        });
+
+        test("Switch to new token", [&]() {
+            set_thread_token(medium_token.get());
+        });
+    }
+
+    test("Try to open file for writing with medium label", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\sec1", FILE_WRITE_DATA, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
+    test("Open file with MAXIMUM_ALLOWED", [&]() {
+        h = create_file(dir + u"\\sec1", MAXIMUM_ALLOWED, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Query FileAccessInformation", [&]() {
+            auto fai = query_information<FILE_ACCESS_INFORMATION>(h.get());
+
+            ACCESS_MASK exp = SYNCHRONIZE | READ_CONTROL | DELETE |
+                              FILE_READ_ATTRIBUTES | FILE_EXECUTE |
+                              FILE_READ_EA | FILE_READ_DATA;
+
+            if (fai.AccessFlags != exp)
+                throw formatted_error("AccessFlags was {:x}, expected {:x}", fai.AccessFlags, exp);
+        });
+
+        h.reset();
+    }
+
+    if (medium_token) {
+        test("Switch back to old token", [&]() {
+            set_thread_token(nullptr);
+        });
+
+        medium_token.reset();
+    }
+
     // FIXME - creating file with SD
     // FIXME - inheriting SD
     // FIXME - open files asking for too many permissions
     // FIXME - MAXIMUM_ALLOWED
     // FIXME - permissions needed for querying and setting SD
     // FIXME - backup and restore privileges
-    // FIXME - traverse checking
+    // FIXME - traverse checking (inc. mandatory access controls)
     // FIXME - make sure empty DACL means no permissions?
-    // FIXME - make sure mandatory access controls etc. obeyed (inc. when traverse-checking) (and MAXIMUM_ALLOWED)
 }

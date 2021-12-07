@@ -141,6 +141,19 @@ extern "C"
 NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                ULONG Length);
 
+extern "C"
+NTSTATUS __stdcall NtSetInformationToken(HANDLE TokenHandle, TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                         PVOID TokenInformation, ULONG TokenInformationLength);
+
+extern "C"
+NTSTATUS __stdcall NtDuplicateToken(HANDLE ExistingTokenHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN EffectiveOnly,
+                                    TOKEN_TYPE TokenType, PHANDLE NewTokenHandle);
+
+extern "C"
+NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
+                                          PVOID ThreadInformation, ULONG ThreadInformationLength);
+
 #define FILE_NEED_EA    0x00000080
 
 typedef struct _FILE_GET_EA_INFORMATION {
@@ -149,6 +162,7 @@ typedef struct _FILE_GET_EA_INFORMATION {
     CHAR EaName[1];
 } FILE_GET_EA_INFORMATION, *PFILE_GET_EA_INFORMATION;
 
+#define NtCurrentThread() ((HANDLE)(LONG_PTR) -2)
 #define NtCurrentProcess() ((HANDLE)(LONG_PTR) -1)
 
 #define FileIdInformation ((FILE_INFORMATION_CLASS)59)

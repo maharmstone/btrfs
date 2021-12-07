@@ -416,7 +416,8 @@ string u16string_to_string(const u16string_view& sv) {
 }
 
 static void do_tests(const u16string_view& name, const u16string& dir) {
-    auto token = open_process_token(NtCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY);
+    auto token = open_process_token(NtCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_ADJUST_DEFAULT |
+                                                        TOKEN_DUPLICATE | TOKEN_QUERY);
 
     disable_token_privileges(token.get());
 
