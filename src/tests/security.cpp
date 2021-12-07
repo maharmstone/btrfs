@@ -617,6 +617,51 @@ void test_security(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Add SeSecurityPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_SECURITY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Open file", [&]() {
+        h = create_file(dir + u"\\sec1", ACCESS_SYSTEM_SECURITY, 0, 0, FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Check SACL still there", [&]() {
+            auto items = get_acl(h.get(), SACL_SECURITY_INFORMATION);
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != SYSTEM_AUDIT_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected SYSTEM_AUDIT_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != 0)
+                throw formatted_error("AceFlags was {:x}, expected 0", ace.AceFlags);
+
+            auto& saa = *reinterpret_cast<SYSTEM_AUDIT_ACE*>(&ace);
+
+            if (saa.Mask != (SUCCESSFUL_ACCESS_ACE_FLAG | FAILED_ACCESS_ACE_FLAG))
+                throw formatted_error("Mask was {:x}, expected {:x}", saa.Mask, SUCCESSFUL_ACCESS_ACE_FLAG | FAILED_ACCESS_ACE_FLAG);
+
+            auto sid = span<const uint8_t>((uint8_t*)&saa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
+    disable_token_privileges(token);
+
     // FIXME - creating file with SD
     // FIXME - inheriting SD
     // FIXME - open files asking for too many permissions
