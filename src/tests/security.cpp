@@ -64,6 +64,36 @@ static unique_handle create_file_sd(const u16string_view& path, ACCESS_MASK acce
     return unique_handle(h);
 }
 
+static unique_handle create_file_with_acl(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+                                          ULONG dispo, ULONG options, ULONG_PTR exp_info, ACCESS_MASK ace_access,
+                                          uint8_t ace_flags) {
+    SECURITY_DESCRIPTOR sd;
+    array<uint8_t, sizeof(ACL) + offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone)> aclbuf;
+
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+        throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+    auto& acl = *(ACL*)aclbuf.data();
+
+    if (!InitializeAcl(&acl, aclbuf.size(), ACL_REVISION))
+        throw formatted_error("InitializeAcl failed (error {})", GetLastError());
+
+    acl.AceCount = 1;
+
+    auto& ace = *(ACCESS_ALLOWED_ACE*)((uint8_t*)aclbuf.data() + sizeof(ACL));
+
+    ace.Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+    ace.Header.AceFlags = ace_flags;
+    ace.Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone);
+    ace.Mask = ace_access;
+    memcpy(&ace.SidStart, sid_everyone, sizeof(sid_everyone));
+
+    if (!SetSecurityDescriptorDacl(&sd, true, &acl, false))
+        throw formatted_error("SetSecurityDescriptorDacl failed (error {})", GetLastError());
+
+    return create_file_sd(path, access, atts, share, dispo, options, exp_info, sd);
+}
+
 void set_dacl(HANDLE h, ACCESS_MASK access) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
@@ -798,32 +828,8 @@ void test_security(HANDLE token, const u16string& dir) {
     }
 
     test("Create file with SD", [&]() {
-        SECURITY_DESCRIPTOR sd;
-        array<uint8_t, sizeof(ACL) + offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone)> aclbuf;
-
-        if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
-            throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
-
-        auto& acl = *(ACL*)aclbuf.data();
-
-        if (!InitializeAcl(&acl, aclbuf.size(), ACL_REVISION))
-            throw formatted_error("InitializeAcl failed (error {})", GetLastError());
-
-        acl.AceCount = 1;
-
-        auto& ace = *(ACCESS_ALLOWED_ACE*)((uint8_t*)aclbuf.data() + sizeof(ACL));
-
-        ace.Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
-        ace.Header.AceFlags = 0;
-        ace.Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone);
-        ace.Mask = FILE_READ_DATA;
-        memcpy(&ace.SidStart, sid_everyone, sizeof(sid_everyone));
-
-        if (!SetSecurityDescriptorDacl(&sd, true, &acl, false))
-            throw formatted_error("SetSecurityDescriptorDacl failed (error {})", GetLastError());
-
-        h = create_file_sd(dir + u"\\sec2", READ_CONTROL, 0, 0, FILE_CREATE,
-                           0, FILE_CREATED, sd);
+        h = create_file_with_acl(dir + u"\\sec2", READ_CONTROL, 0, 0, FILE_CREATE,
+                                 0, FILE_CREATED, FILE_READ_DATA, 0);
     });
 
     if (h) {
@@ -879,9 +885,157 @@ void test_security(HANDLE token, const u16string& dir) {
         }, STATUS_INVALID_OWNER);
     });
 
-    // FIXME - inheriting SD
+    test("Create directory with OBJECT_INHERIT_ACE", [&]() {
+        create_file_with_acl(dir + u"\\sec4", READ_CONTROL, 0, 0, FILE_CREATE,
+                             FILE_DIRECTORY_FILE, FILE_CREATED,
+                             FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY,
+                             OBJECT_INHERIT_ACE);
+    });
+
+    // READ_CONTROL gets given because we're the owner
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\sec4\\file", READ_CONTROL, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Query DACL", [&]() {
+            auto items = get_acl(h.get(), DACL_SECURITY_INFORMATION);
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != ACCESS_ALLOWED_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected ACCESS_ALLOWED_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != 0)
+                throw formatted_error("AceFlags was {:x}, expected 0", ace.AceFlags);
+
+            auto& aaa = *reinterpret_cast<ACCESS_ALLOWED_ACE*>(&ace);
+
+            if (aaa.Mask != (FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY))
+                throw formatted_error("Mask was {:x}, expected FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY", aaa.Mask);
+
+            auto sid = span<const uint8_t>((uint8_t*)&aaa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
+    test("Create subdirectory", [&]() {
+        h = create_file(dir + u"\\sec4\\dir", READ_CONTROL, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Query DACL", [&]() {
+            auto items = get_acl(h.get(), DACL_SECURITY_INFORMATION);
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != ACCESS_ALLOWED_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected ACCESS_ALLOWED_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != (INHERIT_ONLY_ACE | OBJECT_INHERIT_ACE))
+                throw formatted_error("AceFlags was {:x}, expected INHERIT_ONLY_ACE | OBJECT_INHERIT_ACE", ace.AceFlags);
+
+            auto& aaa = *reinterpret_cast<ACCESS_ALLOWED_ACE*>(&ace);
+
+            if (aaa.Mask != (FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY))
+                throw formatted_error("Mask was {:x}, expected FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY", aaa.Mask);
+
+            auto sid = span<const uint8_t>((uint8_t*)&aaa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
+    test("Create directory with CONTAINER_INHERIT_ACE", [&]() {
+        create_file_with_acl(dir + u"\\sec5", READ_CONTROL, 0, 0, FILE_CREATE,
+                             FILE_DIRECTORY_FILE, FILE_CREATED,
+                             FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY,
+                             OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
+    });
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\sec5\\file", READ_CONTROL, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Query DACL", [&]() {
+            auto items = get_acl(h.get(), DACL_SECURITY_INFORMATION);
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != ACCESS_ALLOWED_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected ACCESS_ALLOWED_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != 0)
+                throw formatted_error("AceFlags was {:x}, expected 0", ace.AceFlags);
+
+            auto& aaa = *reinterpret_cast<ACCESS_ALLOWED_ACE*>(&ace);
+
+            if (aaa.Mask != (FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY))
+                throw formatted_error("Mask was {:x}, expected FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY", aaa.Mask);
+
+            auto sid = span<const uint8_t>((uint8_t*)&aaa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
+    test("Create subdirectory", [&]() {
+        h = create_file(dir + u"\\sec5\\dir", READ_CONTROL, 0, 0, FILE_CREATE,
+                        FILE_DIRECTORY_FILE, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Query DACL", [&]() {
+            auto items = get_acl(h.get(), DACL_SECURITY_INFORMATION);
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != ACCESS_ALLOWED_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected ACCESS_ALLOWED_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE))
+                throw formatted_error("AceFlags was {:x}, expected OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE", ace.AceFlags);
+
+            auto& aaa = *reinterpret_cast<ACCESS_ALLOWED_ACE*>(&ace);
+
+            if (aaa.Mask != (FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY))
+                throw formatted_error("Mask was {:x}, expected FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY", aaa.Mask);
+
+            auto sid = span<const uint8_t>((uint8_t*)&aaa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
     // FIXME - permissions needed for querying and setting SD
-    // FIXME - backup and restore privileges
     // FIXME - traverse checking (inc. mandatory access controls)
-    // FIXME - make sure empty DACL means no permissions?
 }
