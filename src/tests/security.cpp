@@ -26,6 +26,44 @@ static const uint8_t sid_high[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x
 static const uint8_t sid_medium[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
                                       0x00, 0x20, 0x00, 0x00 };
 
+static unique_handle create_file_sd(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+                                    ULONG dispo, ULONG options, ULONG_PTR exp_info, const SECURITY_DESCRIPTOR& sd) {
+    NTSTATUS Status;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES oa;
+
+    memset(&oa, 0, sizeof(oa));
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = nullptr;
+
+    us.Length = us.MaximumLength = path.length() * sizeof(char16_t);
+    us.Buffer = (WCHAR*)path.data();
+    oa.ObjectName = &us;
+
+    oa.Attributes = OBJ_CASE_INSENSITIVE;
+    oa.SecurityDescriptor = (void*)&sd;
+    oa.SecurityQualityOfService = nullptr;
+
+    iosb.Information = 0xdeadbeef;
+
+    Status = NtCreateFile(&h, access, &oa, &iosb, nullptr,
+                          atts, share, dispo, options, nullptr, 0);
+
+    if (Status != STATUS_SUCCESS) {
+        if (NT_SUCCESS(Status)) // STATUS_OPLOCK_BREAK_IN_PROGRESS etc.
+            NtClose(h);
+
+        throw ntstatus_error(Status);
+    }
+
+    if (iosb.Information != exp_info)
+        throw formatted_error("iosb.Information was {}, expected {}", iosb.Information, exp_info);
+
+    return unique_handle(h);
+}
+
 void set_dacl(HANDLE h, ACCESS_MASK access) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
@@ -759,10 +797,74 @@ void test_security(HANDLE token, const u16string& dir) {
         medium_token.reset();
     }
 
-    // FIXME - creating file with SD
+    test("Create file with SD", [&]() {
+        SECURITY_DESCRIPTOR sd;
+        array<uint8_t, sizeof(ACL) + offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone)> aclbuf;
+
+        if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+            throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+        auto& acl = *(ACL*)aclbuf.data();
+
+        if (!InitializeAcl(&acl, aclbuf.size(), ACL_REVISION))
+            throw formatted_error("InitializeAcl failed (error {})", GetLastError());
+
+        acl.AceCount = 1;
+
+        auto& ace = *(ACCESS_ALLOWED_ACE*)((uint8_t*)aclbuf.data() + sizeof(ACL));
+
+        ace.Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+        ace.Header.AceFlags = 0;
+        ace.Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_everyone);
+        ace.Mask = FILE_READ_DATA;
+        memcpy(&ace.SidStart, sid_everyone, sizeof(sid_everyone));
+
+        if (!SetSecurityDescriptorDacl(&sd, true, &acl, false))
+            throw formatted_error("SetSecurityDescriptorDacl failed (error {})", GetLastError());
+
+        h = create_file_sd(dir + u"\\sec2", READ_CONTROL, 0, 0, FILE_CREATE,
+                           0, FILE_CREATED, sd);
+    });
+
+    if (h) {
+        test("Query FileAccessInformation", [&]() {
+            auto fai = query_information<FILE_ACCESS_INFORMATION>(h.get());
+
+            ACCESS_MASK exp = READ_CONTROL;
+
+            if (fai.AccessFlags != exp)
+                throw formatted_error("AccessFlags was {:x}, expected {:x}", fai.AccessFlags, exp);
+        });
+
+        test("Query DACL", [&]() {
+            auto items = get_acl(h.get(), DACL_SECURITY_INFORMATION);
+
+            if (items.size() != 1)
+                throw formatted_error("{} items returned, expected 1", items.size());
+
+            auto& ace = *static_cast<ACE_HEADER*>(items.front());
+
+            if (ace.AceType != ACCESS_ALLOWED_ACE_TYPE)
+                throw formatted_error("ACE type was {}, expected ACCESS_ALLOWED_ACE_TYPE", ace.AceType);
+
+            if (ace.AceFlags != 0)
+                throw formatted_error("AceFlags was {:x}, expected 0", ace.AceFlags);
+
+            auto& aaa = *reinterpret_cast<ACCESS_ALLOWED_ACE*>(&ace);
+
+            if (aaa.Mask != FILE_READ_DATA)
+                throw formatted_error("Mask was {:x}, expected FILE_READ_DATA", aaa.Mask);
+
+            auto sid = span<const uint8_t>((uint8_t*)&aaa.SidStart, items.front().buf.size() - offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+            if (!compare_sid(sid, sid_everyone))
+                throw formatted_error("SID was {}, expected {}", sid_to_string(sid), sid_to_string(sid_everyone));
+        });
+
+        h.reset();
+    }
+
     // FIXME - inheriting SD
-    // FIXME - open files asking for too many permissions
-    // FIXME - MAXIMUM_ALLOWED
     // FIXME - permissions needed for querying and setting SD
     // FIXME - backup and restore privileges
     // FIXME - traverse checking (inc. mandatory access controls)

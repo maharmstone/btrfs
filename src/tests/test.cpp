@@ -36,6 +36,7 @@ unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG 
     OBJECT_ATTRIBUTES oa;
     LARGE_INTEGER alloc_size;
 
+    memset(&oa, 0, sizeof(oa));
     oa.Length = sizeof(oa);
     oa.RootDirectory = nullptr; // FIXME - test
 
@@ -44,8 +45,8 @@ unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG 
     oa.ObjectName = &us;
 
     oa.Attributes = OBJ_CASE_INSENSITIVE;
-    oa.SecurityDescriptor = nullptr; // FIXME - test
-    oa.SecurityQualityOfService = nullptr; // FIXME - test(?)
+    oa.SecurityDescriptor = nullptr;
+    oa.SecurityQualityOfService = nullptr;
 
     if (allocation)
         alloc_size.QuadPart = allocation.value();
