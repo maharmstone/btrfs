@@ -1036,6 +1036,67 @@ void test_security(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Create directory without FILE_TRAVERSE", [&]() {
+        create_file_with_acl(dir + u"\\sec6", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                             FILE_DIRECTORY_FILE, FILE_CREATED,
+                             FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | WRITE_DAC,
+                             0);
+    });
+
+    test("Try to create file within directory", [&]() {
+        exp_status([&]() {
+            create_file(dir + u"\\sec6\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                        0, FILE_CREATED);
+        }, STATUS_ACCESS_DENIED);
+    });
+
+    test("Open directory", [&]() {
+        h = create_file(dir + u"\\sec6", WRITE_DAC, 0, 0, FILE_OPEN,
+                        0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Add FILE_TRAVERSE", [&]() {
+            set_dacl(h.get(), FILE_TRAVERSE | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | WRITE_DAC);
+        });
+
+        h.reset();
+    }
+
+    test("Create file within directory", [&]() {
+        create_file(dir + u"\\sec6\\file", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    0, FILE_CREATED);
+    });
+
+    test("Open directory", [&]() {
+        h = create_file(dir + u"\\sec6", WRITE_DAC, 0, 0, FILE_OPEN,
+                        0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Remove FILE_TRAVERSE", [&]() {
+            set_dacl(h.get(), FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | WRITE_DAC);
+        });
+
+        h.reset();
+    }
+
+    test("Add SeChangeNotifyPrivilege to token", [&]() {
+        LUID_AND_ATTRIBUTES laa;
+
+        laa.Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
+        laa.Luid.HighPart = 0;
+        laa.Attributes = SE_PRIVILEGE_ENABLED;
+
+        adjust_token_privileges(token, array{ laa });
+    });
+
+    test("Create another file within directory", [&]() {
+        create_file(dir + u"\\sec6\\file2", MAXIMUM_ALLOWED, 0, 0, FILE_CREATE,
+                    0, FILE_CREATED);
+    });
+
+    disable_token_privileges(token);
+
     // FIXME - permissions needed for querying and setting SD
-    // FIXME - traverse checking (inc. mandatory access controls)
 }
