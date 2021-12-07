@@ -864,6 +864,21 @@ void test_security(HANDLE token, const u16string& dir) {
         h.reset();
     }
 
+    test("Try to create file with other user as owner", [&]() {
+        SECURITY_DESCRIPTOR sd;
+
+        if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+            throw formatted_error("InitializeSecurityDescriptor failed (error {})", GetLastError());
+
+        if (!SetSecurityDescriptorOwner(&sd, (PSID)sid_test, false))
+            throw formatted_error("SetSecurityDescriptorOwner failed (error {})", GetLastError());
+
+        exp_status([&]() {
+            create_file_sd(dir + u"\\sec3", READ_CONTROL, 0, 0, FILE_CREATE,
+                           0, FILE_CREATED, sd);
+        }, STATUS_INVALID_OWNER);
+    });
+
     // FIXME - inheriting SD
     // FIXME - permissions needed for querying and setting SD
     // FIXME - backup and restore privileges
