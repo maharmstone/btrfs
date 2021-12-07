@@ -1098,5 +1098,71 @@ void test_security(HANDLE token, const u16string& dir) {
 
     disable_token_privileges(token);
 
-    // FIXME - permissions needed for querying and setting SD
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\sec7", FILE_READ_ATTRIBUTES, 0, 0, FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        test("Try to query owner", [&]() {
+            exp_status([&]() {
+                get_owner(h.get());
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to query group", [&]() {
+            exp_status([&]() {
+                get_group(h.get());
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to query SACL", [&]() {
+            exp_status([&]() {
+                get_acl(h.get(), SACL_SECURITY_INFORMATION);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to query DACL", [&]() {
+            exp_status([&]() {
+                get_acl(h.get(), DACL_SECURITY_INFORMATION);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to query label", [&]() {
+            exp_status([&]() {
+                get_acl(h.get(), LABEL_SECURITY_INFORMATION);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to set owner", [&]() {
+            exp_status([&]() {
+                set_owner(h.get(), sid_test);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to set group", [&]() {
+            exp_status([&]() {
+                set_group(h.get(), sid_test);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to set SACL", [&]() {
+            exp_status([&]() {
+                set_audit(h.get(), SUCCESSFUL_ACCESS_ACE_FLAG | FAILED_ACCESS_ACE_FLAG, span(sid_everyone));
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to set DACL", [&]() {
+            exp_status([&]() {
+                set_dacl(h.get(), FILE_READ_DATA);
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        test("Try to set label", [&]() {
+            exp_status([&]() {
+                set_mandatory_access(h.get(), SYSTEM_MANDATORY_LABEL_NO_WRITE_UP, span(sid_high));
+            }, STATUS_ACCESS_DENIED);
+        });
+
+        h.reset();
+    }
 }
