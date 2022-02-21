@@ -107,7 +107,7 @@ static vector<varbuf<FILE_FULL_EA_INFORMATION>> read_ea(HANDLE h) {
     return ret;
 }
 
-template<unsigned N>
+template<size_t N>
 static unique_handle create_file_ea(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
                                     ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation,
                                     const array<pair<string_view, string_view>, N>& eas) {
@@ -789,7 +789,6 @@ void test_ea(const u16string& dir) {
         h = create_file_ea(dir + u"\\ea3", FILE_READ_EA | FILE_WRITE_EA | FILE_READ_ATTRIBUTES, 0, 0,
                            FILE_CREATE, 0, FILE_CREATED, nullopt,
                            array{ pair(ea1_name, ea1_value), pair(ea2_name, ea2_value) });
-
     });
 
     if (h) {
