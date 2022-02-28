@@ -108,14 +108,6 @@ endif()
 
 configure_file(src/btrfs.rc.in btrfs.rc)
 
-add_library(btrfs SHARED ${SRC_FILES})
-
-if(MSVC)
-    include_directories("$ENV{WindowsSdkDir}Include\\$ENV{WindowsSDKLibVersion}km")
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    include_directories("${CMAKE_FIND_ROOT_PATH}/usr/include/ddk")
-endif()
-
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
     add_definitions(-D_AMD64_)
     set(MS_ARCH "x64")
@@ -129,6 +121,15 @@ elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
     add_definitions(-D_ARM64_)
     set(MS_ARCH "arm64")
 endif()
+
+if(MSVC)
+    include_directories("$ENV{WindowsSdkDir}Include\\$ENV{WindowsSDKLibVersion}km")
+    link_directories("$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
+    include_directories("${CMAKE_FIND_ROOT_PATH}/usr/include/ddk")
+endif()
+
+add_library(btrfs SHARED ${SRC_FILES})
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-D_DEBUG)
@@ -146,22 +147,21 @@ if(MSVC)
         target_compile_options(btrfs PUBLIC /Gz) # stdcall
     endif()
 
-    target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\ntoskrnl.lib")
-    target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\hal.lib")
+    target_link_libraries(btrfs ntoskrnl hal)
 
     if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\bufferoverflowfastfailk.lib")
+        target_link_libraries(btrfs bufferoverflowfastfailk)
     else()
-        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\BufferOverflowK.lib")
+        target_link_libraries(btrfs BufferOverflowK)
     endif()
 
     if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm")
-        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}um\\${MS_ARCH}\\armrt.lib")
+        target_link_libraries(btrfs armrt)
     elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-        target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}um\\${MS_ARCH}\\arm64rt.lib")
+        target_link_libraries(btrfs arm64rt)
     endif()
 
-    target_link_libraries(btrfs "$ENV{WindowsSdkDir}Lib\\$ENV{WindowsSDKLibVersion}km\\${MS_ARCH}\\rtlver.lib")
+    target_link_libraries(btrfs rtlver)
     target_link_options(btrfs PUBLIC /SUBSYSTEM:NATIVE /NODEFAULTLIB /MANIFEST:NO /Driver /ENTRY:DriverEntry)
 
     # strip out flags for MSVC's runtime checks
