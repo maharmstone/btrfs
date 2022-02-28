@@ -35,8 +35,13 @@
 #include <span>
 #include <vector>
 #include <functional>
+
+#if __has_include(<format>)
+#include <format>
+#else
 #include <fmt/format.h>
 #include <fmt/compile.h>
+#endif
 
 enum class fs_type {
     unknown,
@@ -4295,7 +4300,11 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
         case STATUS_CASE_DIFFERING_NAMES_IN_DIR:
             return "STATUS_CASE_DIFFERING_NAMES_IN_DIR";
         default:
+#if __has_include(<format>)
+            return std::format("Status {:08x}", (uint32_t)s);
+#else
             return fmt::format("Status {:08x}", (uint32_t)s);
+#endif
     }
 }
 
@@ -4317,7 +4326,11 @@ class _formatted_error : public std::exception {
 public:
     template<typename T, typename... Args>
     _formatted_error(const T& s, Args&&... args) {
+#if __has_include(<format>)
+        msg = std::format(s, std::forward<Args>(args)...);
+#else
         msg = fmt::format(s, std::forward<Args>(args)...);
+#endif
     }
 
     const char* what() const noexcept {
@@ -4328,7 +4341,11 @@ private:
     std::string msg;
 };
 
+#if __has_include(<format>)
+#define formatted_error(s, ...) _formatted_error(s, ##__VA_ARGS__)
+#else
 #define formatted_error(s, ...) _formatted_error(FMT_COMPILE(s), ##__VA_ARGS__)
+#endif
 
 template<typename T>
 T query_information(HANDLE h);

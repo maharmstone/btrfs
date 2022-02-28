@@ -20,6 +20,7 @@
 #include <winsvc.h>
 #include <winver.h>
 #include <functional>
+#include <iostream>
 
 using namespace std;
 
@@ -292,6 +293,23 @@ template vector<varbuf<FILE_ID_EXTD_BOTH_DIR_INFORMATION>> query_dir(const u16st
 template vector<varbuf<FILE_NAMES_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
 template vector<varbuf<FILE_REPARSE_POINT_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
 
+template<typename T, typename... Args>
+void _print(const T& s, Args&&... args) {
+#if __has_include(<format>)
+    auto msg = std::format(s, std::forward<Args>(args)...);
+#else
+    auto msg = fmt::format(s, std::forward<Args>(args)...);
+#endif
+
+    cout << msg;
+}
+
+#if __has_include(<format>)
+#define print(s, ...) _print(s, ##__VA_ARGS__)
+#else
+#define print(s, ...) _print(FMT_COMPILE(s), ##__VA_ARGS__)
+#endif
+
 void test(const string& msg, const function<void()>& func) {
     string err;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -308,24 +326,24 @@ void test(const string& msg, const function<void()>& func) {
 
     // FIXME - aligned output?
 
-    fmt::print("{}, ", msg);
+    print("{}, ", msg);
 
     auto col = GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 
     if (col)
         SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), err.empty() ? FOREGROUND_GREEN : (FOREGROUND_RED | FOREGROUND_INTENSITY));
 
-    fmt::print("{}", err.empty() ? "PASS" : "FAIL");
+    print("{}", err.empty() ? "PASS" : "FAIL");
 
     if (col)
         SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), csbi.wAttributes);
 
     if (!err.empty())
-        fmt::print(" ({})", err);
+        print(" ({})", err);
     else
         num_tests_passed++;
 
-    fmt::print("\n");
+    print("\n");
 }
 
 void exp_status(const function<void()>& func, NTSTATUS Status) {
@@ -469,9 +487,9 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
             }
 
             if (!first)
-                fmt::print("\n");
+                print("\n");
 
-            fmt::print("Running test {}\n", u16string_to_string(tf.name));
+            print("Running test {}\n", u16string_to_string(tf.name));
 
             if (col)
                 SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), csbi.wAttributes);
@@ -484,7 +502,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
             total_tests_run += num_tests_run;
             total_tests_passed += num_tests_passed;
 
-            fmt::print("Passed {}/{}\n", num_tests_passed, num_tests_run);
+            print("Passed {}/{}\n", num_tests_passed, num_tests_run);
 
             first = false;
 
@@ -523,7 +541,7 @@ static void do_tests(const u16string_view& name, const u16string& dir) {
         throw runtime_error("Test not supported.");
 
     if (name == u"all")
-        fmt::print("\nTotal passed {}/{}\n", total_tests_passed, total_tests_run);
+        print("\nTotal passed {}/{}\n", total_tests_passed, total_tests_run);
 }
 
 static u16string to_u16string(time_t n) {
@@ -656,8 +674,13 @@ static string get_version(const u16string& fn) {
     if (!VerQueryValueW(buf.data(), L"\\", (void**)&ver, &verlen))
         throw runtime_error("VerQueryValue failed");
 
+#if __has_include(<format>)
+    return std::format("{}.{}.{}.{}", ver->dwFileVersionMS >> 16, ver->dwFileVersionMS & 0xffff,
+                       ver->dwFileVersionLS >> 16, ver->dwFileVersionLS & 0xffff);
+#else
     return fmt::format("{}.{}.{}.{}", ver->dwFileVersionMS >> 16, ver->dwFileVersionMS & 0xffff,
                        ver->dwFileVersionLS >> 16, ver->dwFileVersionLS & 0xffff);
+#endif
 }
 
 static string driver_string(const u16string& driver) {
@@ -674,7 +697,7 @@ static string driver_string(const u16string& driver) {
 
 int wmain(int argc, wchar_t* argv[]) {
     if (argc < 2) {
-        fmt::print(stderr, "Usage: test.exe <dir>\n       test.exe <test> <dir>");
+        cerr << "Usage: test.exe <dir>\n       test.exe <test> <dir>";
         return 1;
     }
 
@@ -704,7 +727,7 @@ int wmain(int argc, wchar_t* argv[]) {
             else if (fs_driver_path(dirh.get(), u"\\Driver\\btrfs"))
                 fstype = fs_type::btrfs;
         } catch (const exception& e) {
-            fmt::print(stderr, "Error getting filesystem type: {}\n", e.what());
+            cerr << "Error getting filesystem type: " << e.what() << endl;
             type_lookup_failed = true;
         }
 
@@ -713,15 +736,15 @@ int wmain(int argc, wchar_t* argv[]) {
         if (!type_lookup_failed) {
             switch (fstype) {
                 case fs_type::ntfs:
-                    fmt::print("Testing on NTFS ({}).\n", driver_string(u"ntfs"));
+                    print("Testing on NTFS ({}).\n", driver_string(u"ntfs"));
                     break;
 
                 case fs_type::btrfs:
-                    fmt::print("Testing on Btrfs ({}).\n", driver_string(u"btrfs"));
+                    print("Testing on Btrfs ({}).\n", driver_string(u"btrfs"));
                     break;
 
                 default:
-                    fmt::print("Testing on unknown filesystem.\n");
+                    print("Testing on unknown filesystem.\n");
                     break;
             }
         }
@@ -730,7 +753,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
         do_tests(testarg, ntdir);
     } catch (const exception& e) {
-        fmt::print(stderr, "{}\n", e.what());
+        cerr << e.what() << endl;
         return 1;
     }
 

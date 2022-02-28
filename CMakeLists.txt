@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 
 project(btrfs VERSION 1.7.9)
 
-option(WITH_TEST "Compile test program" OFF)
+option(WITH_TEST "Compile test program" ON)
 
 # btrfs.sys
 
@@ -324,7 +324,9 @@ if(WITH_TEST)
 
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    find_package(fmt REQUIRED)
+    if(NOT MSVC OR MSVC_VERSION LESS 1929)
+        find_package(fmt REQUIRED)
+    endif()
 
     configure_file(src/tests/test.rc.in test.rc)
 
@@ -356,7 +358,10 @@ if(WITH_TEST)
     endif()
 
     target_link_libraries(test ntdll version)
-    target_link_libraries(test fmt::fmt-header-only)
+
+    if(NOT MSVC OR MSVC_VERSION LESS 1929)
+        target_link_libraries(test fmt::fmt-header-only)
+    endif()
 endif()
 
 # --------------------------------------
