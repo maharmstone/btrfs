@@ -106,12 +106,12 @@ void test_cs(const u16string& dir) {
     test("Check directory entry", [&]() {
         u16string_view name = u"cs1";
 
-        auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir + u"\\csdir", name);
+        auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir + u"\\csdir", name);
 
         if (items.size() != 1)
             throw formatted_error("{} entries returned, expected 1.", items.size());
 
-        auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+        auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
         if (fdi.FileNameLength != name.size() * sizeof(char16_t))
             throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -124,7 +124,7 @@ void test_cs(const u16string& dir) {
         u16string_view name = u"CS1";
 
         exp_status([&]() {
-            query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir + u"\\csdir", name);
+            query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir + u"\\csdir", name);
         }, STATUS_NO_SUCH_FILE);
     });
 

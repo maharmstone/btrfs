@@ -1,4 +1,5 @@
 #include "test.h"
+#include <array>
 
 #define FSCTL_CREATE_OR_GET_OBJECT_ID CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 48, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -552,7 +553,7 @@ void test_create(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Open file", [&]() {
@@ -1195,7 +1196,7 @@ void test_open_id(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -1220,12 +1221,12 @@ void test_open_id(HANDLE token, const u16string& dir) {
     test("Check directory entry", [&]() {
         u16string_view name = u"id1";
 
-        auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+        auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
         if (items.size() != 1)
             throw formatted_error("{} entries returned, expected 1.", items.size());
 
-        auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+        auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
         if (fdi.FileNameLength != name.size() * sizeof(char16_t))
             throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -1335,12 +1336,12 @@ void test_open_id(HANDLE token, const u16string& dir) {
         test("Check directory entry 1 still there", [&]() {
             u16string_view name = u"id1";
 
-            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+            auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
             if (items.size() != 1)
                 throw formatted_error("{} entries returned, expected 1.", items.size());
 
-            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
             if (fdi.FileNameLength != name.size() * sizeof(char16_t))
                 throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -1355,12 +1356,12 @@ void test_open_id(HANDLE token, const u16string& dir) {
         test("Check directory entry 2 still there", [&]() {
             u16string_view name = u"id1a";
 
-            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+            auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
             if (items.size() != 1)
                 throw formatted_error("{} entries returned, expected 1.", items.size());
 
-            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
             if (fdi.FileNameLength != name.size() * sizeof(char16_t))
                 throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));

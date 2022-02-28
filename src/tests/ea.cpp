@@ -1,6 +1,17 @@
 #include "test.h"
+#include <array>
 
 using namespace std;
+
+#ifdef _MSC_VER
+typedef struct _FILE_FULL_EA_INFORMATION {
+    ULONG NextEntryOffset;
+    UCHAR Flags;
+    UCHAR EaNameLength;
+    USHORT EaValueLength;
+    CHAR EaName[1];
+} FILE_FULL_EA_INFORMATION, *PFILE_FULL_EA_INFORMATION;
+#endif
 
 static constexpr uint32_t ea_size(string_view name, string_view value) {
     uint32_t size = offsetof(FILE_FULL_EA_INFORMATION, EaName) + name.length() + 1 + value.length();

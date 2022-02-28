@@ -193,7 +193,7 @@ void test_oplocks_ii(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -937,7 +937,7 @@ void test_oplocks_r(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -1788,7 +1788,7 @@ void test_oplocks_i(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -2450,7 +2450,7 @@ void test_oplocks_rw(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -3126,7 +3126,7 @@ void test_oplocks_batch(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -3786,7 +3786,7 @@ void test_oplocks_rwh(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -4458,7 +4458,7 @@ void test_oplocks_filter(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -5100,7 +5100,7 @@ void test_oplocks_rh(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {

@@ -7,17 +7,13 @@ using namespace std;
 
 #define FSCTL_SET_ZERO_DATA CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 50, METHOD_BUFFERED, FILE_WRITE_DATA)
 
-template<size_t N>
-void adjust_token_privileges(HANDLE token, const array<LUID_AND_ATTRIBUTES, N>& privs) {
+void adjust_token_privileges(HANDLE token, const LUID_AND_ATTRIBUTES& priv) {
     NTSTATUS Status;
-    array<uint8_t, offsetof(TOKEN_PRIVILEGES, Privileges) + (N * sizeof(LUID_AND_ATTRIBUTES))> buf;
+    array<uint8_t, offsetof(TOKEN_PRIVILEGES, Privileges) + sizeof(LUID_AND_ATTRIBUTES)> buf;
     auto& tp = *(TOKEN_PRIVILEGES*)buf.data();
 
-    tp.PrivilegeCount = privs.size();
-
-    for (unsigned int i = 0; i < privs.size(); i++) {
-        tp.Privileges[i] = privs[i];
-    }
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0] = priv;
 
     Status = NtAdjustPrivilegesToken(token, false, &tp, 0, nullptr, nullptr);
 
@@ -264,7 +260,7 @@ void test_io(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     auto write_check = [&](uint64_t multiple, bool sector_align) {
@@ -1243,7 +1239,7 @@ void test_io(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file with FILE_NO_INTERMEDIATE_BUFFERING", [&]() {

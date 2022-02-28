@@ -33,6 +33,8 @@
 #include <string>
 #include <optional>
 #include <span>
+#include <vector>
+#include <functional>
 #include <fmt/format.h>
 #include <fmt/compile.h>
 
@@ -355,6 +357,9 @@ NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInter
 #define FileIdBothDirectoryInformation ((FILE_INFORMATION_CLASS)37)
 #define FileIdFullDirectoryInformation ((FILE_INFORMATION_CLASS)38)
 #define FileValidDataLengthInformation ((FILE_INFORMATION_CLASS)39)
+#define FileHardLinkInformation ((FILE_INFORMATION_CLASS)46)
+#define FileNormalizedNameInformation ((FILE_INFORMATION_CLASS)48)
+#define FileStandardLinkInformation ((FILE_INFORMATION_CLASS)54)
 
 extern "C"
 NTSTATUS NTAPI NtQueryInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr,
@@ -481,6 +486,116 @@ typedef struct _OBJECT_BASIC_INFORMATION {
     ULONG SecurityDescriptorLength;
     LARGE_INTEGER CreateTime;
 } OBJECT_BASIC_INFORMATION, *POBJECT_BASIC_INFORMATION;
+
+typedef struct _FILE_INTERNAL_INFORMATION {
+    LARGE_INTEGER IndexNumber;
+} FILE_INTERNAL_INFORMATION, *PFILE_INTERNAL_INFORMATION;
+
+typedef struct _FILE_EA_INFORMATION {
+    ULONG EaSize;
+} FILE_EA_INFORMATION, *PFILE_EA_INFORMATION;
+
+typedef struct _FILE_ACCESS_INFORMATION {
+    ACCESS_MASK AccessFlags;
+} FILE_ACCESS_INFORMATION, *PFILE_ACCESS_INFORMATION;
+
+typedef struct _FILE_POSITION_INFORMATION {
+    LARGE_INTEGER CurrentByteOffset;
+} FILE_POSITION_INFORMATION, *PFILE_POSITION_INFORMATION;
+
+typedef struct _FILE_MODE_INFORMATION {
+    ULONG Mode;
+} FILE_MODE_INFORMATION, *PFILE_MODE_INFORMATION;
+
+typedef struct _FILE_ALIGNMENT_INFORMATION {
+    ULONG AlignmentRequirement;
+} FILE_ALIGNMENT_INFORMATION, *PFILE_ALIGNMENT_INFORMATION;
+
+typedef struct _FILE_ALL_INFORMATION {
+    FILE_BASIC_INFORMATION BasicInformation;
+    FILE_STANDARD_INFORMATION StandardInformation;
+    FILE_INTERNAL_INFORMATION InternalInformation;
+    FILE_EA_INFORMATION EaInformation;
+    FILE_ACCESS_INFORMATION AccessInformation;
+    FILE_POSITION_INFORMATION PositionInformation;
+    FILE_MODE_INFORMATION ModeInformation;
+    FILE_ALIGNMENT_INFORMATION AlignmentInformation;
+    FILE_NAME_INFORMATION NameInformation;
+} FILE_ALL_INFORMATION, *PFILE_ALL_INFORMATION;
+
+typedef struct _FILE_ATTRIBUTE_TAG_INFORMATION {
+    ULONG FileAttributes;
+    ULONG ReparseTag;
+} FILE_ATTRIBUTE_TAG_INFORMATION, *PFILE_ATTRIBUTE_TAG_INFORMATION;
+
+typedef struct _FILE_NETWORK_OPEN_INFORMATION {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+} FILE_NETWORK_OPEN_INFORMATION, *PFILE_NETWORK_OPEN_INFORMATION;
+
+typedef enum _FSINFOCLASS {
+    FileFsVolumeInformation = 1,
+    FileFsLabelInformation,
+    FileFsSizeInformation,
+    FileFsDeviceInformation,
+    FileFsAttributeInformation,
+    FileFsControlInformation,
+    FileFsFullSizeInformation,
+    FileFsObjectIdInformation,
+    FileFsDriverPathInformation,
+    FileFsVolumeFlagsInformation,
+    FileFsSectorSizeInformation,
+    FileFsDataCopyInformation,
+    FileFsMetadataSizeInformation,
+    FileFsFullSizeInformationEx,
+    FileFsMaximumInformation
+} FS_INFORMATION_CLASS, *PFS_INFORMATION_CLASS;
+
+typedef struct _FILE_DISPOSITION_INFORMATION {
+    BOOLEAN DoDeleteFile;
+} FILE_DISPOSITION_INFORMATION, *PFILE_DISPOSITION_INFORMATION;
+
+typedef struct _FILE_ALLOCATION_INFORMATION {
+    LARGE_INTEGER AllocationSize;
+} FILE_ALLOCATION_INFORMATION, *PFILE_ALLOCATION_INFORMATION;
+
+typedef struct _FILE_END_OF_FILE_INFORMATION {
+    LARGE_INTEGER EndOfFile;
+} FILE_END_OF_FILE_INFORMATION, *PFILE_END_OF_FILE_INFORMATION;
+
+typedef struct _FILE_RENAME_INFORMATION {
+    BOOLEAN ReplaceIfExists;
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_RENAME_INFORMATION, *PFILE_RENAME_INFORMATION;
+
+typedef struct _FILE_LINK_INFORMATION {
+    BOOLEAN ReplaceIfExists;
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_LINK_INFORMATION, *PFILE_LINK_INFORMATION;
+
+extern "C"
+NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
+                                                PVOID FsInformation, ULONG Length,
+                                                FS_INFORMATION_CLASS FsInformationClass);
+
+extern "C"
+NTSTATUS __stdcall NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                                   PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock,
+                                   ULONG FsControlCode, PVOID InputBuffer, ULONG InputBufferLength,
+                                   PVOID OutputBuffer, ULONG OutputBufferLength);
+
+extern "C"
+NTSTATUS __stdcall NtSetInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,
+                                        FILE_INFORMATION_CLASS FileInformationClass);
 #endif
 
 typedef struct _FILE_ID_EXTD_DIR_INFORMATION {
@@ -4273,9 +4388,7 @@ void set_allocation(HANDLE h, uint64_t alloc);
 void set_valid_data_length(HANDLE h, uint64_t vdl);
 void set_zero_data(HANDLE h, uint64_t start, uint64_t end);
 unique_handle create_event();
-
-template<size_t N>
-void adjust_token_privileges(HANDLE token, const std::array<LUID_AND_ATTRIBUTES, N>& privs);
+void adjust_token_privileges(HANDLE token, const LUID_AND_ATTRIBUTES& priv);
 
 // mmap.cpp
 void test_mmap(const std::u16string& dir);

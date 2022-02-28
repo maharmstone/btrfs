@@ -1195,7 +1195,7 @@ void test_delete_ex(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {

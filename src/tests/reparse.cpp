@@ -8,6 +8,10 @@
 #define IO_REPARSE_TAG_FAKE 0x0000BEEF
 #define IO_REPARSE_TAG_FAKE_MICROSOFT_DIR 0x9000CAFE
 
+#ifdef _MSC_VER
+#define SYMLINK_FLAG_RELATIVE 1
+#endif
+
 static const uint8_t reparse_guid[] = { 0xc5, 0xcc, 0x8b, 0xf2, 0xdc, 0xc3, 0x88, 0x42, 0xa1, 0xe2, 0x50, 0x43, 0x97, 0xeb, 0x26, 0xa6 };
 static const uint8_t wrong_guid[] = { 0x61, 0x81, 0x36, 0x76, 0x32, 0xa6, 0xbc, 0x4d, 0xb7, 0xe0, 0x3a, 0xb6, 0x60, 0x03, 0x9e, 0x4e };
 
@@ -328,7 +332,7 @@ void test_reparse(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {

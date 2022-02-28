@@ -1,6 +1,11 @@
 #include "test.h"
+#include <array>
 
 using namespace std;
+
+#ifdef _MSC_VER
+#define ThreadImpersonationToken ((THREADINFOCLASS)5)
+#endif
 
 // S-1-1-0
 static const uint8_t sid_everyone[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
@@ -619,7 +624,7 @@ void test_security(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Open file", [&]() {
@@ -656,7 +661,7 @@ void test_security(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Open file", [&]() {
@@ -742,7 +747,7 @@ void test_security(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Open file", [&]() {
@@ -1088,7 +1093,7 @@ void test_security(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create another file within directory", [&]() {

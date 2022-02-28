@@ -101,7 +101,7 @@ void test_links(HANDLE token, const std::u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file", [&]() {
@@ -234,12 +234,12 @@ void test_links(HANDLE token, const std::u16string& dir) {
             test("Check directory entry of link 1", [&]() {
                 u16string_view name = u"link1a";
 
-                auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+                auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
                 if (items.size() != 1)
                     throw formatted_error("{} entries returned, expected 1.", items.size());
 
-                auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+                auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
                 if (fdi.FileNameLength != name.size() * sizeof(char16_t))
                     throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -254,12 +254,12 @@ void test_links(HANDLE token, const std::u16string& dir) {
             test("Check directory entry of link 2", [&]() {
                 u16string_view name = u"link1b";
 
-                auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+                auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
                 if (items.size() != 1)
                     throw formatted_error("{} entries returned, expected 1.", items.size());
 
-                auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+                auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
                 if (fdi.FileNameLength != name.size() * sizeof(char16_t))
                     throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -336,19 +336,19 @@ void test_links(HANDLE token, const std::u16string& dir) {
             u16string_view name = u"link1a";
 
             exp_status([&]() {
-                query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+                query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
             }, STATUS_NO_SUCH_FILE);
         });
 
         test("Check directory entry of link 2", [&]() {
             u16string_view name = u"link1b";
 
-            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+            auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
             if (items.size() != 1)
                 throw formatted_error("{} entries returned, expected 1.", items.size());
 
-            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
             if (fdi.FileNameLength != name.size() * sizeof(char16_t))
                 throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -428,12 +428,12 @@ void test_links(HANDLE token, const std::u16string& dir) {
         test("Check directory entry of created link after close", [&]() {
             u16string_view name = u"link4b";
 
-            auto items = query_dir<FILE_ID_FULL_DIRECTORY_INFORMATION>(dir, name);
+            auto items = query_dir<FILE_ID_FULL_DIR_INFORMATION>(dir, name);
 
             if (items.size() != 1)
                 throw formatted_error("{} entries returned, expected 1.", items.size());
 
-            auto& fdi = *static_cast<const FILE_ID_FULL_DIRECTORY_INFORMATION*>(items.front());
+            auto& fdi = *static_cast<const FILE_ID_FULL_DIR_INFORMATION*>(items.front());
 
             if (fdi.FileNameLength != name.size() * sizeof(char16_t))
                 throw formatted_error("FileNameLength was {}, expected {}.", fdi.FileNameLength, name.size() * sizeof(char16_t));
@@ -1002,7 +1002,7 @@ void test_links_ex(HANDLE token, const u16string& dir) {
         laa.Luid.HighPart = 0;
         laa.Attributes = SE_PRIVILEGE_ENABLED;
 
-        adjust_token_privileges(token, array{ laa });
+        adjust_token_privileges(token, laa);
     });
 
     test("Create file 1", [&]() {
