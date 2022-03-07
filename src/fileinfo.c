@@ -5461,10 +5461,12 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
-    Status = STATUS_SUCCESS;
-
-    if (fcb->ea_xattr.Length == 0)
+    if (fcb->ea_xattr.Length == 0) {
+        Status = STATUS_NO_EAS_ON_FILE;
         goto end2;
+    }
+
+    Status = STATUS_SUCCESS;
 
     if (IrpSp->Parameters.QueryEa.EaList) {
         FILE_FULL_EA_INFORMATION *ea, *out;
