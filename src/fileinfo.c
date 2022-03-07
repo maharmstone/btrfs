@@ -1639,12 +1639,18 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     fileref->fcb->adsdata.Buffer = NULL;
     fileref->fcb->adsdata.Length = fileref->fcb->adsdata.MaximumLength = 0;
 
+    acquire_fcb_lock_exclusive(Vcb);
+
+    RemoveEntryList(&fileref->fcb->list_entry);
     InsertHeadList(ofr->fcb->list_entry.Blink, &fileref->fcb->list_entry);
 
     if (fileref->fcb->subvol->fcbs_ptrs[fileref->fcb->hash >> 24] == &ofr->fcb->list_entry)
         fileref->fcb->subvol->fcbs_ptrs[fileref->fcb->hash >> 24] = &fileref->fcb->list_entry;
 
     RemoveEntryList(&ofr->fcb->list_entry);
+
+    release_fcb_lock(Vcb);
+
     ofr->fcb->list_entry.Flink = ofr->fcb->list_entry.Blink = NULL;
 
     mark_fcb_dirty(fileref->fcb);
