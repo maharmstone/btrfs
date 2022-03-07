@@ -5563,8 +5563,10 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             ULONG i;
 
             for (i = 0; i < index; i++) {
-                if (ea->NextEntryOffset == 0) // last item
+                if (ea->NextEntryOffset == 0) { // last item
+                    Status = STATUS_NO_MORE_EAS;
                     goto end2;
+                }
 
                 ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
             }
