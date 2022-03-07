@@ -296,7 +296,7 @@ void test_io(HANDLE token, const u16string& dir) {
         test("Check compression information", [&]() {
             auto fci = query_information<FILE_COMPRESSION_INFORMATION>(h.get());
 
-            if (fci.CompressedFileSize.QuadPart != random.size())
+            if ((size_t)fci.CompressedFileSize.QuadPart != random.size())
                 throw formatted_error("CompressedFileSize was {}, expected {}", fci.CompressedFileSize.QuadPart, random.size());
         });
 

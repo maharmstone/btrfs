@@ -343,7 +343,7 @@ void test_streams(const u16string& dir) {
 
             auto& fsi2 = *static_cast<FILE_STREAM_INFORMATION*>(items[1]);
 
-            if (fsi2.StreamSize.QuadPart != data.size())
+            if ((size_t)fsi2.StreamSize.QuadPart != data.size())
                 throw formatted_error("StreamSize was {}, expected {}", fsi2.StreamSize.QuadPart, data.size());
 
             if (fsi2.StreamAllocationSize.QuadPart < fsi2.StreamSize.QuadPart) {
@@ -392,7 +392,7 @@ void test_streams(const u16string& dir) {
 
             auto& fsi2 = *static_cast<FILE_STREAM_INFORMATION*>(items[1]);
 
-            if (fsi2.StreamSize.QuadPart != data.size())
+            if ((size_t)fsi2.StreamSize.QuadPart != data.size())
                 throw formatted_error("StreamSize was {}, expected {}", fsi2.StreamSize.QuadPart, data.size());
 
             if (fsi2.StreamAllocationSize.QuadPart < fsi2.StreamSize.QuadPart) {
@@ -620,7 +620,7 @@ void test_streams(const u16string& dir) {
 
             auto& fsi2 = *static_cast<FILE_STREAM_INFORMATION*>(items[1]);
 
-            if (fsi2.StreamSize.QuadPart != data.size())
+            if ((size_t)fsi2.StreamSize.QuadPart != data.size())
                 throw formatted_error("StreamSize was {}, expected {}", fsi2.StreamSize.QuadPart, data.size());
 
             if (fsi2.StreamAllocationSize.QuadPart < fsi2.StreamSize.QuadPart) {
@@ -682,7 +682,7 @@ void test_streams(const u16string& dir) {
 
             auto& fsi = *static_cast<FILE_STREAM_INFORMATION*>(items.front());
 
-            if (fsi.StreamSize.QuadPart != data.size())
+            if ((size_t)fsi.StreamSize.QuadPart != data.size())
                 throw formatted_error("StreamSize was {}, expected {}", fsi.StreamSize.QuadPart, data.size());
 
             if (fsi.StreamAllocationSize.QuadPart < fsi.StreamSize.QuadPart) {
@@ -782,7 +782,7 @@ void test_streams(const u16string& dir) {
 
             auto& fsi2 = *static_cast<FILE_STREAM_INFORMATION*>(items[1]);
 
-            if (fsi2.StreamSize.QuadPart != data.size())
+            if ((size_t)fsi2.StreamSize.QuadPart != data.size())
                 throw formatted_error("StreamSize was {}, expected {}", fsi2.StreamSize.QuadPart, data.size());
 
             if (fsi2.StreamAllocationSize.QuadPart < fsi2.StreamSize.QuadPart) {
