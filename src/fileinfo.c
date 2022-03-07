@@ -4570,7 +4570,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                     while (le2 != &parfr->children) {
                         file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
 
-                        if (fr2->dc->index == hl->index) {
+                        if (fr2->dc && fr2->dc->index == hl->index) {
                             found = true;
                             deleted = fr2->deleted;
 
