@@ -2660,12 +2660,16 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     if (parfileref->fcb == Vcb->dummy_fcb)
         return STATUS_ACCESS_DENIED;
 
+    Status = check_file_name_valid(stream, false, true);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     Status = open_fileref(Vcb, &newpar, fpus, parfileref, false, NULL, NULL, PagedPool, case_sensitive, Irp);
 
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         UNICODE_STRING fpus2;
 
-        Status = check_file_name_valid(fpus, false, true);
+        Status = check_file_name_valid(fpus, false, false);
         if (!NT_SUCCESS(Status))
             return Status;
 
