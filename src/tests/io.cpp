@@ -42,7 +42,7 @@ vector<uint8_t> random_data(size_t len) {
 
     random_device rd;
     mt19937 gen(rd());
-    uniform_int_distribution<> distrib(0, 0xffffffff);
+    uniform_int_distribution<uint32_t> distrib(0, 0xffffffff);
 
     for (auto& s : span((uint32_t*)random.data(), random.size() / sizeof(uint32_t))) {
         s = distrib(gen);
