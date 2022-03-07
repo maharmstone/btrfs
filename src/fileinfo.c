@@ -2441,8 +2441,6 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     mark_fileref_dirty(dummyfileref);
 
-    free_fileref(dummyfileref);
-
     // change fcb values
 
     fileref->fcb->hash_ptrs = NULL;
