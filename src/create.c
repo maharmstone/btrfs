@@ -82,6 +82,8 @@ typedef struct {
     device_extension* Vcb;
     ACCESS_MASK granted_access;
     file_ref* fileref;
+    NTSTATUS Status;
+    KEVENT event;
 } oplock_context;
 
 fcb* create_fcb(device_extension* Vcb, POOL_TYPE pool_type) {
@@ -3919,11 +3921,14 @@ static void __stdcall oplock_complete(PVOID Context, PIRP Irp) {
     Irp->IoStatus.Status = Status;
     IoCompleteRequest(Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT);
 
-    ExFreePool(ctx);
+    ctx->Status = Status;
+
+    KeSetEvent(&ctx->event, 0, false);
 }
 
 static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, file_ref* fileref, ACCESS_MASK* granted_access,
-                           PFILE_OBJECT FileObject, UNICODE_STRING* fn, ULONG options, PIRP Irp, LIST_ENTRY* rollback) {
+                           PFILE_OBJECT FileObject, UNICODE_STRING* fn, ULONG options, PIRP Irp, LIST_ENTRY* rollback,
+                           oplock_context** opctx) {
     NTSTATUS Status;
     file_ref* sf;
     bool readonly;
@@ -4085,10 +4090,13 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         ctx->Vcb = Vcb;
         ctx->granted_access = *granted_access;
         ctx->fileref = fileref;
+        KeInitializeEvent(&ctx->event, NotificationEvent, false);
 
         Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, ctx, oplock_complete, NULL);
-        if (Status == STATUS_PENDING)
+        if (Status == STATUS_PENDING) {
+            *opctx = ctx;
             return Status;
+        }
 
         ExFreePool(ctx);
 
@@ -4443,7 +4451,8 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, PIRP Irp,
+                          LIST_ENTRY* rollback, oplock_context** opctx) {
     PFILE_OBJECT FileObject = NULL;
     ULONG RequestedDisposition;
     ULONG options;
@@ -4677,9 +4686,10 @@ loaded:
         goto exit;
     }
 
-    if (NT_SUCCESS(Status)) // file already exists
-        Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
-    else {
+    if (NT_SUCCESS(Status)) { // file already exists
+        Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn,
+                            options, Irp, rollback, opctx);
+    } else {
         file_ref* existing_file = NULL;
 
         Status = file_create(Irp, Vcb, FileObject, related, loaded_related, &fn, RequestedDisposition, options, &existing_file, rollback);
@@ -4687,7 +4697,8 @@ loaded:
         if (Status == STATUS_OBJECT_NAME_COLLISION) { // already exists
             fileref = existing_file;
 
-            Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn, options, Irp, rollback);
+            Status = open_file2(Vcb, RequestedDisposition, fileref, &granted_access, FileObject, &fn,
+                                options, Irp, rollback, opctx);
         } else {
             Irp->IoStatus.Information = NT_SUCCESS(Status) ? FILE_CREATED : 0;
             granted_access = IrpSp->Parameters.Create.SecurityContext->DesiredAccess;
@@ -4807,6 +4818,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     PIO_STACK_LOCATION IrpSp;
     device_extension* Vcb = DeviceObject->DeviceExtension;
     bool top_level, locked = false;
+    oplock_context* opctx = NULL;
 
     FsRtlEnterFileSystem();
 
@@ -4985,7 +4997,7 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
         ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
 
-        Status = open_file(DeviceObject, Vcb, Irp, &rollback);
+        Status = open_file(DeviceObject, Vcb, Irp, &rollback, &opctx);
 
         if (!NT_SUCCESS(Status))
             do_rollback(Vcb, &rollback);
@@ -4999,17 +5011,21 @@ NTSTATUS __stdcall drv_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     }
 
 exit:
-    Irp->IoStatus.Status = Status;
-
-    if (Status == STATUS_PENDING)
-        IoMarkIrpPending(Irp);
-    else
+    if (Status != STATUS_PENDING) {
+        Irp->IoStatus.Status = Status;
         IoCompleteRequest(Irp, NT_SUCCESS(Status) ? IO_DISK_INCREMENT : IO_NO_INCREMENT);
-
-    TRACE("create returning %08lx\n", Status);
+    }
 
     if (locked)
         ExReleaseResourceLite(&Vcb->load_lock);
+
+    if (Status == STATUS_PENDING) {
+        KeWaitForSingleObject(&opctx->event, Executive, KernelMode, false, NULL);
+        Status = opctx->Status;
+        ExFreePool(opctx);
+    }
+
+    TRACE("create returning %08lx\n", Status);
 
     if (top_level)
         IoSetTopLevelIrp(NULL);
