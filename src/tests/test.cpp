@@ -704,6 +704,10 @@ int wmain(int argc, wchar_t* argv[]) {
     try {
         u16string_view dirarg = (char16_t*)(argc < 3 ? argv[1] : argv[2]);
 
+        while (!dirarg.empty() && dirarg.back() == u'\\') {
+            dirarg.remove_suffix(1);
+        }
+
         u16string ntdir = u"\\??\\"s + u16string(dirarg);
         ntdir += u"\\" + to_u16string(time(nullptr));
 
