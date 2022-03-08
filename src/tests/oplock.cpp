@@ -1744,6 +1744,7 @@ static DWORD __stdcall wait_and_acknowledge_win7(void* param) {
 
     roib.StructureVersion = REQUEST_OPLOCK_CURRENT_VERSION;
     roib.StructureLength = sizeof(roib);
+    roib.RequestedOplockLevel = 0;
     roib.Flags = REQUEST_OPLOCK_INPUT_FLAG_ACK;
 
     roob.StructureVersion = REQUEST_OPLOCK_CURRENT_VERSION;
