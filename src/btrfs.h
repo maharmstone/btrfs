@@ -102,6 +102,8 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 #define BTRFS_INODE_DIRSYNC     0x400
 #define BTRFS_INODE_COMPRESS    0x800
 
+#define BTRFS_INODE_RO_VERITY   0x1
+
 #define BTRFS_SUBVOL_READONLY   0x1
 
 #define BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE          0x1

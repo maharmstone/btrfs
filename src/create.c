@@ -3992,6 +3992,8 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         goto end;
     }
 
+    readonly |= fileref->fcb->inode_item.flags_ro & BTRFS_INODE_RO_VERITY;
+
     if (readonly) {
         ACCESS_MASK allowed;
 
