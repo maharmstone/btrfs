@@ -9,6 +9,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <assert.h>
 
 static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4000000000000, 0 };
 
@@ -289,7 +290,8 @@ typedef struct {
     uint32_t st_gid;
     uint32_t st_mode;
     uint64_t st_rdev;
-    uint64_t flags;
+    uint32_t flags;
+    uint32_t flags_ro;
     uint64_t sequence;
     uint8_t reserved[32];
     BTRFS_TIME st_atime;
@@ -297,6 +299,8 @@ typedef struct {
     BTRFS_TIME st_mtime;
     BTRFS_TIME otime;
 } INODE_ITEM;
+
+static_assert(sizeof(INODE_ITEM) == 0xa0, "INODE_ITEM has wrong size");
 
 typedef struct {
     INODE_ITEM inode;

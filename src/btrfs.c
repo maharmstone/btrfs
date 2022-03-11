@@ -3104,7 +3104,8 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         reloc_root->root_item.inode.st_blocks = Vcb->superblock.node_size;
         reloc_root->root_item.inode.st_nlink = 1;
         reloc_root->root_item.inode.st_mode = 040755;
-        reloc_root->root_item.inode.flags = 0xffffffff80000000;
+        reloc_root->root_item.inode.flags = 0x80000000;
+        reloc_root->root_item.inode.flags_ro = 0xffffffff;
         reloc_root->root_item.objid = SUBVOL_ROOT_INODE;
         reloc_root->root_item.bytes_used = Vcb->superblock.node_size;
 
