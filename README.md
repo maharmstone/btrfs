@@ -1,5 +1,5 @@
-WinBtrfs v1.7.9
----------------
+WinBtrfs v1.8
+-------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -83,7 +83,7 @@ Features
 Todo
 ----
 
-* fs-verity support (Linux 5.15)
+* Full fs-verity support (Linux 5.15)
 * Zoned support (Linux 5.11) (HM-SMR not supported on Windows?)
 * Defragmentation
 * Support for Btrfs quotas
@@ -266,6 +266,15 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.8 (2022-03-12):
+* Added minimal support for fs-verity
+* Added test suite
+* Fixed incorrect disk usage statistics
+* Fixed potential crashes when renaming stream to file or file to stream
+* Fixed potential crashes when querying hard links on file
+* Fixed potential hang when opening oplocked file
+* Fixed minor issues also uncovered by test suite
 
 v1.7.9 (2021-10-02):
 * Fixed deadlock when mounting on Windows 11

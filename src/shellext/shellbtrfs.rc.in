@@ -84,7 +84,7 @@ BEGIN
             VALUE "FileDescription", "WinBtrfs shell extension"
             VALUE "FileVersion", "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@"
             VALUE "InternalName", "btrfs"
-            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-21"
+            VALUE "LegalCopyright", "Copyright (c) Mark Harmstone 2016-22"
             VALUE "OriginalFilename", "shellbtrfs.dll"
             VALUE "ProductName", "WinBtrfs"
             VALUE "ProductVersion", "@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@"
