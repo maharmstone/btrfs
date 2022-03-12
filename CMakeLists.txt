@@ -357,7 +357,7 @@ if(WITH_TEST)
         target_compile_options(test PUBLIC -Wall -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra)
     endif()
 
-    target_link_libraries(test ntdll version)
+    target_link_libraries(test ntdll version advapi32)
 
     if(NOT MSVC OR MSVC_VERSION LESS 1929)
         target_link_libraries(test fmt::fmt-header-only)
