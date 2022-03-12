@@ -4532,6 +4532,12 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
         ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
 
         if (IsListEmpty(&fcb->hardlinks)) {
+            if (!fileref->dc) {
+                ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+
             bytes_needed += sizeof(FILE_LINK_ENTRY_INFORMATION) + fileref->dc->name.Length - sizeof(WCHAR);
 
             if (bytes_needed > *length)
@@ -4631,6 +4637,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
 
     Status = overflow ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
 
+end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
     return Status;
