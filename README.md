@@ -100,8 +100,17 @@ of the box on modern versions of Windows.
 If you using Windows 10 and have Secure Boot enabled, you may have to make a Registry
 change in order for the driver to be loaded - see [below](#secureboot).
 
-There's also a [Chocolatey package](https://chocolatey.org/packages/winbtrfs) available -
-if you have Chocolatey installed, try running `choco install winbtrfs`.
+WinBtrfs is also available on the following package managers:
+
+* [Chocolatey](https://chocolatey.org/packages/winbtrfs)
+```
+choco install winbtrfs
+```
+* [Scoop](https://github.com/TheRandomLabs/scoop-nonportable/blob/master/bucket/winbtrfs-np.json)
+```
+scoop bucket add nonportable
+scoop install winbtrfs-np
+```
 
 Uninstalling
 ------------
