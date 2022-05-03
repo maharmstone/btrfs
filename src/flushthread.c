@@ -2923,7 +2923,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
 
 #ifdef DEBUG_PARANOID
             if (bgi->used & 0x8000000000000000) {
-                ERR("refusing to write BLOCK_GROUP_ITEM with negative usage value (%I64x)", bgi->used);
+                ERR("refusing to write BLOCK_GROUP_ITEM with negative usage value (%I64x)\n", bgi->used);
                 int3;
             }
 #endif
