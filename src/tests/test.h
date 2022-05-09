@@ -729,8 +729,6 @@ public:
 
 typedef std::unique_ptr<HANDLE, handle_closer> unique_handle;
 
-#define STATUS_CASE_DIFFERING_NAMES_IN_DIR ((NTSTATUS)0xc00004b3)
-
 static __inline std::string ntstatus_to_string(NTSTATUS s) {
     switch (s) {
         case STATUS_KERNEL_APC:
