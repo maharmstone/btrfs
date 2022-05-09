@@ -5929,59 +5929,32 @@ static void init_serial(bool first_time) {
 #if defined(_X86_) || defined(_AMD64_)
 static void check_cpu() {
     bool have_sse2 = false, have_sse42 = false, have_avx2 = false;
+    int cpu_info[4];
 
-#ifndef _MSC_VER
-    {
-        uint32_t eax, ebx, ecx, edx;
+    __cpuid(cpu_info, 1);
+    have_sse42 = cpu_info[2] & (1 << 20);
+    have_sse2 = cpu_info[3] & (1 << 26);
 
-        __cpuid(1, eax, ebx, ecx, edx);
+    __cpuidex(cpu_info, 7, 0);
+    have_avx2 = cpu_info[1] & (1 << 5);
 
-        if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
-            have_sse42 = ecx & bit_SSE4_2;
-            have_sse2 = edx & bit_SSE2;
-        }
+    if (have_avx2) {
+        // check Windows has enabled AVX2 - Windows 10 doesn't immediately
 
-        if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx))
-            have_avx2 = ebx & bit_AVX2;
+        if (__readcr4() & (1 << 18)) {
+            uint32_t xcr0;
 
-        if (have_avx2) {
-            // check Windows has enabled AVX2 - Windows 10 doesn't immediately
-
-            if (__readcr4() & (1 << 18)) {
-                uint32_t xcr0;
-
-                __asm__("xgetbv" : "=a" (xcr0) : "c" (0) : "edx" );
-
-                if ((xcr0 & 6) != 6)
-                    have_avx2 = false;
-            } else
-                have_avx2 = false;
-        }
-    }
+#ifdef _MSC_VER
+            xcr0 = (uint32_t)_xgetbv(0);
 #else
-    {
-        unsigned int cpu_info[4];
-
-        __cpuid(cpu_info, 1);
-        have_sse42 = cpu_info[2] & (1 << 20);
-        have_sse2 = cpu_info[3] & (1 << 26);
-
-        __cpuidex(cpu_info, 7, 0);
-        have_avx2 = cpu_info[1] & (1 << 5);
-
-        if (have_avx2) {
-            // check Windows has enabled AVX2 - Windows 10 doesn't immediately
-
-            if (__readcr4() & (1 << 18)) {
-                uint32_t xcr0 = (uint32_t)_xgetbv(0);
-
-                if ((xcr0 & 6) != 6)
-                    have_avx2 = false;
-            } else
-                have_avx2 = false;
-        }
-    }
+            __asm__("xgetbv" : "=a" (xcr0) : "c" (0) : "edx");
 #endif
+
+            if ((xcr0 & 6) != 6)
+                have_avx2 = false;
+        } else
+            have_avx2 = false;
+    }
 
     if (have_sse42) {
         TRACE("SSE4.2 is supported\n");
