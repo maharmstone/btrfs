@@ -16,7 +16,10 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "test.h"
+
+#define NOGDI
 #include <wincon.h>
+
 #include <winsvc.h>
 #include <winver.h>
 #include <functional>
