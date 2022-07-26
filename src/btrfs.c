@@ -642,6 +642,36 @@ static void calculate_total_space(_In_ device_extension* Vcb, _Out_ uint64_t* to
     *freespace = sectors_used > *totalsize ? 0 : (*totalsize - sectors_used);
 }
 
+// simplified version of FsRtlAreNamesEqual, which can be a bottleneck!
+static bool compare_strings(const UNICODE_STRING* us1, const UNICODE_STRING* us2) {
+    if (us1->Length != us2->Length)
+        return false;
+
+    WCHAR* s1 = us1->Buffer;
+    WCHAR* s2 = us2->Buffer;
+
+    for (unsigned int i = 0; i < us1->Length; i++) {
+        WCHAR c1 = *s1;
+        WCHAR c2 = *s2;
+
+        if (c1 != c2) {
+            if (c1 >= 'a' && c1 <= 'z')
+                c1 = c1 - 'a' + 'A';
+
+            if (c2 >= 'a' && c2 <= 'z')
+                c2 = c2 - 'a' + 'A';
+
+            if (c1 != c2)
+                return false;
+        }
+
+        s1++;
+        s2++;
+    }
+
+    return true;
+}
+
 #define INIT_UNICODE_STRING(var, val) UNICODE_STRING us##var; us##var.Buffer = (WCHAR*)val; us##var.Length = us##var.MaximumLength = sizeof(val) - sizeof(WCHAR);
 
 // This function exists because we have to lie about our FS type in certain situations.
@@ -704,7 +734,7 @@ static bool lie_about_fs_type() {
             name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usmpr.Length) / sizeof(WCHAR)];
             name.Length = name.MaximumLength = usmpr.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &usmpr, true, NULL);
+            blacklist = compare_strings(&name, &usmpr);
         }
 
         if (!blacklist && entry->FullDllName.Length >= uscmd.Length) {
@@ -713,7 +743,7 @@ static bool lie_about_fs_type() {
             name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - uscmd.Length) / sizeof(WCHAR)];
             name.Length = name.MaximumLength = uscmd.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &uscmd, true, NULL);
+            blacklist = compare_strings(&name, &uscmd);
         }
 
         if (!blacklist && entry->FullDllName.Length >= usfsutil.Length) {
@@ -722,7 +752,7 @@ static bool lie_about_fs_type() {
             name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usfsutil.Length) / sizeof(WCHAR)];
             name.Length = name.MaximumLength = usfsutil.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &usfsutil, true, NULL);
+            blacklist = compare_strings(&name, &usfsutil);
         }
 
         if (!blacklist && entry->FullDllName.Length >= usstorsvc.Length) {
@@ -731,7 +761,7 @@ static bool lie_about_fs_type() {
             name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usstorsvc.Length) / sizeof(WCHAR)];
             name.Length = name.MaximumLength = usstorsvc.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &usstorsvc, true, NULL);
+            blacklist = compare_strings(&name, &usstorsvc);
         }
 
         if (!blacklist && entry->FullDllName.Length >= usifstest.Length) {
@@ -740,7 +770,7 @@ static bool lie_about_fs_type() {
             name.Buffer = &entry->FullDllName.Buffer[(entry->FullDllName.Length - usifstest.Length) / sizeof(WCHAR)];
             name.Length = name.MaximumLength = usifstest.Length;
 
-            blacklist = FsRtlAreNamesEqual(&name, &usifstest, true, NULL);
+            blacklist = compare_strings(&name, &usifstest);
         }
 
         if (blacklist) {
