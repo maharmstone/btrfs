@@ -4320,16 +4320,17 @@ public:
     std::string msg;
 };
 
-class _formatted_error : public std::exception {
+class formatted_error : public std::exception {
 public:
-    template<typename T, typename... Args>
-    _formatted_error(const T& s, Args&&... args) {
 #if __has_include(<format>)
-        msg = std::format(s, std::forward<Args>(args)...);
-#else
-        msg = fmt::format(s, std::forward<Args>(args)...);
-#endif
+    template<typename... Args>
+    formatted_error(std::string_view s, Args&&... args) : msg(std::vformat(s, std::make_format_args(args...))) {
     }
+#else
+    template<typename... Args>
+    formatted_error(fmt::format_string<Args...> s, Args&&... args) : msg(fmt::format(s, std::forward<Args>(args)...)) {
+    }
+#endif
 
     const char* what() const noexcept {
         return msg.c_str();
@@ -4338,12 +4339,6 @@ public:
 private:
     std::string msg;
 };
-
-#if __has_include(<format>)
-#define formatted_error(s, ...) _formatted_error(s, ##__VA_ARGS__)
-#else
-#define formatted_error(s, ...) _formatted_error(FMT_COMPILE(s), ##__VA_ARGS__)
-#endif
 
 template<typename T>
 T query_information(HANDLE h);
