@@ -4325,7 +4325,7 @@ public:
     template<typename T, typename... Args>
     _formatted_error(const T& s, Args&&... args) {
 #if __has_include(<format>)
-        msg = std::format(s, std::forward<Args>(args)...);
+        msg = std::vformat(s, std::make_format_args(args...));
 #else
         msg = fmt::format(s, std::forward<Args>(args)...);
 #endif

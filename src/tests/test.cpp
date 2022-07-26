@@ -299,7 +299,7 @@ template vector<varbuf<FILE_REPARSE_POINT_INFORMATION>> query_dir(const u16strin
 template<typename T, typename... Args>
 void _print(const T& s, Args&&... args) {
 #if __has_include(<format>)
-    auto msg = std::format(s, std::forward<Args>(args)...);
+    auto msg = std::vformat(s, std::make_format_args(args...));
 #else
     auto msg = fmt::format(s, std::forward<Args>(args)...);
 #endif
