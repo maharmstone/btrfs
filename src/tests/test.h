@@ -40,7 +40,6 @@
 #include <format>
 #else
 #include <fmt/format.h>
-#include <fmt/compile.h>
 #endif
 
 enum class fs_type {
