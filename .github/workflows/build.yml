@@ -1,0 +1,76 @@
+name: Build CI
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch:
+
+env:
+  BUILD_CONFIG: RelWithDebInfo
+
+jobs:
+  build:
+  
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            folder: x64
+          - arch: x86
+            folder: x86
+          - arch: amd64_arm64
+            folder: aarch64
+          - arch: amd64_arm
+            folder: arm
+
+    name: Build for ${{ matrix.folder }}
+    runs-on: windows-latest
+
+    steps:
+    - name: Get Sources
+      uses: actions/checkout@v3
+      
+    - uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.arch }}
+    
+    - name: Prepare build
+      run: cmake -B build -G "Ninja"
+      
+    - name: Build
+      run: cmake --build build --config ${{env.BUILD_CONFIG}} -j 3
+      
+    - name: Prepare files for upload
+      run: |
+      
+        mkdir upload
+        mkdir upload\${{ matrix.folder }}
+
+        copy src/btrfs.inf upload
+        copy build\ubtrfs.dll upload\${{ matrix.folder }}
+        copy build\shellbtrfs.dll upload\${{ matrix.folder }}
+        copy build\mkbtrfs.exe upload\${{ matrix.folder }}
+        copy build\btrfs.sys upload\${{ matrix.folder }}
+
+
+        mkdir upload-pdb
+        mkdir upload-pdb\${{ matrix.folder }}
+
+        copy build\ubtrfs.pdb upload-pdb\${{ matrix.folder }}
+        copy build\shellbtrfs.pdb upload-pdb\${{ matrix.folder }}
+        copy build\mkbtrfs.pdb upload-pdb\${{ matrix.folder }}
+        copy build\btrfs.pdb upload-pdb\${{ matrix.folder }}
+
+    - name: Upload driver files
+      uses: actions/upload-artifact@v3
+      with:
+        name: btrfs
+        path: upload/*
+
+    - name: Upload PDB files
+      uses: actions/upload-artifact@v3
+      with:
+        name: btrfs-pdb
+        path: upload-pdb/*
