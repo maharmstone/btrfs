@@ -144,6 +144,56 @@ To compile with GCC on Linux, you will need a cross-compiler set up, for either
 either `mingw-x86.cmake` or `mingw-amd64.cmake` as CMake toolchain files to
 generate your Makefile.
 
+Signing
+-----------
+
+To install a built-from-source or a nightly (from github actions) driver, you need to sign it
+In this section, I will show how to compile the driver using test-signing.
+Example commands are given for each steps but it is recommand to check the microsoft documentation link about test-signing, so you know what you are doing
+
+More information can be found at https://docs.microsoft.com/en-us/windows-hardware/drivers/install/test-signing
+
+Note : this is not practical for a everyday use
+
+**1 - Put your computer in test mode**
+
+test-signing doesn't seem to work with Windows by default. You will need to put your computer in a special mode to allow test-signing.
+
+`bcdedit  /set  testsigning  on`
+
+Note : you might need to disable Secure Boot for this to work
+
+**2 - Generate a MakeCert certificate**
+
+This certificate will be used to sign the catalog file of the driver
+
+`makecert -r -pe -ss PrivateCertStore -n CN=Contoso.com(Test) ContosoTest.cer`
+
+**3 - Install the certificate to your system**
+
+For your certificate to be effective, it needs to be installed in the "Trusted Root Certification Authorities" certificate store of the computer you want to install the driver on.
+You can add it by launching "CertMgr" **as administrator**, selecting the "Trusted Root Certification Authorities" certificate store, and importing the .cer file generated earlier
+(The command given on the documentation doesn't seem to work and just launches the CertMgr GUI)
+
+**4 - Generate a catalog file for your driver**
+
+You will need the "Inf2Cat" tool, installed as part of the WDK.
+Run the command in the same directory as your .inf file (or modify the /driver flag)
+
+The command will differ in your case (because of the path) but here is the one I used :
+
+`"C:\Program Files (x86)\Windows Kits\10\bin\x86\Inf2Cat.exe" /os:10_NI_X64 /driver:.`
+
+Note : this was tested in Windows 11, you might need to change the values of the /os flag according to your Windows version
+
+**5 - Sign the catalog file**
+
+Simply sign the catalog file of the driver with the certificate you generated
+
+`SignTool sign /fd SHA256 /v /s PrivateCertStore /n contoso.com(test) /t http://timestamp.digicert.com btrfs.cat`
+
+Only steps 4-5 needs to be done again to sign a new build of the driver
+
 Mappings
 --------
 
