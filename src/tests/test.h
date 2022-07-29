@@ -17,17 +17,18 @@
 
 #pragma once
 
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <ntstatus.h>
+#define WIN32_NO_STATUS
 #include <windef.h>
 #include <winbase.h>
 #include <winternl.h>
 #include <devioctl.h>
 #include <ntdddisk.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <stdbool.h>
 #include <stringapiset.h>
-#include <ntstatus.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
