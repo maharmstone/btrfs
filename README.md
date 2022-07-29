@@ -146,16 +146,46 @@ generate your Makefile.
 
 Signing
 -----------
-
 To install a built-from-source or a nightly (from github actions) driver, you need to sign it
-In this section, I will show how to compile the driver using test-signing.
+In this section, I will show how to disable driver signature enforcement, or how to sign the driver using test-signing
+Warning : both of these solutions aren't perfect, if you are looking for a everyday-use it is recommanded to use the release builds, which are signed with a Microsoft-trusted key.
+
+
+## Disabling signature enforcement
+Note : this isn't persistent accross reboots
+
+Relevant link : https://docs.microsoft.com/en-us/windows-hardware/drivers/install/installing-an-unsigned-driver-during-development-and-test
+
+### 1 - Reboot your computer without driver signature enforcement
+
+(This can be done by pressing the 'Shift' key while rebooting the computer, this will take you to a special screen from which you can select "Troubleshoot" -> "Startup settings" -> "Disable driver signature enforcement")
+
+### 2 - Install the driver
+
+Open the previously downloaded artifact from Github Actions (or mimic the directory structure and fill it with the binaries you just compiled), right-click the btrfs.inf file -> install
+
+A window saying "Microsoft can't verify the publisher of this driver" should pop-up. Click "Install anyway"
+
+If the window didn't show up, the driver probably wasn't installed, make sure you booted your computer with driver signature enforcement disabled.
+
+The computer should next tell you to reboot your computer
+
+### 3 - Reboot the computer again without driver signature enforcement
+Follow the same instructions as step 1
+
+### 4 - Done !
+The driver should now be installed ! Note it will only load when the computer is started without driver signature enforcement
+
+
+
+## Test-signing the driver
+Note : This method is harder to put in place, and has the only benefit of persisting after reboots.
+
 Example commands are given for each steps but it is recommand to check the microsoft documentation link about test-signing, so you know what you are doing
 
-More information can be found at https://docs.microsoft.com/en-us/windows-hardware/drivers/install/test-signing
+Relevant link : https://docs.microsoft.com/en-us/windows-hardware/drivers/install/test-signing
 
-Note : this is not practical for a everyday use
-
-**1 - Put your computer in test mode**
+### 1 - Put your computer in test mode
 
 test-signing doesn't seem to work with Windows by default. You will need to put your computer in a special mode to allow test-signing.
 
@@ -163,22 +193,22 @@ test-signing doesn't seem to work with Windows by default. You will need to put 
 
 Note : you might need to disable Secure Boot for this to work
 
-**2 - Generate a MakeCert certificate**
+### 2 - Generate a MakeCert certificate
 
 This certificate will be used to sign the catalog file of the driver
 
 `makecert -r -pe -ss PrivateCertStore -n CN=Contoso.com(Test) ContosoTest.cer`
 
-**3 - Install the certificate to your system**
+### 3 - Install the certificate to your system
 
 For your certificate to be effective, it needs to be installed in the "Trusted Root Certification Authorities" certificate store of the computer you want to install the driver on.
 You can add it by launching "CertMgr" **as administrator**, selecting the "Trusted Root Certification Authorities" certificate store, and importing the .cer file generated earlier
 (The command given on the documentation doesn't seem to work and just launches the CertMgr GUI)
 
-**4 - Generate a catalog file for your driver**
+### 4 - Generate a catalog file for your driver
 
 You will need the "Inf2Cat" tool, installed as part of the WDK.
-Run the command in the same directory as your .inf file (or modify the /driver flag)
+Run the command in the same directory as your btrfs.inf file (or modify the /driver flag)
 
 The command will differ in your case (because of the path) but here is the one I used :
 
@@ -186,7 +216,7 @@ The command will differ in your case (because of the path) but here is the one I
 
 Note : this was tested in Windows 11, you might need to change the values of the /os flag according to your Windows version
 
-**5 - Sign the catalog file**
+### 5 - Sign the catalog file
 
 Simply sign the catalog file of the driver with the certificate you generated
 
