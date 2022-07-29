@@ -137,6 +137,7 @@ Compilation
 
 To compile with Visual C++ 2019, open the directory and let CMake do its thing.
 If you have the Windows DDK installed correctly, it should just work.
+Note : you need to use the Ninja generator for CMake, else the driver might not work once installed
 
 To compile with GCC on Linux, you will need a cross-compiler set up, for either
 `i686-w64-mingw32` or `x86_64-w64-mingw32`. Create a build directory, then use
