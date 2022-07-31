@@ -1652,6 +1652,9 @@ static __inline void print_open_trees(device_extension* Vcb) {
 }
 
 static __inline bool write_fcb_compressed(fcb* fcb) {
+    if (fcb->inode_item.flags & BTRFS_INODE_NODATACOW)
+        return false;
+
     // make sure we don't accidentally write the cache inodes or pagefile compressed
     if (fcb->subvol->id == BTRFS_ROOT_ROOT || fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
         return false;
