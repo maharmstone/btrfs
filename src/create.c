@@ -2324,12 +2324,17 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
                 fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
         }
 
-        if (parfileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS)
+        if (parfileref->fcb->inode_item.flags & BTRFS_INODE_COMPRESS &&
+            !(fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
             fcb->inode_item.flags |= BTRFS_INODE_COMPRESS;
+        }
     }
 
-    fcb->prop_compression = parfileref->fcb->prop_compression;
-    fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
+    if (!(fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
+        fcb->prop_compression = parfileref->fcb->prop_compression;
+        fcb->prop_compression_changed = fcb->prop_compression != PropCompression_None;
+    } else
+        fcb->prop_compression = PropCompression_None;
 
     fcb->inode_item_changed = true;
 
