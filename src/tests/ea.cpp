@@ -1234,4 +1234,24 @@ void test_ea(const u16string& dir) {
 
         h.reset();
     }
+
+    test("Open volume", [&]() {
+        auto colon = dir.find(u":");
+
+        if (colon == string::npos)
+            throw runtime_error("Unable to extract volume path from directory.");
+
+        auto vol = dir.substr(0, colon + 1);
+
+        h = create_file(vol, FILE_WRITE_EA | FILE_READ_EA, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        FILE_OPEN, 0, FILE_OPENED);
+    });
+
+    if (h) {
+        test("Try to write EA on volume", [&]() {
+            exp_status([&]() {
+                write_ea(h.get(), "HELLO", "world", true);
+            }, STATUS_INVALID_PARAMETER);
+        });
+    }
 }
