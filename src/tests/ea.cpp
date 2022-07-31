@@ -1253,5 +1253,11 @@ void test_ea(const u16string& dir) {
                 write_ea(h.get(), "HELLO", "world", true);
             }, STATUS_INVALID_PARAMETER);
         });
+
+        test("Try to read EA on volume", [&]() {
+            exp_status([&]() {
+                read_ea(h.get());
+            }, STATUS_INVALID_PARAMETER);
+        });
     }
 }
