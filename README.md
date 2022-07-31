@@ -106,7 +106,7 @@ WinBtrfs is also available on the following package managers:
 ```
 choco install winbtrfs
 ```
-* [Scoop](https://github.com/TheRandomLabs/scoop-nonportable/blob/master/bucket/winbtrfs-np.json)
+* [Scoop](https://scoop.sh/#/apps?q=%22winbtrfs-np%22&s=0&d=1&o=true)
 ```
 scoop bucket add nonportable
 scoop install winbtrfs-np
