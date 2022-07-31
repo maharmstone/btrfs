@@ -50,7 +50,7 @@ vector<pair<int64_t, u16string>> query_links(HANDLE h) {
     return ret;
 }
 
-void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const u16string_view& filename) {
+void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, u16string_view filename) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(offsetof(FILE_LINK_INFORMATION, FileName) + (filename.length() * sizeof(char16_t)));
@@ -70,7 +70,7 @@ void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, con
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_link_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, const u16string_view& filename) {
+static void set_link_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, u16string_view filename) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(offsetof(FILE_LINK_INFORMATION_EX, FileName) + (filename.length() * sizeof(char16_t)));

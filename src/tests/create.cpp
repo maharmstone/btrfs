@@ -49,7 +49,7 @@ template<typename T>
 concept has_FileId = requires { T::FileId; };
 
 template<typename T>
-static void check_dir_entry(const u16string& dir, const u16string_view& name,
+static void check_dir_entry(const u16string& dir, u16string_view name,
                             const FILE_BASIC_INFORMATION& fbi, const FILE_STANDARD_INFORMATION& fsi,
                             int64_t file_id, const FILE_ID_128& file_id_128) {
     auto items = query_dir<T>(dir, name);

@@ -18,7 +18,7 @@ static void set_case_sensitive(HANDLE h, bool case_sensitive) {
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static unique_handle create_file_cs(const u16string_view& path, ACCESS_MASK access, ULONG atts,
+static unique_handle create_file_cs(u16string_view path, ACCESS_MASK access, ULONG atts,
                                     ULONG share, ULONG dispo, ULONG options, ULONG_PTR exp_info,
                                     optional<uint64_t> allocation = nullopt) {
     NTSTATUS Status;

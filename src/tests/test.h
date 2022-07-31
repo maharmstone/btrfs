@@ -4362,7 +4362,7 @@ public:
 };
 
 // test.cpp
-unique_handle create_file(const std::u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+unique_handle create_file(std::u16string_view path, ACCESS_MASK access, ULONG atts, ULONG share,
                           ULONG dispo, ULONG options, ULONG_PTR exp_info, std::optional<uint64_t> allocation = std::nullopt);
 
 template<typename T>
@@ -4372,7 +4372,7 @@ void test(const std::string& msg, const std::function<void()>& func);
 void exp_status(const std::function<void()>& func, NTSTATUS Status);
 std::u16string query_file_name_information(HANDLE h, bool normalized = false);
 void disable_token_privileges(HANDLE token);
-std::string u16string_to_string(const std::u16string_view& sv);
+std::string u16string_to_string(std::u16string_view sv);
 
 extern enum fs_type fstype;
 
@@ -4409,7 +4409,7 @@ std::vector<uint8_t> pe_image(std::span<const std::byte> data);
 // rename.cpp
 void test_rename(const std::u16string& dir);
 void test_rename_ex(HANDLE token, const std::u16string& dir);
-void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
+void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, std::u16string_view filename);
 
 // delete.cpp
 void test_delete(const std::u16string& dir);
@@ -4421,7 +4421,7 @@ void set_disposition_information_ex(HANDLE h, uint32_t flags);
 void test_links(HANDLE token, const std::u16string& dir);
 void test_links_ex(HANDLE token, const std::u16string& dir);
 std::vector<std::pair<int64_t, std::u16string>> query_links(HANDLE h);
-void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const std::u16string_view& filename);
+void set_link_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, std::u16string_view filename);
 
 // oplock.cpp
 void test_oplocks_i(HANDLE token, const std::u16string& dir);

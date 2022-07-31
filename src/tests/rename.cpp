@@ -2,7 +2,7 @@
 
 using namespace std;
 
-void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, const u16string_view& filename) {
+void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, u16string_view filename) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(offsetof(FILE_RENAME_INFORMATION, FileName) + (filename.length() * sizeof(char16_t)));
@@ -22,7 +22,7 @@ void set_rename_information(HANDLE h, bool replace_if_exists, HANDLE root_dir, c
         throw formatted_error("iosb.Information was {}, expected 0", iosb.Information);
 }
 
-static void set_rename_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, const u16string_view& filename) {
+static void set_rename_information_ex(HANDLE h, ULONG flags, HANDLE root_dir, u16string_view filename) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(offsetof(FILE_RENAME_INFORMATION_EX, FileName) + (filename.length() * sizeof(char16_t)));

@@ -119,7 +119,7 @@ static vector<varbuf<FILE_FULL_EA_INFORMATION>> read_ea(HANDLE h) {
 }
 
 template<size_t N>
-static unique_handle create_file_ea(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+static unique_handle create_file_ea(u16string_view path, ACCESS_MASK access, ULONG atts, ULONG share,
                                     ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation,
                                     const array<pair<string_view, string_view>, N>& eas) {
     NTSTATUS Status;

@@ -31,7 +31,7 @@ enum fs_type fstype;
 
 static unsigned int num_tests_run, num_tests_passed;
 
-unique_handle create_file(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+unique_handle create_file(u16string_view path, ACCESS_MASK access, ULONG atts, ULONG share,
                           ULONG dispo, ULONG options, ULONG_PTR exp_info, optional<uint64_t> allocation) {
     NTSTATUS Status;
     HANDLE h;
@@ -424,7 +424,7 @@ void disable_token_privileges(HANDLE token) {
         throw ntstatus_error(Status);
 }
 
-string u16string_to_string(const u16string_view& sv) {
+string u16string_to_string(u16string_view sv) {
     if (sv.empty())
         return "";
 
@@ -440,7 +440,7 @@ string u16string_to_string(const u16string_view& sv) {
     return s;
 }
 
-static void do_tests(const u16string_view& name, const u16string& dir) {
+static void do_tests(u16string_view name, const u16string& dir) {
     auto token = open_process_token(NtCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_ADJUST_DEFAULT |
                                                         TOKEN_DUPLICATE | TOKEN_QUERY);
 
@@ -561,7 +561,7 @@ static u16string to_u16string(time_t n) {
     return u16string(s.rbegin(), s.rend());
 }
 
-static bool fs_driver_path(HANDLE h, const u16string_view& driver) {
+static bool fs_driver_path(HANDLE h, u16string_view driver) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<uint8_t> buf(offsetof(FILE_FS_DRIVER_PATH_INFORMATION, DriverName) + (driver.size() * sizeof(char16_t)));

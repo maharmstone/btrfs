@@ -31,7 +31,7 @@ static const uint8_t sid_high[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x
 static const uint8_t sid_medium[] = { 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
                                       0x00, 0x20, 0x00, 0x00 };
 
-static unique_handle create_file_sd(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+static unique_handle create_file_sd(u16string_view path, ACCESS_MASK access, ULONG atts, ULONG share,
                                     ULONG dispo, ULONG options, ULONG_PTR exp_info, const SECURITY_DESCRIPTOR& sd) {
     NTSTATUS Status;
     HANDLE h;
@@ -69,7 +69,7 @@ static unique_handle create_file_sd(const u16string_view& path, ACCESS_MASK acce
     return unique_handle(h);
 }
 
-static unique_handle create_file_with_acl(const u16string_view& path, ACCESS_MASK access, ULONG atts, ULONG share,
+static unique_handle create_file_with_acl(u16string_view path, ACCESS_MASK access, ULONG atts, ULONG share,
                                           ULONG dispo, ULONG options, ULONG_PTR exp_info, ACCESS_MASK ace_access,
                                           uint8_t ace_flags) {
     SECURITY_DESCRIPTOR sd;
