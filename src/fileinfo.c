@@ -5700,6 +5700,11 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         goto end;
     }
 
+    if (fcb == fcb->Vcb->volume_fcb) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
     ccb = FileObject->FsContext2;
 
     if (!ccb) {
