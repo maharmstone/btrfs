@@ -31,7 +31,8 @@ jobs:
     - name: Get Sources
       uses: actions/checkout@v3
       
-    - uses: ilammy/msvc-dev-cmd@v1
+    - name: Setup shell
+      uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: ${{ matrix.shell_arch }}
     
@@ -73,3 +74,51 @@ jobs:
       with:
         name: btrfs-pdb
         path: upload-pdb/*
+
+  sign:
+    needs: build
+    runs-on: windows-latest
+    name: Sign
+
+    env:
+      INF2CAT_PROGRAM: 'C:/Program Files (x86)/Windows Kits/10/bin/x86/Inf2Cat.exe'
+
+    steps:
+      - name: Get Sources
+        uses: actions/checkout@v3
+
+      - name: Setup shell
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: btrfs
+          path: upload
+
+      - name: Import key
+        run: |
+          # Create the PFX file from the base64-encoded secret
+          "${{ secrets.PFX_FILE_B64 }}" | Out-File -FilePath pfx.b64
+          CertUtil -decode pfx.b64 cert.pfx
+          # Import it
+          $plaintextpwd = "password"
+          $pwd = ConvertTo-SecureString -String $plaintextpwd -Force -AsPlainText
+          Import-PfxCertificate -FilePath ./cert.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pwd
+
+      - name: Create catalog file
+        run: |
+          cd upload
+          & "${{env.INF2CAT_PROGRAM}}" /os:10_NI_X64 /driver:.
+      
+      - name: Sign catalog file
+        run: |
+          cd upload
+          SignTool sign /fd SHA256 /v /s My /n "Btrfs driver" /t http://timestamp.digicert.com btrfs.cat
+
+      - name: Upload driver
+        uses: actions/upload-artifact@v3
+        with:
+          name: btrfs
+          path: upload/*
