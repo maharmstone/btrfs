@@ -12,20 +12,19 @@ env:
 
 jobs:
   build:
-  
     strategy:
       matrix:
         include:
-          - arch: x64
-            folder: x64
-          - arch: x86
-            folder: x86
-          - arch: amd64_arm64
-            folder: aarch64
-          - arch: amd64_arm
-            folder: arm
+          - shell_arch: x64
+            win_arch: x64
+          - shell_arch: x86
+            win_arch: x86
+          - shell_arch: amd64_arm64
+            win_arch: arm64
+          - shell_arch: amd64_arm
+            win_arch: arm
 
-    name: Build for ${{ matrix.folder }}
+    name: Build for ${{ matrix.win_arch }}
     runs-on: windows-latest
 
     steps:
@@ -34,7 +33,7 @@ jobs:
       
     - uses: ilammy/msvc-dev-cmd@v1
       with:
-        arch: ${{ matrix.arch }}
+        arch: ${{ matrix.shell_arch }}
     
     - name: Prepare build
       run: cmake -B build -G "Ninja"
@@ -46,22 +45,22 @@ jobs:
       run: |
       
         mkdir upload
-        mkdir upload\${{ matrix.folder }}
+        mkdir upload/${{ matrix.win_arch }}
 
         copy src/btrfs.inf upload
-        copy build\ubtrfs.dll upload\${{ matrix.folder }}
-        copy build\shellbtrfs.dll upload\${{ matrix.folder }}
-        copy build\mkbtrfs.exe upload\${{ matrix.folder }}
-        copy build\btrfs.sys upload\${{ matrix.folder }}
+        copy build/ubtrfs.dll upload/${{ matrix.win_arch }}
+        copy build/shellbtrfs.dll upload/${{ matrix.win_arch }}
+        copy build/mkbtrfs.exe upload/${{ matrix.win_arch }}
+        copy build/btrfs.sys upload/${{ matrix.win_arch }}
 
 
         mkdir upload-pdb
-        mkdir upload-pdb\${{ matrix.folder }}
+        mkdir upload-pdb/${{ matrix.win_arch }}
 
-        copy build\ubtrfs.pdb upload-pdb\${{ matrix.folder }}
-        copy build\shellbtrfs.pdb upload-pdb\${{ matrix.folder }}
-        copy build\mkbtrfs.pdb upload-pdb\${{ matrix.folder }}
-        copy build\btrfs.pdb upload-pdb\${{ matrix.folder }}
+        copy build/ubtrfs.pdb upload-pdb/${{ matrix.win_arch }}
+        copy build/shellbtrfs.pdb upload-pdb/${{ matrix.win_arch }}
+        copy build/mkbtrfs.pdb upload-pdb/${{ matrix.win_arch }}
+        copy build/btrfs.pdb upload-pdb/${{ matrix.win_arch }}
 
     - name: Upload driver files
       uses: actions/upload-artifact@v3
