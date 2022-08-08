@@ -468,6 +468,7 @@ typedef struct {
 typedef struct {
     KEY key;
     LIST_ENTRY items;
+    unsigned int num_items;
     LIST_ENTRY list_entry;
 } batch_item_ind;
 
