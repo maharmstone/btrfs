@@ -466,8 +466,14 @@ typedef struct {
 } batch_item;
 
 typedef struct {
-    root* r;
+    KEY key;
     LIST_ENTRY items;
+    LIST_ENTRY list_entry;
+} batch_item_ind;
+
+typedef struct {
+    root* r;
+    LIST_ENTRY items_ind;
     LIST_ENTRY list_entry;
 } batch_root;
 

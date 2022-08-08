@@ -4464,8 +4464,24 @@ static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* 
         }
 
         br->r = r;
-        InitializeListHead(&br->items);
+        InitializeListHead(&br->items_ind);
         InsertTailList(batchlist, &br->list_entry);
+    }
+
+    if (IsListEmpty(&br->items_ind)) {
+        batch_item_ind* bii;
+
+        bii = ExAllocatePoolWithTag(PagedPool, sizeof(batch_item_ind), ALLOC_TAG);
+        if (!bii) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        bii->key.obj_id = 0;
+        bii->key.obj_type = 0;
+        bii->key.offset = 0;
+        InitializeListHead(&bii->items);
+        InsertTailList(&br->items_ind, &bii->list_entry);
     }
 
     bi = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
@@ -4481,22 +4497,37 @@ static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* 
     bi->datalen = datalen;
     bi->operation = operation;
 
-    le = br->items.Blink;
-    while (le != &br->items) {
-        batch_item* bi2 = CONTAINING_RECORD(le, batch_item, list_entry);
-        int cmp = keycmp(bi2->key, bi->key);
+    le = br->items_ind.Blink;
+    while (le != &br->items_ind) {
+        LIST_ENTRY* le2;
+        batch_item_ind* bii = CONTAINING_RECORD(le, batch_item_ind, list_entry);
 
-        if (cmp == -1 || (cmp == 0 && bi->operation >= bi2->operation)) {
-            InsertHeadList(&bi2->list_entry, &bi->list_entry);
-            return STATUS_SUCCESS;
+        if (keycmp(bii->key, bi->key) == 1) {
+            le = le->Blink;
+            continue;
         }
 
-        le = le->Blink;
+        // FIXME - split ind list if too big
+
+        le2 = bii->items.Blink;
+        while (le2 != &bii->items) {
+            batch_item* bi2 = CONTAINING_RECORD(le2, batch_item, list_entry);
+            int cmp = keycmp(bi2->key, bi->key);
+
+            if (cmp == -1 || (cmp == 0 && bi->operation >= bi2->operation)) {
+                InsertHeadList(&bi2->list_entry, &bi->list_entry);
+                return STATUS_SUCCESS;
+            }
+
+            le2 = le2->Blink;
+        }
+
+        InsertHeadList(&bii->items, &bi->list_entry);
+
+        return STATUS_SUCCESS;
     }
 
-    InsertHeadList(&br->items, &bi->list_entry);
-
-    return STATUS_SUCCESS;
+    return STATUS_INTERNAL_ERROR;
 }
 #ifdef _MSC_VER
 #pragma warning(pop)
