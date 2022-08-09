@@ -2317,7 +2317,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         fcb->inode_item.flags = BTRFS_INODE_NODATACOW | BTRFS_INODE_NODATASUM | BTRFS_INODE_NOCOMPRESS;
     } else {
         // inherit nodatacow flag from parent directory
-        if (parfileref->fcb->inode_item.flags & BTRFS_INODE_NODATACOW) {
+        if (parfileref->fcb->inode_item.flags & BTRFS_INODE_NODATACOW || Vcb->options.nodatacow) {
             fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
 
             if (type != BTRFS_TYPE_DIRECTORY)

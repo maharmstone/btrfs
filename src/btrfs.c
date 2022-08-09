@@ -81,6 +81,7 @@ uint32_t mount_clear_cache = 0;
 uint32_t mount_allow_degraded = 0;
 uint32_t mount_readonly = 0;
 uint32_t mount_no_root_dir = 0;
+uint32_t mount_nodatacow = 0;
 uint32_t no_pnp = 0;
 bool log_started = false;
 UNICODE_STRING log_device, log_file, registry_path;

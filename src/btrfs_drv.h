@@ -655,6 +655,7 @@ typedef struct {
     bool clear_cache;
     bool allow_degraded;
     bool no_root_dir;
+    bool nodatacow;
 } mount_options;
 
 #define VCB_TYPE_FS         1
@@ -1163,6 +1164,7 @@ extern uint32_t mount_clear_cache;
 extern uint32_t mount_allow_degraded;
 extern uint32_t mount_readonly;
 extern uint32_t mount_no_root_dir;
+extern uint32_t mount_nodatacow;
 extern uint32_t no_pnp;
 
 #ifndef __GNUC__
