@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(btrfs VERSION 1.8.0)
+project(btrfs VERSION 1.8.1)
 
 option(WITH_TEST "Compile test program" ON)
 
