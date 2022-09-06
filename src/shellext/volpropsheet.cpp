@@ -935,6 +935,8 @@ INT_PTR CALLBACK BtrfsVolPropSheet::DeviceDlgProc(HWND hwndDlg, UINT uMsg, WPARA
 
                 devlist = GetDlgItem(hwndDlg, IDC_DEVLIST);
 
+                ListView_SetExtendedListViewStyleEx(devlist, ListView_GetExtendedListViewStyle(devlist), LVS_EX_FULLROWSELECT);
+
                 GetClientRect(devlist, &rect);
                 w = rect.right - rect.left;
 
