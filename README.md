@@ -152,7 +152,8 @@ name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001),
 and the value of your Linux uid (e.g. 1000). It will take effect next time the
 driver is loaded.
 
-You can find your current SID by running `wmic useraccount get name,sid`.
+You can find your current SID by running `wmic useraccount get name,sid` in 
+Command Prompt, or using `Get-WmiObject -Class Win32_UserAccount | Format-Table -Property Name,Sid` or `[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value` commands in [PowerShell](https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows).
 
 Similarly, the group mappings are stored in under GroupMappings. The default
 entry maps Windows' Users group to gid 100, which is usually "users" on Linux.
