@@ -44,7 +44,6 @@ jobs:
       
     - name: Prepare files for upload
       run: |
-      
         mkdir upload
         mkdir upload/${{ matrix.win_arch }}
 
@@ -53,7 +52,6 @@ jobs:
         copy build/shellbtrfs.dll upload/${{ matrix.win_arch }}
         copy build/mkbtrfs.exe upload/${{ matrix.win_arch }}
         copy build/btrfs.sys upload/${{ matrix.win_arch }}
-
 
         mkdir upload-pdb
         mkdir upload-pdb/${{ matrix.win_arch }}

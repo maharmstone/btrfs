@@ -141,7 +141,7 @@ Compilation
 
 To compile with Visual C++ 2019, open the directory and let CMake do its thing.
 If you have the Windows DDK installed correctly, it should just work.
-Note : you need to use the Ninja generator for CMake, else the driver might not work once installed
+Note: you need to use the Ninja generator for CMake, else the driver might not work once installed
 
 To compile with GCC on Linux, you will need a cross-compiler set up, for either
 `i686-w64-mingw32` or `x86_64-w64-mingw32`. Create a build directory, then use
@@ -150,13 +150,15 @@ generate your Makefile.
 
 Signing
 -----------
-To install a built-from-source or a nightly (from github actions) driver, you need to sign it
-In this section, I will show how to disable driver signature enforcement, or how to sign the driver using test-signing
-Warning : both of these solutions aren't perfect, if you are looking for a everyday-use it is recommanded to use the release builds, which are signed with a Microsoft-trusted key.
+
+To install a built-from-source or a nightly (from github actions) driver, you need to sign it.
+In this section, I will show how to disable driver signature enforcement, or how to sign the driver using test-signing.
+Warning: both of these solutions aren't perfect, if you are looking for a everyday-use it is recommanded to use the release builds, which are signed with a Microsoft-trusted key.
 
 
 ## Disabling signature enforcement
-Note : this isn't persistent accross reboots
+
+Note: this isn't persistent accross reboots
 
 Relevant link : https://docs.microsoft.com/en-us/windows-hardware/drivers/install/installing-an-unsigned-driver-during-development-and-test
 
@@ -175,19 +177,22 @@ If the window didn't show up, the driver probably wasn't installed, make sure yo
 The computer should next tell you to reboot your computer
 
 ### 3 - Reboot the computer again without driver signature enforcement
+
 Follow the same instructions as step 1
 
 ### 4 - Done !
+
 The driver should now be installed ! Note it will only load when the computer is started without driver signature enforcement
 
 
 
 ## Test-signing the driver
-Note : This method is harder to put in place, and has the only benefit of persisting after reboots.
+
+Note: This method is harder to put in place, and has the only benefit of persisting after reboots.
 
 Example commands are given for each steps but it is recommand to check the microsoft documentation link about test-signing, so you know what you are doing
 
-Relevant link : https://docs.microsoft.com/en-us/windows-hardware/drivers/install/test-signing
+Relevant link: https://docs.microsoft.com/en-us/windows-hardware/drivers/install/test-signing
 
 ### 1 - Put your computer in test mode
 
@@ -195,7 +200,7 @@ test-signing doesn't seem to work with Windows by default. You will need to put 
 
 `bcdedit  /set  testsigning  on`
 
-Note : you might need to disable Secure Boot for this to work
+Note: you might need to disable Secure Boot for this to work
 
 ### 2 - Generate a MakeCert certificate
 
@@ -218,7 +223,7 @@ The command will differ in your case (because of the path) but here is the one I
 
 `"C:\Program Files (x86)\Windows Kits\10\bin\x86\Inf2Cat.exe" /os:10_NI_X64 /driver:.`
 
-Note : this was tested in Windows 11, you might need to change the values of the /os flag according to your Windows version
+Note: this was tested in Windows 11, you might need to change the values of the /os flag according to your Windows version
 
 ### 5 - Sign the catalog file
 
