@@ -1,6 +1,4 @@
-<p align="center">
-  <a title="'Build' workflow Status" href="https://github.com/maharmstone/btrfs/actions?query=workflow%3ABuild%20CI"><img alt="'Build workflow Status" src="https://img.shields.io/github/workflow/status/maharmstone/btrfs/Build%20CI?longCache=true&style=for-the-badge&label=Build&logoColor=fff&logo=GitHub%20Actions"></a>
-</p> 
+[![Build CI](https://github.com/maharmstone/btrfs/actions/workflows/build.yml/badge.svg)](https://github.com/maharmstone/btrfs/actions/workflows/build.yml)
 
 WinBtrfs v1.8
 -------------
