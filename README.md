@@ -1,5 +1,5 @@
-WinBtrfs v1.8
--------------
+WinBtrfs v1.8.1
+---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
