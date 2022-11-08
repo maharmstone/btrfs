@@ -235,6 +235,16 @@ create a new DWORD value called `UpgradedSystem` and set to 1, and reboot.
 
 Or you could always just turn off Secure Boot in your BIOS settings.
 
+* The install option is missing from Windows 10
+
+Add a registry option as shown here: https://answers.microsoft.com/en-us/windows/forum/all/install-option-missing-from-the-context-menu-of/23524ad3-1687-4c2d-ba26-b249b4c4d8e9 . If you get a error message "This file does not have an app associated with it for performing this action. Please install an app or, if one is already installed, create an association in the Default Apps Settings page." after adding the registry option, see manual install command below
+
+* Manual install command for Windows 10
+
+After the secureboot registry setting is configured, if you still have installation issues in windows 10, then run the following to install.
+
+`rundll32 syssetup,SetupInfObjectInstallAction DefaultInstall 128 .\btrfs.inf`
+
 * The root of the drive isn't case-sensitive in LXSS
 
 This is something Microsoft hardcoded into LXSS, presumably to stop people hosing
