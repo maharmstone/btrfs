@@ -31,11 +31,11 @@
 #include <intrin.h>
 #endif
 
-const string EA_NTACL = "security.NTACL";
-const string EA_DOSATTRIB = "user.DOSATTRIB";
-const string EA_REPARSE = "user.reparse";
-const string EA_EA = "user.EA";
-const string XATTR_USER = "user.";
+static const string_view EA_NTACL = "security.NTACL";
+static const string_view EA_DOSATTRIB = "user.DOSATTRIB";
+static const string_view EA_REPARSE = "user.reparse";
+static const string_view EA_EA = "user.EA";
+static const string_view XATTR_USER = "user.";
 
 bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len) {
     size_t off = 0;
