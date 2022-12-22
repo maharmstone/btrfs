@@ -1232,6 +1232,28 @@ void test_ea(const u16string& dir) {
                 throw formatted_error("EA value was \"{}\", expected \"{}\"", value, ea3_value);
         });
 
+        test("Read non-existent EA", [&]() {
+            auto items = read_eas(h.get(), array{ "baz"sv }, false, nullptr, true);
+
+            if (items.size() != 1)
+                throw formatted_error("{} entries returned, expected 1", items.size());
+
+            auto& ffeai = *static_cast<FILE_FULL_EA_INFORMATION*>(items.front());
+
+            if (ffeai.Flags != 0)
+                throw formatted_error("Flags was {:x}, expected 0", ffeai.Flags);
+
+            auto name = string_view(ffeai.EaName, ffeai.EaNameLength);
+
+            if (name != "BAZ") // gets capitalized
+                throw formatted_error("EA name was \"{}\", expected \"BAZ\"", name);
+
+            auto value = string_view(ffeai.EaName + ffeai.EaNameLength + 1, ffeai.EaValueLength);
+
+            if (value != "")
+                throw formatted_error("EA value was \"{}\", expected \"\"", value);
+        });
+
         h.reset();
     }
 
