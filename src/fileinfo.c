@@ -5494,7 +5494,10 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         FILE_GET_EA_INFORMATION* in;
 
         in = IrpSp->Parameters.QueryEa.EaList;
+        out = NULL;
+
         do {
+            bool found = false;
             STRING s;
 
             s.Length = s.MaximumLength = in->EaNameLength;
@@ -5502,30 +5505,19 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
             RtlUpperString(&s, &s);
 
-            if (in->NextEntryOffset == 0)
-                break;
+            ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
 
-            in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
-        } while (true);
-
-        ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
-        out = NULL;
-
-        do {
-            bool found = false;
-
-            in = IrpSp->Parameters.QueryEa.EaList;
             do {
-                if (in->EaNameLength == ea->EaNameLength &&
-                    RtlCompareMemory(in->EaName, ea->EaName, in->EaNameLength) == in->EaNameLength) {
+                if (ea->EaNameLength == in->EaNameLength &&
+                    RtlCompareMemory(ea->EaName, in->EaName, ea->EaNameLength) == ea->EaNameLength) {
                     found = true;
                     break;
                 }
 
-                if (in->NextEntryOffset == 0)
+                if (ea->NextEntryOffset == 0)
                     break;
 
-                in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
+                ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
             } while (true);
 
             if (found) {
@@ -5557,10 +5549,10 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
                     break;
             }
 
-            if (ea->NextEntryOffset == 0)
+            if (in->NextEntryOffset == 0)
                 break;
 
-            ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
+            in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
         } while (true);
     } else {
         FILE_FULL_EA_INFORMATION *ea, *out;
