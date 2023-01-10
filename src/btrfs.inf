@@ -2,7 +2,7 @@
 ;;; WinBtrfs
 ;;;
 ;;;
-;;; Copyright (c) 2016-22 Mark Harmstone
+;;; Copyright (c) 2016-23 Mark Harmstone
 ;;;
 
 [Version]
@@ -10,7 +10,7 @@ Signature   = "$Windows NT$"
 Class       = Volume
 ClassGuid   = {71a27cdd-812a-11d0-bec7-08002be2092f}
 Provider    = %Me%
-DriverVer   = 08/23/2022,1.8.1.0
+DriverVer   = 01/10/2023,1.8.2.0
 CatalogFile = btrfs.cat
 
 [DestinationDirs]

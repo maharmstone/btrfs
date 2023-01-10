@@ -1,4 +1,4 @@
-WinBtrfs v1.8.1
+WinBtrfs v1.8.2
 ---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
@@ -275,6 +275,12 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.8.2 (2023-01-10):
+* Fixed UAC not working
+* Fixed Smartlocker crash on Windows 11 22H2
+* Rejigged INF file to work better on Windows 11
+* Files now signed with SHA256 hash rather than SHA1
 
 v1.8.1 (2022-08-23):
 * Fixed use-after-free when flushing
