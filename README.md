@@ -1,7 +1,7 @@
 [![Build CI](https://github.com/maharmstone/btrfs/actions/workflows/build.yml/badge.svg)](https://github.com/maharmstone/btrfs/actions/workflows/build.yml)
 
-WinBtrfs v1.8
--------------
+WinBtrfs v1.8.2
+---------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -364,6 +364,20 @@ partition type from 83 to 7.
 Changelog
 ---------
 
+v1.8.2 (2023-01-10):
+* Fixed UAC not working
+* Fixed Smartlocker crash on Windows 11 22H2
+* Rejigged INF file to work better on Windows 11
+* Files now signed with SHA256 hash rather than SHA1
+
+v1.8.1 (2022-08-23):
+* Fixed use-after-free when flushing
+* Fixed crash when opening volume when AppLocker installed
+* Compression now disabled for no-COW files, as on Linux
+* Flushing now scales better on very fast drives
+* Fixed small files getting padded to 4,096 bytes by lazy writer
+* Added NoDataCOW registry option
+
 v1.8 (2022-03-12):
 * Added minimal support for fs-verity
 * Added test suite
@@ -709,6 +723,9 @@ missing. You are strongly advised not to enable this unless you need to.
 * `NoRootDir` (DWORD): if you have changed your default subvolume, either natively or by a registry option,
 there will be a hidden directory called $Root which points to where the root would normally be. Set this
 value to 1 to prevent this appearing.
+
+* `NoDataCOW` (DWORD): set this to 1 to disable copy-on-write for new files. This is the equivalent of the
+`nodatacow` flag on Linux.
 
 Contact
 -------

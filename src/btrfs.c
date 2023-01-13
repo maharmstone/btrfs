@@ -81,6 +81,7 @@ uint32_t mount_clear_cache = 0;
 uint32_t mount_allow_degraded = 0;
 uint32_t mount_readonly = 0;
 uint32_t mount_no_root_dir = 0;
+uint32_t mount_nodatacow = 0;
 uint32_t no_pnp = 0;
 bool log_started = false;
 UNICODE_STRING log_device, log_file, registry_path;
@@ -650,7 +651,7 @@ static bool compare_strings(const UNICODE_STRING* us1, const UNICODE_STRING* us2
     WCHAR* s1 = us1->Buffer;
     WCHAR* s2 = us2->Buffer;
 
-    for (unsigned int i = 0; i < us1->Length; i++) {
+    for (unsigned int i = 0; i < us1->Length / sizeof(WCHAR); i++) {
         WCHAR c1 = *s1;
         WCHAR c2 = *s2;
 

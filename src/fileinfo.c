@@ -3208,6 +3208,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     LIST_ENTRY rollback;
     bool set_size = false;
     ULONG filter;
+    uint64_t new_end_of_file;
 
     if (!fileref) {
         ERR("fileref is NULL\n");
@@ -3266,35 +3267,43 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
 
-    TRACE("setting new end to %I64x bytes (currently %I64x)\n", feofi->EndOfFile.QuadPart, fcb->inode_item.st_size);
+    new_end_of_file = feofi->EndOfFile.QuadPart;
 
-    if ((uint64_t)feofi->EndOfFile.QuadPart < fcb->inode_item.st_size) {
+    /* The lazy writer sometimes tries to round files to the next page size through CcSetValidData -
+     * ignore these. See fastfat!FatSetEndOfFileInfo, where Microsoft does the same as we're
+     * doing below. */
+    if (advance_only && new_end_of_file >= (uint64_t)fcb->Header.FileSize.QuadPart)
+        new_end_of_file = fcb->Header.FileSize.QuadPart;
+
+    TRACE("setting new end to %I64x bytes (currently %I64x)\n", new_end_of_file, fcb->inode_item.st_size);
+
+    if (new_end_of_file < fcb->inode_item.st_size) {
         if (advance_only) {
             Status = STATUS_SUCCESS;
             goto end;
         }
 
-        TRACE("truncating file to %I64x bytes\n", feofi->EndOfFile.QuadPart);
+        TRACE("truncating file to %I64x bytes\n", new_end_of_file);
 
         if (!MmCanFileBeTruncated(&fcb->nonpaged->segment_object, &feofi->EndOfFile)) {
             Status = STATUS_USER_MAPPED_FILE;
             goto end;
         }
 
-        Status = truncate_file(fcb, feofi->EndOfFile.QuadPart, Irp, &rollback);
+        Status = truncate_file(fcb, new_end_of_file, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - truncate_file failed\n");
             goto end;
         }
-    } else if ((uint64_t)feofi->EndOfFile.QuadPart > fcb->inode_item.st_size) {
-        TRACE("extending file to %I64x bytes\n", feofi->EndOfFile.QuadPart);
+    } else if (new_end_of_file > fcb->inode_item.st_size) {
+        TRACE("extending file to %I64x bytes\n", new_end_of_file);
 
-        Status = extend_file(fcb, fileref, feofi->EndOfFile.QuadPart, prealloc, NULL, &rollback);
+        Status = extend_file(fcb, fileref, new_end_of_file, prealloc, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - extend_file failed\n");
             goto end;
         }
-    } else if ((uint64_t)feofi->EndOfFile.QuadPart == fcb->inode_item.st_size && advance_only) {
+    } else if (new_end_of_file == fcb->inode_item.st_size && advance_only) {
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -5483,9 +5492,13 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (IrpSp->Parameters.QueryEa.EaList) {
         FILE_FULL_EA_INFORMATION *ea, *out;
         FILE_GET_EA_INFORMATION* in;
+        uint8_t padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
 
         in = IrpSp->Parameters.QueryEa.EaList;
+        out = NULL;
+
         do {
+            bool found = false;
             STRING s;
 
             s.Length = s.MaximumLength = in->EaNameLength;
@@ -5493,65 +5506,59 @@ NTSTATUS __stdcall drv_query_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
             RtlUpperString(&s, &s);
 
-            if (in->NextEntryOffset == 0)
-                break;
+            ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
 
-            in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
-        } while (true);
-
-        ea = (FILE_FULL_EA_INFORMATION*)fcb->ea_xattr.Buffer;
-        out = NULL;
-
-        do {
-            bool found = false;
-
-            in = IrpSp->Parameters.QueryEa.EaList;
             do {
-                if (in->EaNameLength == ea->EaNameLength &&
-                    RtlCompareMemory(in->EaName, ea->EaName, in->EaNameLength) == in->EaNameLength) {
+                if (ea->EaNameLength == in->EaNameLength &&
+                    RtlCompareMemory(ea->EaName, in->EaName, ea->EaNameLength) == ea->EaNameLength) {
                     found = true;
                     break;
                 }
 
-                if (in->NextEntryOffset == 0)
+                if (ea->NextEntryOffset == 0)
                     break;
 
-                in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
+                ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
             } while (true);
 
+            if (offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength > IrpSp->Parameters.QueryEa.Length - retlen - padding) {
+                Status = STATUS_BUFFER_OVERFLOW;
+                retlen = 0;
+                goto end2;
+            }
+
+            retlen += padding;
+
+            if (out) {
+                out->NextEntryOffset = (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
+                out = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)out) + out->NextEntryOffset);
+            } else
+                out = ffei;
+
+            out->NextEntryOffset = 0;
+
             if (found) {
-                uint8_t padding = retlen % 4 > 0 ? (4 - (retlen % 4)) : 0;
-
-                if (offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength > IrpSp->Parameters.QueryEa.Length - retlen - padding) {
-                    Status = STATUS_BUFFER_OVERFLOW;
-                    retlen = 0;
-                    goto end2;
-                }
-
-                retlen += padding;
-
-                if (out) {
-                    out->NextEntryOffset = (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength + padding;
-                    out = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)out) + out->NextEntryOffset);
-                } else
-                    out = ffei;
-
-                out->NextEntryOffset = 0;
                 out->Flags = ea->Flags;
                 out->EaNameLength = ea->EaNameLength;
                 out->EaValueLength = ea->EaValueLength;
                 RtlCopyMemory(out->EaName, ea->EaName, ea->EaNameLength + ea->EaValueLength + 1);
-
-                retlen += (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + ea->EaNameLength + 1 + ea->EaValueLength;
-
-                if (IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
-                    break;
+            } else {
+                out->Flags = 0;
+                out->EaNameLength = in->EaNameLength;
+                out->EaValueLength = 0;
+                RtlCopyMemory(out->EaName, in->EaName, in->EaNameLength);
+                out->EaName[in->EaNameLength] = 0;
             }
 
-            if (ea->NextEntryOffset == 0)
+            retlen += (ULONG)offsetof(FILE_FULL_EA_INFORMATION, EaName[0]) + out->EaNameLength + 1 + out->EaValueLength;
+
+            if (IrpSp->Flags & SL_RETURN_SINGLE_ENTRY)
                 break;
 
-            ea = (FILE_FULL_EA_INFORMATION*)(((uint8_t*)ea) + ea->NextEntryOffset);
+            if (in->NextEntryOffset == 0)
+                break;
+
+            in = (FILE_GET_EA_INFORMATION*)(((uint8_t*)in) + in->NextEntryOffset);
         } while (true);
     } else {
         FILE_FULL_EA_INFORMATION *ea, *out;

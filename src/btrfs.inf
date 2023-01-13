@@ -2,7 +2,7 @@
 ;;; WinBtrfs
 ;;;
 ;;;
-;;; Copyright (c) 2016-22 Mark Harmstone
+;;; Copyright (c) 2016-23 Mark Harmstone
 ;;;
 
 [Version]
@@ -10,11 +10,10 @@ Signature   = "$Windows NT$"
 Class       = Volume
 ClassGuid   = {71a27cdd-812a-11d0-bec7-08002be2092f}
 Provider    = %Me%
-DriverVer   = 03/12/2022,1.8.0
+DriverVer   = 01/10/2023,1.8.2.0
 CatalogFile = btrfs.cat
 
 [DestinationDirs]
-DefaultDestDir          = 12
 Btrfs.DriverFiles       = 12            ;%windir%\system32\drivers
 Btrfs.DllFiles          = 11            ;%windir%\system32
 
@@ -22,52 +21,41 @@ Btrfs.DllFiles          = 11            ;%windir%\system32
 ;; Default install sections
 ;;
 
-[DefaultInstall]
+[DefaultInstall.NTamd64]
 OptionDesc  = %ServiceDescription%
 CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
-RegisterDlls = shellbtrfs
-CopyINF     = btrfs.inf
+AddReg      = shellbtrfs_AddReg
+CopyINF     = btrfs-vol.inf
 
-[DefaultInstall.Services]
+[DefaultInstall.NTx86]
+OptionDesc  = %ServiceDescription%
+CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
+AddReg      = shellbtrfs_AddReg
+CopyINF     = btrfs-vol.inf
+
+[DefaultInstall.NTarm]
+OptionDesc  = %ServiceDescription%
+CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
+AddReg      = shellbtrfs_AddReg
+CopyINF     = btrfs-vol.inf
+
+[DefaultInstall.NTarm64]
+OptionDesc  = %ServiceDescription%
+CopyFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
+AddReg      = shellbtrfs_AddReg
+CopyINF     = btrfs-vol.inf
+
+[DefaultInstall.NTamd64.Services]
 AddService  = %ServiceName%,0x802,Btrfs.Service
 
-[Manufacturer]
-%Me%=Standard,NTamd64,NTx86,NTarm,NTarm64
+[DefaultInstall.NTx86.Services]
+AddService  = %ServiceName%,0x802,Btrfs.Service
 
-[Standard.NTamd64]
-%VolumeName% = Btrfs_Install, BtrfsVolume
-%ControllerName% = Btrfs_Install, ROOT\btrfs
+[DefaultInstall.NTarm.Services]
+AddService  = %ServiceName%,0x802,Btrfs.Service
 
-[Standard.NTx86]
-%VolumeName% = Btrfs_Install, BtrfsVolume
-%ControllerName% = Btrfs_Install, ROOT\btrfs
-
-[Standard.NTarm]
-%VolumeName% = Btrfs_Install, BtrfsVolume
-%ControllerName% = Btrfs_Install, ROOT\btrfs
-
-[Standard.NTarm64]
-%VolumeName% = Btrfs_Install, BtrfsVolume
-%ControllerName% = Btrfs_Install, ROOT\btrfs
-
-[Btrfs_Install]
-OptionDesc   = %ServiceDescription%
-CopyFiles    = Btrfs.DriverFiles,Btrfs.DllFiles
-RegisterDlls = shellbtrfs
-
-[Btrfs_Install.Services]
-AddService  = %ServiceName%,2,Btrfs.Service
-
-;;
-;; Default uninstall sections
-;;
-
-[DefaultUninstall]
-UnregisterDlls = shellbtrfs
-DelFiles   = Btrfs.DriverFiles,Btrfs.DllFiles
-
-[DefaultUninstall.Services]
-DelService = %ServiceName%,0x200      ;Ensure service is stopped before deleting
+[DefaultInstall.NTarm64.Services]
+AddService  = %ServiceName%,0x802,Btrfs.Service
 
 ;
 ; Services Section
@@ -81,9 +69,6 @@ ServiceType      = 1
 StartType        = 1                        ;SERVICE_SYSTEM_START
 ErrorControl     = 1
 LoadOrderGroup   = "File System"
-
-[shellbtrfs]
-11,,shellbtrfs.dll,1
 
 ;
 ; Copy Files
@@ -115,6 +100,26 @@ mkbtrfs.exe = 1,,
 [SourceDisksNames.arm64]
 1 = %DiskId1%,,,\arm64
 
+[shellbtrfs_AddReg]
+HKCR,*\ShellEx\PropertySheetHandlers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F2}"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F0},,,"WinBtrfs shell extension (icon handler)"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F0}\InprocServer32,,%REG_EXPAND_SZ%,"%%SystemRoot%%\System32\shellbtrfs.dll"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F0}\InprocServer32,ThreadingModel,,"Apartment"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F1},,,"WinBtrfs shell extension (context menu)"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F1}\InprocServer32,,%REG_EXPAND_SZ%,"%%SystemRoot%%\System32\shellbtrfs.dll"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F1}\InprocServer32,ThreadingModel,,"Apartment"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F2},,,"WinBtrfs shell extension (property sheet)"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F2}\InprocServer32,,%REG_EXPAND_SZ%,"%%SystemRoot%%\System32\shellbtrfs.dll"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F2}\InprocServer32,ThreadingModel,,"Apartment"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F3},,,"WinBtrfs shell extension (volume property sheet)"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F3}\InprocServer32,,%REG_EXPAND_SZ%,"%%SystemRoot%%\System32\shellbtrfs.dll"
+HKCR,CLSID\{2690B74F-F353-422D-BB12-401581EEF8F3}\InprocServer32,ThreadingModel,,"Apartment"
+HKCR,Directory\Background\ShellEx\ContextMenuHandlers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F1}"
+HKCR,Drive\ShellEx\PropertySheetHandlers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F3}"
+HKCR,Folder\ShellEx\ContextMenuHandlers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F1}"
+HKCR,Folder\ShellEx\PropertySheetHandlers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F2}"
+;HKLM,Software\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F0}"
+
 ;;
 ;; String Section
 ;;
@@ -127,3 +132,4 @@ DriverName              = "btrfs"
 DiskId1                 = "Btrfs Device Installation Disk"
 VolumeName              = "Btrfs volume"
 ControllerName          = "Btrfs controller"
+REG_EXPAND_SZ           = 0x00020000

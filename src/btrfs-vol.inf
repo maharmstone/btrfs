@@ -1,0 +1,93 @@
+;;;
+;;; WinBtrfs
+;;;
+;;;
+;;; Copyright (c) 2016-23 Mark Harmstone
+;;;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = Volume
+ClassGuid   = {71a27cdd-812a-11d0-bec7-08002be2092f}
+Provider    = %Me%
+DriverVer   = 01/10/2023,1.8.2.0
+CatalogFile = btrfs.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+Btrfs.DriverFiles       = 12            ;%windir%\system32\drivers
+
+[Manufacturer]
+%Me%=Standard,NTamd64,NTx86,NTarm,NTarm64
+
+[Standard.NTamd64]
+%VolumeName% = Btrfs_Install, BtrfsVolume
+%ControllerName% = Btrfs_Install, ROOT\btrfs
+
+[Standard.NTx86]
+%VolumeName% = Btrfs_Install, BtrfsVolume
+%ControllerName% = Btrfs_Install, ROOT\btrfs
+
+[Standard.NTarm]
+%VolumeName% = Btrfs_Install, BtrfsVolume
+%ControllerName% = Btrfs_Install, ROOT\btrfs
+
+[Standard.NTarm64]
+%VolumeName% = Btrfs_Install, BtrfsVolume
+%ControllerName% = Btrfs_Install, ROOT\btrfs
+
+[Btrfs_Install]
+OptionDesc   = %ServiceDescription%
+CopyFiles    = Btrfs.DriverFiles
+
+[Btrfs_Install.Services]
+AddService  = %ServiceName%,2,Btrfs.Service
+
+;
+; Services Section
+;
+
+[Btrfs.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\%DriverName%.sys    ;%windir%\system32\drivers\
+ServiceType      = 1
+StartType        = 1                        ;SERVICE_SYSTEM_START
+ErrorControl     = 1
+LoadOrderGroup   = "File System"
+
+;
+; Copy Files
+;
+
+[Btrfs.DriverFiles]
+%DriverName%.sys
+
+[SourceDisksFiles]
+btrfs.sys = 1,,
+
+[SourceDisksNames.x86]
+1 = %DiskId1%,,,\x86
+
+[SourceDisksNames.amd64]
+1 = %DiskId1%,,,\x64
+
+[SourceDisksNames.arm]
+1 = %DiskId1%,,,\arm
+
+[SourceDisksNames.arm64]
+1 = %DiskId1%,,,\aarch64
+
+;;
+;; String Section
+;;
+
+[Strings]
+Me                      = "Mark Harmstone"
+ServiceDescription      = "Btrfs driver"
+ServiceName             = "btrfs"
+DriverName              = "btrfs"
+DiskId1                 = "Btrfs Device Installation Disk"
+VolumeName              = "Btrfs volume"
+ControllerName          = "Btrfs controller"
+REG_EXPAND_SZ           = 0x00020000
