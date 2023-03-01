@@ -267,6 +267,12 @@ for Windows, you're out of luck.
 Thecus uses Linux's MD raid for its block devices. You will need to install [WinMD](https://github.com/maharmstone/winmd)
 as well.
 
+* 64-bit Windows 7 won't load the driver
+
+Windows 7 requires that 64-bit drivers are signed, but the original version doesn't
+support modern certificates. If you can, run Windows Update and try again. If this
+doesn't work, consider installing from an "escrow" ISO which includes all updates.
+
 * The drive doesn't show up
 
 On very old versions of Windows (XP, Server 2003?), Windows ignores Linux partitions
