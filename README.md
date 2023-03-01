@@ -273,7 +273,13 @@ Windows 7 requires that 64-bit drivers are signed, but the original version does
 support modern certificates. If you can, run Windows Update and try again. If this
 doesn't work, consider installing from an "escrow" ISO which includes all updates.
 
-* The drive doesn't show up
+* The drive doesn't show up and Paragon software has been installed
+
+Paragon's filesystem-reading software is known to disable automount. Disable or
+uninstall Paragon, then re-enable automount by running `diskpart` and typing
+`automount enable`.
+
+* The drive doesn't show up on very old versions of Windows
 
 On very old versions of Windows (XP, Server 2003?), Windows ignores Linux partitions
 entirely. If this is the case for you, try running `fdisk` on Linux and changing your
