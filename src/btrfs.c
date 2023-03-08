@@ -1177,7 +1177,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
                 ULONG bytecount;
 
                 Status = utf8_to_utf16(&data->VolumeLabel[0], label_len, &bytecount, Vcb->superblock.label, (ULONG)strlen(Vcb->superblock.label));
-                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
+                if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW) {
                     ERR("utf8_to_utf16 returned %08lx\n", Status);
                     ExReleaseResourceLite(&Vcb->tree_lock);
                     break;
