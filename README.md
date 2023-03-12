@@ -269,9 +269,8 @@ as well.
 
 * 64-bit Windows 7 won't load the driver
 
-Windows 7 requires that 64-bit drivers are signed, but the original version doesn't
-support modern certificates. If you can, run Windows Update and try again. If this
-doesn't work, consider installing from an "escrow" ISO which includes all updates.
+Make sure that you have [KB3033929](https://www.microsoft.com/en-gb/download/details.aspx?id=46148) installed.
+Or consider installing from an "escrow" ISO which includes all updates.
 
 * The drive doesn't show up and Paragon software has been installed
 
