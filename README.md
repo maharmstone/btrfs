@@ -246,6 +246,11 @@ With the shell extension installed, right-click the drive in Explorer, click Pro
 and go to the Btrfs tab. There should be a button which allows you to change the drive
 letter.
 
+* I'm still having problems with drive letters
+
+In Regedit, try deleting the relevant entries in `HKEY_LOCAL_MACHINE\SYSTEM\MountedDevices`,
+then rebooting.
+
 * How do I format a partition as Btrfs?
 
 Use the included command line program mkbtrfs.exe. We can't add Btrfs to Windows' own
