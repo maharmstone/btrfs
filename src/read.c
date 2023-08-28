@@ -3588,7 +3588,8 @@ NTSTATUS __stdcall drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
         CcFlushCache(FileObject->SectionObjectPointer, &IrpSp->Parameters.Read.ByteOffset, IrpSp->Parameters.Read.Length, &iosb);
         if (!NT_SUCCESS(iosb.Status)) {
             ERR("CcFlushCache returned %08lx\n", iosb.Status);
-            return iosb.Status;
+            Status = iosb.Status;
+            goto exit;
         }
     }
 
