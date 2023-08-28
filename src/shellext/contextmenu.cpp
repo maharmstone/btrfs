@@ -86,15 +86,14 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
         if (FAILED(pdtobj->GetData(&format, &stgm)))
             return E_INVALIDARG;
 
-        stgm_set = true;
-
         hdrop = (HDROP)GlobalLock(stgm.hGlobal);
 
         if (!hdrop) {
             ReleaseStgMedium(&stgm);
-            stgm_set = false;
             return E_INVALIDARG;
         }
+
+        stgm_set = true;
 
         num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
@@ -124,14 +123,14 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                         ignore = false;
                         bg = false;
 
-                        GlobalUnlock(hdrop);
+                        GlobalUnlock(stgm.hGlobal);
                         return S_OK;
                     }
                 }
             }
         }
 
-        GlobalUnlock(hdrop);
+        GlobalUnlock(stgm.hGlobal);
 
         return S_OK;
     }
@@ -219,24 +218,24 @@ static bool show_reflink_paste(const wstring& path) {
     num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
     if (num_files == 0) {
-        GlobalUnlock(lh);
+        GlobalUnlock(hdrop);
         CloseClipboard();
         return false;
     }
 
     if (!DragQueryFileW(hdrop, 0, fn, sizeof(fn) / sizeof(WCHAR))) {
-        GlobalUnlock(lh);
+        GlobalUnlock(hdrop);
         CloseClipboard();
         return false;
     }
 
     if (!get_volume_path_parent(fn, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
-        GlobalUnlock(lh);
+        GlobalUnlock(hdrop);
         CloseClipboard();
         return false;
     }
 
-    GlobalUnlock(lh);
+    GlobalUnlock(hdrop);
 
     CloseClipboard();
 
@@ -1105,11 +1104,11 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                                     }
                                 }
                             } catch (...) {
-                                GlobalUnlock(lh);
+                                GlobalUnlock(hdrop);
                                 throw;
                             }
 
-                            GlobalUnlock(lh);
+                            GlobalUnlock(hdrop);
                         }
                     }
                 } catch (...) {

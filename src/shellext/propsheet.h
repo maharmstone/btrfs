@@ -118,7 +118,6 @@ public:
 
     virtual ~BtrfsPropSheet() {
         if (stgm_set) {
-            GlobalUnlock(stgm.hGlobal);
             ReleaseStgMedium(&stgm);
         }
 

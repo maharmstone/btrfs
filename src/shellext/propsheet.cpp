@@ -356,20 +356,21 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
         if (FAILED(pdtobj->GetData(&format, &stgm)))
             return E_INVALIDARG;
 
-        stgm_set = true;
-
         hdrop = (HDROP)GlobalLock(stgm.hGlobal);
 
         if (!hdrop) {
             ReleaseStgMedium(&stgm);
-            stgm_set = false;
             return E_INVALIDARG;
         }
 
+        stgm_set = true;
+
         try {
             hr = load_file_list();
-            if (FAILED(hr))
+            if (FAILED(hr)) {
+                GlobalUnlock(stgm.hGlobal);
                 return hr;
+            }
 
             if (search_list.size() > 0) {
                 thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
@@ -378,11 +379,11 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
                     throw last_error(GetLastError());
             }
         } catch (...) {
-            GlobalUnlock(hdrop);
+            GlobalUnlock(stgm.hGlobal);
             throw;
         }
 
-        GlobalUnlock(hdrop);
+        GlobalUnlock(stgm.hGlobal);
     } catch (const exception& e) {
         error_message(nullptr, e.what());
 
@@ -691,7 +692,7 @@ void BtrfsPropSheet::apply_changes(HWND hDlg) {
 
     if (filename[0] != 0)
         apply_changes_file(hDlg, filename);
-    else {
+    else if (stgm_set) {
         num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
         for (i = 0; i < num_files; i++) {
@@ -864,6 +865,9 @@ static void set_check_box(HWND hwndDlg, ULONG id, uint64_t min, uint64_t max) {
 void BtrfsPropSheet::open_as_admin(HWND hwndDlg) {
     ULONG num_files, i;
     WCHAR fn[MAX_PATH], modfn[MAX_PATH];
+
+    if (!stgm_set)
+        return;
 
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 

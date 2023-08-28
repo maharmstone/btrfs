@@ -40,7 +40,6 @@ public:
 
     virtual ~BtrfsVolPropSheet() {
         if (stgm_set) {
-            GlobalUnlock(stgm.hGlobal);
             ReleaseStgMedium(&stgm);
         }
 

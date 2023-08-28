@@ -34,7 +34,6 @@ public:
 
     virtual ~BtrfsContextMenu() {
         if (stgm_set) {
-            GlobalUnlock(stgm.hGlobal);
             ReleaseStgMedium(&stgm);
         }
 

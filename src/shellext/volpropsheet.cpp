@@ -65,20 +65,19 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
     if (FAILED(pdtobj->GetData(&format, &stgm)))
         return E_INVALIDARG;
 
-    stgm_set = true;
-
     hdrop = (HDROP)GlobalLock(stgm.hGlobal);
 
     if (!hdrop) {
         ReleaseStgMedium(&stgm);
-        stgm_set = false;
         return E_INVALIDARG;
     }
+
+    stgm_set = true;
 
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
     if (num_files > 1) {
-        GlobalUnlock(hdrop);
+        GlobalUnlock(stgm.hGlobal);
         return E_FAIL;
     }
 
@@ -109,7 +108,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
 
                         i++;
                     } else {
-                        GlobalUnlock(hdrop);
+                        GlobalUnlock(stgm.hGlobal);
                         return E_FAIL;
                     }
                 } else
@@ -117,7 +116,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             }
 
             if (!NT_SUCCESS(Status)) {
-                GlobalUnlock(hdrop);
+                GlobalUnlock(stgm.hGlobal);
                 return E_FAIL;
             }
 
@@ -127,15 +126,15 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             ignore = false;
             balance = new BtrfsBalance(fn);
         } else {
-            GlobalUnlock(hdrop);
+            GlobalUnlock(stgm.hGlobal);
             return E_FAIL;
         }
     } else {
-        GlobalUnlock(hdrop);
+        GlobalUnlock(stgm.hGlobal);
         return E_FAIL;
     }
 
-    GlobalUnlock(hdrop);
+    GlobalUnlock(stgm.hGlobal);
 
     return S_OK;
 }
