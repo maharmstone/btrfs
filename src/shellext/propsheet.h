@@ -117,10 +117,8 @@ public:
     }
 
     virtual ~BtrfsPropSheet() {
-        if (stgm_set) {
-            GlobalUnlock(stgm.hGlobal);
+        if (stgm_set)
             ReleaseStgMedium(&stgm);
-        }
 
         InterlockedDecrement(&objs_loaded);
     }

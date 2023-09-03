@@ -358,31 +358,24 @@ HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IData
 
         stgm_set = true;
 
-        hdrop = (HDROP)GlobalLock(stgm.hGlobal);
+        global_lock gl(stgm.hGlobal);
 
-        if (!hdrop) {
+        if (!gl.ptr) {
             ReleaseStgMedium(&stgm);
             stgm_set = false;
             return E_INVALIDARG;
         }
 
-        try {
-            hr = load_file_list();
-            if (FAILED(hr))
-                return hr;
+        hr = load_file_list();
+        if (FAILED(hr))
+            return hr;
 
-            if (search_list.size() > 0) {
-                thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
+        if (search_list.size() > 0) {
+            thread = CreateThread(nullptr, 0, global_search_list_thread, this, 0, nullptr);
 
-                if (!thread)
-                    throw last_error(GetLastError());
-            }
-        } catch (...) {
-            GlobalUnlock(hdrop);
-            throw;
+            if (!thread)
+                throw last_error(GetLastError());
         }
-
-        GlobalUnlock(hdrop);
     } catch (const exception& e) {
         error_message(nullptr, e.what());
 
