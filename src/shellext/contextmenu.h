@@ -33,10 +33,8 @@ public:
     }
 
     virtual ~BtrfsContextMenu() {
-        if (stgm_set) {
-            GlobalUnlock(stgm.hGlobal);
+        if (stgm_set)
             ReleaseStgMedium(&stgm);
-        }
 
         if (uacicon)
             DeleteObject(uacicon);

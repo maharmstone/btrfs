@@ -88,7 +88,9 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
 
         stgm_set = true;
 
-        hdrop = (HDROP)GlobalLock(stgm.hGlobal);
+        global_lock gl(stgm.hGlobal);
+
+        hdrop = (HDROP)gl.ptr;
 
         if (!hdrop) {
             ReleaseStgMedium(&stgm);
@@ -96,10 +98,10 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
             return E_INVALIDARG;
         }
 
-        num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
+        num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
         for (i = 0; i < num_files; i++) {
-            if (DragQueryFileW((HDROP)stgm.hGlobal, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+            if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
                 win_handle h = CreateFileW(fn, FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 
                 if (h != INVALID_HANDLE_VALUE) {
@@ -124,14 +126,11 @@ HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDa
                         ignore = false;
                         bg = false;
 
-                        GlobalUnlock(hdrop);
                         return S_OK;
                     }
                 }
             }
         }
-
-        GlobalUnlock(hdrop);
 
         return S_OK;
     }
@@ -209,7 +208,9 @@ static bool show_reflink_paste(const wstring& path) {
         return false;
     }
 
-    lh = GlobalLock(hdrop);
+    global_lock gl(hdrop);
+
+    lh = gl.ptr;
 
     if (!lh) {
         CloseClipboard();
@@ -219,24 +220,19 @@ static bool show_reflink_paste(const wstring& path) {
     num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
     if (num_files == 0) {
-        GlobalUnlock(lh);
         CloseClipboard();
         return false;
     }
 
     if (!DragQueryFileW(hdrop, 0, fn, sizeof(fn) / sizeof(WCHAR))) {
-        GlobalUnlock(lh);
         CloseClipboard();
         return false;
     }
 
     if (!get_volume_path_parent(fn, volpath2, sizeof(volpath2) / sizeof(WCHAR))) {
-        GlobalUnlock(lh);
         CloseClipboard();
         return false;
     }
-
-    GlobalUnlock(lh);
 
     CloseClipboard();
 
@@ -1090,26 +1086,19 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                     if (hdrop) {
                         HANDLE lh;
 
-                        lh = GlobalLock(hdrop);
+                        global_lock gl(hdrop);
 
-                        if (lh) {
-                            try {
-                                ULONG num_files, i;
-                                WCHAR fn[MAX_PATH];
+                        if (gl.ptr) {
+                            ULONG num_files, i;
+                            WCHAR fn[MAX_PATH];
 
-                                num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+                            num_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
 
-                                for (i = 0; i < num_files; i++) {
-                                    if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                                        reflink_copy(pici->hwnd, fn, pici->lpDirectoryW);
-                                    }
+                            for (i = 0; i < num_files; i++) {
+                                if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
+                                    reflink_copy(pici->hwnd, fn, pici->lpDirectoryW);
                                 }
-                            } catch (...) {
-                                GlobalUnlock(lh);
-                                throw;
                             }
-
-                            GlobalUnlock(lh);
                         }
                     }
                 } catch (...) {

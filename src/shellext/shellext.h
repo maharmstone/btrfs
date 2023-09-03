@@ -327,6 +327,23 @@ private:
     string msg;
 };
 
+class global_lock {
+public:
+    global_lock(HGLOBAL mem) : mem(mem) {
+        ptr = GlobalLock(mem);
+    }
+
+    ~global_lock() {
+        if (ptr)
+            GlobalUnlock(mem);
+    }
+
+    void* ptr;
+
+private:
+    HGLOBAL mem;
+};
+
 extern HMODULE module;
 void format_size(uint64_t size, wstring& s, bool show_bytes);
 void set_dpi_aware();
