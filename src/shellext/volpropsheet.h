@@ -39,10 +39,8 @@ public:
     }
 
     virtual ~BtrfsVolPropSheet() {
-        if (stgm_set) {
-            GlobalUnlock(stgm.hGlobal);
+        if (stgm_set)
             ReleaseStgMedium(&stgm);
-        }
 
         if (devices)
             free(devices);

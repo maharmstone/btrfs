@@ -51,7 +51,6 @@ HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
 HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
     ULONG num_files;
     FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    HDROP hdrop;
     WCHAR fnbuf[MAX_PATH];
 
     if (pidlFolder)
@@ -67,9 +66,9 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
 
     stgm_set = true;
 
-    hdrop = (HDROP)GlobalLock(stgm.hGlobal);
+    global_lock gl(stgm.hGlobal);
 
-    if (!hdrop) {
+    if (!gl.ptr) {
         ReleaseStgMedium(&stgm);
         stgm_set = false;
         return E_INVALIDARG;
@@ -77,10 +76,8 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
 
     num_files = DragQueryFileW((HDROP)stgm.hGlobal, 0xFFFFFFFF, nullptr, 0);
 
-    if (num_files > 1) {
-        GlobalUnlock(hdrop);
+    if (num_files > 1)
         return E_FAIL;
-    }
 
     if (DragQueryFileW((HDROP)stgm.hGlobal, 0, fnbuf, sizeof(fnbuf) / sizeof(WCHAR))) {
         fn = fnbuf;
@@ -108,34 +105,24 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
                         devices = (btrfs_device*)malloc(devsize);
 
                         i++;
-                    } else {
-                        GlobalUnlock(hdrop);
+                    } else
                         return E_FAIL;
-                    }
                 } else
                     break;
             }
 
-            if (!NT_SUCCESS(Status)) {
-                GlobalUnlock(hdrop);
+            if (!NT_SUCCESS(Status))
                 return E_FAIL;
-            }
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_UUID, nullptr, 0, &uuid, sizeof(BTRFS_UUID));
             uuid_set = NT_SUCCESS(Status);
 
             ignore = false;
             balance = new BtrfsBalance(fn);
-        } else {
-            GlobalUnlock(hdrop);
+        } else
             return E_FAIL;
-        }
-    } else {
-        GlobalUnlock(hdrop);
+    } else
         return E_FAIL;
-    }
-
-    GlobalUnlock(hdrop);
 
     return S_OK;
 }
