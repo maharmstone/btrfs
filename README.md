@@ -109,7 +109,7 @@ choco install winbtrfs
 * [Scoop](https://scoop.sh/#/apps?q=%22winbtrfs-np%22&s=0&d=1&o=true)
 ```
 scoop bucket add nonportable
-scoop install winbtrfs-np
+scoop install winbtrfs-np -g
 ```
 
 Uninstalling
