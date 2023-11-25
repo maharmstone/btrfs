@@ -4565,10 +4565,6 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     if (!vde && Vcb->superblock.num_devices > 1) {
         ERR("cannot mount multi-device FS with non-PNP device\n");
         Status = STATUS_UNRECOGNIZED_VOLUME;
-
-        if (pdode)
-            ExReleaseResourceLite(&pdode->child_lock);
-
         goto exit;
     }
 
