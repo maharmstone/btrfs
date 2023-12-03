@@ -342,7 +342,6 @@ HRESULT BtrfsPropSheet::load_file_list() {
 HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY) {
     try {
         FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-        HDROP hdrop;
         HRESULT hr;
 
         if (pidlFolder)

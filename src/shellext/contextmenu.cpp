@@ -1084,8 +1084,6 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                     hdrop = (HDROP)GetClipboardData(CF_HDROP);
 
                     if (hdrop) {
-                        HANDLE lh;
-
                         global_lock gl(hdrop);
 
                         if (gl.ptr) {
