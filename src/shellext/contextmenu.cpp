@@ -188,7 +188,6 @@ static bool get_volume_path_parent(const WCHAR* fn, WCHAR* volpath, ULONG volpat
 
 static bool show_reflink_paste(const wstring& path) {
     HDROP hdrop;
-    HANDLE lh;
     ULONG num_files;
     WCHAR fn[MAX_PATH], volpath1[255], volpath2[255];
 
@@ -210,9 +209,7 @@ static bool show_reflink_paste(const wstring& path) {
 
     global_lock gl(hdrop);
 
-    lh = gl.ptr;
-
-    if (!lh) {
+    if (!gl.ptr) {
         CloseClipboard();
         return false;
     }
@@ -1072,8 +1069,6 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
 
                 return S_OK;
             } else if ((IS_INTRESOURCE(pici->lpVerb) && (ULONG_PTR)pici->lpVerb == 2) || (!IS_INTRESOURCE(pici->lpVerb) && !strcmp(pici->lpVerb, REFLINK_VERBA))) {
-                HDROP hdrop;
-
                 if (!IsClipboardFormatAvailable(CF_HDROP))
                     return S_OK;
 
@@ -1081,11 +1076,9 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
                     throw last_error(GetLastError());
 
                 try {
-                    hdrop = (HDROP)GetClipboardData(CF_HDROP);
+                    HDROP hdrop = (HDROP)GetClipboardData(CF_HDROP);
 
                     if (hdrop) {
-                        HANDLE lh;
-
                         global_lock gl(hdrop);
 
                         if (gl.ptr) {
