@@ -24,7 +24,7 @@ mountmgr::~mountmgr() {
     NtClose(h);
 }
 
-void mountmgr::create_point(const wstring_view& symlink, const wstring_view& device) const {
+void mountmgr::create_point(wstring_view symlink, wstring_view device) const {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
 
@@ -46,7 +46,7 @@ void mountmgr::create_point(const wstring_view& symlink, const wstring_view& dev
         throw ntstatus_error(Status);
 }
 
-void mountmgr::delete_points(const wstring_view& symlink, const wstring_view& unique_id, const wstring_view& device_name) const {
+void mountmgr::delete_points(wstring_view symlink, wstring_view unique_id, wstring_view device_name) const {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
 
@@ -100,7 +100,7 @@ void mountmgr::delete_points(const wstring_view& symlink, const wstring_view& un
         throw ntstatus_error(Status);
 }
 
-vector<mountmgr_point> mountmgr::query_points(const wstring_view& symlink, const wstring_view& unique_id, const wstring_view& device_name) const {
+vector<mountmgr_point> mountmgr::query_points(wstring_view symlink, wstring_view unique_id, wstring_view device_name) const {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     vector<mountmgr_point> v;

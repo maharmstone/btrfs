@@ -348,5 +348,5 @@ wstring format_ntstatus(NTSTATUS Status);
 bool load_string(HMODULE module, UINT id, wstring& s);
 void wstring_sprintf(wstring& s, wstring fmt, ...);
 void command_line_to_args(LPWSTR cmdline, vector<wstring>& args);
-wstring utf8_to_utf16(const string_view& utf8);
+wstring utf8_to_utf16(string_view utf8);
 void error_message(HWND hwnd, const char* msg);

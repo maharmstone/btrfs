@@ -622,7 +622,7 @@ void command_line_to_args(LPWSTR cmdline, vector<wstring>& args) {
     LocalFree(l);
 }
 
-static string utf16_to_utf8(const wstring_view& utf16) {
+static string utf16_to_utf8(wstring_view utf16) {
     string utf8;
     char* buf;
 
@@ -686,7 +686,7 @@ string_error::string_error(int resno, ...) {
 #pragma warning(pop)
 #endif
 
-wstring utf8_to_utf16(const string_view& utf8) {
+wstring utf8_to_utf16(string_view utf8) {
     wstring ret;
     WCHAR* buf;
 

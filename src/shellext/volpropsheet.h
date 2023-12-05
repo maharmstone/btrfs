@@ -107,7 +107,7 @@ private:
 
 class BtrfsChangeDriveLetter {
 public:
-    BtrfsChangeDriveLetter(HWND hwnd, const wstring_view& fn) : hwnd(hwnd), fn(fn) {
+    BtrfsChangeDriveLetter(HWND hwnd, wstring_view fn) : hwnd(hwnd), fn(fn) {
     }
 
     void show();
