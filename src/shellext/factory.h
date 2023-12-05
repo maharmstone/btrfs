@@ -58,8 +58,8 @@ public:
 
     // IClassFactory
 
-    virtual HRESULT __stdcall CreateInstance(IUnknown* pUnknownOuter, const IID& iid, void** ppv);
-    virtual HRESULT __stdcall LockServer(BOOL bLock);
+    virtual HRESULT __stdcall CreateInstance(IUnknown* pUnknownOuter, const IID& iid, void** ppv) override;
+    virtual HRESULT __stdcall LockServer(BOOL bLock) override;
 
     factory_type type;
 
