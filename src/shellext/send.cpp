@@ -672,7 +672,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
 
 extern "C" void CALLBACK SendSubvolW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
-    wstring subvol = L"", parent = L"", file = L"";
+    wstring subvol, parent, file;
     vector<wstring> clones;
 
     command_line_to_args(lpszCmdLine, args);
