@@ -1261,6 +1261,8 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                         break;
                     }
                 }
+
+                break;
             }
 
             case WM_TIMER:
