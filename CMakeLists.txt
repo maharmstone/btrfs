@@ -230,6 +230,8 @@ add_library(shellbtrfs SHARED ${SHELLEXT_SRC_FILES})
 if(NOT MSVC)
     target_link_options(shellbtrfs PUBLIC -static -static-libgcc)
     target_link_libraries(shellbtrfs pthread)
+
+    target_compile_options(shellbtrfs PUBLIC -Wall -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra)
 else()
     target_compile_options(shellbtrfs PUBLIC /EHsc)
     target_link_options(shellbtrfs PUBLIC /MANIFEST:NO)
