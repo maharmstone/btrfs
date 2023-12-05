@@ -70,9 +70,7 @@ using namespace std;
 #pragma warning(disable: 4800)
 #endif
 
-#ifdef __cplusplus
 extern "C" {
-#endif
 NTSTATUS NTAPI NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                           ULONG Length, PLARGE_INTEGER ByteOffset, PULONG Key);
 
@@ -123,9 +121,7 @@ typedef struct _FILE_STREAM_INFORMATION {
 
 NTSTATUS NTAPI NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation, ULONG Length,
                                             FS_INFORMATION_CLASS FsInformationClass);
-#ifdef __cplusplus
 }
-#endif
 
 typedef struct _REPARSE_DATA_BUFFER {
     ULONG ReparseTag;

@@ -1528,9 +1528,7 @@ void BtrfsChangeDriveLetter::show() {
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_DRIVE_LETTER), hwnd, dlg_proc, (LPARAM)this);
 }
 
-#ifdef __cplusplus
 extern "C" {
-#endif
 
 void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
@@ -1592,6 +1590,4 @@ void CALLBACK ShowChangeDriveLetterW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, i
     bcdl.show();
 }
 
-#ifdef __cplusplus
 }
-#endif

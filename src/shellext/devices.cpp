@@ -821,9 +821,7 @@ void BtrfsDeviceResize::ShowDialog(HWND hwnd, const wstring& fn, uint64_t dev_id
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_RESIZE), hwnd, stub_DeviceResizeDlgProc, (LPARAM)this);
 }
 
-#ifdef __cplusplus
 extern "C" {
-#endif
 
 void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int) {
     try {
@@ -957,6 +955,4 @@ void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     }
 }
 
-#ifdef __cplusplus
 }
-#endif

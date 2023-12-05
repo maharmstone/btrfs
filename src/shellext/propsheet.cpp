@@ -1331,9 +1331,7 @@ HRESULT __stdcall BtrfsPropSheet::ReplacePage(UINT, LPFNADDPROPSHEETPAGE, LPARAM
     return S_OK;
 }
 
-#ifdef __cplusplus
 extern "C" {
-#endif
 
 void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
@@ -1382,6 +1380,4 @@ void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     }
 }
 
-#ifdef __cplusplus
 }
-#endif
