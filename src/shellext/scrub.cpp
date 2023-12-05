@@ -368,7 +368,7 @@ void BtrfsScrub::StartScrub(HWND hwndDlg) {
         throw last_error(GetLastError());
 }
 
-void BtrfsScrub::PauseScrub(HWND hwndDlg) {
+void BtrfsScrub::PauseScrub(HWND) {
     btrfs_query_scrub bqs;
 
     win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -394,7 +394,7 @@ void BtrfsScrub::PauseScrub(HWND hwndDlg) {
         throw last_error(GetLastError());
 }
 
-void BtrfsScrub::StopScrub(HWND hwndDlg) {
+void BtrfsScrub::StopScrub(HWND) {
     win_handle h = CreateFileW(fn.c_str(), FILE_TRAVERSE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
 
@@ -410,7 +410,7 @@ void BtrfsScrub::StopScrub(HWND hwndDlg) {
         throw last_error(GetLastError());
 }
 
-INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsScrub::ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -470,7 +470,7 @@ static INT_PTR CALLBACK stub_ScrubDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
         return false;
 }
 
-extern "C" void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         win_handle token;
         TOKEN_PRIVILEGES tp;
@@ -499,7 +499,7 @@ extern "C" void CALLBACK ShowScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLi
     }
 }
 
-extern "C" void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK StartScrubW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);
@@ -535,7 +535,7 @@ extern "C" void CALLBACK StartScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdL
     }
 }
 
-extern "C" void CALLBACK StopScrubW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK StopScrubW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);

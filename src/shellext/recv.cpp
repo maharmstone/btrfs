@@ -59,7 +59,7 @@ bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** val
     return false;
 }
 
-void BtrfsRecv::cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
+void BtrfsRecv::cmd_subvol(HWND, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
     string name;
     BTRFS_UUID* uuid;
     uint64_t* gen;
@@ -149,7 +149,7 @@ void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstrin
     cache.push_back(sc);
 }
 
-void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
+void BtrfsRecv::cmd_snapshot(HWND, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
     string name;
     BTRFS_UUID *uuid, *parent_uuid;
     uint64_t *gen, *parent_transid;
@@ -272,7 +272,7 @@ void BtrfsRecv::cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, 
     num_received++;
 }
 
-void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_mkfile(HWND, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t *inode, *rdev = nullptr, *mode = nullptr;
     ULONG inodelen;
     NTSTATUS Status;
@@ -422,7 +422,7 @@ void BtrfsRecv::cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     }
 }
 
-void BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_rename(HWND, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu, path_tou;
 
     {
@@ -449,7 +449,7 @@ void BtrfsRecv::cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_MOVEFILE_FAILED, pathu.c_str(), path_tou.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-void BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_link(HWND, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu, path_linku;
 
     {
@@ -476,7 +476,7 @@ void BtrfsRecv::cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_CREATEHARDLINK_FAILED, pathu.c_str(), path_linku.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-void BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_unlink(HWND, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     ULONG att;
 
@@ -503,7 +503,7 @@ void BtrfsRecv::cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_DELETEFILE_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-void BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_rmdir(HWND, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     ULONG att;
 
@@ -530,7 +530,7 @@ void BtrfsRecv::cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_REMOVEDIRECTORY_FAILED, pathu.c_str(), GetLastError(), format_message(GetLastError()).c_str());
 }
 
-void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_setxattr(HWND, btrfs_send_command* cmd, uint8_t* data) {
     string xattrname;
     uint8_t* xattrdata;
     ULONG xattrdatalen;
@@ -626,7 +626,7 @@ void BtrfsRecv::cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
     }
 }
 
-void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_removexattr(HWND, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     string xattrname;
 
@@ -708,7 +708,7 @@ void BtrfsRecv::cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* dat
     }
 }
 
-void BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_write(HWND, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t* offset;
     uint8_t* writedata;
     ULONG offsetlen, datalen;
@@ -783,7 +783,7 @@ void BtrfsRecv::cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 }
 
-void BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_clone(HWND, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t *offset, *cloneoffset, *clonetransid, *clonelen;
     BTRFS_UUID* cloneuuid;
     ULONG i, offsetlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
@@ -918,7 +918,7 @@ void BtrfsRecv::cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
     }
 }
 
-void BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_truncate(HWND, btrfs_send_command* cmd, uint8_t* data) {
     uint64_t* size;
     ULONG sizelen;
     wstring pathu;
@@ -972,7 +972,7 @@ void BtrfsRecv::cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) 
     }
 }
 
-void BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_chmod(HWND, btrfs_send_command* cmd, uint8_t* data) {
     win_handle h;
     uint32_t* mode;
     ULONG modelen;
@@ -1012,7 +1012,7 @@ void BtrfsRecv::cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
 }
 
-void BtrfsRecv::cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_chown(HWND, btrfs_send_command* cmd, uint8_t* data) {
     win_handle h;
     uint32_t *uid, *gid;
     ULONG uidlen, gidlen;
@@ -1066,7 +1066,7 @@ static __inline uint64_t unix_time_to_win(BTRFS_TIME* t) {
     return (t->seconds * 10000000) + (t->nanoseconds / 100) + 116444736000000000;
 }
 
-void BtrfsRecv::cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data) {
+void BtrfsRecv::cmd_utimes(HWND, btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     win_handle h;
     FILE_BASIC_INFO fbi;
@@ -1455,7 +1455,7 @@ static DWORD WINAPI global_recv_thread(LPVOID lpParameter) {
     return br->recv_thread();
 }
 
-INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsRecv::RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     switch (uMsg) {
         case WM_INITDIALOG:
             try {
@@ -1540,7 +1540,7 @@ void BtrfsRecv::Open(HWND hwnd, const wstring& file, const wstring& path, bool q
     }
 }
 
-extern "C" void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         OPENFILENAMEW ofn;
         WCHAR file[MAX_PATH];
@@ -1615,7 +1615,7 @@ extern "C" void CALLBACK RecvSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszC
     }
 }
 
-extern "C" void CALLBACK RecvSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK RecvSubvolW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         vector<wstring> args;
 

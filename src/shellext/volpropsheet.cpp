@@ -48,7 +48,7 @@ HRESULT __stdcall BtrfsVolPropSheet::QueryInterface(REFIID riid, void **ppObj) {
     return E_NOINTERFACE;
 }
 
-HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
+HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY) {
     ULONG num_files;
     FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     WCHAR fnbuf[MAX_PATH];
@@ -134,7 +134,7 @@ typedef struct {
     uint64_t size;
 } dev;
 
-void BtrfsVolPropSheet::FormatUsage(HWND hwndDlg, wstring& s, btrfs_usage* usage) {
+void BtrfsVolPropSheet::FormatUsage(HWND, wstring& s, btrfs_usage* usage) {
     uint8_t i, j;
     uint64_t num_devs, dev_size, dev_alloc, data_size, data_alloc, metadata_size, metadata_alloc;
     btrfs_device* bd;
@@ -436,7 +436,7 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
     free(usage);
 }
 
-INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsVolPropSheet::UsageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -548,7 +548,7 @@ static void add_lv_column(HWND list, int string, int cx) {
     SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 }
 
-static int CALLBACK lv_sort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort) {
+static int CALLBACK lv_sort(LPARAM lParam1, LPARAM lParam2, LPARAM) {
     if (lParam1 < lParam2)
         return -1;
     else if (lParam1 > lParam2)
@@ -812,7 +812,7 @@ void BtrfsVolPropSheet::ResetStats(HWND hwndDlg) {
     EndDialog(hwndDlg, 0);
 }
 
-INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsVolPropSheet::StatsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -1399,7 +1399,7 @@ HRESULT __stdcall BtrfsVolPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, L
     return E_FAIL;
 }
 
-HRESULT __stdcall BtrfsVolPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam) {
+HRESULT __stdcall BtrfsVolPropSheet::ReplacePage(UINT, LPFNADDPROPSHEETPAGE, LPARAM) {
     return S_OK;
 }
 
@@ -1445,7 +1445,7 @@ void BtrfsChangeDriveLetter::do_change(HWND hwndDlg) {
     EndDialog(hwndDlg, 1);
 }
 
-INT_PTR BtrfsChangeDriveLetter::DlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR BtrfsChangeDriveLetter::DlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -1532,7 +1532,7 @@ void BtrfsChangeDriveLetter::show() {
 extern "C" {
 #endif
 
-void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         win_handle token;
         NTSTATUS Status;
@@ -1586,7 +1586,7 @@ void CALLBACK ResetStatsW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nC
     }
 }
 
-void CALLBACK ShowChangeDriveLetterW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK ShowChangeDriveLetterW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     BtrfsChangeDriveLetter bcdl(hwnd, lpszCmdLine);
 
     bcdl.show();

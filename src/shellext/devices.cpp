@@ -62,7 +62,7 @@ static wstring get_mountdev_name(const nt_handle& h ) {
     return name;
 }
 
-static void find_devices(HWND hwnd, const GUID* guid, const mountmgr& mm, vector<device>& device_list) {
+static void find_devices(HWND, const GUID* guid, const mountmgr& mm, vector<device>& device_list) {
     HDEVINFO h;
 
     static const wstring dosdevices = L"\\DosDevices\\";
@@ -673,7 +673,7 @@ void BtrfsDeviceResize::do_resize(HWND hwndDlg) {
     }
 }
 
-INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsDeviceResize::DeviceResizeDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -825,7 +825,7 @@ void BtrfsDeviceResize::ShowDialog(HWND hwnd, const wstring& fn, uint64_t dev_id
 extern "C" {
 #endif
 
-void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int) {
     try {
         win_handle token;
         TOKEN_PRIVILEGES tp;
@@ -853,7 +853,7 @@ void CALLBACK AddDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCm
     }
 }
 
-void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         WCHAR *s, *vol, *dev;
         uint64_t devid;
@@ -914,7 +914,7 @@ void CALLBACK RemoveDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int 
     }
 }
 
-void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK ResizeDeviceW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         WCHAR *s, *vol, *dev;
         uint64_t devid;

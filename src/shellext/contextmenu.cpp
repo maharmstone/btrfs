@@ -67,7 +67,7 @@ HRESULT __stdcall BtrfsContextMenu::QueryInterface(REFIID riid, void **ppObj) {
     return E_NOINTERFACE;
 }
 
-HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
+HRESULT __stdcall BtrfsContextMenu::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY) {
     IO_STATUS_BLOCK iosb;
     btrfs_get_file_ids bgfi;
     NTSTATUS Status;
@@ -425,7 +425,7 @@ static void path_strip_path(wstring& path) {
     path = path.substr(bs + 1);
 }
 
-static void create_snapshot(HWND hwnd, const wstring& fn) {
+static void create_snapshot(HWND, const wstring& fn) {
     win_handle h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -1118,7 +1118,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
     return E_FAIL;
 }
 
-HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags, UINT* pwReserved, LPSTR pszName, UINT cchMax) {
+HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags, UINT*, LPSTR pszName, UINT cchMax) {
     if (ignore)
         return E_INVALIDARG;
 
@@ -1595,7 +1595,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
     }
 }
 
-extern "C" void CALLBACK ReflinkCopyW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK ReflinkCopyW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);

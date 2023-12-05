@@ -486,7 +486,7 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
     EndDialog(hwndDlg, 0);
 }
 
-INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -833,7 +833,7 @@ void BtrfsBalance::ShowBalanceOptions(HWND hwndDlg, uint8_t type) {
     DialogBoxParamW(module, MAKEINTRESOURCEW(IDD_BALANCE_OPTIONS), hwndDlg, stub_BalanceOptsDlgProc, (LPARAM)this);
 }
 
-INT_PTR CALLBACK BtrfsBalance::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR CALLBACK BtrfsBalance::BalanceDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -1038,7 +1038,7 @@ static void unserialize(void* data, ULONG len, WCHAR* s) {
     }
 }
 
-extern "C" void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         WCHAR *s, *vol, *block;
         win_handle h, token;
@@ -1099,7 +1099,7 @@ extern "C" void CALLBACK StartBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCm
     }
 }
 
-extern "C" void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         win_handle h, token;
         TOKEN_PRIVILEGES tp;
@@ -1146,7 +1146,7 @@ extern "C" void CALLBACK PauseBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCm
     }
 }
 
-extern "C" void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK StopBalanceW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         win_handle h, token;
         TOKEN_PRIVILEGES tp;

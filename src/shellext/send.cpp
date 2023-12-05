@@ -414,7 +414,7 @@ void BtrfsSend::RemoveClone(HWND hwnd) {
         EnableWindow(GetDlgItem(hwnd, IDC_CLONE_REMOVE), false);
 }
 
-INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+INT_PTR BtrfsSend::SendDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -528,7 +528,7 @@ void BtrfsSend::Open(HWND hwnd, LPWSTR path) {
         throw last_error(GetLastError());
 }
 
-extern "C" void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK SendSubvolGUIW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         win_handle token;
         TOKEN_PRIVILEGES tp;
@@ -670,7 +670,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
     free(buf);
 }
 
-extern "C" void CALLBACK SendSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK SendSubvolW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
     wstring subvol = L"", parent = L"", file = L"";
     vector<wstring> clones;

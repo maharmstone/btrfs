@@ -339,7 +339,7 @@ HRESULT BtrfsPropSheet::load_file_list() {
     return S_OK;
 }
 
-HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY hkeyProgID) {
+HRESULT __stdcall BtrfsPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, IDataObject* pdtobj, HKEY) {
     try {
         FORMATETC format = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
         HDROP hdrop;
@@ -586,7 +586,7 @@ void BtrfsPropSheet::change_inode_flag(HWND hDlg, uint64_t flag, UINT state) {
     SendMessageW(GetParent(hDlg), PSM_CHANGED, (WPARAM)hDlg, 0);
 }
 
-void BtrfsPropSheet::apply_changes_file(HWND hDlg, const wstring& fn) {
+void BtrfsPropSheet::apply_changes_file(HWND, const wstring& fn) {
     win_handle h;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
@@ -1327,7 +1327,7 @@ HRESULT __stdcall BtrfsPropSheet::AddPages(LPFNADDPROPSHEETPAGE pfnAddPage, LPAR
     return E_FAIL;
 }
 
-HRESULT __stdcall BtrfsPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE pfnReplacePage, LPARAM lParam) {
+HRESULT __stdcall BtrfsPropSheet::ReplacePage(UINT, LPFNADDPROPSHEETPAGE, LPARAM) {
     return S_OK;
 }
 
@@ -1335,7 +1335,7 @@ HRESULT __stdcall BtrfsPropSheet::ReplacePage(UINT uPageID, LPFNADDPROPSHEETPAGE
 extern "C" {
 #endif
 
-void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+void CALLBACK ShowPropSheetW(HWND hwnd, HINSTANCE, LPWSTR lpszCmdLine, int) {
     try {
         BtrfsPropSheet bps;
         PROPSHEETPAGEW psp;

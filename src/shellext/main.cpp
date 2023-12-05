@@ -496,14 +496,14 @@ STDAPI DllUnregisterServer(void) {
     return S_OK;
 }
 
-STDAPI DllInstall(BOOL bInstall, LPCWSTR pszCmdLine) {
+STDAPI DllInstall(BOOL bInstall, LPCWSTR) {
     if (bInstall)
         return DllRegisterServer();
     else
         return DllUnregisterServer();
 }
 
-extern "C" BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void* lpReserved) {
+extern "C" BOOL APIENTRY DllMain(HANDLE hModule, DWORD dwReason, void*) {
     if (dwReason == DLL_PROCESS_ATTACH)
         module = (HMODULE)hModule;
 
@@ -542,7 +542,7 @@ static void create_subvol(const wstring& fn) {
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SUBVOL, bcs, (ULONG)bcslen, nullptr, 0);
 }
 
-extern "C" void CALLBACK CreateSubvolW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK CreateSubvolW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);
@@ -588,7 +588,7 @@ static void create_snapshot2(const wstring& source, const wstring& fn) {
     NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_CREATE_SNAPSHOT, bcs, (ULONG)bcslen, nullptr, 0);
 }
 
-extern "C" void CALLBACK CreateSnapshotW(HWND hwnd, HINSTANCE hinst, LPWSTR lpszCmdLine, int nCmdShow) {
+extern "C" void CALLBACK CreateSnapshotW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) {
     vector<wstring> args;
 
     command_line_to_args(lpszCmdLine, args);

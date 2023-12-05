@@ -60,7 +60,7 @@ HRESULT __stdcall BtrfsIconOverlay::GetPriority(int *pPriority) noexcept {
     return S_OK;
 }
 
-HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD dwAttrib) noexcept {
+HRESULT __stdcall BtrfsIconOverlay::IsMemberOf(PCWSTR pwszPath, DWORD) noexcept {
     win_handle h;
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;

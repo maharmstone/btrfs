@@ -36,7 +36,7 @@ HRESULT __stdcall Factory::QueryInterface(const IID& iid, void** ppv) {
     return S_OK;
 }
 
-HRESULT __stdcall Factory::LockServer(BOOL bLock) {
+HRESULT __stdcall Factory::LockServer(BOOL) {
     return E_NOTIMPL;
 }
 
