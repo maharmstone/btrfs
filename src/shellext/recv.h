@@ -51,21 +51,21 @@ public:
     INT_PTR CALLBACK RecvProgressDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 private:
-    void cmd_subvol(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent);
-    void cmd_snapshot(HWND hwnd, btrfs_send_command* cmd, uint8_t* data, const win_handle& parent);
-    void cmd_mkfile(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_rename(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_link(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_unlink(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_rmdir(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_setxattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_removexattr(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_write(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_clone(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_truncate(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_chmod(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_chown(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
-    void cmd_utimes(HWND hwnd, btrfs_send_command* cmd, uint8_t* data);
+    void cmd_subvol(btrfs_send_command* cmd, uint8_t* data, const win_handle& parent);
+    void cmd_snapshot(btrfs_send_command* cmd, uint8_t* data, const win_handle& parent);
+    void cmd_mkfile(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_rename(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_link(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_unlink(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_rmdir(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_setxattr(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_removexattr(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_write(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_clone(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_truncate(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_chmod(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_chown(btrfs_send_command* cmd, uint8_t* data);
+    void cmd_utimes(btrfs_send_command* cmd, uint8_t* data);
     void add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path);
     bool find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
     void do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent);
