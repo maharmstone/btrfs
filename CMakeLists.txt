@@ -321,10 +321,6 @@ if(WITH_TEST)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    if(NOT MSVC OR MSVC_VERSION LESS 1929)
-        find_package(fmt REQUIRED)
-    endif()
-
     configure_file(src/tests/test.rc.in test.rc)
 
     set(TEST_SRC_FILES src/tests/test.cpp
@@ -355,10 +351,6 @@ if(WITH_TEST)
     endif()
 
     target_link_libraries(test ntdll version advapi32)
-
-    if(NOT MSVC OR MSVC_VERSION LESS 1929)
-        target_link_libraries(test fmt::fmt-header-only)
-    endif()
 endif()
 
 # --------------------------------------

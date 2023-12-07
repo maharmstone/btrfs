@@ -208,11 +208,7 @@ static string sid_to_string(span<const uint8_t> sid) {
             if (!s.empty())
                 s += " ";
 
-#if __has_include(<format>)
             s += std::format("{:02x}", b);
-#else
-            s += fmt::format("{:02x}", b);
-#endif
         }
 
         return "Malformed SID (" + s + ")";
@@ -227,20 +223,12 @@ static string sid_to_string(span<const uint8_t> sid) {
     auth |= (uint64_t)sid[6] << 8;
     auth |= sid[7];
 
-#if __has_include(<format>)
     s = std::format("S-1-{}", auth);
-#else
-    s = fmt::format("S-1-{}", auth);
-#endif
 
     auto sub = span<const ULONG>(ss.SubAuthority, ss.SubAuthorityCount);
 
     for (auto n : sub) {
-#if __has_include(<format>)
         s += std::format("-{}", n);
-#else
-        s += fmt::format("-{}", n);
-#endif
     }
 
     return s;

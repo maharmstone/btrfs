@@ -36,12 +36,7 @@
 #include <span>
 #include <vector>
 #include <functional>
-
-#if __has_include(<format>)
 #include <format>
-#else
-#include <fmt/format.h>
-#endif
 
 enum class fs_type {
     unknown,
@@ -4298,11 +4293,7 @@ static __inline std::string ntstatus_to_string(NTSTATUS s) {
         case STATUS_CASE_DIFFERING_NAMES_IN_DIR:
             return "STATUS_CASE_DIFFERING_NAMES_IN_DIR";
         default:
-#if __has_include(<format>)
             return std::format("Status {:08x}", (uint32_t)s);
-#else
-            return fmt::format("Status {:08x}", (uint32_t)s);
-#endif
     }
 }
 
@@ -4322,15 +4313,9 @@ public:
 
 class formatted_error : public std::exception {
 public:
-#if __has_include(<format>)
     template<typename... Args>
     formatted_error(std::string_view s, Args&&... args) : msg(std::vformat(s, std::make_format_args(args...))) {
     }
-#else
-    template<typename... Args>
-    formatted_error(fmt::format_string<Args...> s, Args&&... args) : msg(fmt::format(s, std::forward<Args>(args)...)) {
-    }
-#endif
 
     const char* what() const noexcept {
         return msg.c_str();

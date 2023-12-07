@@ -296,25 +296,12 @@ template vector<varbuf<FILE_ID_EXTD_BOTH_DIR_INFORMATION>> query_dir(const u16st
 template vector<varbuf<FILE_NAMES_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
 template vector<varbuf<FILE_REPARSE_POINT_INFORMATION>> query_dir(const u16string& dir, u16string_view filter);
 
-#if __has_include(<format>)
-
 template<typename... Args>
 void print(string_view s, Args&&... args) {
     auto msg = std::vformat(s, std::make_format_args(args...));
 
     cout << msg;
 }
-
-#else
-
-template<typename... Args>
-void print(fmt::format_string<Args...> s, Args&&... args) {
-    auto msg = fmt::format(s, std::forward<Args>(args)...);
-
-    cout << msg;
-}
-
-#endif
 
 void test(const string& msg, const function<void()>& func) {
     string err;
@@ -680,13 +667,8 @@ static string get_version(const u16string& fn) {
     if (!VerQueryValueW(buf.data(), L"\\", (void**)&ver, &verlen))
         throw runtime_error("VerQueryValue failed");
 
-#if __has_include(<format>)
     return std::format("{}.{}.{}.{}", ver->dwFileVersionMS >> 16, ver->dwFileVersionMS & 0xffff,
                        ver->dwFileVersionLS >> 16, ver->dwFileVersionLS & 0xffff);
-#else
-    return fmt::format("{}.{}.{}.{}", ver->dwFileVersionMS >> 16, ver->dwFileVersionMS & 0xffff,
-                       ver->dwFileVersionLS >> 16, ver->dwFileVersionLS & 0xffff);
-#endif
 }
 
 static string driver_string(const u16string& driver) {
