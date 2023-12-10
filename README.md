@@ -148,8 +148,8 @@ Mappings
 
 The user mappings are stored in the registry key
 HKLM\SYSTEM\CurrentControlSet\services\btrfs\Mappings. Create a DWORD with the
-name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001),
-and the value of your Linux uid (e.g. 1000). It will take effect next time the
+name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001), set the base to **decimal** (unless you like hexidecimal),
+and the value of your Linux uid (e.g. 1000 in decimal, or 3E8 in hexidecimal). It will take effect next time the
 driver is loaded.
 
 You can find your current SID by running `wmic useraccount get name,sid`.
