@@ -3197,7 +3197,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, bool advance_only, bool prealloc) {
+static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject, bool advance_only) {
     FILE_END_OF_FILE_INFORMATION* feofi = Irp->AssociatedIrp.SystemBuffer;
     fcb* fcb = FileObject->FsContext;
     ccb* ccb = FileObject->FsContext2;
@@ -3298,7 +3298,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     } else if (new_end_of_file > fcb->inode_item.st_size) {
         TRACE("extending file to %I64x bytes\n", new_end_of_file);
 
-        Status = extend_file(fcb, fileref, new_end_of_file, prealloc, NULL, &rollback);
+        Status = extend_file(fcb, fileref, new_end_of_file, false, NULL, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("error - extend_file failed\n");
             goto end;
@@ -3306,6 +3306,146 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     } else if (new_end_of_file == fcb->inode_item.st_size && advance_only) {
         Status = STATUS_SUCCESS;
         goto end;
+    }
+
+    ccfs.AllocationSize = fcb->Header.AllocationSize;
+    ccfs.FileSize = fcb->Header.FileSize;
+    ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+    set_size = true;
+
+    filter = FILE_NOTIFY_CHANGE_SIZE;
+
+    if (!ccb->user_set_write_time) {
+        KeQuerySystemTime(&time);
+        win_time_to_unix(time, &fcb->inode_item.st_mtime);
+        filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+    }
+
+    fcb->inode_item_changed = true;
+    mark_fcb_dirty(fcb);
+    queue_notification_fcb(fileref, filter, FILE_ACTION_MODIFIED, NULL);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    if (NT_SUCCESS(Status))
+        clear_rollback(&rollback);
+    else
+        do_rollback(Vcb, &rollback);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+
+    if (set_size) {
+        try {
+            CcSetFileSizes(FileObject, &ccfs);
+        } except (EXCEPTION_EXECUTE_HANDLER) {
+            Status = GetExceptionCode();
+        }
+
+        if (!NT_SUCCESS(Status))
+            ERR("CcSetFileSizes threw exception %08lx\n", Status);
+    }
+
+    ExReleaseResourceLite(&Vcb->tree_lock);
+
+    return Status;
+}
+
+static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
+    FILE_ALLOCATION_INFORMATION* fai = Irp->AssociatedIrp.SystemBuffer;
+    fcb* fcb = FileObject->FsContext;
+    ccb* ccb = FileObject->FsContext2;
+    file_ref* fileref = ccb ? ccb->fileref : NULL;
+    NTSTATUS Status;
+    LARGE_INTEGER time;
+    CC_FILE_SIZES ccfs;
+    LIST_ENTRY rollback;
+    bool set_size = false;
+    ULONG filter;
+    uint64_t new_allocation_size;
+
+    if (!fileref) {
+        ERR("fileref is NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    InitializeListHead(&rollback);
+
+    ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
+
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
+
+    if (fileref ? fileref->deleted : fcb->deleted) {
+        Status = STATUS_FILE_CLOSED;
+        goto end;
+    }
+
+    if (fcb->ads) {
+        if (fai->AllocationSize.QuadPart > 0xffff) {
+            Status = STATUS_DISK_FULL;
+            goto end;
+        }
+
+        if (fai->AllocationSize.QuadPart < 0) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        Status = stream_set_end_of_file_information(Vcb, (uint16_t)fai->AllocationSize.QuadPart, fcb, fileref, false);
+
+        if (NT_SUCCESS(Status)) {
+            ccfs.AllocationSize = fcb->Header.AllocationSize;
+            ccfs.FileSize = fcb->Header.FileSize;
+            ccfs.ValidDataLength = fcb->Header.ValidDataLength;
+            set_size = true;
+        }
+
+        filter = FILE_NOTIFY_CHANGE_STREAM_SIZE;
+
+        if (!ccb->user_set_write_time) {
+            KeQuerySystemTime(&time);
+            win_time_to_unix(time, &fileref->parent->fcb->inode_item.st_mtime);
+            filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+
+            fileref->parent->fcb->inode_item_changed = true;
+            mark_fcb_dirty(fileref->parent->fcb);
+        }
+
+        queue_notification_fcb(fileref->parent, filter, FILE_ACTION_MODIFIED_STREAM, &fileref->dc->name);
+
+        goto end;
+    }
+
+    TRACE("file: %p\n", FileObject);
+    TRACE("paging IO: %s\n", Irp->Flags & IRP_PAGING_IO ? "true" : "false");
+    TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
+        fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+
+    new_allocation_size = fai->AllocationSize.QuadPart;
+
+    TRACE("setting new end to %I64x bytes (currently %I64x)\n", new_allocation_size, fcb->inode_item.st_size);
+
+    if (new_allocation_size < fcb->inode_item.st_size) {
+        TRACE("truncating file to %I64x bytes\n", new_allocation_size);
+
+        if (!MmCanFileBeTruncated(&fcb->nonpaged->segment_object, &fai->AllocationSize)) {
+            Status = STATUS_USER_MAPPED_FILE;
+            goto end;
+        }
+
+        Status = truncate_file(fcb, new_allocation_size, Irp, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - truncate_file failed\n");
+            goto end;
+        }
+    } else if (new_allocation_size > fcb->inode_item.st_size) {
+        TRACE("extending file to %I64x bytes\n", new_allocation_size);
+
+        Status = extend_file(fcb, fileref, new_allocation_size, true, NULL, &rollback);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - extend_file failed\n");
+            goto end;
+        }
     }
 
     ccfs.AllocationSize = fcb->Header.AllocationSize;
@@ -3913,7 +4053,7 @@ NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
                 break;
             }
 
-            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, false, true);
+            Status = set_allocation_information(Vcb, Irp, IrpSp->FileObject);
             break;
         }
 
@@ -3957,7 +4097,7 @@ NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
                 break;
             }
 
-            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly, false);
+            Status = set_end_of_file_information(Vcb, Irp, IrpSp->FileObject, IrpSp->Parameters.SetFile.AdvanceOnly);
 
             break;
         }
