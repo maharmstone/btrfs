@@ -3362,7 +3362,7 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
     LIST_ENTRY rollback;
     bool set_size = false;
     ULONG filter;
-    uint64_t new_allocation_size;
+    uint64_t new_allocation_size, old_allocation_size;
 
     if (!fileref) {
         ERR("fileref is NULL\n");
@@ -3421,11 +3421,12 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
     TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
 
-    new_allocation_size = fai->AllocationSize.QuadPart;
+    new_allocation_size = sector_align(fai->AllocationSize.QuadPart, fcb->Vcb->superblock.sector_size);
+    old_allocation_size = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
 
-    TRACE("setting new end to %I64x bytes (currently %I64x)\n", new_allocation_size, fcb->inode_item.st_size);
+    TRACE("setting new allocation size to %I64x bytes (currently %I64x)\n", new_allocation_size, old_allocation_size);
 
-    if (new_allocation_size < fcb->inode_item.st_size) {
+    if (new_allocation_size < old_allocation_size) {
         TRACE("truncating file to %I64x bytes\n", new_allocation_size);
 
         if (!MmCanFileBeTruncated(&fcb->nonpaged->segment_object, &fai->AllocationSize)) {
@@ -3438,7 +3439,7 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
             ERR("error - truncate_file failed\n");
             goto end;
         }
-    } else if (new_allocation_size > fcb->inode_item.st_size) {
+    } else if (new_allocation_size > old_allocation_size) {
         TRACE("extending file to %I64x bytes\n", new_allocation_size);
 
         Status = extend_file(fcb, fileref, new_allocation_size, true, NULL, &rollback);
@@ -3446,6 +3447,9 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
             ERR("error - extend_file failed\n");
             goto end;
         }
+    } else {
+        Status = STATUS_SUCCESS;
+        goto end;
     }
 
     ccfs.AllocationSize = fcb->Header.AllocationSize;
