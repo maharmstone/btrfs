@@ -149,6 +149,7 @@ typedef struct {
 HMODULE module;
 ULONG def_sector_size = 0, def_node_size = 0;
 uint64_t def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+uint64_t def_compat_ro_flags = 0;
 uint16_t def_csum_type = CSUM_TYPE_CRC32C;
 
 // the following definitions come from fmifs.h in ReactOS
@@ -676,7 +677,8 @@ static void calc_superblock_checksum(superblock* sb) {
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
-                                  btrfs_chunk* sys_chunk, uint32_t node_size, BTRFS_UUID* fsuuid, uint32_t sector_size, PUNICODE_STRING label, uint64_t incompat_flags) {
+                                  btrfs_chunk* sys_chunk, uint32_t node_size, BTRFS_UUID* fsuuid, uint32_t sector_size, PUNICODE_STRING label,
+                                  uint64_t incompat_flags, uint64_t compat_ro_flags) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
@@ -723,6 +725,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->stripe_size = sector_size;
     sb->n = sizeof(KEY) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     sb->chunk_root_generation = 1;
+    sb->compat_ro_flags = compat_ro_flags;
     sb->incompat_flags = incompat_flags;
     sb->csum_type = def_csum_type;
     memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
@@ -949,7 +952,8 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
                  0xffffffffffffffff, 0, BTRFS_TYPE_DIRECTORY, default_subvol);
 }
 
-static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint32_t sector_size, uint32_t node_size, uint64_t incompat_flags) {
+static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint32_t sector_size, uint32_t node_size, uint64_t incompat_flags,
+                            uint64_t compat_ro_flags) {
     NTSTATUS Status;
     LIST_ENTRY roots, chunks;
     btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
@@ -1013,7 +1017,8 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     if (!NT_SUCCESS(Status))
         return Status;
 
-    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk, node_size, &fsuuid, sector_size, label, incompat_flags);
+    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk, node_size, &fsuuid, sector_size, label,
+                               incompat_flags, compat_ro_flags);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -1225,7 +1230,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     HANDLE token;
     TOKEN_PRIVILEGES tp;
     LUID luid;
-    uint64_t incompat_flags;
+    uint64_t incompat_flags, compat_ro_flags;
     UNICODE_STRING empty_label;
 
     static WCHAR btrfs[] = L"\\Btrfs";
@@ -1322,13 +1327,16 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     incompat_flags = def_incompat_flags;
     incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_BIG_METADATA;
 
+    compat_ro_flags = def_compat_ro_flags;
+
     if (!Label) {
         empty_label.Buffer = NULL;
         empty_label.Length = empty_label.MaximumLength = 0;
         Label = &empty_label;
     }
 
-    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size, node_size, incompat_flags);
+    Status = write_btrfs(h, gli.Length.QuadPart, Label, sector_size, node_size, incompat_flags,
+                         compat_ro_flags);
 
     NtFsControlFile(h, NULL, NULL, NULL, &iosb, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0);
 
@@ -1407,6 +1415,10 @@ void __stdcall SetSizes(ULONG sector, ULONG node) {
 
 void __stdcall SetIncompatFlags(uint64_t incompat_flags) {
     def_incompat_flags = incompat_flags;
+}
+
+void __stdcall SetCompatROFlags(uint64_t compat_ro_flags) {
+    def_compat_ro_flags = compat_ro_flags;
 }
 
 void __stdcall SetCsumType(uint16_t csum_type) {
