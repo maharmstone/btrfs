@@ -117,10 +117,17 @@ typedef struct {
 } btrfs_item;
 
 typedef struct {
+    uint64_t address;
+    uint64_t size;
+    LIST_ENTRY list_entry;
+} used_space_extent;
+
+typedef struct {
     uint64_t offset;
     CHUNK_ITEM* chunk_item;
     uint64_t lastoff;
     uint64_t used;
+    LIST_ENTRY used_space;
     LIST_ENTRY list_entry;
 } btrfs_chunk;
 
@@ -208,6 +215,21 @@ typedef enum {
 
 typedef BOOLEAN (NTAPI* PFMIFSCALLBACK)(CALLBACKCOMMAND Command, ULONG SubAction, PVOID ActionInfo);
 
+static bool IsListEmpty(LIST_ENTRY* head) {
+    return head->Flink == head;
+}
+
+static LIST_ENTRY* RemoveHeadList(LIST_ENTRY* head) {
+    LIST_ENTRY *flink, *entry;
+
+    entry = head->Flink;
+    flink = entry->Flink;
+    head->Flink = flink;
+    flink->Blink = head;
+
+    return entry;
+}
+
 NTSTATUS WINAPI ChkdskEx(PUNICODE_STRING DriveRoot, BOOLEAN FixErrors, BOOLEAN Verbose, BOOLEAN CheckOnlyIfDirty,
                          BOOLEAN ScanDrive, PFMIFSCALLBACK Callback) {
     // STUB
@@ -271,6 +293,12 @@ static void free_chunks(LIST_ENTRY* chunks) {
     while (le != chunks) {
         LIST_ENTRY *le2 = le->Flink;
         btrfs_chunk* c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
+
+        while (!IsListEmpty(&c->used_space)) {
+            used_space_extent* use = CONTAINING_RECORD(RemoveHeadList(&c->used_space), used_space_extent, list_entry);
+
+            free(use);
+        }
 
         free(c->chunk_item);
         free(c);
@@ -370,6 +398,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     c->offset = off;
     c->lastoff = off;
     c->used = 0;
+    InitializeListHead(&c->used_space);
 
     c->chunk_item = malloc(sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE)));
 
@@ -455,8 +484,26 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
     while (le != roots) {
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
         btrfs_chunk* c = r->id == BTRFS_ROOT_CHUNK ? sys_chunk : metadata_chunk;
+        bool done_use = false;
 
         r->header.address = get_next_address(c);
+
+        if (!IsListEmpty(&c->used_space)) {
+            used_space_extent* use = CONTAINING_RECORD(c->used_space.Blink, used_space_extent, list_entry);
+
+            if (use->address + use->size == r->header.address) {
+                use->size += node_size;
+                done_use = true;
+            }
+        }
+
+        if (!done_use) {
+            used_space_extent* use = malloc(sizeof(used_space_extent));
+            use->address = r->header.address;
+            use->size = node_size;
+            InsertTailList(&c->used_space, &use->list_entry);
+        }
+
         r->c = c;
         c->lastoff = r->header.address + node_size;
         c->used += node_size;
@@ -596,10 +643,9 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
             if (item->size > 0) {
                 dp -= item->size;
                 memcpy(dp, item->data, item->size);
+            }
 
-                ln->offset = (uint32_t)(dp - tree - sizeof(tree_header));
-            } else
-                ln->offset = 0;
+            ln->offset = (uint32_t)(dp - tree - sizeof(tree_header));
 
             ln = &ln[1];
 
@@ -952,11 +998,52 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
                  0xffffffffffffffff, 0, BTRFS_TYPE_DIRECTORY, default_subvol);
 }
 
+static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_root) {
+    LIST_ENTRY* le;
+
+    le = chunks->Flink;
+    while (le != chunks) {
+        btrfs_chunk* c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
+        uint64_t last_end = c->offset;
+        LIST_ENTRY* le2;
+        FREE_SPACE_INFO fsi;
+
+        fsi.count = 0;
+        fsi.flags = 0;
+
+        le2 = c->used_space.Flink;
+        while (le2 != &c->used_space) {
+            used_space_extent* use = CONTAINING_RECORD(le2, used_space_extent, list_entry);
+
+            if (use->address > last_end) {
+                add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, use->address - last_end,
+                         NULL, 0);
+                fsi.count++;
+            }
+
+            last_end = use->address + use->size;
+
+            le2 = le2->Flink;
+        }
+
+        if (c->offset + c->chunk_item->size > last_end) {
+            add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, c->offset + c->chunk_item->size - last_end,
+                     NULL, 0);
+            fsi.count++;
+        }
+
+        add_item(free_space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size, &fsi, sizeof(fsi));
+
+        le = le->Flink;
+    }
+}
+
 static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint32_t sector_size, uint32_t node_size, uint64_t incompat_flags,
                             uint64_t compat_ro_flags) {
     NTSTATUS Status;
     LIST_ENTRY roots, chunks;
-    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root, *block_group_root;
+    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root,
+               *block_group_root, *free_space_root;
     btrfs_chunk *sys_chunk, *metadata_chunk;
     btrfs_dev dev;
     BTRFS_UUID fsuuid, chunkuuid;
@@ -977,6 +1064,11 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     add_root(&roots, BTRFS_ROOT_CHECKSUM);
     fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
     reloc_root = add_root(&roots, BTRFS_ROOT_DATA_RELOC);
+
+    if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)
+        free_space_root = add_root(&roots, BTRFS_ROOT_FREE_SPACE);
+    else
+        free_space_root = NULL;
 
     if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
         block_group_root = add_root(&roots, BTRFS_ROOT_BLOCK_GROUP);
@@ -1013,6 +1105,9 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root, incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA);
 
     add_block_group_items(&chunks, block_group_root ? block_group_root : extent_root);
+
+    if (free_space_root)
+        populate_free_space_root(&chunks, free_space_root);
 
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
