@@ -58,6 +58,7 @@ typedef struct {
 typedef BOOL (__stdcall* pFormatEx)(DSTRING* root, STREAM_MESSAGE* message, options* opts, uint32_t unk1);
 typedef void (__stdcall* pSetSizes)(ULONG sector, ULONG node);
 typedef void (__stdcall* pSetIncompatFlags)(uint64_t incompat_flags);
+typedef void (__stdcall* pSetCompatROFlags)(uint64_t compat_ro_flags);
 typedef void (__stdcall* pSetCsumType)(uint16_t csum_type);
 
 static void print_string(FILE* f, int resid, ...) {
@@ -90,6 +91,7 @@ int main(int argc, char** argv) {
     int i;
     bool invalid_args = false;
     uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+    uint64_t compat_ro_flags = 0;
     uint16_t csum_type = CSUM_TYPE_CRC32C;
     pSetIncompatFlags SetIncompatFlags;
     pSetCsumType SetCsumType;
@@ -161,6 +163,10 @@ int main(int argc, char** argv) {
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_NO_HOLES;
                 else if (!_stricmp(cmd, "notnoholes"))
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_NO_HOLES;
+                else if (!_stricmp(cmd, "blockgrouptree"))
+                    compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE;
+                else if (!_stricmp(cmd, "notblockgrouptree"))
+                    compat_ro_flags &= ~BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE;
                 else {
                     print_string(stdout, IDS_UNKNOWN_ARG);
                     invalid_args = true;
@@ -303,6 +309,17 @@ int main(int argc, char** argv) {
     }
 
     SetIncompatFlags(incompat_flags);
+
+    if (compat_ro_flags != 0) {
+        pSetCompatROFlags SetCompatROFlags = (pSetIncompatFlags)GetProcAddress(ubtrfs, "SetCompatROFlags");
+
+        if (!SetCompatROFlags) {
+            print_string(stderr, IDS_CANT_FIND_FUNCTION, "SetCompatROFlags", UBTRFS_DLL);
+            return 1;
+        }
+
+        SetCompatROFlags(compat_ro_flags);
+    }
 
     SetCsumType = (pSetCsumType)GetProcAddress(ubtrfs, "SetCsumType");
 
