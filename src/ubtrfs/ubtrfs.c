@@ -831,7 +831,7 @@ static void init_fs_tree(btrfs_root* r, uint32_t node_size) {
     add_inode_ref(r, SUBVOL_ROOT_INODE, SUBVOL_ROOT_INODE, 0, "..");
 }
 
-static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* extent_root) {
+static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* root) {
     LIST_ENTRY* le;
 
     le = chunks->Flink;
@@ -842,7 +842,7 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* extent_root) {
         bgi.used = c->used;
         bgi.chunk_tree = 0x100;
         bgi.flags = c->chunk_item->type;
-        add_item(extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, &bgi, sizeof(BLOCK_GROUP_ITEM));
+        add_item(root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, &bgi, sizeof(BLOCK_GROUP_ITEM));
 
         le = le->Flink;
     }
@@ -956,7 +956,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
                             uint64_t compat_ro_flags) {
     NTSTATUS Status;
     LIST_ENTRY roots, chunks;
-    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root;
+    btrfs_root *root_root, *chunk_root, *extent_root, *dev_root, *fs_root, *reloc_root, *block_group_root;
     btrfs_chunk *sys_chunk, *metadata_chunk;
     btrfs_dev dev;
     BTRFS_UUID fsuuid, chunkuuid;
@@ -977,6 +977,11 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     add_root(&roots, BTRFS_ROOT_CHECKSUM);
     fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
     reloc_root = add_root(&roots, BTRFS_ROOT_DATA_RELOC);
+
+    if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
+        block_group_root = add_root(&roots, BTRFS_ROOT_BLOCK_GROUP);
+    else
+        block_group_root = NULL;
 
     init_device(&dev, 1, size, &fsuuid, sector_size);
 
@@ -1007,7 +1012,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
 
     assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root, incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA);
 
-    add_block_group_items(&chunks, extent_root);
+    add_block_group_items(&chunks, block_group_root ? block_group_root : extent_root);
 
     Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
     if (!NT_SUCCESS(Status))
