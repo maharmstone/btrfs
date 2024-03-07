@@ -148,6 +148,26 @@ sub incompat_flags {
         $f &= ~0x800;
     }
 
+    if ($f & 0x1000) {
+        push @l,"zoned";
+        $f &= ~0x1000;
+    }
+
+    if ($f & 0x2000) {
+        push @l,"extent_tree_v2";
+        $f &= ~0x2000;
+    }
+
+    if ($f & 0x4000) {
+        push @l,"raid_stripe_tree";
+        $f &= ~0x4000;
+    }
+
+    if ($f & 0x10000) {
+        push @l,"squota";
+        $f &= ~0x10000;
+    }
+
     if ($f!=0 || $#l==-1) {
         push @l,sprintf("%x",$f);
     }
@@ -172,6 +192,11 @@ sub compat_ro_flags {
     if ($f&4) {
         push @l,"verity";
         $f&=~4;
+    }
+
+    if ($f&8) {
+        push @l,"block_group_tree";
+        $f&=~8;
     }
 
     if ($f!=0 || $#l==-1) {
