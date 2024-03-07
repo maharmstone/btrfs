@@ -298,7 +298,7 @@ int main(int argc, char** argv) {
     SetIncompatFlags = (pSetIncompatFlags)GetProcAddress(ubtrfs, "SetIncompatFlags");
 
     if (!SetIncompatFlags) {
-        print_string(stderr, IDS_CANT_FIND_SETINCOMPATFLAGS, UBTRFS_DLL);
+        print_string(stderr, IDS_CANT_FIND_FUNCTION, "SetIncompatFlags", UBTRFS_DLL);
         return 1;
     }
 
