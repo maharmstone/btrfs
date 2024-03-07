@@ -307,7 +307,7 @@ int main(int argc, char** argv) {
     SetCsumType = (pSetCsumType)GetProcAddress(ubtrfs, "SetCsumType");
 
     if (!SetCsumType) {
-        print_string(stderr, IDS_CANT_FIND_SETCSUMTYPE, UBTRFS_DLL);
+        print_string(stderr, IDS_CANT_FIND_FUNCTION, "SetCsumType", UBTRFS_DLL);
         return 1;
     }
 
