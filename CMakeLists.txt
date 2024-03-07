@@ -291,6 +291,7 @@ if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
 endif()
 
 if(NOT MSVC)
+    target_compile_options(ubtrfs PUBLIC -Werror-implicit-function-declaration)
     target_link_options(ubtrfs PUBLIC -static -static-libgcc -static-libstdc++)
 endif()
 
