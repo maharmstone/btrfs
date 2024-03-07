@@ -187,6 +187,9 @@ int main(int argc, char** argv) {
     } else
         invalid_args = true;
 
+    if (!ds)
+        invalid_args = true;
+
     if (invalid_args) {
         char* c = argv[0] + strlen(argv[0]) - 1;
         char* fn = NULL;
