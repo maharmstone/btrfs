@@ -304,6 +304,14 @@ int main(int argc, char** argv) {
         SetSizes(node_size, sector_size);
     }
 
+    // From Linux btrfs/disk-io.c: "Artificial requirement for block-group-tree to force
+    // newer features (free-space-tree, no-holes) so the test matrix is smaller."
+    if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE) {
+        compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
+        compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID;
+        incompat_flags |= BTRFS_INCOMPAT_FLAGS_NO_HOLES;
+    }
+
     SetIncompatFlags = (pSetIncompatFlags)GetProcAddress(ubtrfs, "SetIncompatFlags");
 
     if (!SetIncompatFlags) {
