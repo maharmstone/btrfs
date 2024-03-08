@@ -3062,6 +3062,10 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
         case BTRFS_ROOT_DATA_RELOC:
             Vcb->data_reloc_root = r;
             break;
+
+        case BTRFS_ROOT_BLOCK_GROUP:
+            Vcb->block_group_root = r;
+            break;
     }
 
     return STATUS_SUCCESS;
