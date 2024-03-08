@@ -3064,7 +3064,8 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
             break;
 
         case BTRFS_ROOT_BLOCK_GROUP:
-            Vcb->block_group_root = r;
+            if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
+                Vcb->block_group_root = r;
             break;
     }
 
