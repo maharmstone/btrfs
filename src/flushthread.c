@@ -4245,7 +4245,8 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     bgi->chunk_tree = 0x100;
     bgi->flags = c->chunk_item->type;
 
-    Status = insert_tree_item(Vcb, Vcb->extent_root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->block_group_root ? Vcb->block_group_root : Vcb->extent_root, c->offset,
+                              TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(bgi);
