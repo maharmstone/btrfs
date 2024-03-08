@@ -2030,7 +2030,7 @@ after_tree_walk:
     fsi->count = fsi_count;
     fsi->flags = 0;
 
-    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size, fsi, sizeof(fsi),
+    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size, fsi, sizeof(*fsi),
                               NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
