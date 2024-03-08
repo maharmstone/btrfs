@@ -2891,11 +2891,13 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
         }
 
         if (c->used != c->oldused) {
+            root* r = Vcb->block_group_root ? Vcb->block_group_root : Vcb->extent_root;
+
             searchkey.obj_id = c->offset;
             searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
             searchkey.offset = c->chunk_item->size;
 
-            Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
+            Status = find_item(Vcb, r, &tp, &searchkey, false, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("error - find_item returned %08lx\n", Status);
                 release_chunk_lock(c, Vcb);
@@ -2903,7 +2905,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             }
 
             if (keycmp(searchkey, tp.item->key)) {
-                ERR("could not find (%I64x,%x,%I64x) in extent_root\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+                ERR("could not find (%I64x;%I64x,%x,%I64x)\n", r->id, searchkey.obj_id, searchkey.obj_type, searchkey.offset);
                 Status = STATUS_INTERNAL_ERROR;
                 release_chunk_lock(c, Vcb);
                 goto end;
@@ -2944,7 +2946,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
 
-            Status = insert_tree_item(Vcb, Vcb->extent_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, Irp);
+            Status = insert_tree_item(Vcb, r, searchkey.obj_id, searchkey.obj_type, searchkey.offset, bgi, tp.item->size, NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08lx\n", Status);
                 ExFreePool(bgi);
