@@ -366,6 +366,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     btrfs_chunk* c;
     LIST_ENTRY* le;
     CHUNK_ITEM_STRIPE* cis;
+    uint64_t stripe_length = max(sector_size, 0x10000);
 
     off = 0xc00000;
     le = chunks->Flink;
@@ -387,7 +388,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
         size = 0x800000;
 
     size = min(size, dev->dev_item.num_bytes / 10); // cap at 10%
-    size &= ~(sector_size - 1);
+    size &= ~(stripe_length - 1);
 
     stripes = flags & BLOCK_FLAG_DUPLICATE ? 2 : 1;
 
@@ -404,10 +405,10 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
 
     c->chunk_item->size = size;
     c->chunk_item->root_id = BTRFS_ROOT_EXTENT;
-    c->chunk_item->stripe_length = max(sector_size, 0x10000);
+    c->chunk_item->stripe_length = stripe_length;
     c->chunk_item->type = flags;
-    c->chunk_item->opt_io_alignment = max(sector_size, 0x10000);
-    c->chunk_item->opt_io_width = max(sector_size, 0x10000);
+    c->chunk_item->opt_io_alignment = stripe_length;
+    c->chunk_item->opt_io_width = stripe_length;
     c->chunk_item->sector_size = sector_size;
     c->chunk_item->num_stripes = stripes;
     c->chunk_item->sub_stripes = 0;
