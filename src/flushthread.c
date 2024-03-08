@@ -5733,7 +5733,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
         searchkey.offset = 0xffffffffffffffff;
 
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
+        Status = find_item(Vcb, Vcb->block_group_root ? Vcb->block_group_root : Vcb->extent_root,
+                           &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08lx\n", Status);
             return Status;
