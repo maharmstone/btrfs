@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
     int i;
     bool invalid_args = false;
     uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
-    uint64_t compat_ro_flags = 0;
+    uint64_t compat_ro_flags = BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
     uint16_t csum_type = CSUM_TYPE_CRC32C;
     pSetIncompatFlags SetIncompatFlags;
     pSetCsumType SetCsumType;
@@ -163,6 +163,10 @@ int main(int argc, char** argv) {
                     incompat_flags |= BTRFS_INCOMPAT_FLAGS_NO_HOLES;
                 else if (!_stricmp(cmd, "notnoholes"))
                     incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_NO_HOLES;
+                else if (!_stricmp(cmd, "freespacetree"))
+                    compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
+                else if (!_stricmp(cmd, "notfreespacetree"))
+                    compat_ro_flags &= ~BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
                 else if (!_stricmp(cmd, "blockgrouptree"))
                     compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE;
                 else if (!_stricmp(cmd, "notblockgrouptree"))
@@ -308,9 +312,11 @@ int main(int argc, char** argv) {
     // newer features (free-space-tree, no-holes) so the test matrix is smaller."
     if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE) {
         compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
-        compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID;
         incompat_flags |= BTRFS_INCOMPAT_FLAGS_NO_HOLES;
     }
+
+    if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)
+        compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID;
 
     SetIncompatFlags = (pSetIncompatFlags)GetProcAddress(ubtrfs, "SetIncompatFlags");
 
