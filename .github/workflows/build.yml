@@ -1,0 +1,122 @@
+name: Build CI
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch:
+
+env:
+  BUILD_CONFIG: RelWithDebInfo
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - shell_arch: x64
+            win_arch: x64
+          - shell_arch: x86
+            win_arch: x86
+          - shell_arch: amd64_arm64
+            win_arch: arm64
+          - shell_arch: amd64_arm
+            win_arch: arm
+
+    name: Build for ${{ matrix.win_arch }}
+    runs-on: windows-latest
+
+    steps:
+    - name: Get Sources
+      uses: actions/checkout@v3
+      
+    - name: Setup shell
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.shell_arch }}
+    
+    - name: Prepare build
+      run: cmake -B build -G "Ninja"
+      
+    - name: Build
+      run: cmake --build build --config ${{env.BUILD_CONFIG}} -j 3
+      
+    - name: Prepare files for upload
+      run: |
+        mkdir upload
+        mkdir upload/${{ matrix.win_arch }}
+
+        copy src/btrfs.inf upload
+        copy build/ubtrfs.dll upload/${{ matrix.win_arch }}
+        copy build/shellbtrfs.dll upload/${{ matrix.win_arch }}
+        copy build/mkbtrfs.exe upload/${{ matrix.win_arch }}
+        copy build/btrfs.sys upload/${{ matrix.win_arch }}
+
+        mkdir upload-pdb
+        mkdir upload-pdb/${{ matrix.win_arch }}
+
+        copy build/ubtrfs.pdb upload-pdb/${{ matrix.win_arch }}
+        copy build/shellbtrfs.pdb upload-pdb/${{ matrix.win_arch }}
+        copy build/mkbtrfs.pdb upload-pdb/${{ matrix.win_arch }}
+        copy build/btrfs.pdb upload-pdb/${{ matrix.win_arch }}
+
+    - name: Upload driver files
+      uses: actions/upload-artifact@v3
+      with:
+        name: btrfs
+        path: upload/*
+
+    - name: Upload PDB files
+      uses: actions/upload-artifact@v3
+      with:
+        name: btrfs-pdb
+        path: upload-pdb/*
+
+  sign:
+    needs: build
+    runs-on: windows-latest
+    name: Sign
+
+    env:
+      INF2CAT_PROGRAM: 'C:/Program Files (x86)/Windows Kits/10/bin/x86/Inf2Cat.exe'
+
+    steps:
+      - name: Get Sources
+        uses: actions/checkout@v3
+
+      - name: Setup shell
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: btrfs
+          path: upload
+
+      - name: Import key
+        run: |
+          # Create the PFX file from the base64-encoded secret
+          "${{ secrets.PFX_FILE_B64 }}" | Out-File -FilePath pfx.b64
+          CertUtil -decode pfx.b64 cert.pfx
+          # Import it
+          $plaintextpwd = "password"
+          $pwd = ConvertTo-SecureString -String $plaintextpwd -Force -AsPlainText
+          Import-PfxCertificate -FilePath ./cert.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pwd
+
+      - name: Create catalog file
+        run: |
+          cd upload
+          & "${{env.INF2CAT_PROGRAM}}" /os:10_NI_X64 /driver:.
+      
+      - name: Sign catalog file
+        run: |
+          cd upload
+          SignTool sign /fd SHA256 /v /s My /n "Btrfs driver" /t http://timestamp.digicert.com btrfs.cat
+
+      - name: Upload driver
+        uses: actions/upload-artifact@v3
+        with:
+          name: btrfs
+          path: upload/*

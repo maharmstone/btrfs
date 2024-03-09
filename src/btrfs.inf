@@ -98,7 +98,7 @@ mkbtrfs.exe = 1,,
 1 = %DiskId1%,,,\arm
 
 [SourceDisksNames.arm64]
-1 = %DiskId1%,,,\aarch64
+1 = %DiskId1%,,,\arm64
 
 [shellbtrfs_AddReg]
 HKCR,*\ShellEx\PropertySheetHandlers\WinBtrfs,,,"{2690B74F-F353-422D-BB12-401581EEF8F2}"
