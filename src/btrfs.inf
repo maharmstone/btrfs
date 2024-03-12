@@ -92,7 +92,7 @@ mkbtrfs.exe = 1,,
 1 = %DiskId1%,,,\x86
 
 [SourceDisksNames.amd64]
-1 = %DiskId1%,,,\x64
+1 = %DiskId1%,,,\amd64
 
 [SourceDisksNames.arm]
 1 = %DiskId1%,,,\arm
