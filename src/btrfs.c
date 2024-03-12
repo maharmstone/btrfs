@@ -2255,7 +2255,7 @@ static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT
 }
 
 NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_ bool make_orphan, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
-    LARGE_INTEGER newlength, time;
+    LARGE_INTEGER time;
     BTRFS_TIME now;
     NTSTATUS Status;
     ULONG utf8len = 0;
@@ -2411,11 +2411,6 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
     fileref->fcb->subvol->root_item.ctransid = fileref->fcb->Vcb->superblock.generation;
     fileref->fcb->subvol->root_item.ctime = now;
-
-    newlength.QuadPart = 0;
-
-    if (FileObject && !CcUninitializeCacheMap(FileObject, &newlength, NULL))
-        TRACE("CcUninitializeCacheMap failed\n");
 
     ExReleaseResourceLite(fileref->fcb->Header.Resource);
 
