@@ -2468,7 +2468,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         file_ref* fileref;
         bool locked = true;
         bool uninitialize_cache_map = false;
-        bool purge_cache_section = false;
+        bool flush_and_purge_cache = false;
 
         ccb = FileObject->FsContext2;
         fileref = ccb ? ccb->fileref : NULL;
@@ -2562,21 +2562,8 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
                         ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
 
                         clear_rollback(&rollback);
-                    } else if (FileObject->Flags & FO_CACHE_SUPPORTED && FileObject->SectionObjectPointer->DataSectionObject) {
-                        IO_STATUS_BLOCK iosb;
-
-                        if (locked) {
-                            ExReleaseResourceLite(fcb->Header.Resource);
-                            locked = false;
-                        }
-
-                        CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
-
-                        if (!NT_SUCCESS(iosb.Status))
-                            ERR("CcFlushCache returned %08lx\n", iosb.Status);
-
-                        purge_cache_section = true;
-                    }
+                    } else if (FileObject->Flags & FO_CACHE_SUPPORTED && FileObject->SectionObjectPointer->DataSectionObject)
+                        flush_and_purge_cache = true;
                 }
 
                 if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
@@ -2589,7 +2576,14 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
 
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
 
-        if (purge_cache_section) {
+        if (flush_and_purge_cache) {
+            IO_STATUS_BLOCK iosb;
+
+            CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
+
+            if (!NT_SUCCESS(iosb.Status))
+                ERR("CcFlushCache returned %08lx\n", iosb.Status);
+
             if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
                 ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, true);
                 ExReleaseResourceLite(fcb->Header.PagingIoResource);
