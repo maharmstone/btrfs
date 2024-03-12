@@ -2472,6 +2472,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         ccb* ccb;
         file_ref* fileref;
         bool locked = true;
+        bool uninitialize_cache_map = false;
 
         ccb = FileObject->FsContext2;
         fileref = ccb ? ccb->fileref : NULL;
@@ -2591,7 +2592,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
                 }
 
                 if (fcb->Vcb && fcb != fcb->Vcb->volume_fcb)
-                    CcUninitializeCacheMap(FileObject, NULL, NULL);
+                    uninitialize_cache_map = true;
             }
         }
 
@@ -2599,6 +2600,11 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
             ExReleaseResourceLite(fcb->Header.Resource);
 
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+
+        /* In rare instances CcUninitializeCacheMap can block - we need to make
+           sure we're not holding tree_lock if it does. */
+        if (uninitialize_cache_map)
+            CcUninitializeCacheMap(FileObject, NULL, NULL);
 
         FileObject->Flags |= FO_CLEANUP_COMPLETE;
     }
