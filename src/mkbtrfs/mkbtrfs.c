@@ -90,7 +90,8 @@ int main(int argc, char** argv) {
     ULONG sector_size = 0, node_size = 0;
     int i;
     bool invalid_args = false;
-    uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+    uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA |
+                              BTRFS_INCOMPAT_FLAGS_NO_HOLES;
     uint64_t compat_ro_flags = BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
     uint16_t csum_type = CSUM_TYPE_CRC32C;
     pSetIncompatFlags SetIncompatFlags;
