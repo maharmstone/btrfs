@@ -2468,6 +2468,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         file_ref* fileref;
         bool locked = true;
         bool uninitialize_cache_map = false;
+        bool purge_cache_section = false;
 
         ccb = FileObject->FsContext2;
         fileref = ccb ? ccb->fileref : NULL;
@@ -2574,15 +2575,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
                         if (!NT_SUCCESS(iosb.Status))
                             ERR("CcFlushCache returned %08lx\n", iosb.Status);
 
-                        if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
-                            ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, true);
-                            ExReleaseResourceLite(fcb->Header.PagingIoResource);
-                        }
-
-                        CcPurgeCacheSection(FileObject->SectionObjectPointer, NULL, 0, false);
-
-                        TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x)\n",
-                            FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+                        purge_cache_section = true;
                     }
                 }
 
@@ -2595,6 +2588,18 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
             ExReleaseResourceLite(fcb->Header.Resource);
 
         ExReleaseResourceLite(&fcb->Vcb->tree_lock);
+
+        if (purge_cache_section) {
+            if (!ExIsResourceAcquiredSharedLite(fcb->Header.PagingIoResource)) {
+                ExAcquireResourceExclusiveLite(fcb->Header.PagingIoResource, true);
+                ExReleaseResourceLite(fcb->Header.PagingIoResource);
+            }
+
+            CcPurgeCacheSection(FileObject->SectionObjectPointer, NULL, 0, false);
+
+            TRACE("flushed cache on close (FileObject = %p, fcb = %p, AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x)\n",
+                  FileObject, fcb, fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
+        }
 
         /* In rare instances CcUninitializeCacheMap can block - we need to make
            sure we're not holding tree_lock if it does. */
