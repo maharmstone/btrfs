@@ -106,6 +106,13 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "
     endif()
 endif()
 
+if(MSVC AND (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64"))
+    # see cmake bug 24317 if armasm64 fails (should be fixed in CMake 3.29)
+    enable_language(ASM_MARMASM)
+    set(SRC_FILES ${SRC_FILES}
+        src/crc32c-aarch64.asm)
+endif()
+
 configure_file(src/btrfs.rc.in btrfs.rc)
 
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")

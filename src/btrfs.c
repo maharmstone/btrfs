@@ -46,6 +46,10 @@
 #undef INITGUID
 #endif
 
+#ifdef _ARM64_
+#define ARM64_ID_AA64ISAR0_EL1 0x4030
+#endif
+
 #include <ntstrsafe.h>
 
 #define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
@@ -6019,6 +6023,13 @@ static void check_cpu() {
     } else
         TRACE("AVX2 is not supported\n");
 }
+#elif defined(_ARM64_)
+static void check_cpu() {
+    uint64_t reg = _ReadStatusReg(ARM64_ID_AA64ISAR0_EL1);
+
+    if ((reg & 0xf0000) >> 16 == 1)
+        calc_crc32c = calc_crc32c_hw;
+}
 #endif
 
 #ifdef _DEBUG
@@ -6330,7 +6341,7 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
     TRACE("DriverEntry\n");
 
-#if defined(_X86_) || defined(_AMD64_)
+#if defined(_X86_) || defined(_AMD64_) || defined(_ARM64_)
     check_cpu();
 #endif
 

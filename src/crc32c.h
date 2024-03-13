@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-#if defined(_X86_) || defined(_AMD64_)
+#if defined(_X86_) || defined(_AMD64_) || defined(_ARM64_)
 uint32_t __stdcall calc_crc32c_hw(uint32_t seed, uint8_t* msg, uint32_t msglen);
 #endif
 
