@@ -6,19 +6,20 @@ jobs:
   cmake:
     runs-on: msvc-wine
     steps:
-      - run: git clone ${{ github.server_url }}/${{ github.repository }} repo
-      - run: cd repo && git checkout ${{ github.sha }}
+      - run: echo "SHORT_SHA=`echo ${{ github.sha }} | cut -c1-8`" >> $GITHUB_ENV
+      - run: git clone ${{ github.server_url }}/${{ github.repository }} ${SHORT_SHA}
+      - run: cd ${SHORT_SHA} && git checkout ${{ github.sha }}
       - run: mkdir -p build/debug/{amd64,x86,aarch64,arm}
       - run: mkdir -p build/release/{amd64,x86,aarch64,arm}
       - run: mkdir -p build/pdb/{debug,release}/{amd64,x86,aarch64,arm}
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-amd64.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S repo -B build/debug/amd64 && cmake --build build/debug/amd64 --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-x86.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S repo -B build/debug/x86 && cmake --build build/debug/x86 --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-aarch64.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S repo -B build/debug/aarch64 && cmake --build build/debug/aarch64 --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-armv7.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S repo -B build/debug/arm && cmake --build build/debug/arm --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-amd64.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S repo -B build/release/amd64 && cmake --build build/release/amd64 --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-x86.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S repo -B build/release/x86 && cmake --build build/release/x86 --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-aarch64.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S repo -B build/release/aarch64 && cmake --build build/release/aarch64 --parallel `nproc`
-      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-armv7.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S repo -B build/release/arm && cmake --build build/release/arm --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-amd64.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/debug/amd64 && cmake --build build/debug/amd64 --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-x86.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/debug/x86 && cmake --build build/debug/x86 --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-aarch64.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/debug/aarch64 && cmake --build build/debug/aarch64 --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-armv7.cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/debug/arm && cmake --build build/debug/arm --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-amd64.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/release/amd64 && cmake --build build/release/amd64 --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-x86.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/release/x86 && cmake --build build/release/x86 --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-aarch64.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/release/aarch64 && cmake --build build/release/aarch64 --parallel `nproc`
+      - run: cmake -DCMAKE_TOOLCHAIN_FILE=msvc-armv7.cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TEST=OFF -S ${SHORT_SHA} -B build/release/arm && cmake --build build/release/arm --parallel `nproc`
       - run: mv build/debug/amd64/*.pdb build/pdb/debug/amd64/
       - run: mv build/debug/x86/*.pdb build/pdb/debug/x86/
       - run: mv build/debug/aarch64/*.pdb build/pdb/debug/aarch64/
@@ -27,8 +28,8 @@ jobs:
       - run: mv build/release/x86/*.pdb build/pdb/release/x86/
       - run: mv build/release/aarch64/*.pdb build/pdb/release/aarch64/
       - run: mv build/release/arm/*.pdb build/pdb/release/arm/
-      - run: cp repo/src/{btrfs,btrfs-vol}.inf build/debug/
-      - run: cp repo/src/{btrfs,btrfs-vol}.inf build/release/
+      - run: cp ${SHORT_SHA}/src/{btrfs,btrfs-vol}.inf build/debug/
+      - run: cp ${SHORT_SHA}/src/{btrfs,btrfs-vol}.inf build/release/
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ github.sha }}
