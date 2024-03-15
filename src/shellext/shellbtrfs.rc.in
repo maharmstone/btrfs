@@ -684,7 +684,7 @@ BEGIN
     IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM
                             "Unrecoverable metadata checksum error at %llx on device %llx (root %llx, level %x, first item %llx,%x,%llx)"
     IDS_SCRUB_MSG_FINISHED  "Scrub finished at %s %s."
-    IDS_SCRUB_MSG_SUMMARY   "Scrubbed %s in %llu seconds (%s/s)."
+    IDS_SCRUB_MSG_SUMMARY   "Scrubbed %s in %s (%s/s)."
     IDS_BALANCE_SCRUB_RUNNING "Cannot start balance while scrub running."
     IDS_SCRUB_BALANCE_RUNNING "Cannot start scrub while balance running."
     IDS_SCRUB_MSG_SUMMARY_ERRORS_RECOVERABLE "Recovered from %llu error(s)."

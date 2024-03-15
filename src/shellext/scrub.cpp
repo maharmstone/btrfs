@@ -29,6 +29,23 @@
 #include <shlwapi.h>
 #include <uxtheme.h>
 
+static wstring format_duration(uint64_t dur, const wchar_t* fmt) {
+    int len = GetDurationFormatEx(LOCALE_NAME_USER_DEFAULT, 0, nullptr, dur,
+                                  fmt, nullptr, 0);
+    if (len == 0)
+        throw last_error(GetLastError());
+
+    wstring s;
+
+    s.resize(len);
+
+    if (GetDurationFormatEx(LOCALE_NAME_USER_DEFAULT, 0, nullptr, dur,
+                            fmt, s.data(), s.size()) == 0)
+        throw last_error(GetLastError());
+
+    return s;
+}
+
 void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
     btrfs_query_scrub* bqs2 = nullptr;
     bool alloc_bqs2 = false;
@@ -213,7 +230,14 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
 
             format_size((uint64_t)speed, d2, false);
 
-            wstring_sprintf(u, t, d1.c_str(), bqs2->duration / 10000000, d2.c_str());
+            wstring dur;
+
+            if (bqs2->duration >= 36000000000)
+                dur = format_duration(bqs2->duration, L"h:mm:ss");
+            else
+                dur = format_duration(bqs2->duration, L"m:ss");
+
+            wstring_sprintf(u, t, d1.c_str(), dur.c_str(), d2.c_str());
 
             s += u;
             s += L"\r\n";
