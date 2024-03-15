@@ -1,5 +1,5 @@
-WinBtrfs v1.8.2
----------------
+WinBtrfs v1.9
+-------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -79,6 +79,7 @@ Features
 * Metadata UUID incompat flag (Linux 5.0)
 * Three- and four-disk RAID1 (Linux 5.5)
 * New checksum types (xxhash, sha256, blake2) (Linux 5.5)
+* Block group tree (Linux 6.1)
 
 Todo
 ----
@@ -291,6 +292,13 @@ partition type from 83 to 7.
 
 Changelog
 ---------
+
+v1.9 (2024-03-15):
+* Added support for block group tree (Linux 6.1)
+* Fixed hang when system under heavy load
+* Added /blockgrouptree and /freespacetree options to mkbtrfs
+* Follow Linux in defaulting /noholes to on in mkbtrfs
+* Added support for CRC32C instructions on aarch64
 
 v1.8.2 (2023-01-10):
 * Fixed UAC not working
