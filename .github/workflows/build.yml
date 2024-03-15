@@ -7,6 +7,7 @@ jobs:
     runs-on: msvc-wine
     steps:
       - run: git clone ${{ github.server_url }}/${{ github.repository }} repo
+      - run: cd repo && git checkout ${{ github.sha }}
       - run: mkdir -p build/debug/{amd64,x86,aarch64,arm}
       - run: mkdir -p build/release/{amd64,x86,aarch64,arm}
       - run: mkdir -p build/pdb/{debug,release}/{amd64,x86,aarch64,arm}
