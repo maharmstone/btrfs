@@ -30,6 +30,10 @@ jobs:
       - run: mv build/release/arm/*.pdb build/pdb/release/arm/
       - run: cp ${SHORT_SHA}/src/{btrfs,btrfs-vol}.inf build/debug/
       - run: cp ${SHORT_SHA}/src/{btrfs,btrfs-vol}.inf build/release/
+      - run: stampinf -f build/debug/btrfs.inf -d \* -v \*
+      - run: stampinf -f build/debug/btrfs-vol.inf -d \* -v \*
+      - run: stampinf -f build/release/btrfs.inf -d \* -v \*
+      - run: stampinf -f build/release/btrfs-vol.inf -d \* -v \*
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ github.sha }}
