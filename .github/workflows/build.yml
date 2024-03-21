@@ -36,9 +36,18 @@ jobs:
       - run: stampinf -f build/release/btrfs-vol.inf -d \* -v \*
       - run: cd build/debug && makecat ../../${SHORT_SHA}/src/btrfs.cdf
       - run: cd build/release && makecat ../../${SHORT_SHA}/src/btrfs.cdf
+      - env:
+          CERTIFICATE: ${{ secrets.CERTIFICATE }}
+        run: echo "${CERTIFICATE}" > codesigning.crt
+      - env:
+          KEY: ${{ secrets.KEY }}
+        run: echo "${KEY}" > codesigning.key
+      - run: for i in build/{debug,release}/btrfs.cat; do osslsigncode sign -spc codesigning.crt -key codesigning.key -t http://timestamp.digicert.com -in $i -out tmp && mv tmp $i; done
+      - run: for i in build/{debug,release}/{amd64,x86,aarch64,arm}/{btrfs.sys,mkbtrfs.exe,shellbtrfs.dll,ubtrfs.dll}; do osslsigncode sign -spc codesigning.crt -key codesigning.key -t http://timestamp.digicert.com -ph -in $i -out tmp && mv tmp $i; done
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ github.sha }}
+          overwrite: true
           path: |
             build/**/btrfs.sys
             build/**/mkbtrfs.exe
