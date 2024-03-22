@@ -5,6 +5,9 @@ env:
 jobs:
   cmake:
     runs-on: msvc-wine
+    container:
+      volumes:
+        - /var/run/pcscd/pcscd.comm:/var/run/pcscd/pcscd.comm
     steps:
       - run: echo "SHORT_SHA=`echo ${{ github.sha }} | cut -c1-8`" >> $GITHUB_ENV
       - run: git clone ${{ github.server_url }}/${{ github.repository }} ${SHORT_SHA}
@@ -40,10 +43,13 @@ jobs:
           CERTIFICATE: ${{ secrets.CERTIFICATE }}
         run: echo "${CERTIFICATE}" > codesigning.crt
       - env:
-          KEY: ${{ secrets.KEY }}
-        run: echo "${KEY}" > codesigning.key
-      - run: for i in build/{debug,release}/btrfs.cat; do osslsigncode sign -spc codesigning.crt -key codesigning.key -t http://timestamp.digicert.com -in $i -out tmp && mv tmp $i; done
-      - run: for i in build/{debug,release}/{amd64,x86,aarch64,arm}/{btrfs.sys,mkbtrfs.exe,shellbtrfs.dll,ubtrfs.dll}; do osslsigncode sign -spc codesigning.crt -key codesigning.key -t http://timestamp.digicert.com -ph -in $i -out tmp && mv tmp $i; done
+          PKCS11CERT: ${{ secrets.PKCS11CERT }}
+          PKCS11KEY: ${{ secrets.PKCS11KEY }}
+        run: for i in build/{debug,release}/btrfs.cat; do osslsigncode sign -pkcs11module /usr/lib64/libcrypto3PKCS.so -pkcs11cert "${PKCS11CERT}" -key "${PKCS11KEY}" -certs codesigning.crt -t http://timestamp.digicert.com -in $i -out tmp && mv tmp $i; done
+      - env:
+          PKCS11CERT: ${{ secrets.PKCS11CERT }}
+          PKCS11KEY: ${{ secrets.PKCS11KEY }}
+        run: for i in build/{debug,release}/{amd64,x86,aarch64,arm}/{btrfs.sys,mkbtrfs.exe,shellbtrfs.dll,ubtrfs.dll}; do osslsigncode sign -pkcs11module /usr/lib64/libcrypto3PKCS.so -pkcs11cert "${PKCS11CERT}" -key "${PKCS11KEY}" -certs codesigning.crt -t http://timestamp.digicert.com -ph -in $i -out tmp && mv tmp $i; done
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ github.sha }}
