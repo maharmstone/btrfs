@@ -66,7 +66,6 @@ DEFINE_GUID(BtrfsBusInterface, 0x4d414874, 0x6865, 0x6761, 0x6d, 0x65, 0x83, 0x6
 
 PDRIVER_OBJECT drvobj;
 PDEVICE_OBJECT master_devobj, busobj;
-uint64_t num_reads = 0;
 LIST_ENTRY uid_map_list, gid_map_list;
 LIST_ENTRY VcbList;
 ERESOURCE global_loading_lock;
@@ -2728,8 +2727,6 @@ NTSTATUS sync_read_phys(_In_ PDEVICE_OBJECT DeviceObject, _In_ PFILE_OBJECT File
     PIO_STACK_LOCATION IrpSp;
     NTSTATUS Status;
     read_context context;
-
-    num_reads++;
 
     RtlZeroMemory(&context, sizeof(read_context));
     KeInitializeEvent(&context.Event, NotificationEvent, false);
