@@ -518,7 +518,7 @@ static NTSTATUS vol_is_writable(volume_device_extension* vde) {
     Status = writable ? STATUS_SUCCESS : STATUS_MEDIA_WRITE_PROTECTED;
 
 end:
-ExReleaseResourceLite(&pdode->child_lock);
+    ExReleaseResourceLite(&pdode->child_lock);
 
     return STATUS_SUCCESS;
 }
