@@ -125,7 +125,7 @@ After you reboot, you can then delete the btrfs key and remove
 C:\Windows\System32\drivers\btrfs.sys.
 
 If you want to prevent Btrfs driver loading during system booting, for example you have to because of system BSOD(Blue or green screen, very quick after desktop appears.),
-please read this tip.
+please read <a href="doc/Prevent driver loading in booting">this tip</a>.
 
 Compilation
 -----------
