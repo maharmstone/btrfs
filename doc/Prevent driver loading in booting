@@ -1,0 +1,35 @@
+# Preventing Btrfs driver loading during system booting, or unistall Btrfs driver (in some cases) that causes (in some cases)  contained system BSOD.
+
+Maybe you want to unistall the driver without entering to the OS which installed it. 
+(Such as, there are errors in a Btrfs part. This can cause Windows BSOD, show blue or green screen, very quick after desktop appears-- at least on WinBtrfs v1.9.)
+(So, it is sometimes necessary to prevent Btrfs driver loading during system booting.)
+
+You can switch to another OS, open regedit as admin. (Of course avaible in Windows PE, or is it also avaible in Linux?) 
+Press win+r, then type "regedit", press Enter.
+
+Such as, load regedit of target OS to HKLM(HKEY_LOCAL_MACHINE) as name "sys", and it is in part P, as I did.
+(Switch to regedit.) Press HKLM, Alt+F, Alt+L （to load configuration unit), then switch folder directory to "P:\Windows\System32\config\", find and choose the file "system".
+(P:\Windows\System32\config\system)
+(If your target system is in other part, please change part letter to yours. Such as, P:\Windows\System32\config\ -> D:\Windows\System32\config\ .)
+(But do this before, please make sure mount the part including the target OS as read-write able. Such as you need to care about, the OS is in VHD/VHDX, is as RAMOS or ghost/shadow OS.)
+Name it as "sys".(Need, or you need to modify the text copied from below.)
+
+Now, copy five lines below to an empty text(notepad) file, and save it as an reg file(such as"Btrfs_driver-stop.reg")(ANSI encoding method is ok.).
+
+---
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\sys\ControlSet001\Services\btrfs]
+"Start"=dword:00000004
+
+---
+
+Double click the file, press Alt+Y, to continue import it to regedit.
+
+Now, you can switch to regedit, press "sys", Alt+F, Alt+U, Alt+Y, to unmount the regedit "system" of target OS. 
+(Remember to unmount VHD/VHDX if it exists. ) 
+
+Now it is done preventing Btrfs driver loading in system booting.
+Restart the computer, switch to the target OS, then you can delete the btrfs key and remove C:\Windows\System32\drivers\btrfs.sys, unistalling the btrfs driver.
+
+(For more, there is more options for mounting. You can get in much farther down to get, #Mount options .)
