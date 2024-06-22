@@ -32,4 +32,4 @@ Now, you can switch to regedit, press "sys", Alt+F, Alt+U, Alt+Y, to unmount the
 Now it is done preventing Btrfs driver loading in system booting.
 Restart the computer, switch to the target OS, then you can delete the btrfs key and remove C:\Windows\System32\drivers\btrfs.sys, unistalling the btrfs driver.
 
-(For more, there is more options for mounting. You can get in much farther down to get, #Mount options .)
+(For more, there is more options for mounting. You can get in much farther down to get, <a href="/README.me/#Mount>Mount</a> options .)
