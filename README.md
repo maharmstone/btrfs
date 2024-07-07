@@ -151,6 +151,9 @@ entry maps Windows' Users group to gid 100, which is usually "users" on Linux.
 You can also specify user SIDs here to force files created by a user to belong
 to a certain group. The setgid flag also works as on Linux.
 
+Note that processes running under User Access Control tokens create files as
+the BUILTIN\Administrators SID (S-1-5-32-544), rather as a user account.
+
 LXSS ("Ubuntu on Windows" / "Windows Subsystem for Linux")
 ----------------------------------------------------------
 
