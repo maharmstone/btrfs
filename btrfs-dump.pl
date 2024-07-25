@@ -648,7 +648,11 @@ sub dump_item {
 				my $irt=unpack("C",$s);
 				$s = substr($s,1);
 
-				if ($irt == 0xb0) {
+				if ($irt == 0xac) {
+					@b=unpack("Q",$s);
+					$s=substr($s,8);
+					printf("extent_owner_ref root=%x ",$b[0]);
+				} elsif ($irt == 0xb0) {
 					@b=unpack("Q",$s);
 					$s=substr($s,8);
 					printf("tree_block_ref root=%x ",$b[0]);
