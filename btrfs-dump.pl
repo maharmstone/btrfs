@@ -722,9 +722,9 @@ sub dump_item {
 			printf(" stripe(%u) devid=%x offset=%x devuuid=%s",$i,$b[0],$b[1],format_uuid($b[2]));
 		}
 	} elsif ($type == 0xf0) { # QGROUP_STATUS
-		@b=unpack("QQQQ", $s);
-		printf("qgroup_status version=%x generation=%x flags=%s rescan=%x",$b[0],$b[1],qgroup_status_flags($b[2]),$b[3]);
-		$s=substr($s,0x20);
+		@b=unpack("QQQQQ", $s);
+		printf("qgroup_status version=%x generation=%x flags=%s rescan=%x enable_gen=%x",$b[0],$b[1],qgroup_status_flags($b[2]),$b[3],$b[4]);
+		$s=substr($s,0x28);
 	} elsif ($type == 0xf2) { # QGROUP_INFO
 		@b=unpack("QQQQQ", $s);
 		printf("qgroup_info generation=%x rfer=%x rfer_cmpr=%x excl=%x excl_cmpr=%x",$b[0],$b[1],$b[2],$b[3],$b[4]);
