@@ -483,6 +483,11 @@ sub qgroup_status_flags {
 		$f &= ~4;
 	}
 
+	if ($f & 8) {
+		push @l, "simple";
+		$f &= ~8;
+	}
+
 	if ($f != 0) {
 		push @l, $f;
 	}
