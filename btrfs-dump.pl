@@ -589,6 +589,11 @@ sub dump_item {
 		}
 	} elsif ($type == 0x30) { # ORPHAN_ITEM
 		printf("orphan_item");
+	} elsif ($type == 0x48) { # LOG_INDEX
+		@b=unpack("Q",$s);
+		$s=substr($s,8);
+
+		printf("log_index end=%x", $b[0]);
 	} elsif ($type == 0x6c) { # EXTENT_DATA
 		@b=unpack("QQCCvC",$s);
 		$s=substr($s,0x15);
