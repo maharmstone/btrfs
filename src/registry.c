@@ -16,7 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
-#include "zstd/zstd.h"
+#include "zstd/lib/zstd.h"
 
 extern UNICODE_STRING log_device, log_file, registry_path;
 extern LIST_ENTRY uid_map_list, gid_map_list;

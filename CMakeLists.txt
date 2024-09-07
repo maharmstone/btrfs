@@ -6,26 +6,35 @@ option(WITH_TEST "Compile test program" ON)
 
 # btrfs.sys
 
-set(ZSTD_SRC_FILES src/zstd/entropy_common.c
-    src/zstd/error_private.c
-    src/zstd/fse_compress.c
-    src/zstd/fse_decompress.c
-    src/zstd/hist.c
-    src/zstd/huf_compress.c
-    src/zstd/huf_decompress.c
-    src/zstd/zstd_common.c
-    src/zstd/zstd_compress.c
-    src/zstd/zstd_compress_literals.c
-    src/zstd/zstd_compress_sequences.c
-    src/zstd/zstd_compress_superblock.c
-    src/zstd/zstd_ddict.c
-    src/zstd/zstd_decompress.c
-    src/zstd/zstd_decompress_block.c
-    src/zstd/zstd_double_fast.c
-    src/zstd/zstd_fast.c
-    src/zstd/zstd_lazy.c
-    src/zstd/zstd_ldm.c
-    src/zstd/zstd_opt.c)
+set(ZSTD_SRC_FILES src/zstd/lib/common/entropy_common.c
+    src/zstd/lib/common/error_private.c
+    src/zstd/lib/compress/fse_compress.c
+    src/zstd/lib/common/fse_decompress.c
+    src/zstd/lib/compress/hist.c
+    src/zstd/lib/compress/huf_compress.c
+    src/zstd/lib/decompress/huf_decompress.c
+    src/zstd/lib/common/zstd_common.c
+    src/zstd/lib/compress/zstd_compress.c
+    src/zstd/lib/compress/zstd_compress_literals.c
+    src/zstd/lib/compress/zstd_compress_sequences.c
+    src/zstd/lib/compress/zstd_compress_superblock.c
+    src/zstd/lib/decompress/zstd_ddict.c
+    src/zstd/lib/decompress/zstd_decompress.c
+    src/zstd/lib/decompress/zstd_decompress_block.c
+    src/zstd/lib/compress/zstd_double_fast.c
+    src/zstd/lib/compress/zstd_fast.c
+    src/zstd/lib/compress/zstd_lazy.c
+    src/zstd/lib/compress/zstd_ldm.c
+    src/zstd/lib/compress/zstd_opt.c)
+
+add_library(zstd STATIC ${ZSTD_SRC_FILES})
+target_compile_definitions(zstd PRIVATE -DZSTD_DEPS_MALLOC)
+
+if(NOT MSVC)
+    target_compile_options(zstd PRIVATE -ffunction-sections -include ${CMAKE_SOURCE_DIR}/src/zstd-shim.h)
+else()
+    target_compile_options(zstd PRIVATE /Gy /FI ${CMAKE_SOURCE_DIR}/src/zstd-shim.h)
+endif()
 
 set(ZLIB_SRC_FILES src/zlib/adler32.c
     src/zlib/deflate.c
@@ -69,7 +78,6 @@ set(SRC_FILES src/balance.c
     src/write.c
     src/xxhash.c
     ${CMAKE_CURRENT_BINARY_DIR}/btrfs.rc
-    ${ZSTD_SRC_FILES}
     ${ZLIB_SRC_FILES})
 
 if(MSVC) # cmake bug 15170
@@ -137,6 +145,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
 endif()
 
 add_library(btrfs SHARED ${SRC_FILES})
+target_link_libraries(btrfs zstd)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-D_DEBUG)

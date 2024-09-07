@@ -37,7 +37,7 @@
 
 #define ZSTD_STATIC_LINKING_ONLY
 
-#include "zstd/zstd.h"
+#include "zstd/lib/zstd.h"
 
 #define LZO_PAGE_SIZE 4096
 
