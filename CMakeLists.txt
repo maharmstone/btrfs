@@ -45,6 +45,15 @@ set(ZLIB_SRC_FILES src/zlib/adler32.c
     src/zlib/trees.c
     src/zlib/zutil.c)
 
+add_library(zlib STATIC ${ZLIB_SRC_FILES})
+target_compile_definitions(zlib PRIVATE -DNO_GZIP -DZ_SOLO)
+
+if(NOT MSVC)
+    target_compile_options(zlib PRIVATE -ffunction-sections)
+else()
+    target_compile_options(zlib PRIVATE /Gy)
+endif()
+
 set(SRC_FILES src/balance.c
     src/blake2b-ref.c
     src/boot.c
@@ -77,8 +86,7 @@ set(SRC_FILES src/balance.c
     src/volume.c
     src/worker-thread.c
     src/write.c
-    ${CMAKE_CURRENT_BINARY_DIR}/btrfs.rc
-    ${ZLIB_SRC_FILES})
+    ${CMAKE_CURRENT_BINARY_DIR}/btrfs.rc)
 
 if(MSVC) # cmake bug 15170
     if(MSVC_C_ARCHITECTURE_ID STREQUAL "X86")
@@ -145,7 +153,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
 endif()
 
 add_library(btrfs SHARED ${SRC_FILES})
-target_link_libraries(btrfs zstd)
+target_link_libraries(btrfs zstd zlib)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-D_DEBUG)

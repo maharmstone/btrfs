@@ -27,13 +27,7 @@
 // versions are under the LGPL and hence okay to use here.
 
 #include "btrfs_drv.h"
-
-#define Z_SOLO
-#define ZLIB_INTERNAL
-
 #include "zlib/zlib.h"
-#include "zlib/inftrees.h"
-#include "zlib/inflate.h"
 
 #define ZSTD_STATIC_LINKING_ONLY
 
