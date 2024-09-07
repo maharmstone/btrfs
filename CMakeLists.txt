@@ -25,7 +25,8 @@ set(ZSTD_SRC_FILES src/zstd/lib/common/entropy_common.c
     src/zstd/lib/compress/zstd_fast.c
     src/zstd/lib/compress/zstd_lazy.c
     src/zstd/lib/compress/zstd_ldm.c
-    src/zstd/lib/compress/zstd_opt.c)
+    src/zstd/lib/compress/zstd_opt.c
+    src/zstd/lib/common/xxhash.c)
 
 add_library(zstd STATIC ${ZSTD_SRC_FILES})
 target_compile_definitions(zstd PRIVATE -DZSTD_DEPS_MALLOC)
@@ -76,7 +77,6 @@ set(SRC_FILES src/balance.c
     src/volume.c
     src/worker-thread.c
     src/write.c
-    src/xxhash.c
     ${CMAKE_CURRENT_BINARY_DIR}/btrfs.rc
     ${ZLIB_SRC_FILES})
 
@@ -271,7 +271,6 @@ endif()
 
 set(UBTRFS_SRC_FILES src/ubtrfs/ubtrfs.c
     src/crc32c.c
-    src/xxhash.c
     src/sha256.c
     src/blake2b-ref.c
     src/ubtrfs/ubtrfs.def
@@ -297,6 +296,7 @@ endif()
 
 target_compile_definitions(ubtrfs PUBLIC _USRDLL)
 target_link_libraries(ubtrfs ntdll advapi32)
+target_link_libraries(ubtrfs zstd)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     target_compile_options(ubtrfs PUBLIC -Wno-pragma-pack) # ignore warning in mingw headers

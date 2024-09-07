@@ -30,4 +30,12 @@ static unsigned long _byteswap_ulong(unsigned long val) {
            ((val >>  8) & 0x0000ff00) |
            ((val >> 24) & 0x000000ff);
 }
+
+static unsigned int _rotl(unsigned int value, int shift) {
+    return (value << shift) | (value >> (32 - shift));
+}
+
+static uint64_t _rotl64(uint64_t value, int shift) {
+    return (value << shift) | (value >> (64 - shift));
+}
 #endif

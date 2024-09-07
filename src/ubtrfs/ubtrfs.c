@@ -34,7 +34,7 @@
 #include "../btrfs.h"
 #include "../btrfsioctl.h"
 #include "../crc32c.h"
-#include "../xxhash.h"
+#include "../zstd/lib/common/xxhash.h"
 
 #if defined(_X86_) || defined(_AMD64_)
 #ifndef _MSC_VER

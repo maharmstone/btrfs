@@ -16,7 +16,7 @@
  * along with WinBtrfs.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include "btrfs_drv.h"
-#include "xxhash.h"
+#include "zstd/lib/common/xxhash.h"
 #include "crc32c.h"
 
 enum read_data_status {
