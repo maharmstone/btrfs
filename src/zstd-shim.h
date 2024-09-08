@@ -13,7 +13,7 @@ static void ZSTD_free(void* ptr) {
 }
 
 #ifdef _MSC_VER
-static uint64_t _byteswap_uint64(uint64_t val) {
+static uint64_t __cdecl _byteswap_uint64(uint64_t val) {
     return ((val << 56) & 0xff00000000000000ULL) |
         ((val << 40) & 0x00ff000000000000ULL) |
         ((val << 24) & 0x0000ff0000000000ULL) |
@@ -24,18 +24,18 @@ static uint64_t _byteswap_uint64(uint64_t val) {
         ((val >> 56) & 0x00000000000000ffULL);
 }
 
-static unsigned long _byteswap_ulong(unsigned long val) {
+static unsigned long __cdecl _byteswap_ulong(unsigned long val) {
     return ((val << 24) & 0xff000000) |
            ((val <<  8) & 0x00ff0000) |
            ((val >>  8) & 0x0000ff00) |
            ((val >> 24) & 0x000000ff);
 }
 
-static unsigned int _rotl(unsigned int value, int shift) {
+static unsigned int __cdecl _rotl(unsigned int value, int shift) {
     return (value << shift) | (value >> (32 - shift));
 }
 
-static uint64_t _rotl64(uint64_t value, int shift) {
+static uint64_t __cdecl _rotl64(uint64_t value, int shift) {
     return (value << shift) | (value >> (64 - shift));
 }
 #endif

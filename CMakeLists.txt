@@ -4,7 +4,19 @@ project(btrfs VERSION 1.9.0)
 
 option(WITH_TEST "Compile test program" ON)
 
-# btrfs.sys
+if(MSVC) # cmake bug 15170
+    if(MSVC_C_ARCHITECTURE_ID STREQUAL "X86")
+        set(CMAKE_SYSTEM_PROCESSOR "x86")
+    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "x64")
+        set(CMAKE_SYSTEM_PROCESSOR "x86_64")
+    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARMV7")
+        set(CMAKE_SYSTEM_PROCESSOR "arm")
+    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARM64")
+        set(CMAKE_SYSTEM_PROCESSOR "aarch64")
+    endif()
+endif()
+
+# zstd
 
 set(ZSTD_SRC_FILES src/zstd/lib/common/entropy_common.c
     src/zstd/lib/common/error_private.c
@@ -35,7 +47,14 @@ if(NOT MSVC)
     target_compile_options(zstd PRIVATE -ffunction-sections -include ${CMAKE_SOURCE_DIR}/src/zstd-shim.h)
 else()
     target_compile_options(zstd PRIVATE /Gy /FI ${CMAKE_SOURCE_DIR}/src/zstd-shim.h)
+    set_property(TARGET zstd PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
+
+if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
+    target_compile_options(zstd PUBLIC /Gz) # stdcall
+endif()
+
+# zlib
 
 set(ZLIB_SRC_FILES src/zlib/adler32.c
     src/zlib/deflate.c
@@ -53,6 +72,12 @@ if(NOT MSVC)
 else()
     target_compile_options(zlib PRIVATE /Gy)
 endif()
+
+if(MSVC AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86")
+    target_compile_options(zlib PUBLIC /Gz) # stdcall
+endif()
+
+# btrfs.sys
 
 set(SRC_FILES src/balance.c
     src/blake2b-ref.c
@@ -87,18 +112,6 @@ set(SRC_FILES src/balance.c
     src/worker-thread.c
     src/write.c
     ${CMAKE_CURRENT_BINARY_DIR}/btrfs.rc)
-
-if(MSVC) # cmake bug 15170
-    if(MSVC_C_ARCHITECTURE_ID STREQUAL "X86")
-        set(CMAKE_SYSTEM_PROCESSOR "x86")
-    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "x64")
-        set(CMAKE_SYSTEM_PROCESSOR "x86_64")
-    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARMV7")
-        set(CMAKE_SYSTEM_PROCESSOR "arm")
-    elseif(MSVC_C_ARCHITECTURE_ID STREQUAL "ARM64")
-        set(CMAKE_SYSTEM_PROCESSOR "aarch64")
-    endif()
-endif()
 
 # Work around bug in MSVC version of cmake - see https://gitlab.kitware.com/cmake/cmake/-/merge_requests/4257
 set(CMAKE_ASM_MASM_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded         "")
