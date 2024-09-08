@@ -10,7 +10,7 @@ jobs:
         - /var/run/pcscd/pcscd.comm:/var/run/pcscd/pcscd.comm
     steps:
       - run: echo "SHORT_SHA=`echo ${{ github.sha }} | cut -c1-8`" >> $GITHUB_ENV
-      - run: git clone ${{ github.server_url }}/${{ github.repository }} ${SHORT_SHA}
+      - run: git clone --recurse-submodules -j`nproc` ${{ github.server_url }}/${{ github.repository }} ${SHORT_SHA}
       - run: cd ${SHORT_SHA} && git checkout ${{ github.sha }}
       - run: mkdir -p build/debug/{amd64,x86,aarch64,arm}
       - run: mkdir -p build/release/{amd64,x86,aarch64,arm}
