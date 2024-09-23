@@ -89,8 +89,11 @@ To install the driver, [download and extract the latest release](https://github.
 right-click btrfs.inf, and choose Install. The driver is signed, so should work out
 of the box on modern versions of Windows.
 
-If you using Windows 10 and have Secure Boot enabled, you may have to make a Registry
-change in order for the driver to be loaded - see [below](#secureboot).
+If you using Windows 10 or 11 and have Secure Boot enabled, you may have to make a Registry
+change in order for the driver to be loaded - see [below](#secureboot). It's easier though
+just to turn off Secure Boot in your BIOS, unless you have a particular need for it. Bear in
+mind that Windows 11 soft-requires Secure Boot to be installed, but will work fine afterwords
+with it turned off.
 
 WinBtrfs is also available on the following package managers:
 
@@ -222,7 +225,7 @@ looking into converting your files.
 
 * <a name="secureboot"></a>How do I get this working with Secure Boot turned on?
 
-For the very latest versions of Windows 10, Microsoft introduced more onerous
+For the later versions of Windows 10, Microsoft introduced more onerous
 requirements for signing, which seemingly aren't available for open-source drivers.
 
 To work around this, go to `HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\CI\Policy` in Regedit,
