@@ -127,6 +127,10 @@ HKLM\SYSTEM\CurrentControlSet\services\btrfs\Start to 4, to disable the service.
 After you reboot, you can then delete the btrfs key and remove
 C:\Windows\System32\drivers\btrfs.sys.
 
+If you want to prevent Btrfs driver loading during system booting, 
+for example you have to because of system BSOD(Blue or green screen, very quick after desktop appears.),
+please read <a href="doc/Prevent driver loading in booting">this tip</a>. 
+
 Compilation
 -----------
 
@@ -286,6 +290,10 @@ uninstall Paragon, then re-enable automount by running `diskpart` and typing
 On very old versions of Windows (XP, Server 2003?), Windows ignores Linux partitions
 entirely. If this is the case for you, try running `fdisk` on Linux and changing your
 partition type from 83 to 7.
+
+* Windows system turns to show BSOD after every booting time! How to prevent Btrfs driver loading?
+
+please read <a href="doc/Prevent driver loading in booting">this tip</a>. 
 
 Changelog
 ---------
