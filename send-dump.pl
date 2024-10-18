@@ -8,7 +8,7 @@ binmode($f);
 
 while (!eof($f)) {
     do_stream($f);
-    
+
     if (!eof($f)) {
         print "---\n";
     }
@@ -28,7 +28,7 @@ sub do_stream {
         exit;
     }
 
-    if ($ver != 1) {
+    if ($ver != 1 && $ver != 2) {
         printf STDERR "Version $ver not supported.\n";
         close($f);
         exit;
@@ -38,7 +38,7 @@ sub do_stream {
     while (!eof($f) && $type != 21) {
         read($f,$a,0xa);
         ($len,$type,$crc)=unpack("VvV",$a);
-        
+
         if ($type == 1) {
             printf("subvol, %x, %08x\n", $len, $crc);
         } elsif ($type == 2) {
@@ -83,10 +83,16 @@ sub do_stream {
             printf("end, %x, %08x\n", $len, $crc);
         } elsif ($type == 22) {
             printf("update-extent, %x, %08x\n", $len, $crc);
+        } elsif ($type == 23) {
+            printf("fallocate, %x, %08x\n", $len, $crc);
+        } elsif ($type == 24) {
+            printf("fileattr, %x, %08x\n", $len, $crc);
+        } elsif ($type == 25) {
+            printf("encoded-write, %x, %08x\n", $len, $crc);
         } else {
             printf("unknown(%x), %x, %08x\n", $type, $len, $crc);
         }
-        
+
         read($f,$b,$len);
         print_tlvs($b);
     }
@@ -94,19 +100,19 @@ sub do_stream {
 
 sub btrfstime {
     my ($t)=@_;
-    
+
     my $ut = unpack("Q",$t);
     my @lt = localtime($ut);
-    
+
     return sprintf("%04u-%02u-%02u %02u:%02u:%02u",$lt[5]+1900,$lt[4]+1,$lt[3],$lt[2],$lt[1],$lt[0]);
 }
 
 sub print_tlvs {
     my ($b)=@_;
-    
+
     while (length($b)>0) {
         my ($t,$l)=unpack("vv",$b);
-        
+
         if ($t == 1) {
             printf("  uuid: %08x-%04x-%04x-%04x-%02x%02x%02x%02x%02x%02x\n", unpack("NnnnCCCCCC",substr($b,4,$l)));
             $b=substr($b,$l+4);
@@ -162,8 +168,13 @@ sub print_tlvs {
             printf("  offset: %x\n", unpack("Q",substr($b,4,$l)));
             $b=substr($b,$l+4);
         } elsif ($t == 19) {
-            printf("  data: (%x bytes)\n", $l);
-            $b=substr($b,$l+4);
+            if ($ver == 2) {
+                printf("  data: (%x bytes)\n", length($b) - 2); # FIXME
+                $b="";
+            } else {
+                printf("  data: (%x bytes)\n", $l);
+                $b=substr($b,$l+4);
+            }
         } elsif ($t == 20) {
             printf("  clone_uuid: %08x-%04x-%04x-%04x-%02x%02x%02x%02x%02x%02x\n", unpack("NnnnCCCCCC",substr($b,4,$l)));
             $b=substr($b,$l+4);
@@ -178,6 +189,27 @@ sub print_tlvs {
             $b=substr($b,$l+4);
         } elsif ($t == 24) {
             printf("  clone_len: %x\n", unpack("Q",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 25) {
+            printf("  fallocate_mode: %x\n", unpack("V",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 26) {
+            printf("  fileattr: %x\n", unpack("Q",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 27) {
+            printf("  unencoded_file_len: %x\n", unpack("Q",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 28) {
+            printf("  unencoded_len: %x\n", unpack("Q",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 29) {
+            printf("  unencoded_offset: %x\n", unpack("Q",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 30) {
+            printf("  compression: %x\n", unpack("V",substr($b,4,$l)));
+            $b=substr($b,$l+4);
+        } elsif ($t == 31) {
+            printf("  encryption: %x\n", unpack("V",substr($b,4,$l)));
             $b=substr($b,$l+4);
         } else {
             printf("  unknown(%u),%x\n",$t,$l);
