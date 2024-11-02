@@ -287,6 +287,12 @@ On very old versions of Windows (XP, Server 2003?), Windows ignores Linux partit
 entirely. If this is the case for you, try running `fdisk` on Linux and changing your
 partition type from 83 to 7.
 
+* I can edit files on Windows that I shouldn't be able to
+
+There's no mapping between Windows and POSIX permission models, they're too
+different for this to be practical. If this bothers you, you can create a
+Windows ACL on files that you don't want to be able to edit.
+
 Changelog
 ---------
 
