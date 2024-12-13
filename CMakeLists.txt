@@ -236,6 +236,7 @@ set(SHELLEXT_SRC_FILES src/shellext/balance.cpp
     src/shellext/factory.cpp
     src/shellext/iconoverlay.cpp
     src/shellext/main.cpp
+    src/shellext/mappings.cpp
     src/shellext/mountmgr.cpp
     src/shellext/propsheet.cpp
     src/shellext/recv.cpp

@@ -206,6 +206,7 @@
 #define IDS_CANT_OPEN_MOUNTMGR          289
 #define IDS_TVM_INSERTITEM_FAILED       290
 #define IDS_RECV_PATH_TOO_LONG          291
+#define IDD_MAPPINGS                    292
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003
@@ -336,6 +337,8 @@
 #define IDC_RESIZE_NEWSIZE              1073
 #define IDC_VOL_CHANGE_DRIVE_LETTER     1073
 #define IDC_DRIVE_LETTER_COMBO          1074
+#define IDC_MAPPINGS_TAB                1075
+#define IDC_MAPPINGS_LIST               1076
 
 // Next default values for new objects
 //

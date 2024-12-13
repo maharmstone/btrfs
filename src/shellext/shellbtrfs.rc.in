@@ -384,6 +384,15 @@ BEGIN
     LTEXT           "Drive letter:",IDC_STATIC,15,19,45,8
 END
 
+IDD_MAPPINGS DIALOGEX 0, 0, 200, 163
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Mappings"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,75,145,50,14
+    CONTROL         "",IDC_MAPPINGS_TAB,"SysTabControl32",0x0,0,0,200,142
+    CONTROL         "",IDC_MAPPINGS_LIST,"SysListView32",LVS_REPORT | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,3,15,193,123
+END
 
 /////////////////////////////////////////////////////////////////////////////
 //
