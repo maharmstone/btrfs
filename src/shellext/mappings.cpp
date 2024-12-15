@@ -1,16 +1,35 @@
 #include "shellext.h"
 #include "resource.h"
 #include <windows.h>
+#include <commctrl.h>
 #include <stdexcept>
 
 using namespace std;
+
+static void init_dialog(HWND hwnd) {
+    TCITEMW tie;
+
+    auto tab = GetDlgItem(hwnd, IDC_MAPPINGS_TAB);
+
+    memset(&tie, 0, sizeof(tie));
+
+    tie.mask = TCIF_TEXT;
+    tie.iImage = -1;
+    tie.pszText = L"UID mappings"; // FIXME - LoadString
+    SendMessageW(tab, TCM_INSERTITEMW, 0, (LPARAM)&tie);
+    tie.pszText = L"GID mappings"; // FIXME - LoadString
+    SendMessageW(tab, TCM_INSERTITEMW, 1, (LPARAM)&tie);
+
+    // FIXME - set list header names
+    // FIXME - populate list
+}
 
 static INT_PTR CALLBACK MappingsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
-                // FIXME
-            break;
+                init_dialog(hwndDlg);
+                return true;
 
             case WM_COMMAND:
                 switch (HIWORD(wParam)) {
