@@ -11,6 +11,9 @@
 
 using namespace std;
 
+static const WCHAR UID_REG_PATH[] = L"SYSTEM\\CurrentControlSet\\Services\\btrfs\\Mappings";
+static const WCHAR GID_REG_PATH[] = L"SYSTEM\\CurrentControlSet\\Services\\btrfs\\GroupMappings";
+
 class formatted_error : public exception {
 public:
     template<typename... Args>
@@ -145,16 +148,30 @@ static void resolve_names(span<mapping_entry> entries) {
     }
 }
 
-static void populate_list(HWND list) {
+static void populate_list(HWND hwnd) {
     LSTATUS ret;
     unique_hkey k;
     array<WCHAR, 1000> name;
     DWORD name_len, type;
     vector<mapping_entry> entries;
+    wstring uidgid_str;
+    LVCOLUMNW lvc;
 
-    // FIXME - GroupMappings
+    auto tab = GetDlgItem(hwnd, IDC_MAPPINGS_TAB);
 
-    ret = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\btrfs\\Mappings",
+    auto tabsel = SendMessageW(tab, TCM_GETCURSEL, 0, 0);
+    auto groups = tabsel == 1;
+
+    auto list = GetDlgItem(hwnd, IDC_MAPPINGS_LIST);
+
+    // change column to UID or GID
+    load_string(module, groups ? IDS_MAPPINGS_GID : IDS_MAPPINGS_UID, uidgid_str);
+    lvc.iSubItem = 1;
+    lvc.pszText = (WCHAR*)uidgid_str.c_str();
+    lvc.mask = LVCF_TEXT;
+    SendMessageW(list, LVM_SETCOLUMNW, 1, (LPARAM)&lvc);
+
+    ret = RegOpenKeyExW(HKEY_LOCAL_MACHINE, groups ? GID_REG_PATH : UID_REG_PATH,
                         0, KEY_QUERY_VALUE, out_ptr(k));
     if (ret != ERROR_SUCCESS)
         throw formatted_error("RegOpenKeyEx failed (error {})", ret);
@@ -188,8 +205,6 @@ static void populate_list(HWND list) {
     }
 
     resolve_names(entries);
-
-    // FIXME - change UID header name to GID and vice versa
 
     SendMessageW(list, LVM_DELETEALLITEMS, 0, 0);
     SendMessageW(list, LVM_SETITEMCOUNT, entries.size(), 0);
@@ -256,19 +271,19 @@ static void init_dialog(HWND hwnd) {
     SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 
     lvc.iSubItem = 1;
-    lvc.pszText = (WCHAR*)uid_str.c_str(); // change when tab changes
+    lvc.pszText = (WCHAR*)uid_str.c_str();
     lvc.cx = 100;
     lvc.fmt = LVCFMT_LEFT;
     SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
 
     try {
-        populate_list(list);
+        populate_list(GetParent(list));
     } catch (const exception& e) {
         error_message(GetParent(list), e.what());
     }
 }
 
-static INT_PTR CALLBACK MappingsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
+static INT_PTR CALLBACK MappingsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
@@ -283,6 +298,18 @@ static INT_PTR CALLBACK MappingsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, 
                             case IDCANCEL:
                                 EndDialog(hwndDlg, 1);
                             return true;
+                        }
+                    break;
+                }
+            break;
+
+            case WM_NOTIFY:
+                switch (((LPNMHDR)lParam)->code) {
+                    case TCN_SELCHANGE:
+                        try {
+                            populate_list(hwndDlg);
+                        } catch (const exception& e) {
+                            error_message(hwndDlg, e.what());
                         }
                     break;
                 }
