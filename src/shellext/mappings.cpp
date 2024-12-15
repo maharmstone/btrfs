@@ -9,6 +9,12 @@ using namespace std;
 static void init_dialog(HWND hwnd) {
     TCITEMW tie;
     LVCOLUMNW lvc;
+    wstring uid_mappings_str, gid_mappings_str, principal_str, uid_str;
+
+    load_string(module, IDS_MAPPINGS_UID_MAPPINGS, uid_mappings_str);
+    load_string(module, IDS_MAPPINGS_GID_MAPPINGS, gid_mappings_str);
+    load_string(module, IDS_MAPPINGS_PRINCIPAL, principal_str);
+    load_string(module, IDS_MAPPINGS_UID, uid_str);
 
     auto tab = GetDlgItem(hwnd, IDC_MAPPINGS_TAB);
 
@@ -16,9 +22,9 @@ static void init_dialog(HWND hwnd) {
 
     tie.mask = TCIF_TEXT;
     tie.iImage = -1;
-    tie.pszText = L"UID mappings"; // FIXME - LoadString
+    tie.pszText = (WCHAR*)uid_mappings_str.c_str();
     SendMessageW(tab, TCM_INSERTITEMW, 0, (LPARAM)&tie);
-    tie.pszText = L"GID mappings"; // FIXME - LoadString
+    tie.pszText = (WCHAR*)gid_mappings_str.c_str();
     SendMessageW(tab, TCM_INSERTITEMW, 1, (LPARAM)&tie);
 
     auto list = GetDlgItem(hwnd, IDC_MAPPINGS_LIST);
@@ -26,13 +32,13 @@ static void init_dialog(HWND hwnd) {
     lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
 
     lvc.iSubItem = 0;
-    lvc.pszText = L"Principal"; // FIXME - LoadString
+    lvc.pszText = (WCHAR*)principal_str.c_str();
     lvc.cx = 300;
     lvc.fmt = LVCFMT_LEFT;
     SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
 
     lvc.iSubItem = 1;
-    lvc.pszText = L"UID"; // FIXME - LoadString, change when tab changes
+    lvc.pszText = (WCHAR*)uid_str.c_str(); // change when tab changes
     lvc.cx = 100;
     lvc.fmt = LVCFMT_LEFT;
     SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);

@@ -207,6 +207,11 @@
 #define IDS_TVM_INSERTITEM_FAILED       290
 #define IDS_RECV_PATH_TOO_LONG          291
 #define IDD_MAPPINGS                    292
+#define IDS_MAPPINGS_UID_MAPPINGS       293
+#define IDS_MAPPINGS_GID_MAPPINGS       294
+#define IDS_MAPPINGS_PRINCIPAL          295
+#define IDS_MAPPINGS_UID                296
+#define IDS_MAPPINGS_GID                297
 #define IDC_UID                         1001
 #define IDC_GID                         1002
 #define IDC_USERR                       1003

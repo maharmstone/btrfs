@@ -831,6 +831,11 @@ BEGIN
     IDS_CANT_OPEN_MOUNTMGR  "Could not get a handle to mount manager."
     IDS_TVM_INSERTITEM_FAILED "TVM_INSERTITEM failed."
     IDS_RECV_PATH_TOO_LONG  "%S: path was too long."
+    IDS_MAPPINGS_UID_MAPPINGS  "UID mappings"
+    IDS_MAPPINGS_GID_MAPPINGS  "GID mappings"
+    IDS_MAPPINGS_PRINCIPAL  "Principal"
+    IDS_MAPPINGS_UID  "UID"
+    IDS_MAPPINGS_GID  "GID"
 END
 
 #endif    // English (United Kingdom) resources
