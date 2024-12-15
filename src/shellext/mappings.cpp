@@ -2,9 +2,217 @@
 #include "resource.h"
 #include <windows.h>
 #include <commctrl.h>
+#include <sddl.h>
+#include <ntstatus.h>
+#include <ntsecapi.h>
 #include <stdexcept>
+#include <format>
+#include <memory>
 
 using namespace std;
+
+class formatted_error : public exception {
+public:
+    template<typename... Args>
+    formatted_error(string_view s, Args&&... args) : msg(vformat(s, make_format_args(args...))) {
+    }
+
+    const char* what() const noexcept {
+        return msg.c_str();
+    }
+
+private:
+    string msg;
+};
+
+class lsa_handle_closer {
+public:
+    using pointer = LSA_HANDLE;
+
+    void operator()(LSA_HANDLE h) {
+        LsaClose(h);
+    }
+};
+
+using unique_lsa_handle = unique_ptr<LSA_HANDLE, lsa_handle_closer>;
+
+template<typename T>
+class lsa_pointer_freer {
+public:
+    using pointer = T;
+
+    void operator()(T ptr) {
+        LsaFreeMemory(ptr);
+    }
+};
+
+using unique_lsa_translated_name = unique_ptr<LSA_TRANSLATED_NAME, lsa_pointer_freer<LSA_TRANSLATED_NAME*>>;
+using unique_lsa_referenced_domain_list = unique_ptr<LSA_REFERENCED_DOMAIN_LIST, lsa_pointer_freer<LSA_REFERENCED_DOMAIN_LIST*>>;
+
+class hkey_closer {
+public:
+    using pointer = HKEY;
+
+    void operator()(HKEY key) {
+        RegCloseKey(key);
+    }
+};
+
+using unique_hkey = unique_ptr<HKEY, hkey_closer>;
+
+template<typename T>
+class local_freer {
+public:
+    using pointer = T;
+
+    void operator()(T ptr) {
+        LocalFree(ptr);
+    }
+};
+
+using unique_sid = unique_ptr<PSID, local_freer<PSID>>;
+
+struct mapping_entry {
+    unique_sid sid;
+    DWORD value;
+    u16string domain;
+    u16string name;
+    SID_NAME_USE use;
+};
+
+static unique_lsa_handle lsa_open_policy(ACCESS_MASK access) {
+    LSA_OBJECT_ATTRIBUTES oa;
+    NTSTATUS Status;
+    LSA_HANDLE h;
+
+    memset(&oa, 0, sizeof(oa));
+
+    Status = LsaOpenPolicy(nullptr, &oa, access, &h);
+
+    if (Status != STATUS_SUCCESS)
+        throw formatted_error("LsaOpenPolicy returned {:08x}", (uint32_t)Status);
+
+    return unique_lsa_handle{h};
+}
+
+static void lsa_lookup_sids(LSA_HANDLE h, span<const PSID> sids,
+                            unique_lsa_translated_name& names,
+                            unique_lsa_referenced_domain_list& domains) {
+    NTSTATUS Status;
+    LSA_REFERENCED_DOMAIN_LIST* domains_ptr;
+    LSA_TRANSLATED_NAME* names_ptr;
+
+    Status = LsaLookupSids(h, sids.size(), (PSID*)sids.data(),
+                           &domains_ptr, &names_ptr);
+    if (Status != STATUS_SUCCESS && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED)
+        throw formatted_error("LsaLookupSids returned {:08x}", (uint32_t)Status);
+
+    names.reset(names_ptr);
+    domains.reset(domains_ptr);
+}
+
+static void resolve_names(span<mapping_entry> entries) {
+    if (entries.empty())
+        return;
+
+    vector<PSID> sids;
+    auto h = lsa_open_policy(POLICY_LOOKUP_NAMES);
+
+    sids.reserve(entries.size());
+
+    for (const auto& ent : entries) {
+        sids.push_back(ent.sid.get());
+    }
+
+    unique_lsa_translated_name names;
+    unique_lsa_referenced_domain_list domains;
+
+    lsa_lookup_sids(h.get(), sids, names, domains);
+
+    for (unsigned int i = 0; i < entries.size(); i++) {
+        auto& ent = entries[i];
+
+        const auto& n = names.get()[i];
+
+        ent.use = n.Use;
+        ent.name = u16string_view((char16_t*)n.Name.Buffer, n.Name.Length / sizeof(char16_t));
+
+        if (n.DomainIndex >= 0 && (ULONG)n.DomainIndex < domains->Entries) {
+            const auto& d = domains->Domains[n.DomainIndex];
+
+            ent.domain = u16string_view((char16_t*)d.Name.Buffer, d.Name.Length / sizeof(char16_t));
+        }
+    }
+}
+
+static void populate_list(HWND list) {
+    LSTATUS ret;
+    unique_hkey k;
+    array<WCHAR, 1000> name;
+    DWORD name_len, type;
+    vector<mapping_entry> entries;
+
+    // FIXME - GroupMappings
+
+    ret = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\btrfs\\Mappings",
+                        0, KEY_QUERY_VALUE, out_ptr(k));
+    if (ret != ERROR_SUCCESS)
+        throw formatted_error("RegOpenKeyEx failed (error {})", ret);
+
+    for (DWORD index = 0; ; index++) {
+        unique_sid sid;
+        mapping_entry me;
+        DWORD val, val_len;
+
+        name_len = name.size();
+        val_len = sizeof(val);
+
+        ret = RegEnumValueW(k.get(), index, name.data(), &name_len, nullptr,
+                            &type, (LPBYTE)&val, &val_len);
+
+        if (ret == ERROR_NO_MORE_ITEMS)
+            break;
+
+        if ((ret == ERROR_SUCCESS || ret == ERROR_MORE_DATA) && type != REG_DWORD)
+            continue;
+
+        if (ret != ERROR_SUCCESS)
+            throw formatted_error("RegEnumValue failed (error {})", ret);
+
+        if (!ConvertStringSidToSidW(name.data(), out_ptr(sid)))
+            continue;
+
+        me.sid = std::move(sid);
+        me.value = val;
+        entries.emplace_back(std::move(me));
+    }
+
+    resolve_names(entries);
+
+    // FIXME - change UID header name to GID and vice versa
+
+    SendMessageW(list, LVM_DELETEALLITEMS, 0, 0);
+
+    for (const auto& ent : entries) {
+        LVITEMW lvi;
+
+        // FIXME - UID/GID number
+        // FIXME - different icons for SID types
+
+        u16string s;
+
+        if (!ent.domain.empty())
+            s = ent.domain + u"\\";
+
+        s += ent.name;
+
+        lvi.pszText = (WCHAR*)s.c_str();
+        lvi.mask = LVIF_TEXT;
+        lvi.iSubItem = 0;
+
+        SendMessageW(list, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+    }
+}
 
 static void init_dialog(HWND hwnd) {
     TCITEMW tie;
@@ -43,10 +251,14 @@ static void init_dialog(HWND hwnd) {
     lvc.fmt = LVCFMT_LEFT;
     SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
 
-    // FIXME - populate list
+    try {
+        populate_list(list);
+    } catch (const exception& e) {
+        error_message(GetParent(list), e.what());
+    }
 }
 
-static INT_PTR CALLBACK MappingsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+static INT_PTR CALLBACK MappingsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM) {
     try {
         switch (uMsg) {
             case WM_INITDIALOG:
