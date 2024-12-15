@@ -4,10 +4,13 @@
 #include <commctrl.h>
 #include <sddl.h>
 #include <ntstatus.h>
+#define _NTDEF_
 #include <ntsecapi.h>
 #include <stdexcept>
 #include <format>
 #include <memory>
+#include <span>
+#include <array>
 
 using namespace std;
 
