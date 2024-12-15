@@ -8,6 +8,7 @@ using namespace std;
 
 static void init_dialog(HWND hwnd) {
     TCITEMW tie;
+    LVCOLUMNW lvc;
 
     auto tab = GetDlgItem(hwnd, IDC_MAPPINGS_TAB);
 
@@ -20,7 +21,22 @@ static void init_dialog(HWND hwnd) {
     tie.pszText = L"GID mappings"; // FIXME - LoadString
     SendMessageW(tab, TCM_INSERTITEMW, 1, (LPARAM)&tie);
 
-    // FIXME - set list header names
+    auto list = GetDlgItem(hwnd, IDC_MAPPINGS_LIST);
+
+    lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+
+    lvc.iSubItem = 0;
+    lvc.pszText = L"Principal"; // FIXME - LoadString
+    lvc.cx = 300;
+    lvc.fmt = LVCFMT_LEFT;
+    SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&lvc);
+
+    lvc.iSubItem = 1;
+    lvc.pszText = L"UID"; // FIXME - LoadString, change when tab changes
+    lvc.cx = 100;
+    lvc.fmt = LVCFMT_LEFT;
+    SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&lvc);
+
     // FIXME - populate list
 }
 
