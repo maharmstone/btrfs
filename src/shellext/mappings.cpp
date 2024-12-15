@@ -192,11 +192,12 @@ static void populate_list(HWND list) {
     // FIXME - change UID header name to GID and vice versa
 
     SendMessageW(list, LVM_DELETEALLITEMS, 0, 0);
+    SendMessageW(list, LVM_SETITEMCOUNT, entries.size(), 0);
 
-    for (const auto& ent : entries) {
+    for (size_t i = 0; i < entries.size(); i++) {
+        const auto& ent = entries[i];
         LVITEMW lvi;
 
-        // FIXME - UID/GID number
         // FIXME - different icons for SID types
 
         u16string s;
@@ -208,9 +209,18 @@ static void populate_list(HWND list) {
 
         lvi.pszText = (WCHAR*)s.c_str();
         lvi.mask = LVIF_TEXT;
+        lvi.iItem = i;
         lvi.iSubItem = 0;
 
         SendMessageW(list, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+
+        auto s2 = to_wstring(ent.value);
+
+        lvi.pszText = (WCHAR*)s2.c_str();
+        lvi.mask = LVIF_TEXT;
+        lvi.iSubItem = 1;
+
+        SendMessageW(list, LVM_SETITEMTEXTW, i, (LPARAM)&lvi);
     }
 }
 
