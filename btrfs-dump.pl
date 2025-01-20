@@ -29,13 +29,13 @@ for (my $i = 1; $i <= $#ARGV; $i++) {
 
     seek($file,0x10000,0);
     read($file,$sb,0x1000);
-    my @b=unpack("Vx28A16QQA8QQQQQQQQQVVVVVQQQQvCCCA98A256QQx240a2048a672",$sb);
+    my @b=unpack("Vx28a16QQA8QQQQQQQQQVVVVVQQQQvCCCa98a256QQx240a2048a672",$sb);
 
     if ($b[4] ne "_BHRfS_M") {
         die $ARGV[$i].": not Btrfs";
     }
 
-    my @di = unpack("QQQVVVQQQVCCA16A16",$b[27]);
+    my @di = unpack("QQQVVVQQQVCCa16a16",$b[27]);
     $devs{$di[0]}=$file;
 }
 
@@ -213,8 +213,8 @@ sub read_superblock {
 	seek($f,0x10000,0);
 	read($f,$sb,0x1000);
 	($roottree, $chunktree, $logtree)=unpack("x80QQQ",$sb);
-	@b = unpack("A32A16QQA8QQQQQQQQQVVVVVQQQQvCCCA98A256QQA16x224a2048a672",$sb);
-    @di = unpack("QQQVVVQQQVCCA16A16",$b[27]);
+	@b = unpack("a32a16QQa8QQQQQQQQQVVVVVQQQQvCCCa98A256QQa16x224a2048a672",$sb);
+    @di = unpack("QQQVVVQQQVCCa16a16",$b[27]);
 
 	$csum_type = $b[23];
 
@@ -242,7 +242,7 @@ sub read_superblock {
 		printf("bootstrap %x,%x,%x\n", @b2[0], @b2[1], @b2[2]);
 		$bootstrap=substr($bootstrap,0x11);
 
-		my @c=unpack("QQQQVVVvvQQA16",$bootstrap);
+		my @c=unpack("QQQQVVVvvQQa16",$bootstrap);
 		dump_item(0xe4, substr($bootstrap,0,0x30+($c[7]*0x20)), "", 0);
 
 		$bootstrap=substr($bootstrap,0x30+($c[7]*0x20));
@@ -524,7 +524,7 @@ sub dump_item {
 			#print Dumper(@b)."\n";
 			printf("; expgen=%x objid=%x blocknum=%x bytelimit=%x bytesused=%x snapshotgen=%x flags=%x numrefs=%x dropprogress=%x,%x,%x droplevel=%x rootlevel=%x", @b);
 
-			@b=unpack("QA16A16A16QQQQQVQVQVQV",$s);
+			@b=unpack("Qa16a16a16QQQQQVQVQVQV",$s);
 			$s=substr($s,0xc8); # above + 64 blank bytes
 
 			printf(" gen2=%x uuid=%s par_uuid=%s rec_uuid=%s ctransid=%x otransid=%x stransid=%x rtransid=%x ctime=%s otime=%s stime=%s rtime=%s", $b[0], format_uuid($b[1]), format_uuid($b[2]), format_uuid($b[3]), $b[4], $b[5], $b[6], $b[7], format_time($b[8],$b[9]), format_time($b[10],$b[11]), format_time($b[12],$b[13]), format_time($b[14],$b[15]));
@@ -716,11 +716,11 @@ sub dump_item {
 	} elsif ($type == 0xc8) { # FREE_SPACE_BITMAP
 		printf("free_space_bitmap"); # FIXME - print contents
 	} elsif ($type == 0xcc) { # DEV_EXTENT
-		@b=unpack("QQQQA16",$s);
+		@b=unpack("QQQQa16",$s);
 		$s=substr($s,0x30);
 		printf("dev_extent chunktree=%x, chunkobjid=%x, logaddr=%x, size=%x, chunktreeuuid=%s", $b[0], $b[1], $b[2], $b[3], format_uuid($b[4]));
 	} elsif ($type == 0xd8) { # DEV_ITEM
-		@b=unpack("QQQVVVQQQVCCA16A16",$s);
+		@b=unpack("QQQVVVQQQVCCa16a16",$s);
 		printf("dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], format_uuid($b[12]), format_uuid($b[13]));
 		$s=substr($s,0x62);
 	} elsif ($type == 0xe4) { # CHUNK_ITEM
@@ -730,7 +730,7 @@ sub dump_item {
 
 		my $numstripes=$b[7];
 		for (my $i=0;$i<$numstripes;$i++) {
-			@b=unpack("QQA16",$s);
+			@b=unpack("QQa16",$s);
 			$s=substr($s,0x20);
 
 			printf(" stripe(%u) devid=%x offset=%x devuuid=%s",$i,$b[0],$b[1],format_uuid($b[2]));
@@ -912,7 +912,7 @@ sub dump_tree {
 
 	$tree = read_data($addr, $nodesize, $bs);
 
-	@headbits=unpack("A32A16QQA16QQVC",$tree);
+	@headbits=unpack("a32a16QQa16QQVC",$tree);
 	if ($headbits[2] != $addr) {
 		printf STDERR sprintf("Address mismatch: expected %llx, got %llx\n", $addr, $headbits[2]);
 		exit;
@@ -956,7 +956,7 @@ sub dump_tree {
 
 				my $numstripes=$b[7];
 
-				my @cis=unpack("QQA16",$stripes);
+				my @cis=unpack("QQa16",$stripes);
 				$stripes=substr($stripes,32);
 
 				$obj{'physoffset'}=$cis[1];
@@ -967,7 +967,7 @@ sub dump_tree {
 				$obj{'devid'}=$cis[0];
 
 				if ($b[7] > 1) {
-					my @cis=unpack("QQA16",$stripes);
+					my @cis=unpack("QQa16",$stripes);
 					$stripes=substr($stripes,32);
 
 					$obj{'physoffset2'}=$cis[1];
@@ -975,7 +975,7 @@ sub dump_tree {
 				}
 
 				if ($b[7] > 2) {
-					my @cis=unpack("QQA16",$stripes);
+					my @cis=unpack("QQa16",$stripes);
 					$stripes=substr($stripes,32);
 
 					$obj{'physoffset3'}=$cis[1];
@@ -983,7 +983,7 @@ sub dump_tree {
 				}
 
 				if ($b[7] > 3) {
-					my @cis=unpack("QQA16",$stripes);
+					my @cis=unpack("QQa16",$stripes);
 					$stripes=substr($stripes,32);
 
 					$obj{'physoffset4'}=$cis[1];
