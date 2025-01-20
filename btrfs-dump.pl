@@ -906,6 +906,36 @@ sub read_data {
 	}
 }
 
+sub header_flags {
+	my ($flags)=@_;
+	my @l=();
+
+	if ($flags & 1) {
+		push @l,"written";
+		$flags &= ~1;
+	}
+
+	if ($flags & 2) {
+		push @l,"reloc";
+		$flags &= ~2;
+	}
+
+	if ($flags & 0x100000000000000) {
+		push @l,"mixed_backref";
+		$flags &= ~0x100000000000000;
+	}
+
+	if ($flags != 0) {
+		push @l,sprintf("%x",$flags);
+	}
+
+	if ($#l > -1) {
+		return join(',',@l);
+	} else {
+		return 0;
+	}
+}
+
 sub dump_tree {
 	my ($addr, $pref, $bs)=@_;
 	my ($head, @headbits, $level, $treenum, $tree, $csum);
@@ -927,7 +957,7 @@ sub dump_tree {
 	}
 
 	print $pref;
-	printf("header csum=%s fsid=%s addr=%x flags=%x chunk=%s gen=%x tree=%x numitems=%x level=%x\n", $csum, format_uuid($headbits[1]), $headbits[2], $headbits[3], format_uuid($headbits[4]), $headbits[5], $headbits[6], $headbits[7], $headbits[8]);
+	printf("header csum=%s fsid=%s addr=%x flags=%s chunk=%s gen=%x tree=%x numitems=%x level=%x\n", $csum, format_uuid($headbits[1]), $headbits[2], header_flags($headbits[3]), format_uuid($headbits[4]), $headbits[5], $headbits[6], $headbits[7], $headbits[8]);
 
 	$level=$headbits[8];
 	$treenum=$headbits[6];
