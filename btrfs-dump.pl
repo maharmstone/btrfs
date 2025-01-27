@@ -39,7 +39,7 @@ for (my $i = 1; $i <= $#ARGV; $i++) {
     $devs{$di[0]}=$file;
 }
 
-my ($f,$chunktree,$roottree,$logtree,$nodesize);
+my ($f,$chunktree,$roottree,$logtree,$nodesize,$blocksize);
 
 open($f,$ARGV[0]) || die "Error opening ".$ARGV[0].": $!";
 binmode($f);
@@ -230,6 +230,7 @@ sub read_superblock {
 
 	my $devid=format_uuid($di[12]);
 
+	$blocksize = $b[14];
 	$nodesize = $b[15];
 
 	$devs{$di[0]}=$f;
@@ -495,6 +496,36 @@ sub qgroup_status_flags {
 	return join(',',@l);
 }
 
+sub free_space_bitmap {
+	my ($s, $off) = @_;
+
+	my $b = "";
+	while (length($s) != 0) {
+		$b .= reverse(sprintf("%08b", ord($s)));
+		$s = substr($s, 1, length($s) - 1);
+	}
+
+	my @runs = ();
+
+	my $run_start = 0;
+	for (my $i = 0; $i < length($b); $i++) {
+		my $c = substr($b, $i, 1);
+
+		if ($c eq "1" && ($i == 0 || substr($b, $i - 1, 1) eq "0")) {
+			$run_start = $i;
+		} elsif ($c eq "0" && $i != 0 && substr($b, $i - 1, 1) eq "1") {
+			push @runs, sprintf("%x, %x", $off + ($run_start * $blocksize), ($i - $run_start) * $blocksize);
+		}
+	}
+
+	if (substr($b, length($b) - 1, 1) eq "1") {
+		push @runs, sprintf("%x, %x", $off + ($run_start * $blocksize),
+							(length($b) - $run_start) * $blocksize);
+	}
+
+	return join('; ', @runs);
+}
+
 sub dump_item {
 	my ($type,$s,$pref,$id,$off)=@_;
 	my (@b);
@@ -714,7 +745,8 @@ sub dump_item {
 	} elsif ($type == 0xc7) { # FREE_SPACE_EXTENT
 		printf("free_space_extent");
 	} elsif ($type == 0xc8) { # FREE_SPACE_BITMAP
-		printf("free_space_bitmap"); # FIXME - print contents
+		printf("free_space_bitmap %s", free_space_bitmap($s, $id));
+		$s = "";
 	} elsif ($type == 0xcc) { # DEV_EXTENT
 		@b=unpack("QQQQa16",$s);
 		$s=substr($s,0x30);
