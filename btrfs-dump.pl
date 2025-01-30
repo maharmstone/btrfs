@@ -526,6 +526,72 @@ sub free_space_bitmap {
 	return join('; ', @runs);
 }
 
+sub block_group_item_flags {
+	my ($f) = @_;
+	my (@l);
+
+	if ($f & 1) {
+		push @l, "data";
+		$f &= ~1;
+	}
+
+	if ($f & 2) {
+		push @l, "system";
+		$f &= ~2;
+	}
+
+	if ($f & 4) {
+		push @l, "metadata";
+		$f &= ~4;
+	}
+
+	if ($f & 8) {
+		push @l, "raid0";
+		$f &= ~8;
+	}
+
+	if ($f & 16) {
+		push @l, "raid1";
+		$f &= ~16;
+	}
+
+	if ($f & 32) {
+		push @l, "dup";
+		$f &= ~32;
+	}
+
+	if ($f & 64) {
+		push @l, "raid10";
+		$f &= ~64;
+	}
+
+	if ($f & 128) {
+		push @l, "raid5";
+		$f &= ~128;
+	}
+
+	if ($f & 256) {
+		push @l, "raid6";
+		$f &= ~256;
+	}
+
+	if ($f & 512) {
+		push @l, "raid1c3";
+		$f &= ~512;
+	}
+
+	if ($f & 1024) {
+		push @l, "raid1c4";
+		$f &= ~1024;
+	}
+
+	if ($f != 0) {
+		push @l, $f;
+	}
+
+	return join(',', @l);
+}
+
 sub dump_item {
 	my ($type,$s,$pref,$id,$off)=@_;
 	my (@b);
@@ -737,8 +803,8 @@ sub dump_item {
 	} elsif ($type == 0xc0) { # BLOCK_GROUP_ITEM
 		@b=unpack("QQQ",$s);
 		$s=substr($s,0x18);
-		printf("block_group_item size=%x chunktreeid=%x flags=%x",$b[0],$b[1],$b[2]);
-        } elsif ($type == 0xc6) { # FREE_SPACE_INFO
+		printf("block_group_item size=%x chunktreeid=%x flags=%s", $b[0], $b[1], block_group_item_flags($b[2]));
+	} elsif ($type == 0xc6) { # FREE_SPACE_INFO
 		@b=unpack("VV",$s);
 		$s=substr($s,0x8);
 		printf("free_space_info count=%x flags=%x",$b[0],$b[1]);
