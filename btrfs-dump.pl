@@ -597,6 +597,27 @@ sub block_group_item_flags {
 	return join(',', @l);
 }
 
+sub extent_item_flags {
+	my ($f) = @_;
+	my (@l);
+
+	if ($f & 1) {
+		push @l, "data";
+		$f &= ~1;
+	}
+
+	if ($f & 2) {
+		push @l, "tree_block";
+		$f &= ~2;
+	}
+
+	if ($f != 0) {
+		push @l, $f;
+	}
+
+	return join(',', @l);
+}
+
 sub dump_item {
 	my ($type,$s,$pref,$id,$off)=@_;
 	my (@b);
@@ -745,7 +766,8 @@ sub dump_item {
 			printf("extent_item_v0 refcount=%x",$b[0]);
 		} else {
 			@b=unpack("QQQ",$s);
-			printf("%s refcount=%x gen=%x flags=%x ",$type == 0xa9 ? "metadata_item_key" : "extent_item_key",$b[0],$b[1],$b[2]);
+			printf("%s refcount=%x gen=%x flags=%s ", $type == 0xa9 ? "metadata_item_key" : "extent_item_key",
+				   $b[0], $b[1], extent_item_flags($b[2]));
 
 			$s=substr($s,24);
 
