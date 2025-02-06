@@ -355,6 +355,11 @@ sub inode_flags {
         $flags &= ~2048;
     }
 
+    if ($flags & 0x80000000) {
+        push @l, "root_item_init";
+        $flags &= ~0x80000000;
+    }
+
     if ($flags & 4294967296) {
         push @l,"ro_verity";
         $flags &= ~4294967296;
