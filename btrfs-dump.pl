@@ -850,7 +850,8 @@ sub dump_item {
 		$s=substr($s,0x62);
 	} elsif ($type == 0xe4) { # CHUNK_ITEM
 		@b=unpack("QQQQVVVvv",$s);
-		printf("chunk_item size=%x root=%x stripelength=%x type=%x ioalign=%x iowidth=%x sectorsize=%x numstripes=%x substripes=%x",$b[0],$b[1],$b[2],$b[3],$b[4],$b[5],$b[6],$b[7],$b[8]);
+		printf("chunk_item size=%x root=%x stripelength=%x type=%s ioalign=%x iowidth=%x sectorsize=%x numstripes=%x substripes=%x",
+			   $b[0], $b[1], $b[2], block_group_item_flags($b[3]), $b[4], $b[5], $b[6], $b[7], $b[8]);
 		$s=substr($s,0x30);
 
 		my $numstripes=$b[7];
