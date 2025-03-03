@@ -63,6 +63,12 @@ print "ROOT:\n";
 dump_tree($roottree, "", 0);
 print "\n";
 
+if ($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE) {
+    print "REMAP:\n";
+    dump_tree($roots{13}, "", 0);
+    print "\n";
+}
+
 if ($logtree != 0) {
     print "LOG:\n";
     dump_tree($logtree, "", 0);
@@ -72,9 +78,11 @@ if ($logtree != 0) {
 my @rs = sort { $a <=> $b } (keys(%roots));
 
 foreach my $r (@rs) {
-    printf("Tree %x:\n", $r);
-    dump_tree($roots{$r}, "");
-    print "\n";
+    if ($r != 13) {
+        printf("Tree %x:\n", $r);
+        dump_tree($roots{$r}, "");
+        print "\n";
+    }
 }
 
 my @lrs = sort { $a <=> $b } (keys(%logroots));
@@ -1063,7 +1071,7 @@ sub dump_item {
 
         printf("shared_data_ref count=%x", @b);
     } elsif ($type == 0xc0) { # BLOCK_GROUP_ITEM
-        if ($incompat_flags & 0x20000) {
+        if ($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE) {
             @b = unpack("QQQQV", $s);
             $s = substr($s, 0x24);
             printf("block_group_item used=%x chunk_objectid=%x flags=%s remap_bytes=%x identity_remap_count=%x", $b[0], $b[1], block_group_item_flags($b[2]), $b[3], $b[4]);
