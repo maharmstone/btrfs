@@ -110,13 +110,18 @@ scoop install winbtrfs-np -g
 Uninstalling
 ------------
 
-If you want to uninstall, from a command prompt run:
+If you want to uninstall, from an elevated command prompt first run:
 
-```
-RUNDLL32.EXE SETUPAPI.DLL,InstallHinfSection DefaultUninstall 132 btrfs.inf
-```
+```pnputil /enum-drivers```
 
-You may need to give the full path to btrfs.inf.
+There should be two entries for `btrfs.inf` and `btrfs-vol.inf`, with files of
+the form `oemNN.inf`. Make a note of their names.
+
+Then for each run...
+```
+pnputil /delete-driver oemNN.inf /uninstall /force
+```
+...and reboot.
 
 You can also go to Device Manager, find "Btrfs controller" under
 "Storage volumes", right click and choose "Uninstall". Tick the checkbox to
