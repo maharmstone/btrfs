@@ -800,7 +800,7 @@ sub dump_item {
                 } elsif ($irt == 0xb6) {
                     @b = unpack("Q", $s);
                     $s = substr($s, 8);
-                    printf("shared_block_ref offset=%x", $b[0]);
+                    printf("shared_block_ref offset=%x ", $b[0]);
                 } elsif ($irt == 0xb8) {
                     @b = unpack("Qv", $s);
                     $s = substr($s, 12);
