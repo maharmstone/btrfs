@@ -206,6 +206,72 @@ sub compat_ro_flags {
     return join(',', @l);
 }
 
+sub format_super_flags {
+    my ($f) = @_;
+    my @l;
+
+    if ($f & 1) {
+        push @l, "written";
+        $f &= ~1;
+    }
+
+    if ($f & 2) {
+        push @l, "reloc";
+        $f &= ~2;
+    }
+
+    if ($f & 4) {
+        push @l, "error";
+        $f &= ~4;
+    }
+
+    if ($f & 0x100000000) {
+        push @l, "seeding";
+        $f &= ~0x100000000;
+    }
+
+    if ($f & 0x200000000) {
+        push @l, "metadump";
+        $f &= ~0x200000000;
+    }
+
+    if ($f & 0x400000000) {
+        push @l, "metadump_v2";
+        $f &= ~0x400000000;
+    }
+
+    if ($f & 0x800000000) {
+        push @l, "changing_fsid";
+        $f &= ~0x800000000;
+    }
+
+    if ($f & 0x1000000000) {
+        push @l, "changing_fsid_v2";
+        $f &= ~0x1000000000;
+    }
+
+    if ($f & 0x4000000000) {
+        push @l, "changing_bg_tree";
+        $f &= ~0x4000000000;
+    }
+
+    if ($f & 0x8000000000) {
+        push @l, "changing_data_csum";
+        $f &= ~0x8000000000;
+    }
+
+    if ($f & 0x10000000000) {
+        push @l, "changin_meta_csum";
+        $f &= ~0x10000000000;
+    }
+
+    if ($f != 0 || $#l == -1) {
+        push @l, sprintf("%x", $f);
+    }
+
+    return join(',', @l);
+}
+
 sub read_superblock {
     my ($f) = @_;
     my ($sb, @b, @b2, @di, $csum);
@@ -226,7 +292,7 @@ sub read_superblock {
         $csum = sprintf("%08x", unpack("V", $b[0]));
     }
 
-    printf("superblock csum=%s fsuuid=%s physaddr=%x flags=%x magic=%s gen=%x roottree=%x chunktree=%x logtree=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x n=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%s incompat_flags=%s csum_type=%x root_level=%x chunk_root_level=%x log_root_level=%x (dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s) label=%s cache_gen=%x uuid_tree_gen=%x metadata_uuid=%s\n", $csum, format_uuid($b[1]), $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], compat_ro_flags($b[21]), incompat_flags($b[22]), $b[23], $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30], format_uuid($b[31]));
+    printf("superblock csum=%s fsuuid=%s physaddr=%x flags=%s magic=%s gen=%x roottree=%x chunktree=%x logtree=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x n=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%s incompat_flags=%s csum_type=%x root_level=%x chunk_root_level=%x log_root_level=%x (dev_item id=%x numbytes=%x bytesused=%x ioalign=%x iowidth=%x sectorsize=%x type=%x gen=%x startoff=%x devgroup=%x seekspeed=%x bandwidth=%x devid=%s fsid=%s) label=%s cache_gen=%x uuid_tree_gen=%x metadata_uuid=%s\n", $csum, format_uuid($b[1]), $b[2], format_super_flags($b[3]), $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], compat_ro_flags($b[21]), incompat_flags($b[22]), $b[23], $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30], format_uuid($b[31]));
 
     my $devid = format_uuid($di[12]);
 
