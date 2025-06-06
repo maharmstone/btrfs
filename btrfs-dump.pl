@@ -14,6 +14,8 @@ use Data::Dumper;
 use strict;
 use integer;
 
+use constant BTRFS_FEATURE_INCOMPAT_REMAP_TREE => 0x20000;
+
 if (scalar(@ARGV) < 1) {
     my @dp = split(/\//, $0);
 
@@ -40,7 +42,7 @@ for (my $i = 1; $i <= $#ARGV; $i++) {
     $devs{$di[0]} = $file;
 }
 
-my ($f, $chunktree, $roottree, $logtree, $nodesize, $blocksize);
+my ($f, $chunktree, $roottree, $logtree, $nodesize, $blocksize, $incompat_flags);
 
 open($f, $ARGV[0]) || die "Error opening " . $ARGV[0] . ": $!";
 binmode($f);
@@ -167,6 +169,11 @@ sub incompat_flags {
     if ($f & 0x10000) {
         push @l, "simple_quota";
         $f &= ~0x10000;
+    }
+
+    if ($f & 0x20000) {
+        push @l,"remap_tree";
+        $f &= ~0x20000;
     }
 
     if ($f != 0 || $#l == -1) {
@@ -296,7 +303,7 @@ sub read_superblock {
     seek($f, 0x10000, 0);
     read($f, $sb, 0x1000);
     ($roottree, $chunktree, $logtree) = unpack("x80QQQ", $sb);
-    @b = unpack("a32a16QQa8QQQQQQQQQVVVVVQQQQvCCCa98A256QQa16x224a2048a672", $sb);
+    @b = unpack("a32a16QQa8QQQQQQQQQVVVVVQQQQvCCCa98A256QQa16QQQCx199a2048a672", $sb);
     @di = unpack("QQQVVVQQQVCCa16a16", $b[27]);
 
     $csum_type = $b[23];
@@ -309,16 +316,23 @@ sub read_superblock {
         $csum = sprintf("%08x", unpack("V", $b[0]));
     }
 
-    printf("superblock csum=%s fsid=%s bytenr=%x flags=%s magic=%s generation=%x root=%x chunk_root=%x log_root=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x sys_chunk_array_size=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%s incompat_flags=%s csum_type=%s root_level=%x chunk_root_level=%x log_root_level=%x (dev_item devid=%x total_bytes=%x bytes_used=%x io_align=%x io_width=%x sector_size=%x type=%x generation=%x start_offset=%x dev_group=%x seek_speed=%x bandwidth=%x uuid=%s fsid=%s) label=%s cache_generation=%x uuid_tree_generation=%x metadata_uuid=%s\n", $csum, format_uuid($b[1]), $b[2], format_super_flags($b[3]), $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], compat_ro_flags($b[21]), incompat_flags($b[22]), csum_type($b[23]), $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30], format_uuid($b[31]));
+    printf("superblock csum=%s fsid=%s bytenr=%x flags=%s magic=%s generation=%x root=%x chunk_root=%x log_root=%x log_root_transid=%x total_bytes=%x bytes_used=%x root_dir_objectid=%x num_devices=%x sectorsize=%x nodesize=%x leafsize=%x stripesize=%x sys_chunk_array_size=%x chunk_root_generation=%x compat_flags=%x compat_ro_flags=%s incompat_flags=%s csum_type=%s root_level=%x chunk_root_level=%x log_root_level=%x (dev_item devid=%x total_bytes=%x bytes_used=%x io_align=%x io_width=%x sector_size=%x type=%x generation=%x start_offset=%x dev_group=%x seek_speed=%x bandwidth=%x uuid=%s fsid=%s) label=%s cache_generation=%x uuid_tree_generation=%x metadata_uuid=%s", $csum, format_uuid($b[1]), $b[2], format_super_flags($b[3]), $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], $b[12], $b[13], $b[14], $b[15], $b[16], $b[17], $b[18], $b[19], $b[20], compat_ro_flags($b[21]), incompat_flags($b[22]), csum_type($b[23]), $b[24], $b[25], $b[26], $di[0], $di[1], $di[2], $di[3], $di[4], $di[5], $di[6], $di[7], $di[8], $di[9], $di[10], $di[11], format_uuid($di[12]), format_uuid($di[13]), $b[28], $b[29], $b[30], format_uuid($b[31]));
 
     my $devid = format_uuid($di[12]);
 
     $blocksize = $b[14];
     $nodesize = $b[15];
+    $incompat_flags = $b[22];
+
+    if ($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE) {
+        printf(" remap_root=%x remap_root_generation=%x remap_root_level=%x", $b[33], $b[34], $b[35]);
+    }
+
+    print "\n";
 
     $devs{$di[0]} = $f;
 
-    my $bootstrap = substr($b[32], 0, $b[18]);
+    my $bootstrap = substr($b[36], 0, $b[18]);
 
     while (length($bootstrap) > 0) {
         #print Dumper($bootstrap)."\n";
@@ -351,7 +365,7 @@ sub read_superblock {
         push @l2p_bs, \%obj;
     }
 
-    my $backups = $b[33];
+    my $backups = $b[37];
 
     while (length($backups) > 0) {
         my $backup = substr($backups, 0, 168);
@@ -678,6 +692,16 @@ sub block_group_item_flags {
     if ($f & 1024) {
         push @l, "raid1c4";
         $f &= ~1024;
+    }
+
+    if ($f & 2048) {
+        push @l, "remapped";
+        $f &= ~2048;
+    }
+
+    if ($f & 4096) {
+        push @l, "remap";
+        $f &= ~4096;
     }
 
     if ($f != 0) {
@@ -1039,9 +1063,15 @@ sub dump_item {
 
         printf("shared_data_ref count=%x", @b);
     } elsif ($type == 0xc0) { # BLOCK_GROUP_ITEM
-        @b = unpack("QQQ", $s);
-        $s = substr($s, 0x18);
-        printf("block_group_item used=%x chunk_objectid=%x flags=%s", $b[0], $b[1], block_group_item_flags($b[2]));
+        if ($incompat_flags & 0x20000) {
+            @b = unpack("QQQQV", $s);
+            $s = substr($s, 0x24);
+            printf("block_group_item used=%x chunk_objectid=%x flags=%s remap_bytes=%x identity_remap_count=%x", $b[0], $b[1], block_group_item_flags($b[2]), $b[3], $b[4]);
+        } else {
+            @b = unpack("QQQ", $s);
+            $s = substr($s, 0x18);
+            printf("block_group_item used=%x chunk_objectid=%x flags=%s", $b[0], $b[1], block_group_item_flags($b[2]));
+        }
     } elsif ($type == 0xc6) { # FREE_SPACE_INFO
         @b = unpack("VV", $s);
         $s = substr($s, 0x8);
@@ -1072,6 +1102,16 @@ sub dump_item {
 
             printf(" stripe(%u) devid=%x offset=%x dev_uuid=%s", $i, $b[0], $b[1], format_uuid($b[2]));
         }
+    } elsif ($type == 0xea) { # IDENTITY_REMAP
+        printf("identity_remap");
+    } elsif ($type == 0xeb) { # REMAP
+        @b = unpack("Q", $s);
+        $s = substr($s, 0x8);
+        printf("remap %x", $b[0]);
+    } elsif ($type == 0xec) { # REMAP_BACKREF
+        @b = unpack("Q", $s);
+        $s = substr($s, 0x8);
+        printf("remap_backref %x", $b[0]);
     } elsif ($type == 0xf0) { # QGROUP_STATUS
         @b = unpack("QQQQQ", $s);
         printf("qgroup_status version=%x generation=%x flags=%s rescan=%x enable_gen=%x", $b[0], $b[1], qgroup_status_flags($b[2]), $b[3], $b[4]);
