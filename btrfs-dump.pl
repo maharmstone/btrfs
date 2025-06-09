@@ -79,7 +79,7 @@ if ($logtree != 0) {
 my @rs = sort { $a <=> $b } (keys(%roots));
 
 foreach my $r (@rs) {
-    if ($r != 13) {
+    if ($r != 13 || !($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE)) {
         printf("Tree %x:\n", $r);
         dump_tree($roots{$r}, "");
         print "\n";
