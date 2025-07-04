@@ -42,7 +42,7 @@ for (my $i = 1; $i <= $#ARGV; $i++) {
     $devs{$di[0]} = $file;
 }
 
-my ($f, $chunktree, $roottree, $logtree, $nodesize, $blocksize, $incompat_flags);
+my ($f, $chunktree, $roottree, $logtree, $remaptree, $nodesize, $blocksize, $incompat_flags);
 
 open($f, $ARGV[0]) || die "Error opening " . $ARGV[0] . ": $!";
 binmode($f);
@@ -60,15 +60,15 @@ print "CHUNK:\n";
 dump_tree($chunktree, "", 1);
 print "\n";
 
+if ($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE) {
+    print "REMAP:\n";
+    dump_tree($remaptree, "", 0);
+    print "\n";
+}
+
 print "ROOT:\n";
 dump_tree($roottree, "", 0);
 print "\n";
-
-if ($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE) {
-    print "REMAP:\n";
-    dump_tree($roots{13}, "", 0);
-    print "\n";
-}
 
 if ($logtree != 0) {
     print "LOG:\n";
@@ -335,6 +335,7 @@ sub read_superblock {
 
     if ($incompat_flags & BTRFS_FEATURE_INCOMPAT_REMAP_TREE) {
         printf(" remap_root=%x remap_root_generation=%x remap_root_level=%x", $b[33], $b[34], $b[35]);
+        $remaptree = $b[33];
     }
 
     print "\n";
