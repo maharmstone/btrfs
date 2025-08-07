@@ -323,8 +323,19 @@ static NTSTATUS __stdcall fast_io_release_for_mod_write(PFILE_OBJECT FileObject,
 
 _Function_class_(FAST_IO_ACQUIRE_FOR_CCFLUSH)
 static NTSTATUS __stdcall fast_io_acquire_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject) {
-    UNUSED(FileObject);
+    fcb* fcb;
+
+    TRACE("(%p, %p)\n", FileObject, DeviceObject);
+
     UNUSED(DeviceObject);
+
+    fcb = FileObject->FsContext;
+
+    if (!fcb)
+        return STATUS_INVALID_PARAMETER;
+
+    ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
+    ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
     IoSetTopLevelIrp((PIRP)FSRTL_CACHE_TOP_LEVEL_IRP);
 
@@ -333,8 +344,16 @@ static NTSTATUS __stdcall fast_io_acquire_for_ccflush(PFILE_OBJECT FileObject, P
 
 _Function_class_(FAST_IO_RELEASE_FOR_CCFLUSH)
 static NTSTATUS __stdcall fast_io_release_for_ccflush(PFILE_OBJECT FileObject, PDEVICE_OBJECT DeviceObject) {
-    UNUSED(FileObject);
+    fcb* fcb;
+
+    TRACE("(%p, %p)\n", FileObject, DeviceObject);
+
     UNUSED(DeviceObject);
+
+    fcb = FileObject->FsContext;
+
+    ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&fcb->Vcb->tree_lock);
 
     if (IoGetTopLevelIrp() == (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP)
         IoSetTopLevelIrp(NULL);
