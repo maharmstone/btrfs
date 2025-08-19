@@ -316,12 +316,12 @@ sub read_superblock {
 
         my %obj;
 
-        $obj{'physoffset'} = $c[10];
         $obj{'offset'} = $b2[2];
         $obj{'size'} = $c[0];
         $obj{'type'} = $c[3];
         $obj{'num_stripes'} = $c[7];
-        $obj{'devid'} = $c[9];
+        $obj{'stripes'}[0]{'devid'} = $c[9];
+        $obj{'stripes'}[0]{'physoffset'} = $c[10];
 
         # FIXME - second stripes etc.
 
@@ -1032,14 +1032,14 @@ sub read_data {
                 $physstripe = ($parity + $stripe + 1) % 3;
 
                 if ($physstripe == 0) {
-                    $f = $devs{$obj->{'devid'}};
-                    $physoff = $obj->{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[0]{'devid'}};
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } elsif ($physstripe == 1) {
-                    $f = $devs{$obj->{'devid2'}};
-                    $physoff = $obj->{'physoffset2'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[1]{'devid'}};
+                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } elsif ($physstripe == 2) {
-                    $f = $devs{$obj->{'devid3'}};
-                    $physoff = $obj->{'physoffset3'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[2]{'devid'}};
+                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 }
 
                 seek($f, $physoff, 0);
@@ -1051,17 +1051,17 @@ sub read_data {
                 $physstripe = ($parity + $stripe + 1) % 4;
 
                 if ($physstripe == 0) {
-                    $f = $devs{$obj->{'devid'}};
-                    $physoff = $obj->{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[0]{'devid'}};
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } elsif ($physstripe == 1) {
-                    $f = $devs{$obj->{'devid2'}};
-                    $physoff = $obj->{'physoffset2'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[1]{'devid'}};
+                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } elsif ($physstripe == 2) {
-                    $f = $devs{$obj->{'devid3'}};
-                    $physoff = $obj->{'physoffset3'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[2]{'devid'}};
+                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } elsif ($physstripe == 3) {
-                    $f = $devs{$obj->{'devid4'}};
-                    $physoff = $obj->{'physoffset4'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[3]{'devid'}};
+                    $physoff = $obj->{'stripes'}[3]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 }
 
                 seek($f, $physoff, 0);
@@ -1071,12 +1071,14 @@ sub read_data {
                 $stripe = int($stripeoff / 0x10000);
 
                 if ($stripe == 0) {
-                    $f = $devs{$obj->{'devid'}};
-                    $physoff = $obj->{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[0]{'devid'}};
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } else {
-                    $f = $devs{$obj->{'devid3'}};
-                    $physoff = $obj->{'physoffset3'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[2]{'devid'}};
+                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 }
+
+                # FIXME - six-device RAID10
 
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
@@ -1085,18 +1087,18 @@ sub read_data {
                 $stripe = int($stripeoff / 0x10000);
 
                 if ($stripe == 0) {
-                    $f = $devs{$obj->{'devid'}};
-                    $physoff = $obj->{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[0]{'devid'}};
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 } else {
-                    $f = $devs{$obj->{'devid2'}};
-                    $physoff = $obj->{'physoffset2'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $f = $devs{$obj->{'stripes'}[1]{'devid'}};
+                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
                 }
 
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
             } else { # SINGLE, DUP, RAID1
-                seek($devs{$obj->{'devid'}}, $obj->{'physoffset'} + $addr - $obj->{'offset'}, 0);
-                read($devs{$obj->{'devid'}}, $data, $size);
+                seek($devs{$obj->{'stripes'}[0]{'devid'}}, $obj->{'stripes'}[0]{'physoffset'} + $addr - $obj->{'offset'}, 0);
+                read($devs{$obj->{'stripes'}[0]{'devid'}}, $data, $size);
             }
 
             return $data;
@@ -1184,38 +1186,17 @@ sub dump_tree {
 
                 my $numstripes = $b[7];
 
-                my @cis = unpack("QQa16", $stripes);
-                $stripes = substr($stripes, 32);
-
-                $obj{'physoffset'} = $cis[1];
                 $obj{'offset'} = $ihb[2];
                 $obj{'size'} = $b[0];
                 $obj{'type'} = $b[3];
                 $obj{'num_stripes'} = $b[7];
-                $obj{'devid'} = $cis[0];
 
-                if ($b[7] > 1) {
+                for (my $i = 0; $i < $numstripes; $i++) {
                     my @cis = unpack("QQa16", $stripes);
                     $stripes = substr($stripes, 32);
 
-                    $obj{'physoffset2'} = $cis[1];
-                    $obj{'devid2'} = $cis[0];
-                }
-
-                if ($b[7] > 2) {
-                    my @cis = unpack("QQa16", $stripes);
-                    $stripes = substr($stripes, 32);
-
-                    $obj{'physoffset3'} = $cis[1];
-                    $obj{'devid3'} = $cis[0];
-                }
-
-                if ($b[7] > 3) {
-                    my @cis = unpack("QQa16", $stripes);
-                    $stripes = substr($stripes, 32);
-
-                    $obj{'physoffset4'} = $cis[1];
-                    $obj{'devid4'} = $cis[0];
+                    $obj{'stripes'}[$i]{'physoffset'} = $cis[1];
+                    $obj{'stripes'}[$i]{'devid'} = $cis[0];
                 }
 
                 push @l2p, \%obj;
