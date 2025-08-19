@@ -320,6 +320,7 @@ sub read_superblock {
         $obj{'size'} = $c[0];
         $obj{'type'} = $c[3];
         $obj{'num_stripes'} = $c[7];
+        $obj{'stripe_len'} = $c[2];
 
         for (my $i = 0; $i < $c[7]; $i++) {
             my @cis = unpack("QQa16", $bootstrap);
@@ -1030,56 +1031,56 @@ sub read_data {
     foreach my $obj (@arr) {
         if ($obj->{'offset'} <= $addr && ($addr - $obj->{'offset'}) < $obj->{'size'}) {
             if ($obj->{'type'} & 0x80) { # RAID5
-                $stripeoff = ($addr - $obj->{'offset'}) % 0x20000;
-                $parity = (int(($addr - $obj->{'offset'}) / 0x20000) + 2) % 3;
-                $stripe = int($stripeoff / 0x10000);
+                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
+                $parity = (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) + 2) % 3;
+                $stripe = int($stripeoff / $obj->{'stripe_len'});
                 $physstripe = ($parity + $stripe + 1) % 3;
 
                 if ($physstripe == 0) {
                     $f = $devs{$obj->{'stripes'}[0]{'devid'}};
-                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } elsif ($physstripe == 1) {
                     $f = $devs{$obj->{'stripes'}[1]{'devid'}};
-                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } elsif ($physstripe == 2) {
                     $f = $devs{$obj->{'stripes'}[2]{'devid'}};
-                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 }
 
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
             } elsif ($obj->{'type'} & 0x100) {    # RAID6
-                $stripeoff = ($addr - $obj->{'offset'}) % 0x20000;
-                $parity = (int(($addr - $obj->{'offset'}) / 0x20000) + 3) % 4;
-                $stripe = int($stripeoff / 0x10000);
+                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
+                $parity = (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) + 3) % 4;
+                $stripe = int($stripeoff / $obj->{'stripe_len'});
                 $physstripe = ($parity + $stripe + 1) % 4;
 
                 if ($physstripe == 0) {
                     $f = $devs{$obj->{'stripes'}[0]{'devid'}};
-                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } elsif ($physstripe == 1) {
                     $f = $devs{$obj->{'stripes'}[1]{'devid'}};
-                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } elsif ($physstripe == 2) {
                     $f = $devs{$obj->{'stripes'}[2]{'devid'}};
-                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } elsif ($physstripe == 3) {
                     $f = $devs{$obj->{'stripes'}[3]{'devid'}};
-                    $physoff = $obj->{'stripes'}[3]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[3]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 }
 
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
             } elsif ($obj->{'type'} & 0x40) { # RAID10
-                $stripeoff = ($addr - $obj->{'offset'}) % 0x20000;
-                $stripe = int($stripeoff / 0x10000);
+                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
+                $stripe = int($stripeoff / $obj->{'stripe_len'});
 
                 if ($stripe == 0) {
                     $f = $devs{$obj->{'stripes'}[0]{'devid'}};
-                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } else {
                     $f = $devs{$obj->{'stripes'}[2]{'devid'}};
-                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 }
 
                 # FIXME - six-device RAID10
@@ -1087,16 +1088,18 @@ sub read_data {
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
             } elsif ($obj->{'type'} & 0x8) { # RAID0
-                $stripeoff = ($addr - $obj->{'offset'}) % 0x20000;
-                $stripe = int($stripeoff / 0x10000);
+                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
+                $stripe = int($stripeoff / $obj->{'stripe_len'});
 
                 if ($stripe == 0) {
                     $f = $devs{$obj->{'stripes'}[0]{'devid'}};
-                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 } else {
                     $f = $devs{$obj->{'stripes'}[1]{'devid'}};
-                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / 0x20000) * 0x10000) + ($stripeoff % 0x10000);
+                    $physoff = $obj->{'stripes'}[1]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
                 }
+
+                # FIXME - RAID0 with more than two devices?
 
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
@@ -1194,6 +1197,7 @@ sub dump_tree {
                 $obj{'size'} = $b[0];
                 $obj{'type'} = $b[3];
                 $obj{'num_stripes'} = $b[7];
+                $obj{'stripe_len'} = $b[2];
 
                 for (my $i = 0; $i < $numstripes; $i++) {
                     my @cis = unpack("QQa16", $stripes);
