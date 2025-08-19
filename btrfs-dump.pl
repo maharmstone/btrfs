@@ -12,6 +12,7 @@
 
 use Data::Dumper;
 use strict;
+use integer;
 
 if (scalar(@ARGV) < 1) {
     my @dp = split(/\//, $0);
@@ -321,6 +322,7 @@ sub read_superblock {
         $obj{'type'} = $c[3];
         $obj{'num_stripes'} = $c[7];
         $obj{'stripe_len'} = $c[2];
+        $obj{'sub_stripes'} = $c[8];
 
         for (my $i = 0; $i < $c[7]; $i++) {
             my @cis = unpack("QQa16", $bootstrap);
@@ -1072,18 +1074,12 @@ sub read_data {
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
             } elsif ($obj->{'type'} & 0x40) { # RAID10
-                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
-                $stripe = int($stripeoff / $obj->{'stripe_len'});
+                my $stripe_num = ($addr - $obj->{'offset'}) / $obj->{'stripe_len'};
+                my $stripe_offset = ($addr - $obj->{'offset'}) % $obj->{'stripe_len'};
+                my $stripe = $stripe_num % ($obj->{'num_stripes'} / $obj->{'sub_stripes'}) * $obj->{'sub_stripes'};
 
-                if ($stripe == 0) {
-                    $f = $devs{$obj->{'stripes'}[0]{'devid'}};
-                    $physoff = $obj->{'stripes'}[0]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
-                } else {
-                    $f = $devs{$obj->{'stripes'}[2]{'devid'}};
-                    $physoff = $obj->{'stripes'}[2]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
-                }
-
-                # FIXME - six-device RAID10
+                $f = $devs{$obj->{'stripes'}[$stripe]{'devid'}};
+                $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (($stripe_num / ($obj->{'num_stripes'} / $obj->{'sub_stripes'})) * $obj->{'stripe_len'}) + $stripe_offset;
 
                 seek($f, $physoff, 0);
                 read($f, $data, $size);
@@ -1198,6 +1194,7 @@ sub dump_tree {
                 $obj{'type'} = $b[3];
                 $obj{'num_stripes'} = $b[7];
                 $obj{'stripe_len'} = $b[2];
+                $obj{'sub_stripes'} = $b[8];
 
                 for (my $i = 0; $i < $numstripes; $i++) {
                     my @cis = unpack("QQa16", $stripes);
