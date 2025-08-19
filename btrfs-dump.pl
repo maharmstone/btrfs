@@ -1035,20 +1035,21 @@ sub read_data {
             if ($obj->{'type'} & 0x80) { # RAID5
                 my $data_stripes = $obj->{'num_stripes'} - 1;
                 $stripeoff = ($addr - $obj->{'offset'}) % ($data_stripes * $obj->{'stripe_len'});
-                $parity = (int(($addr - $obj->{'offset'}) / ($data_stripes * $obj->{'stripe_len'})) + $data_stripes) % $obj->{'num_stripes'};
+                $parity = (int(($addr - $obj->{'offset'}) / ($data_stripes * $obj->{'stripe_len'})) + $obj->{'num_stripes'} - 1) % $obj->{'num_stripes'};
                 $stripe2 = int($stripeoff / $obj->{'stripe_len'});
                 $stripe = ($parity + $stripe2 + 1) % $obj->{'num_stripes'};
 
                 $f = $devs{$obj->{'stripes'}[$stripe]{'devid'}};
                 $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (int(($addr - $obj->{'offset'}) / ($data_stripes * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
             } elsif ($obj->{'type'} & 0x100) { # RAID6
-                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
-                $parity = (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) + 3) % 4;
+                my $data_stripes = $obj->{'num_stripes'} - 2;
+                $stripeoff = ($addr - $obj->{'offset'}) % ($data_stripes * $obj->{'stripe_len'});
+                $parity = (int(($addr - $obj->{'offset'}) / ($data_stripes * $obj->{'stripe_len'})) + $obj->{'num_stripes'} - 1) % $obj->{'num_stripes'};
                 $stripe2 = int($stripeoff / $obj->{'stripe_len'});
-                $stripe = ($parity + $stripe2 + 1) % 4;
+                $stripe = ($parity + $stripe2 + 1) % $obj->{'num_stripes'};
 
                 $f = $devs{$obj->{'stripes'}[$stripe]{'devid'}};
-                $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
+                $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (int(($addr - $obj->{'offset'}) / ($data_stripes * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
             } elsif ($obj->{'type'} & 0x40) { # RAID10
                 my $stripe_num = ($addr - $obj->{'offset'}) / $obj->{'stripe_len'};
                 my $stripe_offset = ($addr - $obj->{'offset'}) % $obj->{'stripe_len'};
