@@ -1056,13 +1056,12 @@ sub read_data {
                 $f = $devs{$obj->{'stripes'}[$stripe]{'devid'}};
                 $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (($stripe_num / ($obj->{'num_stripes'} / $obj->{'sub_stripes'})) * $obj->{'stripe_len'}) + $stripe_offset;
             } elsif ($obj->{'type'} & 0x8) { # RAID0
-                $stripeoff = ($addr - $obj->{'offset'}) % (2 * $obj->{'stripe_len'});
-                $stripe = int($stripeoff / $obj->{'stripe_len'});
+                my $stripe_num = ($addr - $obj->{'offset'}) / $obj->{'stripe_len'};
+                my $stripe_offset = ($addr - $obj->{'offset'}) % $obj->{'stripe_len'};
+                my $stripe = $stripe_num % $obj->{'num_stripes'};
 
                 $f = $devs{$obj->{'stripes'}[$stripe]{'devid'}};
-                $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (int(($addr - $obj->{'offset'}) / (2 * $obj->{'stripe_len'})) * $obj->{'stripe_len'}) + ($stripeoff % $obj->{'stripe_len'});
-
-                # FIXME - RAID0 with more than two devices?
+                $physoff = $obj->{'stripes'}[$stripe]{'physoffset'} + (($stripe_num / $obj->{'num_stripes'}) * $obj->{'stripe_len'}) + $stripe_offset;
             } else { # SINGLE, DUP, RAID1, RAID1C3, RAID1C4
                 $f = $devs{$obj->{'stripes'}[0]{'devid'}};
                 $physoff = $obj->{'stripes'}[0]{'physoffset'} + $addr - $obj->{'offset'};
