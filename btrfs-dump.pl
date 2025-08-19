@@ -309,10 +309,10 @@ sub read_superblock {
         printf("bootstrap %x,%x,%x\n", @b2[0], @b2[1], @b2[2]);
         $bootstrap = substr($bootstrap, 0x11);
 
-        my @c = unpack("QQQQVVVvvQQa16", $bootstrap);
+        my @c = unpack("QQQQVVVvv", $bootstrap);
         dump_item(0xe4, substr($bootstrap, 0, 0x30 + ($c[7] * 0x20)), "", 0);
 
-        $bootstrap = substr($bootstrap, 0x30 + ($c[7] * 0x20));
+        $bootstrap = substr($bootstrap, 0x30);
 
         my %obj;
 
@@ -320,10 +320,14 @@ sub read_superblock {
         $obj{'size'} = $c[0];
         $obj{'type'} = $c[3];
         $obj{'num_stripes'} = $c[7];
-        $obj{'stripes'}[0]{'devid'} = $c[9];
-        $obj{'stripes'}[0]{'physoffset'} = $c[10];
 
-        # FIXME - second stripes etc.
+        for (my $i = 0; $i < $c[7]; $i++) {
+            my @cis = unpack("QQa16", $bootstrap);
+            $bootstrap = substr($bootstrap, 0x20);
+
+            $obj{'stripes'}[$i]{'physoffset'} = $cis[1];
+            $obj{'stripes'}[$i]{'devid'} = $cis[0];
+        }
 
         push @l2p_bs, \%obj;
     }
