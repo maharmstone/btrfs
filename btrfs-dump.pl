@@ -918,7 +918,7 @@ sub dump_item {
     } elsif ($type == 0xcc) { # DEV_EXTENT
         @b = unpack("QQQQa16", $s);
         $s = substr($s, 0x30);
-        printf("dev_extent chunktree=%x, chunkobjid=%x, logaddr=%x, size=%x, chunktreeuuid=%s", $b[0], $b[1], $b[2], $b[3], format_uuid($b[4]));
+        printf("dev_extent chunk_tree=%x chunk_objectid=%x chunk_offset=%x length=%x chunk_tree_uuid=%s", $b[0], $b[1], $b[2], $b[3], format_uuid($b[4]));
     } elsif ($type == 0xd8) { # DEV_ITEM
         @b = unpack("QQQVVVQQQVCCa16a16", $s);
         printf("dev_item devid=%x total_bytes=%x bytes_used=%x io_align=%x io_width=%x sector_size=%x type=%x generation=%x start_offset=%x dev_group=%x seek_speed=%x bandwidth=%x uuid=%s fsid=%s", $b[0], $b[1],  $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], $b[10], $b[11], format_uuid($b[12]), format_uuid($b[13]));
