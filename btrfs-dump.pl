@@ -701,6 +701,11 @@ sub extent_item_flags {
         $f &= ~2;
     }
 
+    if ($f & 256) {
+        push @l, "full_backref";
+        $f &= ~256;
+    }
+
     if ($f != 0) {
         push @l, $f;
     }
