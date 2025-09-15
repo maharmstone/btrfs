@@ -713,7 +713,7 @@ sub dump_item {
             print "inode_item";
         }
 
-        printf(" gen=%x transid=%x size=%x blocks=%x blockgroup=%x nlink=%x uid=%x gid=%x mode=%o rdev=%x flags=%s seq=%x atime=%s ctime=%s mtime=%s otime=%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], inode_flags($b[10]), $b[11], format_time($b[12], $b[13]), format_time($b[14], $b[15]), format_time($b[16], $b[17]), format_time($b[18], $b[19]));
+        printf(" generation=%x transid=%x size=%x nbytes=%x block_group=%x nlink=%x uid=%x gid=%x mode=%o rdev=%x flags=%s sequence=%x atime=%s ctime=%s mtime=%s otime=%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], $b[6], $b[7], $b[8], $b[9], inode_flags($b[10]), $b[11], format_time($b[12], $b[13]), format_time($b[14], $b[15]), format_time($b[16], $b[17]), format_time($b[18], $b[19]));
 
         if ($type != 0x1) {
             @b = unpack("QQQQQQQVQCQCC", $s);
