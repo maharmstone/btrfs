@@ -722,6 +722,22 @@ sub extent_data_type {
     }
 }
 
+sub compression_type {
+    my ($d) = @_;
+
+    if ($d == 0) {
+        return "none";
+    } elsif ($d == 1) {
+        return "zlib";
+    } elsif ($d == 2) {
+        return "lzo";
+    } elsif ($d == 3) {
+        return "zstd";
+    } else {
+        return sprintf("%x", $d);
+    }
+}
+
 sub dump_item {
     my ($type, $s, $pref, $id, $off) = @_;
     my (@b);
@@ -826,7 +842,7 @@ sub dump_item {
         @b = unpack("QQCCvC", $s);
         $s = substr($s, 0x15);
 
-        printf("extent_data generation=%x ram_bytes=%x compression=%s encryption=%s other_encoding=%s type=%s", $b[0], $b[1], $b[2], $b[3], $b[4], extent_data_type($b[5]));
+        printf("extent_data generation=%x ram_bytes=%x compression=%s encryption=%x other_encoding=%x type=%s", $b[0], $b[1], compression_type($b[2]), $b[3], $b[4], extent_data_type($b[5]));
 
         if ($b[5] != 0) {
             @b = unpack("QQQQ", $s);
