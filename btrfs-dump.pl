@@ -720,12 +720,12 @@ sub dump_item {
             $s = substr($s, 0x4f);
 
             #print Dumper(@b)."\n";
-            printf("; expgen=%x objid=%x blocknum=%x bytelimit=%x bytesused=%x snapshotgen=%x flags=%x numrefs=%x dropprogress=%x,%x,%x droplevel=%x rootlevel=%x", @b);
+            printf("; generation=%x root_dirid=%x bytenr=%x byte_limit=%x bytes_used=%x last_snapshot=%x flags=%x refs=%x drop_progress=%x,%x,%x drop_level=%x level=%x", @b);
 
             @b = unpack("Qa16a16a16QQQQQVQVQVQV", $s);
             $s = substr($s, 0xc8); # above + 64 blank bytes
 
-            printf(" gen2=%x uuid=%s par_uuid=%s rec_uuid=%s ctransid=%x otransid=%x stransid=%x rtransid=%x ctime=%s otime=%s stime=%s rtime=%s", $b[0], format_uuid($b[1]), format_uuid($b[2]), format_uuid($b[3]), $b[4], $b[5], $b[6], $b[7], format_time($b[8], $b[9]), format_time($b[10], $b[11]), format_time($b[12], $b[13]), format_time($b[14], $b[15]));
+            printf(" generation_v2=%x uuid=%s parent_uuid=%s received_uuid=%s ctransid=%x otransid=%x stransid=%x rtransid=%x ctime=%s otime=%s stime=%s rtime=%s", $b[0], format_uuid($b[1]), format_uuid($b[2]), format_uuid($b[3]), $b[4], $b[5], $b[6], $b[7], format_time($b[8], $b[9]), format_time($b[10], $b[11]), format_time($b[12], $b[13]), format_time($b[14], $b[15]));
         }
     } elsif ($type == 0xc) { # INODE_REF
         printf("inode_ref");
