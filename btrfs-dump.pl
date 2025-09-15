@@ -736,7 +736,7 @@ sub dump_item {
             my $name = substr($s, 0, $b[1]);
             $s = substr($s, $b[1]);
 
-            printf(" index=%x n=%x name=%s", $b[0], $b[1], $name);
+            printf(" index=%x name_len=%x name=%s", $b[0], $b[1], $name);
         } while (length($s) > 0);
     } elsif ($type == 0xd) { # INODE_EXTREF
         printf("inode_extref");
