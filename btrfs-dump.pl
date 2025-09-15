@@ -925,7 +925,7 @@ sub dump_item {
     } elsif ($type == 0xc6) { # FREE_SPACE_INFO
         @b = unpack("VV", $s);
         $s = substr($s, 0x8);
-        printf("free_space_info count=%x flags=%x", $b[0], $b[1]);
+        printf("free_space_info extent_count=%x flags=%x", $b[0], $b[1]);
     } elsif ($type == 0xc7) { # FREE_SPACE_EXTENT
         printf("free_space_extent");
     } elsif ($type == 0xc8) { # FREE_SPACE_BITMAP
