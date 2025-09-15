@@ -925,7 +925,7 @@ sub dump_item {
         $s = substr($s, 0x62);
     } elsif ($type == 0xe4) { # CHUNK_ITEM
         @b = unpack("QQQQVVVvv", $s);
-        printf("chunk_item size=%x root=%x stripelength=%x type=%s ioalign=%x iowidth=%x sectorsize=%x numstripes=%x substripes=%x",
+        printf("chunk_item length=%x owner=%x stripe_len=%x type=%s io_align=%x io_width=%x sector_size=%x num_stripes=%x sub_stripes=%x",
                $b[0], $b[1], $b[2], block_group_item_flags($b[3]), $b[4], $b[5], $b[6], $b[7], $b[8]);
         $s = substr($s, 0x30);
 
@@ -934,7 +934,7 @@ sub dump_item {
             @b = unpack("QQa16", $s);
             $s = substr($s, 0x20);
 
-            printf(" stripe(%u) devid=%x offset=%x devuuid=%s", $i, $b[0], $b[1], format_uuid($b[2]));
+            printf(" stripe(%u) devid=%x offset=%x dev_uuid=%s", $i, $b[0], $b[1], format_uuid($b[2]));
         }
     } elsif ($type == 0xf0) { # QGROUP_STATUS
         @b = unpack("QQQQQ", $s);
