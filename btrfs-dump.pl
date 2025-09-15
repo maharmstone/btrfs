@@ -812,13 +812,13 @@ sub dump_item {
         @b = unpack("QQCCvC", $s);
         $s = substr($s, 0x15);
 
-        printf("extent_data gen=%x size=%x comp=%s enc=%s otherenc=%s type=%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5]);
+        printf("extent_data generation=%x ram_bytes=%x compression=%s encryption=%s other_encoding=%s type=%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5]);
 
         if ($b[5] != 0) {
             @b = unpack("QQQQ", $s);
             $s = substr($s, 0x20);
 
-            printf(" ea=%x es=%x o=%x s=%x", @b);
+            printf(" disk_bytenr=%x disk_num_bytes=%x offset=%x num_bytes=%x", @b);
         } else {
             $s = substr($s, $b[1]);
         }
