@@ -1128,7 +1128,7 @@ sub dump_tree {
     }
 
     print $pref;
-    printf("header csum=%s fsid=%s addr=%x flags=%s chunk=%s gen=%x tree=%x numitems=%x level=%x\n", $csum, format_uuid($headbits[1]), $headbits[2], header_flags($headbits[3]), format_uuid($headbits[4]), $headbits[5], $headbits[6], $headbits[7], $headbits[8]);
+    printf("header csum=%s fsid=%s bytenr=%x flags=%s chunk_tree_uuid=%s generation=%x owner=%x nritems=%x level=%x\n", $csum, format_uuid($headbits[1]), $headbits[2], header_flags($headbits[3]), format_uuid($headbits[4]), $headbits[5], $headbits[6], $headbits[7], $headbits[8]);
 
     $level = $headbits[8];
     $treenum = $headbits[6];
