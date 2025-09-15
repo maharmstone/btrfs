@@ -1264,7 +1264,7 @@ sub dump_tree {
             my @ihb = unpack("QCQQQ", $itemhead);
 
             print $pref;
-            printf("%x,%x,%x block=%x gen=%x\n", $ihb[0], $ihb[1], $ihb[2], $ihb[3], $ihb[4]);
+            printf("%x,%x,%x blockptr=%x generation=%x\n", $ihb[0], $ihb[1], $ihb[2], $ihb[3], $ihb[4]);
 
             dump_tree($ihb[3], " " . $pref, $bs);
         }
