@@ -1083,7 +1083,7 @@ sub dump_item {
         @b = unpack("QCQQQQ", $s);
         $s = substr($s, 0x29);
 
-        printf("free_space key=(%x,%x,%x) gen=%x num_entries=%x num_bitmaps=%x", @b);
+        printf("free_space location=(%x,%x,%x) generation=%x num_entries=%x num_bitmaps=%x", @b);
     } else {
         printf STDERR("ERROR - unknown type %x (size=%x, tell=%x)\n", $type, length($s), tell($f));
         printf("unknown (size=%x)", length($s));
