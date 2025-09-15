@@ -904,7 +904,7 @@ sub dump_item {
         my $name = substr($s, 0, $b[2]);
         $s = substr($s, $b[2]);
 
-        printf("%s id=%x seq=%x n=%x name=%s", $type == 0x90 ? "root_backref" : "root_ref", $b[0], $b[1], $b[2], $name);
+        printf("%s dirid=%x sequence=%x name_len=%x name=%s", $type == 0x90 ? "root_backref" : "root_ref", $b[0], $b[1], $b[2], $name);
     } elsif ($type == 0xa8 || $type == 0xa9) { # EXTENT_ITEM_KEY or METADATA_ITEM_KEY
         # FIXME - TREE_BLOCK is out by one byte (why?)
         if (length($s) == 4) {
