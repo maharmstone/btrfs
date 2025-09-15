@@ -857,7 +857,7 @@ sub dump_item {
             printf("extent_item_v0 refcount=%x", $b[0]);
         } else {
             @b = unpack("QQQ", $s);
-            printf("%s refcount=%x gen=%x flags=%s ", $type == 0xa9 ? "metadata_item_key" : "extent_item_key",
+            printf("%s refs=%x generation=%x flags=%s ", $type == 0xa9 ? "metadata_item" : "extent_item",
                    $b[0], $b[1], extent_item_flags($b[2]));
 
             $s = substr($s, 24);
