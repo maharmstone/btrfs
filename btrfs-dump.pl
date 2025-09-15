@@ -819,7 +819,7 @@ sub dump_item {
             my $name = substr($s, 0, $b[2]);
             $s = substr($s, $b[2]);
 
-            printf(" dir=%x index=%x n=%x name=%s", $b[0], $b[1], $b[2], $name);
+            printf(" parent_objectid=%x index=%x name_len=%x name=%s", $b[0], $b[1], $b[2], $name);
         } while (length($s) > 0);
     } elsif ($type == 0x18 || $type == 0x54 || $type == 0x60) { # XATTR_ITEM, DIR_ITEM or DIR_INDEX
         print $type == 0x54 ? "dir_item" : ($type == 0x18 ? "xattr_item" : "dir_index");
