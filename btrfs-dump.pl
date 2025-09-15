@@ -834,7 +834,7 @@ sub dump_item {
             my $name2 = substr($s, 0, $b[4]);
             $s = substr($s, $b[4]);
 
-            printf(" location=%x,%x,%x transid=%x data_len=%x name_len=%x type=%s name=%s%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], dir_item_type($b[6]), $name, $name2 eq "" ? "" : (" name2=" . $name2));
+            printf(" location=%x,%x,%x transid=%x data_len=%x name_len=%x type=%s name=%s%s", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], dir_item_type($b[6]), $name, $name2 eq "" ? "" : (" data=" . $name2));
         }
     } elsif ($type == 0x24) { # VERITY_DESC_ITEM
         printf("verity_desc_item");
