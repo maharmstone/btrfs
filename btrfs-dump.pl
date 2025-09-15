@@ -884,7 +884,7 @@ sub dump_item {
                 } elsif ($irt == 0xb2) {
                     @b = unpack("QQQv", $s);
                     $s = substr($s, 28);
-                    printf(" extent_data_ref root=%x objid=%x offset=%x count=%x", @b);
+                    printf(" extent_data_ref root=%x objectid=%x offset=%x count=%x", @b);
                     $refcount -= $b[3] - 1;
                 } elsif ($irt == 0xb6) {
                     @b = unpack("Q", $s);
@@ -905,7 +905,7 @@ sub dump_item {
     } elsif ($type == 0xb2) { # EXTENT_DATA_REF
         @b = unpack("QQQv", $s);
         $s = substr($s, 28);
-        printf("extent_data_ref root=%x objid=%x offset=%x count=%x ", @b);
+        printf("extent_data_ref root=%x objectid=%x offset=%x count=%x ", @b);
     } elsif ($type == 0xb4) { # EXTENT_REF_V0
         @b = unpack("QQQv", $s);
         $s = substr($s, 28);
