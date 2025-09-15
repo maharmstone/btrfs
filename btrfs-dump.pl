@@ -181,12 +181,12 @@ sub compat_ro_flags {
     my @l;
 
     if ($f & 1) {
-        push @l, "space_tree";
+        push @l, "free_space_tree";
         $f &= ~1;
     }
 
     if ($f & 2) {
-        push @l, "space_tree_valid";
+        push @l, "free_space_tree_valid";
         $f &= ~2;
     }
 
