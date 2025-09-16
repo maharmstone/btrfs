@@ -980,7 +980,7 @@ sub dump_item {
             }
         }
     } elsif ($type == 0xb0) { # TREE_BLOCK_REF
-        printf("tree_block_ref ");
+        printf("tree_block_ref");
     } elsif ($type == 0xb2) { # EXTENT_DATA_REF
         @b = unpack("QQQv", $s);
         $s = substr($s, 28);
