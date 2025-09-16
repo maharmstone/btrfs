@@ -785,6 +785,47 @@ sub free_space_info_flags {
     return join(',', @l);
 }
 
+sub qgroup_limit_flags {
+    my ($f) = @_;
+    my (@l);
+
+    if ($f & 1) {
+        push @l, "max_rfer";
+        $f &= ~1;
+    }
+
+    if ($f & 2) {
+        push @l, "max_excl";
+        $f &= ~2;
+    }
+
+    if ($f & 4) {
+        push @l, "rsv_rfer";
+        $f &= ~4;
+    }
+
+    if ($f & 8) {
+        push @l, "rsv_excl";
+        $f &= ~8;
+    }
+
+    if ($f & 16) {
+        push @l, "rfer_cmpr";
+        $f &= ~8;
+    }
+
+    if ($f & 32) {
+        push @l, "excl_cmpr";
+        $f &= ~8;
+    }
+
+    if ($f != 0 || $#l == -1) {
+        push @l, $f;
+    }
+
+    return join(',', @l);
+}
+
 sub dump_item {
     my ($type, $s, $pref, $id, $off) = @_;
     my (@b);
@@ -1041,7 +1082,7 @@ sub dump_item {
         $s = substr($s, 0x28);
     } elsif ($type == 0xf4) { # QGROUP_LIMIT
         @b = unpack("QQQQQ", $s);
-        printf("qgroup_limit flags=%x max_rfer=%x max_excl=%x rsv_rfer=%x rsv_excl=%x", $b[0], $b[1], $b[2], $b[3], $b[4]);
+        printf("qgroup_limit flags=%s max_rfer=%x max_excl=%x rsv_rfer=%x rsv_excl=%x", qgroup_limit_flags($b[0]), $b[1], $b[2], $b[3], $b[4]);
         $s = substr($s, 0x28);
     } elsif ($type == 0xf6) { # QGROUP_RELATION
         printf("qgroup_relation");
