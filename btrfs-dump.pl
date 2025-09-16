@@ -991,7 +991,7 @@ sub dump_item {
 
         printf("extent_ref_v0 root=%x gen=%x objid=%x count=%x", @b);
     } elsif ($type == 0xb6) { # SHARED_BLOCK_REF
-        printf("shared_block_ref ");
+        printf("shared_block_ref");
     } elsif ($type == 0xb8) { # SHARED_DATA_REF
         @b = unpack("v", $s);
         $s = substr($s, 4);
