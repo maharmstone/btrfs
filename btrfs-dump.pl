@@ -62,7 +62,7 @@ dump_tree($roottree, "", 0);
 print "\n";
 
 if ($logtree != 0) {
-    print "LOG: \n";
+    print "LOG:\n";
     dump_tree($logtree, "", 0);
     print "\n";
 }
