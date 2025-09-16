@@ -165,7 +165,7 @@ sub incompat_flags {
     }
 
     if ($f & 0x10000) {
-        push @l, "squota";
+        push @l, "simple_quota";
         $f &= ~0x10000;
     }
 
