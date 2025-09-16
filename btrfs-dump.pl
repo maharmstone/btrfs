@@ -769,6 +769,22 @@ sub dir_item_type {
     }
 }
 
+sub free_space_info_flags {
+    my ($f) = @_;
+    my (@l);
+
+    if ($f & 1) {
+        push @l, "using_bitmaps";
+        $f &= ~1;
+    }
+
+    if ($f != 0 || $#l == -1) {
+        push @l, sprintf("%x", $f);
+    }
+
+    return join(',', @l);
+}
+
 sub dump_item {
     my ($type, $s, $pref, $id, $off) = @_;
     my (@b);
@@ -988,7 +1004,7 @@ sub dump_item {
     } elsif ($type == 0xc6) { # FREE_SPACE_INFO
         @b = unpack("VV", $s);
         $s = substr($s, 0x8);
-        printf("free_space_info extent_count=%x flags=%x", $b[0], $b[1]);
+        printf("free_space_info extent_count=%x flags=%s", $b[0], free_space_info_flags($b[1]));
     } elsif ($type == 0xc7) { # FREE_SPACE_EXTENT
         printf("free_space_extent");
     } elsif ($type == 0xc8) { # FREE_SPACE_BITMAP
