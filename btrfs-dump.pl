@@ -580,7 +580,7 @@ sub qgroup_status_flags {
     }
 
     if ($f & 8) {
-        push @l, "simple";
+        push @l, "simple_mode";
         $f &= ~8;
     }
 
