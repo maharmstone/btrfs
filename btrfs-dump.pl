@@ -848,7 +848,7 @@ sub dump_item {
             @b = unpack("Qx16C", $s);
             $s = substr($s, 25);
 
-            printf(" size=%x enc=%x", $b[0], $b[1]);
+            printf(" size=%x encryption=%x", $b[0], $b[1]);
         } else {
             while (length($s) > 0) {
                 @b = unpack("C", $s);
