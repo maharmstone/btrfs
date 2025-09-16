@@ -857,6 +857,8 @@ sub dump_item {
             }
         }
     } elsif ($type == 0x25) { # VERITY_MERKLE_ITEM
+        printf("verity_merkle_item");
+
         while (length($s) > 0) {
             @b = unpack("NNNNNNNN", $s);
             printf(" %008x%008x%008x%008x%008x%008x%008x%008x", $b[0], $b[1], $b[2], $b[3], $b[4], $b[5], $b[6], $b[7]);
