@@ -53,11 +53,11 @@ my $csum_type;
 
 read_superblock($f);
 
-print "CHUNK: \n";
+print "CHUNK:\n";
 dump_tree($chunktree, "", 1);
 print "\n";
 
-print "ROOT: \n";
+print "ROOT:\n";
 dump_tree($roottree, "", 0);
 print "\n";
 
