@@ -905,7 +905,7 @@ sub dump_item {
     } elsif ($type == 0xc0) { # BLOCK_GROUP_ITEM
         @b = unpack("QQQ", $s);
         $s = substr($s, 0x18);
-        printf("block_group_item size=%x chunktreeid=%x flags=%s", $b[0], $b[1], block_group_item_flags($b[2]));
+        printf("block_group_item used=%x chunk_objectid=%x flags=%s", $b[0], $b[1], block_group_item_flags($b[2]));
     } elsif ($type == 0xc6) { # FREE_SPACE_INFO
         @b = unpack("VV", $s);
         $s = substr($s, 0x8);
