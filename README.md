@@ -110,10 +110,11 @@ scoop install winbtrfs-np -g
 Uninstalling
 ------------
 
-If you want to uninstall, from a command prompt run:
+If you want to uninstall, from an elevated command prompt run:
 
 ```
-RUNDLL32.EXE SETUPAPI.DLL,InstallHinfSection DefaultUninstall 132 btrfs.inf
+PNPUTIL.exe /delete-driver btrfs.inf /uninstall /force /reboot
+PNPUTIL.exe /delete-driver btrfs-vol.inf /uninstall /force /reboot
 ```
 
 You may need to give the full path to btrfs.inf.
