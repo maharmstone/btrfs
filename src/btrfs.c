@@ -4376,11 +4376,13 @@ static void calculate_sector_shift(device_extension* Vcb) {
 }
 
 static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
+    NTSTATUS Status = STATUS_SUCCESS; // Declare status as Success instead of only Status;
+	BOOLEAN childLockHeld = FALSE; // Add childLockHeld Initialization for Lock Checking
+
     PIO_STACK_LOCATION IrpSp;
     PDEVICE_OBJECT NewDeviceObject = NULL;
     PDEVICE_OBJECT DeviceToMount, readobj;
     PFILE_OBJECT fileobj;
-    NTSTATUS Status;
     device_extension* Vcb = NULL;
     LIST_ENTRY *le, batchlist;
     KEY searchkey;
@@ -4466,7 +4468,12 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     if (vde) {
         pdode = vde->pdode;
 
-        ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
+        childLockHeld = ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
+
+        if (!childLockHeld) {
+            Status = STATUS_UNSUCCESSFUL;
+            goto exit;
+		}
 
         le = pdode->children.Flink;
         while (le != &pdode->children) {
@@ -4484,9 +4491,10 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                     goto exit;
                 }
 
-                Status = STATUS_DEVICE_NOT_READY;
-                ExReleaseResourceLite(&pdode->child_lock);
-                goto exit;
+                if(childLockHeld) {
+                    ExReleaseResourceLite(&pdode->child_lock);
+				}
+                return Status; // Add Checks before Releasing Lock
             }
 
             le = le2;

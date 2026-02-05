@@ -14,7 +14,7 @@ static void ZSTD_free(void* ptr) {
 
 #ifdef _MSC_VER
 
-#include <crt/intrin.h>
+#include <intrin.h>
 
 #pragma intrinsic(_byteswap_uint64)
 #pragma intrinsic(_byteswap_ulong)

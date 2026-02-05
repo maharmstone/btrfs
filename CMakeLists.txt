@@ -16,6 +16,13 @@ if(MSVC) # cmake bug 15170
     endif()
 endif()
 
+# Add Include directory
+include_directories("C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/km")
+include_directories("C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/shared")
+
+# Add ntoskrnl.lib
+link_directories("C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22621.0/km/x64")
+
 # zstd
 
 set(ZSTD_SRC_FILES src/zstd/lib/common/entropy_common.c
@@ -38,6 +45,7 @@ set(ZSTD_SRC_FILES src/zstd/lib/common/entropy_common.c
     src/zstd/lib/compress/zstd_lazy.c
     src/zstd/lib/compress/zstd_ldm.c
     src/zstd/lib/compress/zstd_opt.c
+    src/zstd/lib/compress/zstd_preSplit.c
     src/zstd/lib/common/xxhash.c)
 
 add_library(zstd STATIC ${ZSTD_SRC_FILES})

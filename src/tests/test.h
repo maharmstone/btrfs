@@ -265,9 +265,9 @@ typedef struct _FILE_OBJECTID_BUFFER {
 
 #define FILE_CS_FLAG_CASE_SENSITIVE_DIR             0x00000001
 
-typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
-    ULONG Flags;
-} FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
+//typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
+//    ULONG Flags;
+//} FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
 
 typedef struct _REPARSE_DATA_BUFFER {
     ULONG ReparseTag;
@@ -662,41 +662,42 @@ typedef struct _REQUEST_OPLOCK_OUTPUT_BUFFER {
 
 #define FileStatInformation ((FILE_INFORMATION_CLASS)68)
 
-typedef struct _FILE_STAT_INFORMATION {
-    LARGE_INTEGER FileId;
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER AllocationSize;
-    LARGE_INTEGER EndOfFile;
-    ULONG FileAttributes;
-    ULONG ReparseTag;
-    ULONG NumberOfLinks;
-    ACCESS_MASK EffectiveAccess;
-} FILE_STAT_INFORMATION, *PFILE_STAT_INFORMATION;
+//typedef struct _FILE_STAT_INFORMATION {
+//    LARGE_INTEGER FileId;
+//    LARGE_INTEGER CreationTime;
+//    LARGE_INTEGER LastAccessTime;
+//    LARGE_INTEGER LastWriteTime;
+//    LARGE_INTEGER ChangeTime;
+//    LARGE_INTEGER AllocationSize;
+//    LARGE_INTEGER EndOfFile;
+//    ULONG FileAttributes;
+//    ULONG ReparseTag;
+//    ULONG NumberOfLinks;
+//    ACCESS_MASK EffectiveAccess;
+//} FILE_STAT_INFORMATION, *PFILE_STAT_INFORMATION;
 
 #define FileStatLxInformation ((FILE_INFORMATION_CLASS)70)
 
-typedef struct _FILE_STAT_LX_INFORMATION {
-    LARGE_INTEGER FileId;
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER AllocationSize;
-    LARGE_INTEGER EndOfFile;
-    ULONG FileAttributes;
-    ULONG ReparseTag;
-    ULONG NumberOfLinks;
-    ACCESS_MASK EffectiveAccess;
-    ULONG LxFlags;
-    ULONG LxUid;
-    ULONG LxGid;
-    ULONG LxMode;
-    ULONG LxDeviceIdMajor;
-    ULONG LxDeviceIdMinor;
-} FILE_STAT_LX_INFORMATION, *PFILE_STAT_LX_INFORMATION;
+//typedef struct _FILE_STAT_LX_INFORMATION {
+//    LARGE_INTEGER FileId;
+//    LARGE_INTEGER CreationTime;
+//    LARGE_INTEGER LastAccessTime;
+//    LARGE_INTEGER LastWriteTime;
+//    LARGE_INTEGER ChangeTime;
+//    LARGE_INTEGER AllocationSize;
+//    LARGE_INTEGER EndOfFile;
+//    ULONG FileAttributes;
+//    ULONG ReparseTag;
+//    ULONG NumberOfLinks;
+//    ACCESS_MASK EffectiveAccess;
+//    ULONG LxFlags;
+//    ULONG LxUid;
+//    ULONG LxGid;
+//    ULONG LxMode;
+//    ULONG LxDeviceIdMajor;
+//    ULONG LxDeviceIdMinor;
+//} FILE_STAT_LX_INFORMATION, *PFILE_STAT_LX_INFORMATION;
+// _FILE_STAT_LX_INFORMATION already defined in Windows SDK
 
 typedef struct _FILE_STANDARD_LINK_INFORMATION {
     ULONG NumberOfAccessibleLinks;
