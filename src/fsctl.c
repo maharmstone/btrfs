@@ -3369,9 +3369,14 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
     if (fcb->ads || sourcefcb->ads || make_inline || fcb_is_inline(sourcefcb)) {
         uint8_t* data2;
-        ULONG bytes_read, dataoff, datalen2;
+        ULONG bytes_read, dataoff, datalen2, to_read;
 
         if (make_inline) {
+            if ((uint64_t)ded->TargetFileOffset.QuadPart > (uint64_t)fcb->inode_item.size) {
+                Status = STATUS_INVALID_PARAMETER;
+                goto end;
+            }
+
             dataoff = (ULONG)ded->TargetFileOffset.QuadPart;
             datalen2 = (ULONG)fcb->inode_item.size;
         } else if (fcb->ads) {
@@ -3402,15 +3407,19 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             }
         }
 
+        to_read = (ULONG)min((uint64_t)ded->ByteCount.QuadPart, (uint64_t)(datalen2 - dataoff));
+
         if (sourcefcb->ads) {
-            Status = read_stream(sourcefcb, data2 + dataoff, ded->SourceFileOffset.QuadPart, (ULONG)ded->ByteCount.QuadPart, &bytes_read);
+            Status = read_stream(sourcefcb, data2 + dataoff, ded->SourceFileOffset.QuadPart,
+                                 to_read, &bytes_read);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_stream returned %08lx\n", Status);
                 ExFreePool(data2);
                 goto end;
             }
         } else {
-            Status = read_file(sourcefcb, data2 + dataoff, ded->SourceFileOffset.QuadPart, ded->ByteCount.QuadPart, &bytes_read, Irp);
+            Status = read_file(sourcefcb, data2 + dataoff, ded->SourceFileOffset.QuadPart,
+                               to_read, &bytes_read, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08lx\n", Status);
                 ExFreePool(data2);
@@ -3419,11 +3428,16 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         }
 
         if (dataoff + bytes_read < datalen2)
-            RtlZeroMemory(data2 + dataoff + bytes_read, datalen2 - bytes_read);
+            RtlZeroMemory(data2 + dataoff + bytes_read, datalen2 - dataoff - bytes_read);
 
-        if (fcb->ads)
-            RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data2, (USHORT)min(ded->ByteCount.QuadPart, fcb->adsdata.Length - ded->TargetFileOffset.QuadPart));
-        else if (make_inline) {
+        if (fcb->ads) {
+            USHORT copylen;
+
+            if ((uint64_t)ded->TargetFileOffset.QuadPart < fcb->adsdata.Length) {
+                RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data2,
+                              (USHORT)min((uint64_t)ded->ByteCount.QuadPart, (uint64_t)(fcb->adsdata.Length - ded->TargetFileOffset.QuadPart)));
+            }
+        } else if (make_inline) {
             uint16_t edsize;
             struct btrfs_file_extent_item* ed;
 
