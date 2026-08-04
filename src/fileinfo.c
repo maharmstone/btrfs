@@ -5534,6 +5534,13 @@ NTSTATUS __stdcall drv_query_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
     fcb = IrpSp->FileObject->FsContext;
+
+    if (!fcb) {
+        ERR("no fcb\n");
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
     TRACE("fcb = %p\n", fcb);
     TRACE("fcb->subvol = %p\n", fcb->subvol);
 
