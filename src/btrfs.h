@@ -179,22 +179,22 @@ struct btrfs_key_ptr {
     uint64_t generation;
 };
 
-typedef struct {
-    uint64_t dev_id;
-    uint64_t num_bytes;
+struct btrfs_dev_item {
+    uint64_t devid;
+    uint64_t total_bytes;
     uint64_t bytes_used;
-    uint32_t optimal_io_align;
-    uint32_t optimal_io_width;
-    uint32_t minimal_io_size;
+    uint32_t io_align;
+    uint32_t io_width;
+    uint32_t sector_size;
     uint64_t type;
     uint64_t generation;
     uint64_t start_offset;
     uint32_t dev_group;
     uint8_t seek_speed;
     uint8_t bandwidth;
-    BTRFS_UUID device_uuid;
-    BTRFS_UUID fs_uuid;
-} DEV_ITEM;
+    BTRFS_UUID uuid;
+    BTRFS_UUID fsid;
+};
 
 #define SYS_CHUNK_ARRAY_SIZE 0x800
 #define BTRFS_NUM_BACKUP_ROOTS 4
@@ -253,7 +253,7 @@ typedef struct {
     uint8_t root_level;
     uint8_t chunk_root_level;
     uint8_t log_root_level;
-    DEV_ITEM dev_item;
+    struct btrfs_dev_item dev_item;
     char label[MAX_LABEL_SIZE];
     uint64_t cache_generation;
     uint64_t uuid_tree_generation;

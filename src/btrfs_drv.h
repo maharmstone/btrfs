@@ -498,7 +498,7 @@ typedef struct {
 typedef struct {
     PDEVICE_OBJECT devobj;
     PFILE_OBJECT fileobj;
-    DEV_ITEM devitem;
+    struct btrfs_dev_item devitem;
     bool removable;
     bool seeding;
     bool readonly;

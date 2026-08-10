@@ -1166,7 +1166,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         while (le != &pdode->children) {
             volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
-            if (RtlCompareMemory(&vc2->uuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (RtlCompareMemory(&vc2->uuid, &sb->dev_item.uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 // duplicate, ignore
                 ExReleaseResourceLite(&pdode->child_lock);
                 ExReleaseResourceLite(&pdo_list_lock);
@@ -1187,8 +1187,8 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         goto fail;
     }
 
-    vc->uuid = sb->dev_item.device_uuid;
-    vc->devid = sb->dev_item.dev_id;
+    vc->uuid = sb->dev_item.uuid;
+    vc->devid = sb->dev_item.devid;
     vc->generation = sb->generation;
     vc->notification_entry = NULL;
     vc->boot_volume = false;
@@ -1258,7 +1258,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-            if (!dev->devobj && RtlCompareMemory(&dev->devitem.device_uuid, &sb->dev_item.device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (!dev->devobj && RtlCompareMemory(&dev->devitem.uuid, &sb->dev_item.uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 dev->devobj = DeviceObject;
                 dev->disk_num = disk_num;
                 dev->part_num = part_num;

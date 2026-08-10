@@ -3208,13 +3208,13 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
     searchkey.objectid = 0;
     searchkey.type = TYPE_DEV_STATS;
-    searchkey.offset = dev->devitem.dev_id;
+    searchkey.offset = dev->devitem.devid;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
     if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey))
         RtlCopyMemory(dev->stats, tp.item->data, min(sizeof(uint64_t) * 5, tp.item->size));
 
-    searchkey.objectid = dev->devitem.dev_id;
+    searchkey.objectid = dev->devitem.devid;
     searchkey.type = TYPE_DEV_EXTENT;
     searchkey.offset = 0;
 
@@ -3227,7 +3227,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     lastaddr = 0;
 
     do {
-        if (tp.item->key.objectid == dev->devitem.dev_id && tp.item->key.type == TYPE_DEV_EXTENT) {
+        if (tp.item->key.objectid == dev->devitem.devid && tp.item->key.type == TYPE_DEV_EXTENT) {
             if (tp.item->size >= sizeof(DEV_EXTENT)) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
 
@@ -3254,8 +3254,8 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
         }
     } while (b);
 
-    if (lastaddr < dev->devitem.num_bytes) {
-        Status = add_space_entry(&dev->space, NULL, lastaddr, dev->devitem.num_bytes - lastaddr);
+    if (lastaddr < dev->devitem.total_bytes) {
+        Status = add_space_entry(&dev->space, NULL, lastaddr, dev->devitem.total_bytes - lastaddr);
         if (!NT_SUCCESS(Status)) {
             ERR("add_space_entry returned %08lx\n", Status);
             return Status;
@@ -3277,7 +3277,7 @@ static void add_device_to_list(_In_ device_extension* Vcb, _In_ device* dev) {
     while (le != &Vcb->devices) {
         device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev2->devitem.dev_id > dev->devitem.dev_id) {
+        if (dev2->devitem.devid > dev->devitem.devid) {
             InsertHeadList(le->Blink, &dev->list_entry);
             return;
         }
@@ -3298,12 +3298,12 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-        TRACE("device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", dev->devitem.dev_id,
-            dev->devitem.device_uuid.uuid[0], dev->devitem.device_uuid.uuid[1], dev->devitem.device_uuid.uuid[2], dev->devitem.device_uuid.uuid[3], dev->devitem.device_uuid.uuid[4], dev->devitem.device_uuid.uuid[5], dev->devitem.device_uuid.uuid[6], dev->devitem.device_uuid.uuid[7],
-            dev->devitem.device_uuid.uuid[8], dev->devitem.device_uuid.uuid[9], dev->devitem.device_uuid.uuid[10], dev->devitem.device_uuid.uuid[11], dev->devitem.device_uuid.uuid[12], dev->devitem.device_uuid.uuid[13], dev->devitem.device_uuid.uuid[14], dev->devitem.device_uuid.uuid[15]);
+        TRACE("device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", dev->devitem.devid,
+            dev->devitem.uuid.uuid[0], dev->devitem.uuid.uuid[1], dev->devitem.uuid.uuid[2], dev->devitem.uuid.uuid[3], dev->devitem.uuid.uuid[4], dev->devitem.uuid.uuid[5], dev->devitem.uuid.uuid[6], dev->devitem.uuid.uuid[7],
+            dev->devitem.uuid.uuid[8], dev->devitem.uuid.uuid[9], dev->devitem.uuid.uuid[10], dev->devitem.uuid.uuid[11], dev->devitem.uuid.uuid[12], dev->devitem.uuid.uuid[13], dev->devitem.uuid.uuid[14], dev->devitem.uuid.uuid[15]);
 
-        if (RtlCompareMemory(&dev->devitem.device_uuid, uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-            TRACE("returning device %I64x\n", dev->devitem.dev_id);
+        if (RtlCompareMemory(&dev->devitem.uuid, uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            TRACE("returning device %I64x\n", dev->devitem.devid);
             return dev;
         }
 
@@ -3338,9 +3338,9 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
                 RtlZeroMemory(dev, sizeof(device));
                 dev->devobj = vc->devobj;
                 dev->fileobj = vc->fileobj;
-                dev->devitem.device_uuid = *uuid;
-                dev->devitem.dev_id = vc->devid;
-                dev->devitem.num_bytes = vc->size;
+                dev->devitem.uuid = *uuid;
+                dev->devitem.devid = vc->devid;
+                dev->devitem.total_bytes = vc->size;
                 dev->seeding = vc->seeding;
                 dev->readonly = dev->seeding;
                 dev->reloc = false;
@@ -3528,10 +3528,10 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
         TRACE("(%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
         if (tp.item->key.objectid == 1 && tp.item->key.type == TYPE_DEV_ITEM) {
-            if (tp.item->size < sizeof(DEV_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
+            if (tp.item->size < sizeof(struct btrfs_dev_item)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dev_item));
             } else {
-                DEV_ITEM* di = (DEV_ITEM*)tp.item->data;
+                struct btrfs_dev_item* di = (struct btrfs_dev_item*)tp.item->data;
                 LIST_ENTRY* le;
                 bool done = false;
 
@@ -3539,8 +3539,8 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                 while (le != &Vcb->devices) {
                     device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-                    if (dev->devobj && RtlCompareMemory(&dev->devitem.device_uuid, &di->device_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
-                        RtlCopyMemory(&dev->devitem, tp.item->data, min(tp.item->size, sizeof(DEV_ITEM)));
+                    if (dev->devobj && RtlCompareMemory(&dev->devitem.uuid, &di->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                        RtlCopyMemory(&dev->devitem, tp.item->data, min(tp.item->size, sizeof(struct btrfs_dev_item)));
 
                         if (le != Vcb->devices.Flink)
                             init_device(Vcb, dev, true);
@@ -3564,7 +3564,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                         while (le != &pdode->children) {
                             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
-                            if (RtlCompareMemory(&di->device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                            if (RtlCompareMemory(&di->uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                                 device* dev;
 
                                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
@@ -3578,15 +3578,15 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                                 dev->devobj = vc->devobj;
                                 dev->fileobj = vc->fileobj;
-                                RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
+                                RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(struct btrfs_dev_item)));
                                 dev->seeding = vc->seeding;
                                 init_device(Vcb, dev, false);
 
-                                if (dev->devitem.num_bytes > vc->size) {
-                                    WARN("device %I64x: DEV_ITEM says %I64x bytes, but Windows only reports %I64x\n", tp.item->key.offset,
-                                         dev->devitem.num_bytes, vc->size);
+                                if (dev->devitem.total_bytes > vc->size) {
+                                    WARN("device %I64x: btrfs_dev_item says %I64x bytes, but Windows only reports %I64x\n", tp.item->key.offset,
+                                         dev->devitem.total_bytes, vc->size);
 
-                                    dev->devitem.num_bytes = vc->size;
+                                    dev->devitem.total_bytes = vc->size;
                                 }
 
                                 dev->disk_num = vc->disk_num;
@@ -3604,8 +3604,8 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                         if (!done) {
                             if (!Vcb->options.allow_degraded) {
                                 ERR("volume not found: device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", tp.item->key.offset,
-                                    di->device_uuid.uuid[0], di->device_uuid.uuid[1], di->device_uuid.uuid[2], di->device_uuid.uuid[3], di->device_uuid.uuid[4], di->device_uuid.uuid[5], di->device_uuid.uuid[6], di->device_uuid.uuid[7],
-                                    di->device_uuid.uuid[8], di->device_uuid.uuid[9], di->device_uuid.uuid[10], di->device_uuid.uuid[11], di->device_uuid.uuid[12], di->device_uuid.uuid[13], di->device_uuid.uuid[14], di->device_uuid.uuid[15]);
+                                    di->uuid.uuid[0], di->uuid.uuid[1], di->uuid.uuid[2], di->uuid.uuid[3], di->uuid.uuid[4], di->uuid.uuid[5], di->uuid.uuid[6], di->uuid.uuid[7],
+                                    di->uuid.uuid[8], di->uuid.uuid[9], di->uuid.uuid[10], di->uuid.uuid[11], di->uuid.uuid[12], di->uuid.uuid[13], di->uuid.uuid[14], di->uuid.uuid[15]);
                             } else {
                                 device* dev;
 
@@ -3619,7 +3619,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                                 RtlZeroMemory(dev, sizeof(device));
 
                                 // Missing device, so we keep dev->devobj as NULL
-                                RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(DEV_ITEM)));
+                                RtlCopyMemory(&dev->devitem, di, min(tp.item->size, sizeof(struct btrfs_dev_item)));
                                 InitializeListHead(&dev->trim_list);
 
                                 add_device_to_list(Vcb, dev);
@@ -4676,13 +4676,13 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     dev->devobj = readobj;
     dev->fileobj = fileobj;
-    RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(DEV_ITEM));
+    RtlCopyMemory(&dev->devitem, &Vcb->superblock.dev_item, sizeof(struct btrfs_dev_item));
 
-    if (dev->devitem.num_bytes > readobjsize) {
-        WARN("device %I64x: DEV_ITEM says %I64x bytes, but Windows only reports %I64x\n", dev->devitem.dev_id,
-                dev->devitem.num_bytes, readobjsize);
+    if (dev->devitem.total_bytes > readobjsize) {
+        WARN("device %I64x: btrfs_dev_item says %I64x bytes, but Windows only reports %I64x\n", dev->devitem.devid,
+                dev->devitem.total_bytes, readobjsize);
 
-        dev->devitem.num_bytes = readobjsize;
+        dev->devitem.total_bytes = readobjsize;
     }
 
     dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? true : false;

@@ -2234,7 +2234,7 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
     // All the documentation says that the Linux driver only writes one superblock
     // if it thinks a disk is an SSD, but this doesn't seem to be the case!
 
-    while (superblock_addrs[i] > 0 && device->devitem.num_bytes >= superblock_addrs[i] + sizeof(superblock)) {
+    while (superblock_addrs[i] > 0 && device->devitem.total_bytes >= superblock_addrs[i] + sizeof(superblock)) {
         ULONG sblen = (ULONG)sector_align(sizeof(superblock), Vcb->superblock.sector_size);
         superblock* sb;
         write_superblocks_stripe* stripe;
@@ -2251,7 +2251,7 @@ static NTSTATUS write_superblock(device_extension* Vcb, device* device, write_su
         if (sblen > sizeof(superblock))
             RtlZeroMemory((uint8_t*)sb + sizeof(superblock), sblen - sizeof(superblock));
 
-        RtlCopyMemory(&sb->dev_item, &device->devitem, sizeof(DEV_ITEM));
+        RtlCopyMemory(&sb->dev_item, &device->devitem, sizeof(struct btrfs_dev_item));
         sb->sb_phys_addr = superblock_addrs[i];
 
         calc_superblock_checksum(sb);
@@ -2396,7 +2396,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
         write_superblocks_stripe* stripe = CONTAINING_RECORD(le, write_superblocks_stripe, list_entry);
 
         if (!NT_SUCCESS(stripe->Status)) {
-            ERR("device %I64x returned %08lx\n", stripe->device->devitem.dev_id, stripe->Status);
+            ERR("device %I64x returned %08lx\n", stripe->device->devitem.devid, stripe->Status);
             log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
             Status = stripe->Status;
             goto end;
@@ -4095,12 +4095,12 @@ static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback
 NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    DEV_ITEM* di;
+    struct btrfs_dev_item* di;
     NTSTATUS Status;
 
     searchkey.objectid = 1;
     searchkey.type = TYPE_DEV_ITEM;
-    searchkey.offset = device->devitem.dev_id;
+    searchkey.offset = device->devitem.devid;
 
     Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -4109,7 +4109,7 @@ NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        ERR("error - could not find DEV_ITEM for device %I64x\n", device->devitem.dev_id);
+        ERR("error - could not find btrfs_dev_item for device %I64x\n", device->devitem.devid);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -4119,15 +4119,15 @@ NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp) {
         return Status;
     }
 
-    di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+    di = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dev_item), ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlCopyMemory(di, &device->devitem, sizeof(DEV_ITEM));
+    RtlCopyMemory(di, &device->devitem, sizeof(struct btrfs_dev_item));
 
-    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, device->devitem.devid, di, sizeof(struct btrfs_dev_item), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(di);
@@ -4285,7 +4285,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         de->length = c->chunk_item->size / factor;
         de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
 
-        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.dev_id, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.devid, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(de);
@@ -5643,7 +5643,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
                     c->devices[i]->devitem.bytes_used -= de->length;
 
-                    if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.dev_id) {
+                    if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.devid) {
                         if (cis[i].offset < Vcb->balance.opts[0].drange_start && cis[i].offset + de->length > Vcb->balance.opts[0].drange_start)
                             space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, Vcb->balance.opts[0].drange_start - cis[i].offset, NULL, rollback);
                     } else
@@ -5656,7 +5656,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
             c->devices[i]->devitem.bytes_used -= len;
 
-            if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.dev_id) {
+            if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.devid) {
                 if (cis[i].offset < Vcb->balance.opts[0].drange_start && cis[i].offset + len > Vcb->balance.opts[0].drange_start)
                     space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, Vcb->balance.opts[0].drange_start - cis[i].offset, NULL, rollback);
             } else
@@ -5664,15 +5664,15 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
     }
 
-    // modify DEV_ITEMs in chunk tree
+    // modify btrfs_dev_items in chunk tree
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (c->devices[i]) {
             uint64_t j;
-            DEV_ITEM* di;
+            struct btrfs_dev_item* di;
 
             searchkey.objectid = 1;
             searchkey.type = TYPE_DEV_ITEM;
-            searchkey.offset = c->devices[i]->devitem.dev_id;
+            searchkey.offset = c->devices[i]->devitem.devid;
 
             Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, false, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -5687,15 +5687,15 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                     return Status;
                 }
 
-                di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+                di = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dev_item), ALLOC_TAG);
                 if (!di) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(DEV_ITEM));
+                RtlCopyMemory(di, &c->devices[i]->devitem, sizeof(struct btrfs_dev_item));
 
-                Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
+                Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, c->devices[i]->devitem.devid, di, sizeof(struct btrfs_dev_item), NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     return Status;
@@ -7010,7 +7010,7 @@ static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP
 
     searchkey.objectid = 0;
     searchkey.type = TYPE_DEV_STATS;
-    searchkey.offset = dev->devitem.dev_id;
+    searchkey.offset = dev->devitem.devid;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -7035,7 +7035,7 @@ static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP
 
     RtlCopyMemory(stats, dev->stats, statslen);
 
-    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, dev->devitem.dev_id, stats, statslen, NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, dev->devitem.devid, stats, statslen, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(stats);
@@ -7200,7 +7200,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+                uint64_t space = dev->devitem.total_bytes - dev->devitem.bytes_used;
 
                 if (space >= s1) {
                     s3 = s2;
@@ -7225,7 +7225,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+                uint64_t space = dev->devitem.total_bytes - dev->devitem.bytes_used;
 
                 if (space >= s1) {
                     s4 = s3;
@@ -7255,7 +7255,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+                uint64_t space = dev->devitem.total_bytes - dev->devitem.bytes_used;
 
                 if (space >= s1) {
                     s2 = s1;
@@ -7277,7 +7277,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = (dev->devitem.num_bytes - dev->devitem.bytes_used) / 2;
+                uint64_t space = (dev->devitem.total_bytes - dev->devitem.bytes_used) / 2;
 
                 could_alloc = max(could_alloc, space);
             }
@@ -7292,7 +7292,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+                uint64_t space = dev->devitem.total_bytes - dev->devitem.bytes_used;
 
                 if (space >= s1) {
                     s3 = s2;
@@ -7317,7 +7317,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+                uint64_t space = dev->devitem.total_bytes - dev->devitem.bytes_used;
 
                 if (space >= s1) {
                     s4 = s3;
@@ -7345,7 +7345,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
             if (!dev->readonly) {
-                uint64_t space = dev->devitem.num_bytes - dev->devitem.bytes_used;
+                uint64_t space = dev->devitem.total_bytes - dev->devitem.bytes_used;
 
                 could_alloc = max(could_alloc, space);
             }

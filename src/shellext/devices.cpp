@@ -265,7 +265,7 @@ static void find_devices(HWND, const GUID* guid, const mountmgr& mm, vector<devi
                                     superblock* bsb = (superblock*)sb;
 
                                     RtlCopyMemory(&dev.fs_uuid, &bsb->uuid, sizeof(BTRFS_UUID));
-                                    RtlCopyMemory(&dev.dev_uuid, &bsb->dev_item.device_uuid, sizeof(BTRFS_UUID));
+                                    RtlCopyMemory(&dev.dev_uuid, &bsb->dev_item.uuid, sizeof(BTRFS_UUID));
                                 }
 
                                 break;

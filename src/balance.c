@@ -2567,7 +2567,7 @@ static NTSTATUS remove_superblocks(device* dev) {
 
     RtlZeroMemory(sb, sizeof(superblock));
 
-    while (superblock_addrs[i] > 0 && dev->devitem.num_bytes >= superblock_addrs[i] + sizeof(superblock)) {
+    while (superblock_addrs[i] > 0 && dev->devitem.total_bytes >= superblock_addrs[i] + sizeof(superblock)) {
         Status = write_data_phys(dev->devobj, dev->fileobj, superblock_addrs[i], sb, sizeof(superblock));
 
         if (!NT_SUCCESS(Status)) {
@@ -2607,7 +2607,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
 
     searchkey.objectid = 1;
     searchkey.type = TYPE_DEV_ITEM;
-    searchkey.offset = dev->devitem.dev_id;
+    searchkey.offset = dev->devitem.devid;
 
     Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -2628,7 +2628,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
 
     searchkey.objectid = 0;
     searchkey.type = TYPE_DEV_STATS;
-    searchkey.offset = dev->devitem.dev_id;
+    searchkey.offset = dev->devitem.devid;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -2648,7 +2648,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
     // update superblock
 
     Vcb->superblock.num_devices--;
-    Vcb->superblock.total_bytes -= dev->devitem.num_bytes;
+    Vcb->superblock.total_bytes -= dev->devitem.total_bytes;
     Vcb->devices_loaded--;
 
     RemoveEntryList(&dev->list_entry);
@@ -2683,7 +2683,7 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
         while (le != &pdode->children) {
             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
-            if (RtlCompareMemory(&dev->devitem.device_uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (RtlCompareMemory(&dev->devitem.uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                 PFILE_OBJECT FileObject;
                 PDEVICE_OBJECT mountmgr;
                 UNICODE_STRING mmdevpath;
@@ -2812,7 +2812,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
     dev->num_trim_entries = 0;
 
-    searchkey.objectid = dev->devitem.dev_id;
+    searchkey.objectid = dev->devitem.devid;
     searchkey.type = TYPE_DEV_EXTENT;
     searchkey.offset = 0;
 
@@ -2825,7 +2825,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.objectid == dev->devitem.dev_id && tp.item->key.type == TYPE_DEV_EXTENT) {
+        if (tp.item->key.objectid == dev->devitem.devid && tp.item->key.type == TYPE_DEV_EXTENT) {
             if (tp.item->size >= sizeof(DEV_EXTENT)) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
 
@@ -2848,8 +2848,8 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
         }
     } while (b);
 
-    if (lastoff < dev->devitem.num_bytes)
-        add_trim_entry_avoid_sb(Vcb, dev, lastoff, dev->devitem.num_bytes - lastoff);
+    if (lastoff < dev->devitem.total_bytes)
+        add_trim_entry_avoid_sb(Vcb, dev, lastoff, dev->devitem.total_bytes - lastoff);
 
     if (dev->num_trim_entries == 0)
         return;
@@ -3005,7 +3005,7 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
 
     // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
 
-    space_list_add2(&dev->space, NULL, 0x100000, dev->devitem.num_bytes - 0x100000, NULL, NULL);
+    space_list_add2(&dev->space, NULL, 0x100000, dev->devitem.total_bytes - 0x100000, NULL, NULL);
 
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
@@ -3016,7 +3016,7 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
         for (n = 0; n < c->chunk_item->num_stripes; n++) {
             uint64_t stripe_size = 0;
 
-            if (cis[n].dev_id == dev->devitem.dev_id) {
+            if (cis[n].dev_id == dev->devitem.devid) {
                 if (stripe_size == 0) {
                     uint16_t factor;
 
@@ -3398,7 +3398,7 @@ end:
             while (le != &Vcb->devices) {
                 device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-                if (dev2->devitem.dev_id == Vcb->balance.opts[0].devid) {
+                if (dev2->devitem.devid == Vcb->balance.opts[0].devid) {
                     dev = dev2;
                     break;
                 }
@@ -3428,7 +3428,7 @@ end:
             while (le != &Vcb->devices) {
                 device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-                if (dev2->devitem.dev_id == Vcb->balance.opts[0].devid) {
+                if (dev2->devitem.devid == Vcb->balance.opts[0].devid) {
                     dev = dev2;
                     break;
                 }
@@ -3450,20 +3450,20 @@ end:
             } else {
                 uint64_t old_size;
 
-                old_size = dev->devitem.num_bytes;
-                dev->devitem.num_bytes = Vcb->balance.opts[0].drange_start;
+                old_size = dev->devitem.total_bytes;
+                dev->devitem.total_bytes = Vcb->balance.opts[0].drange_start;
 
                 Status = update_dev_item(Vcb, dev, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("update_dev_item returned %08lx\n", Status);
-                    dev->devitem.num_bytes = old_size;
+                    dev->devitem.total_bytes = old_size;
                     Vcb->balance.status = Status;
 
                     Status = regenerate_space_list(Vcb, dev);
                     if (!NT_SUCCESS(Status))
                         WARN("regenerate_space_list returned %08lx\n", Status);
                 } else {
-                    Vcb->superblock.total_bytes -= old_size - dev->devitem.num_bytes;
+                    Vcb->superblock.total_bytes -= old_size - dev->devitem.total_bytes;
 
                     Status = do_write(Vcb, NULL);
                     if (!NT_SUCCESS(Status))
@@ -3828,7 +3828,7 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
     while (le != &Vcb->devices) {
         device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev2->devitem.dev_id == devid)
+        if (dev2->devitem.devid == devid)
             dev = dev2;
 
         if (!dev2->readonly)

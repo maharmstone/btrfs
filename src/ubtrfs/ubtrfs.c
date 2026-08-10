@@ -140,7 +140,7 @@ typedef struct {
 } btrfs_root;
 
 typedef struct {
-    DEV_ITEM dev_item;
+    struct btrfs_dev_item dev_item;
     uint64_t last_alloc;
 } btrfs_dev;
 
@@ -355,7 +355,7 @@ static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev
     de.length = size;
     de.chunktree_uuid = *chunkuuid;
 
-    add_item(dev_root, dev->dev_item.dev_id, TYPE_DEV_EXTENT, off, &de, sizeof(DEV_EXTENT));
+    add_item(dev_root, dev->dev_item.devid, TYPE_DEV_EXTENT, off, &de, sizeof(DEV_EXTENT));
 
     return off;
 }
@@ -380,19 +380,19 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     }
 
     if (flags & BLOCK_FLAG_METADATA) {
-        if (dev->dev_item.num_bytes > 0xC80000000) // 50 GB
+        if (dev->dev_item.total_bytes > 0xC80000000) // 50 GB
             size = 0x40000000; // 1 GB
         else
             size = 0x10000000; // 256 MB
     } else // BLOCK_FLAG_SYSTEM
         size = 0x800000;
 
-    size = min(size, dev->dev_item.num_bytes / 10); // cap at 10%
+    size = min(size, dev->dev_item.total_bytes / 10); // cap at 10%
     size &= ~(stripe_length - 1);
 
     stripes = flags & BLOCK_FLAG_DUPLICATE ? 2 : 1;
 
-    if (dev->dev_item.num_bytes - dev->dev_item.bytes_used < stripes * size) // not enough space
+    if (dev->dev_item.total_bytes - dev->dev_item.bytes_used < stripes * size) // not enough space
         return NULL;
 
     c = malloc(sizeof(btrfs_chunk));
@@ -416,9 +416,9 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
 
     for (i = 0; i < stripes; i++) {
-        cis[i].dev_id = dev->dev_item.dev_id;
+        cis[i].dev_id = dev->dev_item.devid;
         cis[i].offset = find_chunk_offset(size, c->offset, dev, dev_root, chunkuuid);
-        cis[i].dev_uuid = dev->dev_item.device_uuid;
+        cis[i].dev_uuid = dev->dev_item.uuid;
     }
 
     add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE)));
@@ -685,20 +685,20 @@ static void get_uuid(BTRFS_UUID* uuid) {
 }
 
 static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* fsuuid, uint32_t sector_size) {
-    dev->dev_item.dev_id = id;
-    dev->dev_item.num_bytes = size;
+    dev->dev_item.devid = id;
+    dev->dev_item.total_bytes = size;
     dev->dev_item.bytes_used = 0;
-    dev->dev_item.optimal_io_align = sector_size;
-    dev->dev_item.optimal_io_width = sector_size;
-    dev->dev_item.minimal_io_size = sector_size;
+    dev->dev_item.io_align = sector_size;
+    dev->dev_item.io_width = sector_size;
+    dev->dev_item.sector_size = sector_size;
     dev->dev_item.type = 0;
     dev->dev_item.generation = 0;
     dev->dev_item.start_offset = 0;
     dev->dev_item.dev_group = 0;
     dev->dev_item.seek_speed = 0;
     dev->dev_item.bandwidth = 0;
-    get_uuid(&dev->dev_item.device_uuid);
-    dev->dev_item.fs_uuid = *fsuuid;
+    get_uuid(&dev->dev_item.uuid);
+    dev->dev_item.fsid = *fsuuid;
 
     dev->last_alloc = 0x100000; // skip first megabyte
 }
@@ -762,7 +762,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->generation = 1;
     sb->root_tree_addr = root_root->header.bytenr;
     sb->chunk_tree_addr = chunk_root->header.bytenr;
-    sb->total_bytes = dev->dev_item.num_bytes;
+    sb->total_bytes = dev->dev_item.total_bytes;
     sb->bytes_used = bytes_used;
     sb->root_dir_objectid = BTRFS_ROOT_TREEDIR;
     sb->num_devices = 1;
@@ -775,7 +775,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->compat_ro_flags = compat_ro_flags;
     sb->incompat_flags = incompat_flags;
     sb->csum_type = def_csum_type;
-    memcpy(&sb->dev_item, &dev->dev_item, sizeof(DEV_ITEM));
+    memcpy(&sb->dev_item, &dev->dev_item, sizeof(struct btrfs_dev_item));
 
     if (label->Length > 0) {
         ULONG utf8len;
@@ -811,7 +811,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     while (superblock_addrs[i] != 0) {
         LARGE_INTEGER off;
 
-        if (superblock_addrs[i] > dev->dev_item.num_bytes)
+        if (superblock_addrs[i] > dev->dev_item.total_bytes)
             break;
 
         sb->sb_phys_addr = superblock_addrs[i];
@@ -1096,7 +1096,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
 
-    add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.dev_id, &dev.dev_item, sizeof(DEV_ITEM));
+    add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.devid, &dev.dev_item, sizeof(struct btrfs_dev_item));
 
     set_default_subvol(root_root, node_size);
 
@@ -1222,7 +1222,7 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     }
 
     fsuuid = sb->uuid;
-    devuuid = sb->dev_item.device_uuid;
+    devuuid = sb->dev_item.uuid;
 
     free(sb);
 

@@ -150,7 +150,7 @@ static bool find_new_dup_stripes(device_extension* Vcb, stripe* stripes, uint64_
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
         if (!dev->readonly && !dev->reloc && dev->devobj) {
-            uint64_t usage = (dev->devitem.bytes_used * 4096) / dev->devitem.num_bytes;
+            uint64_t usage = (dev->devitem.bytes_used * 4096) / dev->devitem.total_bytes;
 
             // favour devices which have been used the least
             if (usage < devusage) {
@@ -278,7 +278,7 @@ static bool find_new_stripe(device_extension* Vcb, stripe* stripes, uint16_t i, 
         }
 
         if (!skip) {
-            usage = (dev->devitem.bytes_used * 4096) / dev->devitem.num_bytes;
+            usage = (dev->devitem.bytes_used * 4096) / dev->devitem.total_bytes;
 
             // favour devices which have been used the least
             if (usage < devusage) {
@@ -379,7 +379,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     le = Vcb->devices.Flink;
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
-        total_size += dev->devitem.num_bytes;
+        total_size += dev->devitem.total_bytes;
 
         le = le->Flink;
     }
@@ -581,7 +581,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     c->chunk_item->type = flags;
     c->chunk_item->opt_io_alignment = (uint32_t)c->chunk_item->stripe_length;
     c->chunk_item->opt_io_width = (uint32_t)c->chunk_item->stripe_length;
-    c->chunk_item->sector_size = stripes[0].device->devitem.minimal_io_size;
+    c->chunk_item->sector_size = stripes[0].device->devitem.sector_size;
     c->chunk_item->num_stripes = num_stripes;
     c->chunk_item->sub_stripes = sub_stripes;
 
@@ -594,14 +594,14 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
 
     cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
     for (i = 0; i < num_stripes; i++) {
-        cis[i].dev_id = stripes[i].device->devitem.dev_id;
+        cis[i].dev_id = stripes[i].device->devitem.devid;
 
         if (type == BLOCK_FLAG_DUPLICATE && i == 1 && stripes[i].dh == stripes[0].dh)
             cis[i].offset = stripes[0].dh->address + stripe_size;
         else
             cis[i].offset = stripes[i].dh->address;
 
-        cis[i].dev_uuid = stripes[i].device->devitem.device_uuid;
+        cis[i].dev_uuid = stripes[i].device->devitem.uuid;
 
         c->devices[i] = stripes[i].device;
     }

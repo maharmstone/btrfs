@@ -1477,11 +1477,11 @@ static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
         }
 
         dev->next_entry = 0;
-        dev->dev_id = dev2->devitem.dev_id;
+        dev->dev_id = dev2->devitem.devid;
         dev->readonly = (Vcb->readonly || dev2->readonly) ? true : false;
         dev->device_number = dev2->disk_num;
         dev->partition_number = dev2->part_num;
-        dev->size = dev2->devitem.num_bytes;
+        dev->size = dev2->devitem.total_bytes;
 
         if (dev2->devobj) {
             GET_LENGTH_INFORMATION gli;
@@ -2667,7 +2667,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
     }
 
     fsuuid = sb->uuid;
-    devuuid = sb->dev_item.device_uuid;
+    devuuid = sb->dev_item.uuid;
 
     ExFreePool(sb);
 
@@ -2688,7 +2688,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
                 while (le2 != &Vcb->devices) {
                     device* dev = CONTAINING_RECORD(le2, device, list_entry);
 
-                    if (RtlCompareMemory(&dev->devitem.device_uuid, &devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                    if (RtlCompareMemory(&dev->devitem.uuid, &devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
                         ExReleaseResourceLite(&Vcb->tree_lock);
                         ExReleaseResourceLite(&global_loading_lock);
                         return STATUS_DEVICE_NOT_READY;
@@ -2738,7 +2738,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     HANDLE h;
     LIST_ENTRY* le;
     device* dev;
-    DEV_ITEM* di;
+    struct btrfs_dev_item* di;
     uint64_t dev_id, size;
     uint8_t* mb;
     uint64_t* stats;
@@ -2924,38 +2924,38 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     while (le != &Vcb->devices) {
         device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev2->devitem.dev_id > dev_id)
-            dev_id = dev2->devitem.dev_id;
+        if (dev2->devitem.devid > dev_id)
+            dev_id = dev2->devitem.devid;
 
         le = le->Flink;
     }
 
     dev_id++;
 
-    dev->devitem.dev_id = dev_id;
-    dev->devitem.num_bytes = size;
+    dev->devitem.devid = dev_id;
+    dev->devitem.total_bytes = size;
     dev->devitem.bytes_used = 0;
-    dev->devitem.optimal_io_align = Vcb->superblock.sector_size;
-    dev->devitem.optimal_io_width = Vcb->superblock.sector_size;
-    dev->devitem.minimal_io_size = Vcb->superblock.sector_size;
+    dev->devitem.io_align = Vcb->superblock.sector_size;
+    dev->devitem.io_width = Vcb->superblock.sector_size;
+    dev->devitem.sector_size = Vcb->superblock.sector_size;
     dev->devitem.type = 0;
     dev->devitem.generation = 0;
     dev->devitem.start_offset = 0;
     dev->devitem.dev_group = 0;
     dev->devitem.seek_speed = 0;
     dev->devitem.bandwidth = 0;
-    get_uuid(&dev->devitem.device_uuid);
-    dev->devitem.fs_uuid = Vcb->superblock.uuid;
+    get_uuid(&dev->devitem.uuid);
+    dev->devitem.fsid = Vcb->superblock.uuid;
 
-    di = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_ITEM), ALLOC_TAG);
+    di = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dev_item), ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
         goto end;
     }
 
-    RtlCopyMemory(di, &dev->devitem, sizeof(DEV_ITEM));
+    RtlCopyMemory(di, &dev->devitem, sizeof(struct btrfs_dev_item));
 
-    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->dev_id, di, sizeof(DEV_ITEM), NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->chunk_root, 1, TYPE_DEV_ITEM, di->devid, di, sizeof(struct btrfs_dev_item), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(di);
@@ -2974,7 +2974,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
 
     searchkey.objectid = 0;
     searchkey.type = TYPE_DEV_STATS;
-    searchkey.offset = di->dev_id;
+    searchkey.offset = di->devid;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -2992,7 +2992,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         }
     }
 
-    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->dev_id, stats, sizeof(uint64_t) * 5, NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->dev_root, 0, TYPE_DEV_STATS, di->devid, stats, sizeof(uint64_t) * 5, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(stats);
@@ -3031,7 +3031,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         goto end;
     }
 
-    vc->uuid = dev->devitem.device_uuid;
+    vc->uuid = dev->devitem.uuid;
     vc->devid = dev_id;
     vc->generation = Vcb->superblock.generation;
     vc->devobj = DeviceObject;
@@ -3184,7 +3184,7 @@ static NTSTATUS reset_stats(device_extension* Vcb, void* data, ULONG length, KPR
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev->devitem.dev_id == devid) {
+        if (dev->devitem.devid == devid) {
             RtlZeroMemory(dev->stats, sizeof(uint64_t) * 5);
             dev->stats_changed = true;
             Vcb->stats_changed = true;
@@ -4728,7 +4728,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
     while (le != &Vcb->devices) {
         device* dev2 = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev2->devitem.dev_id == br->device) {
+        if (dev2->devitem.devid == br->device) {
             dev = dev2;
             break;
         }
@@ -4754,13 +4754,13 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
         goto end;
     }
 
-    if (br->size > 0 && dev->devitem.num_bytes == br->size) {
+    if (br->size > 0 && dev->devitem.total_bytes == br->size) {
         TRACE("size unchanged, returning STATUS_SUCCESS\n");
         Status = STATUS_SUCCESS;
         goto end;
     }
 
-    if (br->size > 0 && dev->devitem.num_bytes > br->size) { // shrink device
+    if (br->size > 0 && dev->devitem.total_bytes > br->size) { // shrink device
         bool need_balance = true;
         uint64_t old_size, delta;
 
@@ -4768,7 +4768,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
         while (le != &dev->space) {
             space* s = CONTAINING_RECORD(le, space, list_entry);
 
-            if (s->address <= br->size && s->address + s->size >= dev->devitem.num_bytes) {
+            if (s->address <= br->size && s->address + s->size >= dev->devitem.total_bytes) {
                 need_balance = false;
                 break;
             }
@@ -4776,7 +4776,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             le = le->Flink;
         }
 
-        delta = dev->devitem.num_bytes - br->size;
+        delta = dev->devitem.total_bytes - br->size;
 
         if (need_balance) {
             OBJECT_ATTRIBUTES oa;
@@ -4792,9 +4792,9 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
 
             for (i = 0; i < 3; i++) {
                 Vcb->balance.opts[i].flags = BTRFS_BALANCE_OPTS_ENABLED | BTRFS_BALANCE_OPTS_DEVID | BTRFS_BALANCE_OPTS_DRANGE;
-                Vcb->balance.opts[i].devid = dev->devitem.dev_id;
+                Vcb->balance.opts[i].devid = dev->devitem.devid;
                 Vcb->balance.opts[i].drange_start = br->size;
-                Vcb->balance.opts[i].drange_end = dev->devitem.num_bytes;
+                Vcb->balance.opts[i].drange_end = dev->devitem.total_bytes;
             }
 
             Vcb->balance.paused = false;
@@ -4817,13 +4817,13 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             goto end;
         }
 
-        old_size = dev->devitem.num_bytes;
-        dev->devitem.num_bytes = br->size;
+        old_size = dev->devitem.total_bytes;
+        dev->devitem.total_bytes = br->size;
 
         Status = update_dev_item(Vcb, dev, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_dev_item returned %08lx\n", Status);
-            dev->devitem.num_bytes = old_size;
+            dev->devitem.total_bytes = old_size;
             goto end;
         }
 
@@ -4844,7 +4844,7 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
         if (br->size == 0) {
             br->size = gli.Length.QuadPart;
 
-            if (dev->devitem.num_bytes == br->size) {
+            if (dev->devitem.total_bytes == br->size) {
                 TRACE("size unchanged, returning STATUS_SUCCESS\n");
                 Status = STATUS_SUCCESS;
                 goto end;
@@ -4861,19 +4861,19 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             goto end;
         }
 
-        delta = br->size - dev->devitem.num_bytes;
+        delta = br->size - dev->devitem.total_bytes;
 
-        old_size = dev->devitem.num_bytes;
-        dev->devitem.num_bytes = br->size;
+        old_size = dev->devitem.total_bytes;
+        dev->devitem.total_bytes = br->size;
 
         Status = update_dev_item(Vcb, dev, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_dev_item returned %08lx\n", Status);
-            dev->devitem.num_bytes = old_size;
+            dev->devitem.total_bytes = old_size;
             goto end;
         }
 
-        space_list_add2(&dev->space, NULL, dev->devitem.num_bytes, delta, NULL, NULL);
+        space_list_add2(&dev->space, NULL, dev->devitem.total_bytes, delta, NULL, NULL);
 
         Vcb->superblock.total_bytes += delta;
     }

@@ -113,7 +113,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
             itemsize += (ULONG)offsetof(btrfs_filesystem_device, name[0]);
             length -= (ULONG)offsetof(btrfs_filesystem_device, name[0]);
 
-            RtlCopyMemory(&bfd->uuid, &dev->devitem.device_uuid, sizeof(BTRFS_UUID));
+            RtlCopyMemory(&bfd->uuid, &dev->devitem.uuid, sizeof(BTRFS_UUID));
 
             if (dev->devobj) {
                 Status = dev_ioctl(dev->devobj, IOCTL_MOUNTDEV_QUERY_DEVICE_NAME, NULL, 0, &mdn, sizeof(MOUNTDEV_NAME), true, NULL);
