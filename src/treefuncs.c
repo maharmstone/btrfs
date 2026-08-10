@@ -107,10 +107,10 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         t->size += t->header.nritems * sizeof(struct btrfs_item);
         t->buf = buf;
     } else {
-        internal_node* in = (internal_node*)(buf + sizeof(struct btrfs_header));
+        struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.nritems * sizeof(internal_node)) + sizeof(struct btrfs_header) > Vcb->superblock.node_size) {
+        if ((t->header.nritems * sizeof(struct btrfs_key_ptr)) + sizeof(struct btrfs_header) > Vcb->superblock.node_size) {
             ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -126,7 +126,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
 
             td->key = in[i].key;
 
-            td->treeholder.address = in[i].address;
+            td->treeholder.address = in[i].blockptr;
             td->treeholder.generation = in[i].generation;
             td->treeholder.tree = NULL;
             td->ignore = false;
@@ -135,7 +135,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             InsertTailList(&t->itemlist, &td->list_entry);
         }
 
-        t->size = t->header.nritems * sizeof(internal_node);
+        t->size = t->header.nritems * sizeof(struct btrfs_key_ptr);
         t->buf = NULL;
     }
 
@@ -994,7 +994,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         if (t->paritem && t->paritem->ignore) {
             t->paritem->ignore = false;
             t->parent->header.nritems++;
-            t->parent->size += sizeof(internal_node);
+            t->parent->size += sizeof(struct btrfs_key_ptr);
         }
 
         t->header.generation = Vcb->superblock.generation;
@@ -1034,7 +1034,7 @@ NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
     if (tp->tree->header.level == 0)
         tp->tree->size -= sizeof(struct btrfs_item) + tp->item->size;
     else
-        tp->tree->size -= sizeof(internal_node);
+        tp->tree->size -= sizeof(struct btrfs_key_ptr);
 
     gen = tp->tree->Vcb->superblock.generation;
 
@@ -2339,7 +2339,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 if (t->paritem && t->paritem->ignore) {
                     t->paritem->ignore = false;
                     t->parent->header.nritems++;
-                    t->parent->size += sizeof(internal_node);
+                    t->parent->size += sizeof(struct btrfs_key_ptr);
                 }
 
                 t->header.generation = Vcb->superblock.generation;

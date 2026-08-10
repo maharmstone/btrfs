@@ -173,11 +173,11 @@ struct btrfs_item {
     uint32_t size;
 };
 
-typedef struct {
+struct btrfs_key_ptr {
     struct btrfs_key key;
-    uint64_t address;
+    uint64_t blockptr;
     uint64_t generation;
-} internal_node;
+};
 
 typedef struct {
     uint64_t dev_id;

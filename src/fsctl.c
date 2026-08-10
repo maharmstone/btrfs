@@ -164,14 +164,14 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
         }
     } else {
         uint32_t i;
-        internal_node* in = (internal_node*)&th[1];
+        struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)&th[1];
 
         for (i = 0; i < th->nritems; i++) {
             TREE_BLOCK_REF tbr;
 
             tbr.offset = subvol->id;
 
-            Status = increase_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, th->level - 1, Irp);
+            Status = increase_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr, NULL, th->level - 1, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("increase_extent_refcount returned %08lx\n", Status);
                 goto end;

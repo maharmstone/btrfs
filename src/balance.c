@@ -443,17 +443,17 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     if (ei->flags & EXTENT_ITEM_SHARED_BACKREFS || mr->data->flags & HEADER_FLAG_SHARED_BACKREF || !(mr->data->flags & HEADER_FLAG_MIXED_BACKREF)) {
         if (mr->data->level > 0) {
             uint16_t i;
-            internal_node* in = (internal_node*)&mr->data[1];
+            struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)&mr->data[1];
 
             for (i = 0; i < mr->data->nritems; i++) {
-                uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, in[i].address, mr->address, NULL);
+                uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, in[i].blockptr, mr->address, NULL);
 
                 if (sbrrc > 0) {
                     SHARED_BLOCK_REF sbr;
 
                     sbr.offset = mr->new_address;
 
-                    Status = increase_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, NULL);
+                    Status = increase_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("increase_extent_refcount returned %08lx\n", Status);
                         return Status;
@@ -461,7 +461,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
 
                     sbr.offset = mr->address;
 
-                    Status = decrease_extent_refcount(Vcb, in[i].address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                    Status = decrease_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
                                                       sbr.offset, false, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("decrease_extent_refcount returned %08lx\n", Status);
@@ -818,11 +818,11 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
 
                     if (ref->parent) {
                         uint16_t i;
-                        internal_node* in = (internal_node*)&ref->parent->data[1];
+                        struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)&ref->parent->data[1];
 
                         for (i = 0; i < ref->parent->data->nritems; i++) {
-                            if (in[i].address == mr->address) {
-                                in[i].address = mr->new_address;
+                            if (in[i].blockptr == mr->address) {
+                                in[i].blockptr = mr->new_address;
                                 break;
                             }
                         }

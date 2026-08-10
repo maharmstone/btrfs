@@ -1951,7 +1951,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             if (t->header.level == 0)
                 size += num_items * sizeof(struct btrfs_item);
             else
-                size += num_items * sizeof(internal_node);
+                size += num_items * sizeof(struct btrfs_key_ptr);
 
             if (num_items != t->header.nritems) {
                 ERR("tree %I64x, level %x: num_items was %x, expected %x\n", t->root->id, t->header.level, num_items, t->header.nritems);
@@ -2028,7 +2028,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                     le2 = le2->Flink;
                 }
             } else {
-                internal_node* itemptr = (internal_node*)body;
+                struct btrfs_key_ptr* itemptr = (struct btrfs_key_ptr*)body;
                 int i = 0;
 
                 le2 = t->itemlist.Flink;
@@ -2036,7 +2036,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                     tree_data* td = CONTAINING_RECORD(le2, tree_data, list_entry);
                     if (!td->ignore) {
                         itemptr[i].key = td->key;
-                        itemptr[i].address = td->treeholder.address;
+                        itemptr[i].blockptr = td->treeholder.address;
                         itemptr[i].generation = td->treeholder.generation;
                         i++;
                     }
@@ -3104,7 +3104,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
         nt->paritem = td;
 
         nt->parent->header.nritems++;
-        nt->parent->size += sizeof(internal_node);
+        nt->parent->size += sizeof(struct btrfs_key_ptr);
 
         goto end;
     }
@@ -3145,7 +3145,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     pt->new_address = 0;
     pt->has_new_address = false;
     pt->updated_extents = false;
-    pt->size = pt->header.nritems * sizeof(internal_node);
+    pt->size = pt->header.nritems * sizeof(struct btrfs_key_ptr);
     pt->uniqueness_determined = true;
     pt->is_unique = true;
     pt->list_entry_hash.Flink = NULL;
@@ -3219,7 +3219,7 @@ static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
             if (t->header.level == 0)
                 ds = sizeof(struct btrfs_item) + td->size;
             else
-                ds = sizeof(internal_node);
+                ds = sizeof(struct btrfs_key_ptr);
 
             if (numitems == 0 && ds > Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
                 ERR("(%I64x,%x,%I64x) in tree %I64x is too large (%x > %Ix)\n",
@@ -3428,7 +3428,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
         if (!nextparitem->ignore) {
             nextparitem->ignore = true;
             next_tree->parent->header.nritems--;
-            next_tree->parent->size -= sizeof(internal_node);
+            next_tree->parent->size -= sizeof(struct btrfs_key_ptr);
 
             *done_deletions = true;
         }
@@ -3465,7 +3465,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
                 if (next_tree->header.level == 0)
                     size = sizeof(struct btrfs_item) + td->size;
                 else
-                    size = sizeof(internal_node);
+                    size = sizeof(struct btrfs_key_ptr);
             } else
                 size = 0;
 
@@ -3712,7 +3712,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                         if (!t->paritem->ignore) {
                             t->paritem->ignore = true;
                             t->parent->header.nritems--;
-                            t->parent->size -= sizeof(internal_node);
+                            t->parent->size -= sizeof(struct btrfs_key_ptr);
                         }
 
                         RemoveEntryList(&t->paritem->list_entry);

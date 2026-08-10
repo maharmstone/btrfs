@@ -406,7 +406,7 @@ static void log_tree_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 static void log_tree_checksum_error_shared(device_extension* Vcb, uint64_t offset, uint64_t address, uint64_t devid) {
     struct btrfs_header* tree;
     NTSTATUS Status;
-    internal_node* in;
+    struct btrfs_key_ptr* in;
     ULONG i;
 
     tree = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
@@ -426,10 +426,10 @@ static void log_tree_checksum_error_shared(device_extension* Vcb, uint64_t offse
         goto end;
     }
 
-    in = (internal_node*)&tree[1];
+    in = (struct btrfs_key_ptr*)&tree[1];
 
     for (i = 0; i < tree->nritems; i++) {
-        if (in[i].address == address) {
+        if (in[i].blockptr == address) {
             log_tree_checksum_error(Vcb, address, devid, tree->owner, tree->level - 1, &in[i].key);
             break;
         }

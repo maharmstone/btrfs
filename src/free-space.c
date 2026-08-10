@@ -2007,7 +2007,7 @@ after_tree_walk:
                 if (t->paritem && t->paritem->ignore) {
                     t->paritem->ignore = false;
                     t->parent->header.nritems++;
-                    t->parent->size += sizeof(internal_node);
+                    t->parent->size += sizeof(struct btrfs_key_ptr);
                 }
 
                 t->header.generation = Vcb->superblock.generation;

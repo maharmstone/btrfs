@@ -2914,7 +2914,7 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
                 WARN("superblock sector size was 0\n");
             else if (sb->sector_size & (sb->sector_size - 1))
                 WARN("superblock sector size was not power of 2\n");
-            else if (sb->node_size < sizeof(struct btrfs_header) + sizeof(internal_node) || sb->node_size > 0x10000)
+            else if (sb->node_size < sizeof(struct btrfs_header) + sizeof(struct btrfs_key_ptr) || sb->node_size > 0x10000)
                 WARN("invalid node size %x\n", sb->node_size);
             else if ((sb->node_size % sb->sector_size) != 0)
                 WARN("node size %x was not a multiple of sector_size %x\n", sb->node_size, sb->sector_size);
