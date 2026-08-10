@@ -225,26 +225,26 @@ struct btrfs_root_backup {
     uint8_t unused_8[10];
 };
 
-typedef struct {
-    uint8_t checksum[32];
-    BTRFS_UUID uuid;
-    uint64_t sb_phys_addr;
+struct btrfs_super_block {
+    uint8_t csum[32];
+    BTRFS_UUID fsid;
+    uint64_t bytenr;
     uint64_t flags;
     uint64_t magic;
     uint64_t generation;
-    uint64_t root_tree_addr;
-    uint64_t chunk_tree_addr;
-    uint64_t log_tree_addr;
-    uint64_t log_root_transid;
+    uint64_t root;
+    uint64_t chunk_root;
+    uint64_t log_root;
+    uint64_t __unused_log_root_transid;
     uint64_t total_bytes;
     uint64_t bytes_used;
     uint64_t root_dir_objectid;
     uint64_t num_devices;
-    uint32_t sector_size;
-    uint32_t node_size;
-    uint32_t leaf_size;
-    uint32_t stripe_size;
-    uint32_t n;
+    uint32_t sectorsize;
+    uint32_t nodesize;
+    uint32_t __unused_leafsize;
+    uint32_t stripesize;
+    uint32_t sys_chunk_array_size;
     uint64_t chunk_root_generation;
     uint64_t compat_flags;
     uint64_t compat_ro_flags;
@@ -258,11 +258,15 @@ typedef struct {
     uint64_t cache_generation;
     uint64_t uuid_tree_generation;
     BTRFS_UUID metadata_uuid;
-    uint64_t reserved[28];
+    uint64_t nr_global_roots;
+    uint64_t remap_root;
+    uint64_t remap_root_generation;
+    uint8_t remap_root_level;
+    uint8_t reserved[199];
     uint8_t sys_chunk_array[SYS_CHUNK_ARRAY_SIZE];
-    struct btrfs_root_backup backup[BTRFS_NUM_BACKUP_ROOTS];
-    uint8_t reserved2[565];
-} superblock;
+    struct btrfs_root_backup super_roots[BTRFS_NUM_BACKUP_ROOTS];
+    uint8_t padding[565];
+};
 
 #define BTRFS_TYPE_UNKNOWN   0
 #define BTRFS_TYPE_FILE      1

@@ -53,7 +53,7 @@ void calc_thread_main(device_extension* Vcb, calc_job* cj) {
             case calc_thread_xxhash:
             case calc_thread_sha256:
             case calc_thread_blake2:
-                cj2->in = (uint8_t*)cj2->in + Vcb->superblock.sector_size;
+                cj2->in = (uint8_t*)cj2->in + Vcb->superblock.sectorsize;
                 cj2->out = (uint8_t*)cj2->out + Vcb->csum_size;
             break;
 
@@ -72,19 +72,19 @@ void calc_thread_main(device_extension* Vcb, calc_job* cj) {
 
         switch (cj2->type) {
             case calc_thread_crc32c:
-                *(uint32_t*)dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sector_size);
+                *(uint32_t*)dest = ~calc_crc32c(0xffffffff, src, Vcb->superblock.sectorsize);
             break;
 
             case calc_thread_xxhash:
-                *(uint64_t*)dest = XXH64(src, Vcb->superblock.sector_size, 0);
+                *(uint64_t*)dest = XXH64(src, Vcb->superblock.sectorsize, 0);
             break;
 
             case calc_thread_sha256:
-                calc_sha256(dest, src, Vcb->superblock.sector_size);
+                calc_sha256(dest, src, Vcb->superblock.sectorsize);
             break;
 
             case calc_thread_blake2:
-                blake2b(dest, BLAKE2_HASH_SIZE, src, Vcb->superblock.sector_size);
+                blake2b(dest, BLAKE2_HASH_SIZE, src, Vcb->superblock.sectorsize);
             break;
 
             case calc_thread_decomp_zlib:

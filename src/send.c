@@ -1700,7 +1700,7 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
 
         ext2->offset = lastoff;
         ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
-        ext2->data.decoded_size = ed2->num_bytes = sector_align(size - lastoff, Vcb->superblock.sector_size);
+        ext2->data.decoded_size = ed2->num_bytes = sector_align(size - lastoff, Vcb->superblock.sectorsize);
         ext2->data.type = EXTENT_TYPE_REGULAR;
         ed2->address = ed2->size = ed2->offset = 0;
 
@@ -1988,7 +1988,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
                             uint64_t clone_offset = tp.item->key.offset + ed2->offset - seed2->offset;
                             uint64_t clone_len = min(context->lastinode.size - se->offset, ed2->num_bytes);
 
-                            if ((clone_offset & (context->Vcb->superblock.sector_size - 1)) == 0 && (clone_len & (context->Vcb->superblock.sector_size - 1)) == 0) {
+                            if ((clone_offset & (context->Vcb->superblock.sectorsize - 1)) == 0 && (clone_len & (context->Vcb->superblock.sectorsize - 1)) == 0) {
                                 ULONG pos = context->datalen;
 
                                 send_command(context, BTRFS_SEND_CMD_CLONE);
@@ -2291,7 +2291,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             uint64_t off, offset;
             uint8_t* buf;
 
-            buf = ExAllocatePoolWithTag(NonPagedPool, MAX_SEND_WRITE + (2 * context->Vcb->superblock.sector_size), ALLOC_TAG);
+            buf = ExAllocatePoolWithTag(NonPagedPool, MAX_SEND_WRITE + (2 * context->Vcb->superblock.sectorsize), ALLOC_TAG);
             if (!buf) {
                 ERR("out of memory\n");
                 ExFreePool(se);
@@ -2323,7 +2323,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     }
                 }
 
-                skip_start = addr & (context->Vcb->superblock.sector_size - 1);
+                skip_start = addr & (context->Vcb->superblock.sectorsize - 1);
                 addr -= skip_start;
 
                 if (context->lastinode.flags & BTRFS_INODE_NODATASUM)
@@ -2331,7 +2331,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 else {
                     uint32_t len;
 
-                    len = (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size) >> context->Vcb->sector_shift;
+                    len = (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sectorsize) >> context->Vcb->sector_shift;
 
                     csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                     if (!csum) {
@@ -2353,7 +2353,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     }
                 }
 
-                Status = read_data(context->Vcb, addr, (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sector_size),
+                Status = read_data(context->Vcb, addr, (uint32_t)sector_align(length + skip_start, context->Vcb->superblock.sectorsize),
                                    csum, false, buf, NULL, NULL, NULL, 0, false, NormalPagePriority);
                 if (!NT_SUCCESS(Status)) {
                     ERR("read_data returned %08lx\n", Status);

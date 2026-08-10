@@ -104,9 +104,9 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
     if (c) {
         acquire_chunk_lock(c, Vcb);
 
-        c->used -= Vcb->superblock.node_size;
+        c->used -= Vcb->superblock.nodesize;
 
-        space_list_add(c, tp->item->key.objectid, Vcb->superblock.node_size, rollback);
+        space_list_add(c, tp->item->key.objectid, Vcb->superblock.nodesize, rollback);
 
         release_chunk_lock(c, Vcb);
     }
@@ -255,7 +255,7 @@ static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_-
 
     if (tp.item->key.objectid == address && tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM))
         skinny = true;
-    else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
+    else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.nodesize &&
              tp.item->size >= sizeof(EXTENT_ITEM)) {
         EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
@@ -348,7 +348,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             extlen += sizeof(SHARED_BLOCK_REF);
 
         if (all_inline) {
-            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.node_size >> 2)) {
+            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.nodesize >> 2)) {
                 all_inline = false;
                 first_noninline = ref;
             } else
@@ -408,7 +408,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
         Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_METADATA_ITEM, mr->data->level, ei, inline_len, NULL, NULL);
     else
-        Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_EXTENT_ITEM, Vcb->superblock.node_size, ei, inline_len, NULL, NULL);
+        Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_EXTENT_ITEM, Vcb->superblock.nodesize, ei, inline_len, NULL, NULL);
 
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
@@ -453,7 +453,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
 
                     sbr.offset = mr->new_address;
 
-                    Status = increase_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, NULL);
+                    Status = increase_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("increase_extent_refcount returned %08lx\n", Status);
                         return Status;
@@ -461,7 +461,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
 
                     sbr.offset = mr->address;
 
-                    Status = decrease_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                    Status = decrease_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
                                                       sbr.offset, false, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("decrease_extent_refcount returned %08lx\n", Status);
@@ -579,13 +579,13 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
         LIST_ENTRY* le2;
         chunk* pc;
 
-        mr->data = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+        mr->data = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.nodesize, ALLOC_TAG);
         if (!mr->data) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        Status = read_data(Vcb, mr->address, Vcb->superblock.node_size, NULL, true, (uint8_t*)mr->data,
+        Status = read_data(Vcb, mr->address, Vcb->superblock.nodesize, NULL, true, (uint8_t*)mr->data,
                            c && mr->address >= c->offset && mr->address < c->offset + c->chunk_item->size ? c : NULL, &pc, NULL, 0, false, NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data returned %08lx\n", Status);
@@ -745,8 +745,8 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     acquire_chunk_lock(newchunk, Vcb);
 
                     if (newchunk->chunk_item->type == flags && find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
-                        newchunk->used += Vcb->superblock.node_size;
-                        space_list_subtract(newchunk, mr->new_address, Vcb->superblock.node_size, rollback);
+                        newchunk->used += Vcb->superblock.nodesize;
+                        space_list_subtract(newchunk, mr->new_address, Vcb->superblock.nodesize, rollback);
                         done = true;
                     }
 
@@ -763,10 +763,10 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                         if (!c2->readonly && !c2->reloc && c2 != newchunk && c2->chunk_item->type == flags) {
                             acquire_chunk_lock(c2, Vcb);
 
-                            if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.node_size) {
+                            if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.nodesize) {
                                 if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
-                                    c2->used += Vcb->superblock.node_size;
-                                    space_list_subtract(c2, mr->new_address, Vcb->superblock.node_size, rollback);
+                                    c2->used += Vcb->superblock.nodesize;
+                                    space_list_subtract(c2, mr->new_address, Vcb->superblock.nodesize, rollback);
                                     release_chunk_lock(c2, Vcb);
                                     newchunk = c2;
                                     done = true;
@@ -801,8 +801,8 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             Status = STATUS_DISK_FULL;
                             goto end;
                         } else {
-                            newchunk->used += Vcb->superblock.node_size;
-                            space_list_subtract(newchunk, mr->new_address, Vcb->superblock.node_size, rollback);
+                            newchunk->used += Vcb->superblock.nodesize;
+                            space_list_subtract(newchunk, mr->new_address, Vcb->superblock.nodesize, rollback);
                         }
 
                         release_chunk_lock(newchunk, Vcb);
@@ -862,9 +862,9 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             r->treeholder.address = mr->new_address;
 
                             if (r == Vcb->root_root)
-                                Vcb->superblock.root_tree_addr = mr->new_address;
+                                Vcb->superblock.root = mr->new_address;
                             else if (r == Vcb->chunk_root)
-                                Vcb->superblock.chunk_tree_addr = mr->new_address;
+                                Vcb->superblock.chunk_root = mr->new_address;
                             else if (r->root_item.block_number == mr->address) {
                                 struct btrfs_key searchkey;
                                 ROOT_ITEM* ri;
@@ -1032,7 +1032,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 }
 
                 tw->address = mr->new_address;
-                tw->length = Vcb->superblock.node_size;
+                tw->length = Vcb->superblock.nodesize;
                 tw->data = (uint8_t*)mr->data;
                 tw->allocated = false;
 
@@ -1134,7 +1134,7 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* ch
             if (tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
                 tree = true;
                 skinny = true;
-            } else if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
+            } else if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.nodesize &&
                        tp.item->size >= sizeof(EXTENT_ITEM)) {
                 EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
@@ -1566,7 +1566,7 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
         }
 
         if (all_inline) {
-            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.node_size >> 2)) {
+            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.nodesize >> 2)) {
                 all_inline = false;
                 first_noninline = ref;
             } else
@@ -2556,19 +2556,19 @@ static void load_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
 
 static NTSTATUS remove_superblocks(device* dev) {
     NTSTATUS Status;
-    superblock* sb;
+    struct btrfs_super_block* sb;
     int i = 0;
 
-    sb = ExAllocatePoolWithTag(PagedPool, sizeof(superblock), ALLOC_TAG);
+    sb = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_super_block), ALLOC_TAG);
     if (!sb) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlZeroMemory(sb, sizeof(superblock));
+    RtlZeroMemory(sb, sizeof(struct btrfs_super_block));
 
-    while (superblock_addrs[i] > 0 && dev->devitem.total_bytes >= superblock_addrs[i] + sizeof(superblock)) {
-        Status = write_data_phys(dev->devobj, dev->fileobj, superblock_addrs[i], sb, sizeof(superblock));
+    while (superblock_addrs[i] > 0 && dev->devitem.total_bytes >= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+        Status = write_data_phys(dev->devobj, dev->fileobj, superblock_addrs[i], sb, sizeof(struct btrfs_super_block));
 
         if (!NT_SUCCESS(Status)) {
             ExFreePool(sb);

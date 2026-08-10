@@ -3251,7 +3251,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
         uint8_t* buf;
         bool make_inline = end <= fcb->Vcb->options.max_inline;
 
-        buf = ExAllocatePoolWithTag(PagedPool, (ULONG)(make_inline ? (offsetof(EXTENT_DATA, data[0]) + end) : sector_align(end, fcb->Vcb->superblock.sector_size)), ALLOC_TAG);
+        buf = ExAllocatePoolWithTag(PagedPool, (ULONG)(make_inline ? (offsetof(EXTENT_DATA, data[0]) + end) : sector_align(end, fcb->Vcb->superblock.sectorsize)), ALLOC_TAG);
         if (!buf) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -3272,9 +3272,9 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
         }
 
         if (!make_inline) {
-            RtlZeroMemory(buf + end, (ULONG)(sector_align(end, fcb->Vcb->superblock.sector_size) - end));
+            RtlZeroMemory(buf + end, (ULONG)(sector_align(end, fcb->Vcb->superblock.sectorsize) - end));
 
-            Status = do_write_file(fcb, 0, sector_align(end, fcb->Vcb->superblock.sector_size), buf, Irp, false, 0, rollback);
+            Status = do_write_file(fcb, 0, sector_align(end, fcb->Vcb->superblock.sectorsize), buf, Irp, false, 0, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("do_write_file returned %08lx\n", Status);
                 ExFreePool(buf);
@@ -3303,7 +3303,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
             fcb->inode_item_changed = true;
             TRACE("setting st_size to %I64x\n", end);
 
-            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
             fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
             fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
         }
@@ -3312,8 +3312,8 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
         return STATUS_SUCCESS;
     }
 
-    Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sector_size),
-                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
+    Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sectorsize),
+                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08lx\n", Status);
         return Status;
@@ -3323,7 +3323,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
     fcb->inode_item_changed = true;
     TRACE("setting st_size to %I64x\n", end);
 
-    fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+    fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
     fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
     fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
     // FIXME - inform cache manager of this
@@ -3380,7 +3380,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 cur_inline = false;
 
-                length = sector_align(origlength, fcb->Vcb->superblock.sector_size);
+                length = sector_align(origlength, fcb->Vcb->superblock.sectorsize);
 
                 data = ExAllocatePoolWithTag(PagedPool, (ULONG)length, ALLOC_TAG);
                 if (!data) {
@@ -3468,7 +3468,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 fcb->Header.AllocationSize.QuadPart = fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             } else {
-                newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
+                newalloc = sector_align(end, fcb->Vcb->superblock.sectorsize);
 
                 if (newalloc > oldalloc) {
                     if (prealloc) {
@@ -3498,7 +3498,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
             }
         } else {
             if (end > fcb->Vcb->options.max_inline) {
-                newalloc = sector_align(end, fcb->Vcb->superblock.sector_size);
+                newalloc = sector_align(end, fcb->Vcb->superblock.sectorsize);
 
                 if (prealloc) {
                     Status = insert_prealloc_extent(fcb, 0, newalloc, rollback);
@@ -4365,21 +4365,21 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
         if (make_inline) {
             start_data = 0;
-            end_data = sector_align(newlength, fcb->Vcb->superblock.sector_size);
+            end_data = sector_align(newlength, fcb->Vcb->superblock.sectorsize);
             bufhead = sizeof(EXTENT_DATA) - 1;
         } else if (compress) {
             start_data = off64 & ~(uint64_t)(COMPRESSED_EXTENT_SIZE - 1);
             end_data = min(sector_align(off64 + *length, COMPRESSED_EXTENT_SIZE),
-                           sector_align(newlength, fcb->Vcb->superblock.sector_size));
+                           sector_align(newlength, fcb->Vcb->superblock.sectorsize));
             bufhead = 0;
         } else {
-            start_data = off64 & ~(uint64_t)(fcb->Vcb->superblock.sector_size - 1);
-            end_data = sector_align(off64 + *length, fcb->Vcb->superblock.sector_size);
+            start_data = off64 & ~(uint64_t)(fcb->Vcb->superblock.sectorsize - 1);
+            end_data = sector_align(off64 + *length, fcb->Vcb->superblock.sectorsize);
             bufhead = 0;
         }
 
         if (fcb_is_inline(fcb))
-            end_data = max(end_data, sector_align(fcb->inode_item.st_size, Vcb->superblock.sector_size));
+            end_data = max(end_data, sector_align(fcb->inode_item.st_size, Vcb->superblock.sectorsize));
 
         fcb->Header.ValidDataLength.QuadPart = newlength;
         TRACE("fcb %p FileSize = %I64x\n", fcb, fcb->Header.FileSize.QuadPart);

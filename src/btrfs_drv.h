@@ -740,7 +740,7 @@ typedef struct _device_extension {
     LONG chunk_locks_held;
 #endif
     uint64_t devices_loaded;
-    superblock superblock;
+    struct btrfs_super_block superblock;
     unsigned int sector_shift;
     unsigned int csum_size;
     bool readonly;
@@ -1143,7 +1143,7 @@ _Ret_maybenull_
 root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp);
 
 void do_shutdown(PIRP Irp);
-bool check_superblock_checksum(superblock* sb);
+bool check_superblock_checksum(struct btrfs_super_block* sb);
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__
@@ -1462,7 +1462,7 @@ _Dispatch_type_(IRP_MJ_READ)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_read(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 
-NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t length, _In_reads_bytes_opt_(length*sizeof(uint32_t)/Vcb->superblock.sector_size) void* csum,
+NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t length, _In_reads_bytes_opt_(length*sizeof(uint32_t)/Vcb->superblock.sectorsize) void* csum,
                    _In_ bool is_tree, _Out_writes_bytes_(length) uint8_t* buf, _In_opt_ chunk* c, _Out_opt_ chunk** pc, _In_opt_ PIRP Irp, _In_ uint64_t generation, _In_ bool file_read,
                    _In_ ULONG priority);
 NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULONG* pbr, PIRP Irp) __attribute__((nonnull(1, 2)));
@@ -1581,7 +1581,7 @@ NTSTATUS vol_close(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS vol_device_control(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
-void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num);
+void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num);
 NTSTATUS mountmgr_add_drive_letter(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devpath);
 
 _Function_class_(DRIVER_NOTIFICATION_CALLBACK_ROUTINE)
@@ -1780,7 +1780,7 @@ static __inline uint64_t fcb_alloc_size(fcb* fcb) {
     else if (fcb->atts & FILE_ATTRIBUTE_SPARSE_FILE)
         return fcb->inode_item.st_blocks;
     else
-        return sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+        return sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
 }
 
 typedef BOOLEAN (__stdcall *tPsIsDiskCountersEnabled)();

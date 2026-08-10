@@ -1242,7 +1242,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         if (ed && ed->type == EXTENT_TYPE_INLINE)
             fcb->Header.AllocationSize.QuadPart = fcb->inode_item.st_size;
         else
-            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
 
         fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
         fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
@@ -1437,7 +1437,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
 
     overhead = tp.item->size - xattrlen;
 
-    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - overhead;
+    fcb->adsmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - overhead;
 
     fcb->adsdata.Buffer = (char*)xattrdata;
     fcb->adsdata.Length = fcb->adsdata.MaximumLength = xattrlen;
@@ -2838,7 +2838,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     else
         overhead = 0;
 
-    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - (sizeof(DIR_ITEM) - 1);
+    fcb->adsmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - (sizeof(DIR_ITEM) - 1);
 
     if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
         WARN("not enough room for new DIR_ITEM (%Iu + %lu > %lu)\n", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);

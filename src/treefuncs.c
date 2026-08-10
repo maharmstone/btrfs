@@ -67,7 +67,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         struct btrfs_item* ln = (struct btrfs_item*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.nritems * sizeof(struct btrfs_item)) + sizeof(struct btrfs_header) > Vcb->superblock.node_size) {
+        if ((t->header.nritems * sizeof(struct btrfs_item)) + sizeof(struct btrfs_header) > Vcb->superblock.nodesize) {
             ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -88,8 +88,8 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             else
                 td->data = NULL;
 
-            if (ln[i].size + sizeof(struct btrfs_header) + sizeof(struct btrfs_item) > Vcb->superblock.node_size) {
-                ERR("overlarge item in tree %I64x: %u > %Iu\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item));
+            if (ln[i].size + sizeof(struct btrfs_header) + sizeof(struct btrfs_item) > Vcb->superblock.nodesize) {
+                ERR("overlarge item in tree %I64x: %u > %Iu\n", addr, ln[i].size, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item));
                 ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
                 ExFreePool(t);
                 return STATUS_INTERNAL_ERROR;
@@ -110,7 +110,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.nritems * sizeof(struct btrfs_key_ptr)) + sizeof(struct btrfs_header) > Vcb->superblock.node_size) {
+        if ((t->header.nritems * sizeof(struct btrfs_key_ptr)) + sizeof(struct btrfs_header) > Vcb->superblock.nodesize) {
             ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -224,13 +224,13 @@ NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, 
     uint8_t* buf;
     chunk* c;
 
-    buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
+    buf = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.nodesize, ALLOC_TAG);
     if (!buf) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Status = read_data(Vcb, th->address, Vcb->superblock.node_size, NULL, true, buf, NULL,
+    Status = read_data(Vcb, th->address, Vcb->superblock.nodesize, NULL, true, buf, NULL,
                        &c, Irp, th->generation, false, NormalPagePriority);
     if (!NT_SUCCESS(Status)) {
         ERR("read_data returned 0x%08lx\n", Status);
@@ -1324,7 +1324,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
         bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) {
-        uint16_t maxlen = (uint16_t)(Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item));
+        uint16_t maxlen = (uint16_t)(Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item));
 
         switch (bi->operation) {
             case Batch_SetXattr: {

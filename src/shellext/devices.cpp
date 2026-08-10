@@ -262,9 +262,9 @@ static void find_devices(HWND, const GUID* guid, const mountmgr& mm, vector<devi
                                 dev.fstype = fs_ident[i].name;
 
                                 if (dev.fstype == L"Btrfs") {
-                                    superblock* bsb = (superblock*)sb;
+                                    struct btrfs_super_block* bsb = (struct btrfs_super_block*)sb;
 
-                                    RtlCopyMemory(&dev.fs_uuid, &bsb->uuid, sizeof(BTRFS_UUID));
+                                    RtlCopyMemory(&dev.fs_uuid, &bsb->fsid, sizeof(BTRFS_UUID));
                                     RtlCopyMemory(&dev.dev_uuid, &bsb->dev_item.uuid, sizeof(BTRFS_UUID));
                                 }
 

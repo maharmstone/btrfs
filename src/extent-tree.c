@@ -252,7 +252,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, u
             er->hash = get_extent_hash(er->type, &er->edr);
 
             if (all_inline) {
-                if ((uint16_t)(inline_len + 1 + extlen) > Vcb->superblock.node_size >> 2) {
+                if ((uint16_t)(inline_len + 1 + extlen) > Vcb->superblock.nodesize >> 2) {
                     all_inline = false;
                     first_noninline = er;
                 } else
@@ -681,7 +681,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
     offset = get_extent_hash(type, data);
 
-    max_extent_item_size = (Vcb->superblock.node_size >> 4) - sizeof(struct btrfs_item);
+    max_extent_item_size = (Vcb->superblock.nodesize >> 4) - sizeof(struct btrfs_item);
 
     // If we can, add entry as inline extent item
 
@@ -2140,8 +2140,8 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
         return 0;
     }
 
-    if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != Vcb->superblock.node_size) {
-        ERR("extent %I64x had size %I64x, not %x as expected\n", address, tp.item->key.offset, Vcb->superblock.node_size);
+    if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != Vcb->superblock.nodesize) {
+        ERR("extent %I64x had size %I64x, not %x as expected\n", address, tp.item->key.offset, Vcb->superblock.nodesize);
         return 0;
     }
 

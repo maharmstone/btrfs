@@ -703,22 +703,22 @@ static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* 
     dev->last_alloc = 0x100000; // skip first megabyte
 }
 
-static void calc_superblock_checksum(superblock* sb) {
+static void calc_superblock_checksum(struct btrfs_super_block* sb) {
     switch (def_csum_type) {
         case CSUM_TYPE_CRC32C:
-            *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+            *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
 
         case CSUM_TYPE_XXHASH:
-            *(uint64_t*)sb = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+            *(uint64_t*)sb = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
         break;
 
         case CSUM_TYPE_SHA256:
-            calc_sha256((uint8_t*)sb, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+            calc_sha256((uint8_t*)sb, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
 
         case CSUM_TYPE_BLAKE2:
-            blake2b((uint8_t*)sb, BLAKE2_HASH_SIZE, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+            blake2b((uint8_t*)sb, BLAKE2_HASH_SIZE, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
     }
 }
@@ -730,7 +730,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     IO_STATUS_BLOCK iosb;
     ULONG sblen;
     int i;
-    superblock* sb;
+    struct btrfs_super_block* sb;
     struct btrfs_key* key;
     uint64_t bytes_used;
     LIST_ENTRY* le;
@@ -756,21 +756,21 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb = malloc(sblen);
     memset(sb, 0, sblen);
 
-    sb->uuid = *fsuuid;
+    sb->fsid = *fsuuid;
     sb->flags = 1;
     sb->magic = BTRFS_MAGIC;
     sb->generation = 1;
-    sb->root_tree_addr = root_root->header.bytenr;
-    sb->chunk_tree_addr = chunk_root->header.bytenr;
+    sb->root = root_root->header.bytenr;
+    sb->chunk_root = chunk_root->header.bytenr;
     sb->total_bytes = dev->dev_item.total_bytes;
     sb->bytes_used = bytes_used;
     sb->root_dir_objectid = BTRFS_ROOT_TREEDIR;
     sb->num_devices = 1;
-    sb->sector_size = sector_size;
-    sb->node_size = node_size;
-    sb->leaf_size = node_size;
-    sb->stripe_size = sector_size;
-    sb->n = sizeof(struct btrfs_key) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
+    sb->sectorsize = sector_size;
+    sb->nodesize = node_size;
+    sb->__unused_leafsize = node_size;
+    sb->stripesize = sector_size;
+    sb->sys_chunk_array_size = sizeof(struct btrfs_key) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     sb->chunk_root_generation = 1;
     sb->compat_ro_flags = compat_ro_flags;
     sb->incompat_flags = incompat_flags;
@@ -814,7 +814,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
         if (superblock_addrs[i] > dev->dev_item.total_bytes)
             break;
 
-        sb->sb_phys_addr = superblock_addrs[i];
+        sb->bytenr = superblock_addrs[i];
 
         calc_superblock_checksum(sb);
 
@@ -1146,16 +1146,16 @@ static bool look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
     return false;
 }
 
-static bool check_superblock_checksum(superblock* sb) {
+static bool check_superblock_checksum(struct btrfs_super_block* sb) {
     switch (sb->csum_type) {
         case CSUM_TYPE_CRC32C: {
-            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             return crc32 == *(uint32_t*)sb;
         }
 
         case CSUM_TYPE_XXHASH: {
-            uint64_t hash = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+            uint64_t hash = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
 
             return hash == *(uint64_t*)sb;
         }
@@ -1163,7 +1163,7 @@ static bool check_superblock_checksum(superblock* sb) {
         case CSUM_TYPE_SHA256: {
             uint8_t hash[SHA256_HASH_SIZE];
 
-            calc_sha256(hash, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+            calc_sha256(hash, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             return !memcmp(hash, sb, SHA256_HASH_SIZE);
         }
@@ -1171,7 +1171,7 @@ static bool check_superblock_checksum(superblock* sb) {
         case CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
-            blake2b(hash, sizeof(hash), &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+            blake2b(hash, sizeof(hash), &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             return !memcmp(hash, sb, BLAKE2_HASH_SIZE);
         }
@@ -1183,7 +1183,7 @@ static bool check_superblock_checksum(superblock* sb) {
 
 static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     NTSTATUS Status;
-    superblock* sb;
+    struct btrfs_super_block* sb;
     ULONG sblen;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -1221,7 +1221,7 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
         return false;
     }
 
-    fsuuid = sb->uuid;
+    fsuuid = sb->fsid;
     devuuid = sb->dev_item.uuid;
 
     free(sb);

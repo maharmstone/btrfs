@@ -345,7 +345,7 @@ static bool test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
         }
     }
 
-    toread = (ULONG)sector_align(sizeof(superblock), sector_size);
+    toread = (ULONG)sector_align(sizeof(struct btrfs_super_block), sector_size);
     data = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
@@ -354,8 +354,8 @@ static bool test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
 
     Status = sync_read_phys(DeviceObject, FileObject, superblock_addrs[0], toread, data, true);
 
-    if (NT_SUCCESS(Status) && ((superblock*)data)->magic == BTRFS_MAGIC) {
-        superblock* sb = (superblock*)data;
+    if (NT_SUCCESS(Status) && ((struct btrfs_super_block*)data)->magic == BTRFS_MAGIC) {
+        struct btrfs_super_block* sb = (struct btrfs_super_block*)data;
 
         if (check_superblock_checksum(sb)) {
             TRACE("volume found\n");
@@ -363,7 +363,7 @@ static bool test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
             if (length >= superblock_addrs[1] + toread) {
                 ULONG i = 1;
 
-                superblock* sb2 = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
+                struct btrfs_super_block* sb2 = ExAllocatePoolWithTag(NonPagedPool, toread, ALLOC_TAG);
                 if (!sb2) {
                     ERR("out of memory\n");
                     goto deref;
@@ -383,7 +383,7 @@ static bool test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 ExFreePool(sb2);
             }
 
-            if (!fs_ignored(&sb->uuid)) {
+            if (!fs_ignored(&sb->fsid)) {
                 DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
                 add_volume_device(sb, devpath, length, disk_num, part_num);
             }

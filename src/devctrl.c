@@ -33,7 +33,7 @@ static NTSTATUS mountdev_query_stable_guid(device_extension* Vcb, PIRP Irp) {
     if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < sizeof(MOUNTDEV_STABLE_GUID))
         return STATUS_INVALID_PARAMETER;
 
-    RtlCopyMemory(&msg->StableGuid, &Vcb->superblock.uuid, sizeof(GUID));
+    RtlCopyMemory(&msg->StableGuid, &Vcb->superblock.fsid, sizeof(GUID));
 
     Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
 
@@ -86,7 +86,7 @@ static NTSTATUS query_filesystems(void* data, ULONG length) {
         length -= offsetof(btrfs_filesystem, device);
 
         bfs->next_entry = 0;
-        RtlCopyMemory(&bfs->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID));
+        RtlCopyMemory(&bfs->uuid, &Vcb->superblock.fsid, sizeof(BTRFS_UUID));
 
         ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 

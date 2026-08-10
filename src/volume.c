@@ -1074,7 +1074,7 @@ static void __stdcall drive_letter_callback(pdo_device_extension* pdode) {
     ObDereferenceObject(mountmgrfo);
 }
 
-void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num) {
+void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, uint64_t length, ULONG disk_num, ULONG part_num) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     PDEVICE_OBJECT DeviceObject;
@@ -1095,7 +1095,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
     while (le != &pdo_list) {
         pdo_device_extension* pdode2 = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-        if (RtlCompareMemory(&pdode2->uuid, &sb->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        if (RtlCompareMemory(&pdode2->uuid, &sb->fsid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
             pdode = pdode2;
             break;
         }
@@ -1145,7 +1145,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
 
         pdode->type = VCB_TYPE_PDO;
         pdode->pdo = pdo;
-        pdode->uuid = sb->uuid;
+        pdode->uuid = sb->fsid;
 
         ExInitializeResourceLite(&pdode->child_lock);
         InitializeListHead(&pdode->children);
@@ -1153,7 +1153,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         pdode->children_loaded = 0;
 
         pdo->Flags &= ~DO_DEVICE_INITIALIZING;
-        pdo->SectorSize = (USHORT)sb->sector_size;
+        pdo->SectorSize = (USHORT)sb->sectorsize;
 
         ExAcquireResourceExclusiveLite(&pdode->child_lock, true);
 
@@ -1279,7 +1279,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
             pdode->vde->device->Characteristics |= FILE_REMOVABLE_MEDIA;
     }
 
-    if (pdode->num_children == pdode->children_loaded || (pdode->children_loaded == 1 && allow_degraded_mount(&sb->uuid))) {
+    if (pdode->num_children == pdode->children_loaded || (pdode->children_loaded == 1 && allow_degraded_mount(&sb->fsid))) {
         if ((!new_pdo || !no_pnp) && pdode->vde) {
             Status = IoSetDeviceInterfaceState(&pdode->vde->bus_name, true);
             if (!NT_SUCCESS(Status))
@@ -1300,7 +1300,7 @@ void add_volume_device(superblock* sb, PUNICODE_STRING devpath, uint64_t length,
         drive_letter_callback(pdode);
 
     if (new_pdo) {
-        if (RtlCompareMemory(&sb->uuid, &boot_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
+        if (RtlCompareMemory(&sb->fsid, &boot_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
             boot_add_device(pdo);
         else if (no_pnp)
             AddDevice(drvobj, pdo);

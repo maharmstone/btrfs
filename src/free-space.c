@@ -35,7 +35,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, L
     mark_fcb_dirty(fcb);
 
     if (fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size), Irp, rollback);
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             return Status;
@@ -261,11 +261,11 @@ static void load_free_space_bitmap(device_extension* Vcb, chunk* c, uint64_t off
     ULONG runlength, index;
 
     // flip bits
-    for (i = 0; i < Vcb->superblock.sector_size / sizeof(uint32_t); i++) {
+    for (i = 0; i < Vcb->superblock.sectorsize / sizeof(uint32_t); i++) {
         dwords[i] = ~dwords[i];
     }
 
-    len = Vcb->superblock.sector_size * 8;
+    len = Vcb->superblock.sectorsize * 8;
 
     RtlInitializeBitMap(&bmph, data, len);
 
@@ -376,7 +376,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             for (j = 0; j < ci->num_stripes; j++) {
                 ULONG sub_stripes = max(ci->sub_stripes, 1);
 
-                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
                     off_start *= ci->num_stripes / sub_stripes;
@@ -395,7 +395,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint64_t stripe_size = ci->size / (ci->num_stripes - 1);
 
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 1));
                     off_start *= ci->num_stripes - 1;
@@ -413,7 +413,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint64_t stripe_size = ci->size / (ci->num_stripes - 2);
 
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 2));
                     off_start *= ci->num_stripes - 2;
@@ -429,9 +429,9 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             }
         } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_length);
 
                     Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
                     if (!NT_SUCCESS(Status)) {
@@ -475,7 +475,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     uint64_t num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
     LIST_ENTRY *le, rollback;
 
-    // FIXME - does this break if Vcb->superblock.sector_size is not 4096?
+    // FIXME - does this break if Vcb->superblock.sectorsize is not 4096?
 
     TRACE("(%p, %I64x)\n", Vcb, c->offset);
 
@@ -531,7 +531,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     if (num_entries == 0 && num_bitmaps == 0)
         return STATUS_SUCCESS;
 
-    size = (uint32_t)sector_align(c->cache->inode_item.st_size, Vcb->superblock.sector_size);
+    size = (uint32_t)sector_align(c->cache->inode_item.st_size, Vcb->superblock.sectorsize);
 
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
 
@@ -574,7 +574,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     extent_length = (num_sectors * sizeof(uint32_t)) + sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sector_size) >> Vcb->sector_shift) + num_bitmaps);
+    num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sectorsize) >> Vcb->sector_shift) + num_bitmaps);
 
     if (num_valid_sectors > num_sectors) {
         ERR("free space cache for %I64x was %u sectors, expected at least %u\n", c->offset, num_sectors, num_valid_sectors);
@@ -585,7 +585,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     for (uint32_t i = 0; i < num_valid_sectors; i++) {
         if (i << Vcb->sector_shift > sizeof(uint32_t) * num_sectors)
-            crc32 = ~calc_crc32c(0xffffffff, &data[i << Vcb->sector_shift], Vcb->superblock.sector_size);
+            crc32 = ~calc_crc32c(0xffffffff, &data[i << Vcb->sector_shift], Vcb->superblock.sectorsize);
         else if ((i + 1) << Vcb->sector_shift < sizeof(uint32_t) * num_sectors)
             crc32 = 0; // FIXME - test this
         else
@@ -602,7 +602,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     bmpnum = 0;
     for (uint32_t i = 0; i < num_entries; i++) {
         if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
-            off = sector_align(off, Vcb->superblock.sector_size);
+            off = sector_align(off, Vcb->superblock.sectorsize);
 
         fse = (FREE_SPACE_ENTRY*)&data[off];
 
@@ -623,12 +623,12 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     }
 
     if (num_bitmaps > 0) {
-        bmpnum = sector_align(off, Vcb->superblock.sector_size) >> Vcb->sector_shift;
+        bmpnum = sector_align(off, Vcb->superblock.sectorsize) >> Vcb->sector_shift;
         off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
         for (uint32_t i = 0; i < num_entries; i++) {
             if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
-                off = sector_align(off, Vcb->superblock.sector_size);
+                off = sector_align(off, Vcb->superblock.sectorsize);
 
             fse = (FREE_SPACE_ENTRY*)&data[off];
 
@@ -946,7 +946,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
                 }
 
                 if (tp.item->key.type == TYPE_METADATA_ITEM)
-                    lastaddr = tp.item->key.objectid + Vcb->superblock.node_size;
+                    lastaddr = tp.item->key.objectid + Vcb->superblock.nodesize;
                 else
                     lastaddr = tp.item->key.objectid + tp.item->key.offset;
             }
@@ -1077,7 +1077,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
     new_cache_size = sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
 
-    num_sectors = (uint32_t)sector_align(new_cache_size, Vcb->superblock.sector_size) >> Vcb->sector_shift;
+    num_sectors = (uint32_t)sector_align(new_cache_size, Vcb->superblock.sectorsize) >> Vcb->sector_shift;
     num_sectors = (uint32_t)sector_align(num_sectors, CACHE_INCREMENTS);
 
     // adjust for padding
@@ -1085,7 +1085,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
     new_cache_size = sizeof(uint64_t) + (sizeof(uint32_t) * num_sectors);
     for (i = 0; i < num_entries; i++) {
         if ((new_cache_size >> Vcb->sector_shift) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift))
-            new_cache_size = sector_align(new_cache_size, Vcb->superblock.sector_size);
+            new_cache_size = sector_align(new_cache_size, Vcb->superblock.sectorsize);
 
         new_cache_size += sizeof(FREE_SPACE_ENTRY);
     }
@@ -1741,7 +1741,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
         space* s = CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry);
 
         if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
-            off = sector_align(off, Vcb->superblock.sector_size);
+            off = sector_align(off, Vcb->superblock.sectorsize);
 
         fse = (FREE_SPACE_ENTRY*)((uint8_t*)data + off);
 
@@ -1809,7 +1809,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* 
 
     for (uint32_t i = 0; i < num_sectors; i++) {
         if (i << Vcb->sector_shift > sizeof(uint32_t) * num_sectors)
-            checksums[i] = ~calc_crc32c(0xffffffff, (uint8_t*)data + (i << Vcb->sector_shift), Vcb->superblock.sector_size);
+            checksums[i] = ~calc_crc32c(0xffffffff, (uint8_t*)data + (i << Vcb->sector_shift), Vcb->superblock.sectorsize);
         else if ((i + 1) << Vcb->sector_shift < sizeof(uint32_t) * num_sectors)
             checksums[i] = 0; // FIXME - test this
         else

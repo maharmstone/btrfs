@@ -942,7 +942,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     }
 
     for (unsigned int i = 0; i < num_parts; i++) {
-        if (parts[i].cj->space_left >= fcb->Vcb->superblock.sector_size) {
+        if (parts[i].cj->space_left >= fcb->Vcb->superblock.sectorsize) {
             parts[i].compression_type = type;
             parts[i].outlen = parts[i].inlen - parts[i].cj->space_left;
 
@@ -951,8 +951,8 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
             else if (type == BTRFS_COMPRESSION_ZSTD)
                 fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD;
 
-            if ((parts[i].outlen & (fcb->Vcb->superblock.sector_size - 1)) != 0) {
-                unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sector_size);
+            if ((parts[i].outlen & (fcb->Vcb->superblock.sectorsize - 1)) != 0) {
+                unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sectorsize);
 
                 RtlZeroMemory(parts[i].buf + parts[i].outlen, newlen - parts[i].outlen);
 
@@ -960,7 +960,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
             }
         } else {
             parts[i].compression_type = BTRFS_COMPRESSION_NONE;
-            parts[i].outlen = (unsigned int)sector_align(parts[i].inlen, fcb->Vcb->superblock.sector_size);
+            parts[i].outlen = (unsigned int)sector_align(parts[i].inlen, fcb->Vcb->superblock.sectorsize);
         }
 
         buflen += parts[i].outlen;

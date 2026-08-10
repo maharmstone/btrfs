@@ -1097,7 +1097,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
 
             calculate_total_space(Vcb, (uint64_t*)&ffsi->TotalAllocationUnits.QuadPart, (uint64_t*)&ffsi->ActualAvailableAllocationUnits.QuadPart);
             ffsi->CallerAvailableAllocationUnits.QuadPart = ffsi->ActualAvailableAllocationUnits.QuadPart;
-            ffsi->SectorsPerAllocationUnit = Vcb->superblock.sector_size / 512;
+            ffsi->SectorsPerAllocationUnit = Vcb->superblock.sectorsize / 512;
             ffsi->BytesPerSector = 512;
 
             BytesCopied = sizeof(FILE_FS_FULL_SIZE_INFORMATION);
@@ -1112,7 +1112,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
 
             TRACE("FileFsObjectIdInformation\n");
 
-            RtlCopyMemory(ffoi->ObjectId, &Vcb->superblock.uuid.uuid[0], sizeof(UCHAR) * 16);
+            RtlCopyMemory(ffoi->ObjectId, &Vcb->superblock.fsid.uuid[0], sizeof(UCHAR) * 16);
             RtlZeroMemory(ffoi->ExtendedInfo, sizeof(ffoi->ExtendedInfo));
 
             BytesCopied = sizeof(FILE_FS_OBJECTID_INFORMATION);
@@ -1128,7 +1128,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
             TRACE("FileFsSizeInformation\n");
 
             calculate_total_space(Vcb, (uint64_t*)&ffsi->TotalAllocationUnits.QuadPart, (uint64_t*)&ffsi->AvailableAllocationUnits.QuadPart);
-            ffsi->SectorsPerAllocationUnit = Vcb->superblock.sector_size / 512;
+            ffsi->SectorsPerAllocationUnit = Vcb->superblock.sectorsize / 512;
             ffsi->BytesPerSector = 512;
 
             BytesCopied = sizeof(FILE_FS_SIZE_INFORMATION);
@@ -1171,7 +1171,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
 
             RtlZeroMemory(&ffvi, offsetof(FILE_FS_VOLUME_INFORMATION, VolumeLabel));
 
-            ffvi.VolumeSerialNumber = Vcb->superblock.uuid.uuid[12] << 24 | Vcb->superblock.uuid.uuid[13] << 16 | Vcb->superblock.uuid.uuid[14] << 8 | Vcb->superblock.uuid.uuid[15];
+            ffvi.VolumeSerialNumber = Vcb->superblock.fsid.uuid[12] << 24 | Vcb->superblock.fsid.uuid[13] << 16 | Vcb->superblock.fsid.uuid[14] << 8 | Vcb->superblock.fsid.uuid[15];
             ffvi.VolumeLabelLength = orig_label_len;
 
             RtlCopyMemory(data, &ffvi, min(offsetof(FILE_FS_VOLUME_INFORMATION, VolumeLabel), IrpSp->Parameters.QueryVolume.Length));
@@ -1201,10 +1201,10 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
         {
             FILE_FS_SECTOR_SIZE_INFORMATION* data = Irp->AssociatedIrp.SystemBuffer;
 
-            data->LogicalBytesPerSector = Vcb->superblock.sector_size;
-            data->PhysicalBytesPerSectorForAtomicity = Vcb->superblock.sector_size;
-            data->PhysicalBytesPerSectorForPerformance = Vcb->superblock.sector_size;
-            data->FileSystemEffectivePhysicalBytesPerSectorForAtomicity = Vcb->superblock.sector_size;
+            data->LogicalBytesPerSector = Vcb->superblock.sectorsize;
+            data->PhysicalBytesPerSectorForAtomicity = Vcb->superblock.sectorsize;
+            data->PhysicalBytesPerSectorForPerformance = Vcb->superblock.sectorsize;
+            data->FileSystemEffectivePhysicalBytesPerSectorForAtomicity = Vcb->superblock.sectorsize;
             data->ByteOffsetForSectorAlignment = 0;
             data->ByteOffsetForPartitionAlignment = 0;
 
@@ -2057,7 +2057,7 @@ void uninit(_In_ device_extension* Vcb) {
         }
     }
 
-    Status = registry_mark_volume_unmounted(&Vcb->superblock.uuid);
+    Status = registry_mark_volume_unmounted(&Vcb->superblock.fsid);
     if (!NT_SUCCESS(Status) && Status != STATUS_TOO_LATE)
         WARN("registry_mark_volume_unmounted returned %08lx\n", Status);
 
@@ -2208,7 +2208,7 @@ static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT
     // excise extents
 
     if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sector_size), Irp, rollback);
+        Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sectorsize), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             return Status;
@@ -2810,26 +2810,26 @@ exit:
     return Status;
 }
 
-bool check_superblock_checksum(superblock* sb) {
+bool check_superblock_checksum(struct btrfs_super_block* sb) {
     switch (sb->csum_type) {
         case CSUM_TYPE_CRC32C: {
-            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->uuid, (ULONG)sizeof(superblock) - sizeof(sb->checksum));
+            uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
-            if (crc32 == *((uint32_t*)sb->checksum))
+            if (crc32 == *((uint32_t*)sb->csum))
                 return true;
 
-            WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->checksum));
+            WARN("crc32 was %08x, expected %08x\n", crc32, *((uint32_t*)sb->csum));
 
             break;
         }
 
         case CSUM_TYPE_XXHASH: {
-            uint64_t hash = XXH64(&sb->uuid, sizeof(superblock) - sizeof(sb->checksum), 0);
+            uint64_t hash = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
 
-            if (hash == *((uint64_t*)sb->checksum))
+            if (hash == *((uint64_t*)sb->csum))
                 return true;
 
-            WARN("superblock hash was %I64x, expected %I64x\n", hash, *((uint64_t*)sb->checksum));
+            WARN("superblock hash was %I64x, expected %I64x\n", hash, *((uint64_t*)sb->csum));
 
             break;
         }
@@ -2837,7 +2837,7 @@ bool check_superblock_checksum(superblock* sb) {
         case CSUM_TYPE_SHA256: {
             uint8_t hash[SHA256_HASH_SIZE];
 
-            calc_sha256(hash, &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+            calc_sha256(hash, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             if (RtlCompareMemory(hash, sb, SHA256_HASH_SIZE) == SHA256_HASH_SIZE)
                 return true;
@@ -2850,7 +2850,7 @@ bool check_superblock_checksum(superblock* sb) {
         case CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
-            blake2b(hash, sizeof(hash), &sb->uuid, sizeof(superblock) - sizeof(sb->checksum));
+            blake2b(hash, sizeof(hash), &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             if (RtlCompareMemory(hash, sb, BLAKE2_HASH_SIZE) == BLAKE2_HASH_SIZE)
                 return true;
@@ -2869,11 +2869,11 @@ bool check_superblock_checksum(superblock* sb) {
 
 static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ uint64_t length) {
     NTSTATUS Status;
-    superblock* sb;
+    struct btrfs_super_block* sb;
     ULONG i, to_read;
     uint8_t valid_superblocks;
 
-    to_read = device->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), device->SectorSize);
+    to_read = device->SectorSize == 0 ? sizeof(struct btrfs_super_block) : (ULONG)sector_align(sizeof(struct btrfs_super_block), device->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
@@ -2910,16 +2910,16 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
         } else {
             TRACE("got superblock %lu!\n", i);
 
-            if (sb->sector_size == 0)
+            if (sb->sectorsize == 0)
                 WARN("superblock sector size was 0\n");
-            else if (sb->sector_size & (sb->sector_size - 1))
+            else if (sb->sectorsize & (sb->sectorsize - 1))
                 WARN("superblock sector size was not power of 2\n");
-            else if (sb->node_size < sizeof(struct btrfs_header) + sizeof(struct btrfs_key_ptr) || sb->node_size > 0x10000)
-                WARN("invalid node size %x\n", sb->node_size);
-            else if ((sb->node_size % sb->sector_size) != 0)
-                WARN("node size %x was not a multiple of sector_size %x\n", sb->node_size, sb->sector_size);
+            else if (sb->nodesize < sizeof(struct btrfs_header) + sizeof(struct btrfs_key_ptr) || sb->nodesize > 0x10000)
+                WARN("invalid node size %x\n", sb->nodesize);
+            else if ((sb->nodesize % sb->sectorsize) != 0)
+                WARN("node size %x was not a multiple of sectorsize %x\n", sb->nodesize, sb->sectorsize);
             else if (check_superblock_checksum(sb) && (valid_superblocks == 0 || sb->generation > Vcb->superblock.generation)) {
-                RtlCopyMemory(&Vcb->superblock, sb, sizeof(superblock));
+                RtlCopyMemory(&Vcb->superblock, sb, sizeof(struct btrfs_super_block));
                 valid_superblocks++;
             }
         }
@@ -3138,13 +3138,13 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
         reloc_root->root_item.inode.generation = 1;
         reloc_root->root_item.inode.st_size = 3;
-        reloc_root->root_item.inode.st_blocks = Vcb->superblock.node_size;
+        reloc_root->root_item.inode.st_blocks = Vcb->superblock.nodesize;
         reloc_root->root_item.inode.st_nlink = 1;
         reloc_root->root_item.inode.st_mode = 040755;
         reloc_root->root_item.inode.flags = 0x80000000;
         reloc_root->root_item.inode.flags_ro = 0xffffffff;
         reloc_root->root_item.objid = SUBVOL_ROOT_INODE;
-        reloc_root->root_item.bytes_used = Vcb->superblock.node_size;
+        reloc_root->root_item.bytes_used = Vcb->superblock.nodesize;
 
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
         if (!ii) {
@@ -3157,7 +3157,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
         RtlZeroMemory(ii, sizeof(INODE_ITEM));
         ii->generation = Vcb->superblock.generation;
-        ii->st_blocks = Vcb->superblock.node_size;
+        ii->st_blocks = Vcb->superblock.nodesize;
         ii->st_nlink = 1;
         ii->st_mode = 040755;
         ii->st_atime = now;
@@ -3785,7 +3785,7 @@ void protect_superblocks(_Inout_ chunk* c) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint16_t sub_stripes = max(ci->sub_stripes, 1);
 
-                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
 #ifdef _DEBUG
                     uint64_t startoff;
                     uint16_t startoffstripe;
@@ -3813,14 +3813,14 @@ void protect_superblocks(_Inout_ chunk* c) {
             uint64_t stripe_size = ci->size / (ci->num_stripes - 1);
 
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
                     off_start *= ci->num_stripes - 1;
 
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), ci->stripe_length);
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), ci->stripe_length);
                     off_end *= ci->num_stripes - 1;
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
@@ -3832,14 +3832,14 @@ void protect_superblocks(_Inout_ chunk* c) {
             uint64_t stripe_size = ci->size / (ci->num_stripes - 2);
 
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     off_start = superblock_addrs[i] - cis[j].offset;
                     off_start -= off_start % ci->stripe_length;
                     off_start *= ci->num_stripes - 2;
 
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), ci->stripe_length);
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), ci->stripe_length);
                     off_end *= ci->num_stripes - 2;
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
@@ -3849,13 +3849,13 @@ void protect_superblocks(_Inout_ chunk* c) {
             }
         } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(superblock)) {
+                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     // The Linux driver protects the whole stripe in which the superblock lives
 
                     off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(superblock), c->chunk_item->stripe_length);
+                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_length);
 
                     space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
@@ -3926,11 +3926,11 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 
 static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
     struct btrfs_key key;
-    ULONG n = Vcb->superblock.n;
+    ULONG n = Vcb->superblock.sys_chunk_array_size;
 
     while (n > 0) {
         if (n > sizeof(struct btrfs_key)) {
-            RtlCopyMemory(&key, &Vcb->superblock.sys_chunk_array[Vcb->superblock.n - n], sizeof(struct btrfs_key));
+            RtlCopyMemory(&key, &Vcb->superblock.sys_chunk_array[Vcb->superblock.sys_chunk_array_size - n], sizeof(struct btrfs_key));
             n -= sizeof(struct btrfs_key);
         } else
             return STATUS_SUCCESS;
@@ -3945,7 +3945,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
             if (n < sizeof(CHUNK_ITEM))
                 return STATUS_SUCCESS;
 
-            ci = (CHUNK_ITEM*)&Vcb->superblock.sys_chunk_array[Vcb->superblock.n - n];
+            ci = (CHUNK_ITEM*)&Vcb->superblock.sys_chunk_array[Vcb->superblock.sys_chunk_array_size - n];
             cisize = sizeof(CHUNK_ITEM) + (ci->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
 
             if (n < cisize)
@@ -4262,11 +4262,11 @@ _Success_(return>=0)
 static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool* pno_pnp) {
     NTSTATUS Status;
     ULONG to_read;
-    superblock* sb;
+    struct btrfs_super_block* sb;
     UNICODE_STRING pnp_name;
     const GUID* guid;
 
-    to_read = DeviceObject->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), DeviceObject->SectorSize);
+    to_read = DeviceObject->SectorSize == 0 ? sizeof(struct btrfs_super_block) : (ULONG)sector_align(sizeof(struct btrfs_super_block), DeviceObject->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
@@ -4316,12 +4316,12 @@ end:
 static bool still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj) {
     NTSTATUS Status;
     ULONG to_read;
-    superblock* sb;
+    struct btrfs_super_block* sb;
 
     if (!device)
         return false;
 
-    to_read = device->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), device->SectorSize);
+    to_read = device->SectorSize == 0 ? sizeof(struct btrfs_super_block) : (ULONG)sector_align(sizeof(struct btrfs_super_block), device->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
@@ -4365,7 +4365,7 @@ static bool still_has_superblock(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT f
 }
 
 static void calculate_sector_shift(device_extension* Vcb) {
-    uint32_t ss = Vcb->superblock.sector_size;
+    uint32_t ss = Vcb->superblock.sectorsize;
 
     Vcb->sector_shift = 0;
 
@@ -4623,7 +4623,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_METADATA_UUID))
-        Vcb->superblock.metadata_uuid = Vcb->superblock.uuid;
+        Vcb->superblock.metadata_uuid = Vcb->superblock.fsid;
 
     Vcb->readonly = false;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
@@ -4639,9 +4639,9 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->superblock.generation++;
     Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
 
-    if (Vcb->superblock.log_tree_addr != 0) {
+    if (Vcb->superblock.log_root != 0) {
         FIXME("FIXME - replay transaction log (clearing for now)\n");
-        Vcb->superblock.log_tree_addr = 0;
+        Vcb->superblock.log_root = 0;
     }
 
     switch (Vcb->superblock.csum_type) {
@@ -4706,7 +4706,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     Vcb->log_to_phys_loaded = false;
 
-    add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_tree_addr, Vcb->superblock.chunk_root_generation, NULL);
+    add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_root, Vcb->superblock.chunk_root_generation, NULL);
 
     if (!Vcb->chunk_root) {
         ERR("Could not load chunk root.\n");
@@ -4793,7 +4793,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         }
     }
 
-    add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root_tree_addr, Vcb->superblock.generation - 1, NULL);
+    add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root, Vcb->superblock.generation - 1, NULL);
 
     if (!Vcb->root_root) {
         ERR("Could not load root of roots.\n");
@@ -5024,7 +5024,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    Status = registry_mark_volume_mounted(&Vcb->superblock.uuid);
+    Status = registry_mark_volume_mounted(&Vcb->superblock.fsid);
     if (!NT_SUCCESS(Status))
         WARN("registry_mark_volume_mounted returned %08lx\n", Status);
 
@@ -5109,7 +5109,7 @@ exit:
 
 static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
     NTSTATUS Status;
-    superblock* sb;
+    struct btrfs_super_block* sb;
     ULONG to_read, cc;
 
     if (!dev->devobj)
@@ -5160,7 +5160,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
         dev->change_count = cc;
     }
 
-    to_read = dev->devobj->SectorSize == 0 ? sizeof(superblock) : (ULONG)sector_align(sizeof(superblock), dev->devobj->SectorSize);
+    to_read = dev->devobj->SectorSize == 0 ? sizeof(struct btrfs_super_block) : (ULONG)sector_align(sizeof(struct btrfs_super_block), dev->devobj->SectorSize);
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {
@@ -5186,7 +5186,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
         return STATUS_WRONG_VOLUME;
     }
 
-    if (RtlCompareMemory(&sb->uuid, &Vcb->superblock.uuid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
+    if (RtlCompareMemory(&sb->fsid, &Vcb->superblock.fsid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
         ERR("different UUIDs\n");
         ExFreePool(sb);
         return STATUS_WRONG_VOLUME;
@@ -5545,9 +5545,9 @@ end:
 static bool device_still_valid(device* dev, uint64_t expected_generation) {
     NTSTATUS Status;
     unsigned int to_read;
-    superblock* sb;
+    struct btrfs_super_block* sb;
 
-    to_read = (unsigned int)(dev->devobj->SectorSize == 0 ? sizeof(superblock) : sector_align(sizeof(superblock), dev->devobj->SectorSize));
+    to_read = (unsigned int)(dev->devobj->SectorSize == 0 ? sizeof(struct btrfs_super_block) : sector_align(sizeof(struct btrfs_super_block), dev->devobj->SectorSize));
 
     sb = ExAllocatePoolWithTag(NonPagedPool, to_read, ALLOC_TAG);
     if (!sb) {

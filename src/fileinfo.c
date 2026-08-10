@@ -1733,8 +1733,8 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             }
 
             ExFreePool(ed);
-        } else if (adsdata.Length & (Vcb->superblock.sector_size - 1)) {
-            char* newbuf = ExAllocatePoolWithTag(PagedPool, (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size), ALLOC_TAG);
+        } else if (adsdata.Length & (Vcb->superblock.sectorsize - 1)) {
+            char* newbuf = ExAllocatePoolWithTag(PagedPool, (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sectorsize), ALLOC_TAG);
             if (!newbuf) {
                 ERR("out of memory\n");
                 ExFreePool(adsdata.Buffer);
@@ -1743,12 +1743,12 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             }
 
             RtlCopyMemory(newbuf, adsdata.Buffer, adsdata.Length);
-            RtlZeroMemory(newbuf + adsdata.Length, (uint16_t)(sector_align(adsdata.Length, Vcb->superblock.sector_size) - adsdata.Length));
+            RtlZeroMemory(newbuf + adsdata.Length, (uint16_t)(sector_align(adsdata.Length, Vcb->superblock.sectorsize) - adsdata.Length));
 
             ExFreePool(adsdata.Buffer);
 
             adsdata.Buffer = newbuf;
-            adsdata.Length = adsdata.MaximumLength = (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sector_size);
+            adsdata.Length = adsdata.MaximumLength = (uint16_t)sector_align(adsdata.Length, Vcb->superblock.sectorsize);
         }
 
         if (!make_inline) {
@@ -1963,7 +1963,7 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
 
     RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
 
-    newmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) -
+    newmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) -
                 offsetof(DIR_ITEM, name[0]);
 
     if (newmaxlen < adsxattr.Length) {
@@ -2210,7 +2210,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
 
-    newmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) -
+    newmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) -
                 offsetof(DIR_ITEM, name[0]);
 
     if (newmaxlen < adsxattr.Length) {
@@ -2345,7 +2345,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     dummyfcb->hash = fileref->fcb->hash;
 
     if (fileref->fcb->inode_item.st_size > 0) {
-        Status = excise_extents(Vcb, dummyfcb, 0, sector_align(fileref->fcb->inode_item.st_size, Vcb->superblock.sector_size),
+        Status = excise_extents(Vcb, dummyfcb, 0, sector_align(fileref->fcb->inode_item.st_size, Vcb->superblock.sectorsize),
                                 Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
@@ -3416,8 +3416,8 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
     TRACE("FileObject: AllocationSize = %I64x, FileSize = %I64x, ValidDataLength = %I64x\n",
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
 
-    new_allocation_size = sector_align(fai->AllocationSize.QuadPart, fcb->Vcb->superblock.sector_size);
-    old_allocation_size = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sector_size);
+    new_allocation_size = sector_align(fai->AllocationSize.QuadPart, fcb->Vcb->superblock.sectorsize);
+    old_allocation_size = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
 
     TRACE("setting new allocation size to %I64x bytes (currently %I64x)\n", new_allocation_size, old_allocation_size);
 
@@ -4963,7 +4963,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
 }
 
 static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, LONG* length) {
-    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.uuid.uuid[8], sizeof(uint64_t));
+    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.fsid.uuid[8], sizeof(uint64_t));
     RtlCopyMemory(&fii->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
     RtlCopyMemory(&fii->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
 

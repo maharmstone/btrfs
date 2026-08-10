@@ -341,7 +341,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 fbdi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                fbdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                fbdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             fbdi->FileAttributes = atts;
             fbdi->FileNameLength = de->name.Length;
@@ -381,7 +381,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 fdi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                fdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                fdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             fdi->FileAttributes = atts;
             fdi->FileNameLength = de->name.Length;
@@ -419,7 +419,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 ffdi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                ffdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                ffdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             ffdi->FileAttributes = atts;
             ffdi->FileNameLength = de->name.Length;
@@ -458,7 +458,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 fibdi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                fibdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                fibdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             fibdi->FileAttributes = atts;
             fibdi->FileNameLength = de->name.Length;
@@ -499,7 +499,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 fifdi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                fifdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                fifdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             fifdi->FileAttributes = atts;
             fifdi->FileNameLength = de->name.Length;
@@ -543,7 +543,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 fiedi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                fiedi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                fiedi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             fiedi->FileAttributes = atts;
             fiedi->FileNameLength = de->name.Length;
@@ -586,7 +586,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
                 fiebdi->AllocationSize.QuadPart = ii.st_blocks;
             else
-                fiebdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sector_size);
+                fiebdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
 
             fiebdi->FileAttributes = atts;
             fiebdi->FileNameLength = de->name.Length;
