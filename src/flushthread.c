@@ -25,7 +25,7 @@
 /* cf. __MAX_CSUM_ITEMS in Linux - it needs sizeof(leaf_node) bytes free
  * so it can do a split. Linux tries to get it so a run will fit in a
  * sector, but the MAX_CSUM_ITEMS logic is wrong... */
-#define MAX_CSUM_SIZE (4096 - sizeof(tree_header) - (2 * sizeof(leaf_node)))
+#define MAX_CSUM_SIZE (4096 - sizeof(struct btrfs_header) - (2 * sizeof(leaf_node)))
 
 // #define DEBUG_WRITE_LOOPS
 
@@ -576,7 +576,7 @@ nextdev:
 }
 
 static bool trees_consistent(device_extension* Vcb) {
-    ULONG maxsize = Vcb->superblock.node_size - sizeof(tree_header);
+    ULONG maxsize = Vcb->superblock.node_size - sizeof(struct btrfs_header);
     LIST_ENTRY* le;
 
     le = Vcb->trees.Flink;
@@ -584,7 +584,7 @@ static bool trees_consistent(device_extension* Vcb) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
 
         if (t->write) {
-            if (t->header.num_items == 0 && t->parent) {
+            if (t->header.nritems == 0 && t->parent) {
 #ifdef DEBUG_WRITE_LOOPS
                 ERR("empty tree found, looping again\n");
 #endif
@@ -626,7 +626,7 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
             tree* t = CONTAINING_RECORD(le, tree, list_entry);
 
             if (t->write && t->header.level == level) {
-                TRACE("tree %p: root = %I64x, level = %x, parent = %p\n", t, t->header.tree_id, t->header.level, t->parent);
+                TRACE("tree %p: root = %I64x, level = %x, parent = %p\n", t, t->header.owner, t->header.level, t->parent);
 
                 nothing_found = false;
 
@@ -887,7 +887,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
         flags = Vcb->metadata_flags;
 
     if (t->has_address) {
-        origchunk = get_chunk_from_address(Vcb, t->header.address);
+        origchunk = get_chunk_from_address(Vcb, t->header.bytenr);
 
         if (origchunk && !origchunk->readonly && !origchunk->reloc && origchunk->chunk_item->type == flags &&
             insert_tree_extent(Vcb, t->header.level, t->root->id, origchunk, &addr, Irp, rollback)) {
@@ -968,7 +968,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
     if (!t || t->parent)
         root = parent_root;
     else
-        root = t->header.tree_id;
+        root = t->header.owner;
 
     Status = decrease_extent_refcount_tree(Vcb, address, Vcb->superblock.node_size, root, level, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -1091,7 +1091,7 @@ static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST
         }
     }
 
-    searchkey.objectid = t->header.address;
+    searchkey.objectid = t->header.bytenr;
     searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
@@ -1101,7 +1101,7 @@ static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST
         return false;
     }
 
-    if (tp.item->key.objectid == t->header.address && (tp.item->key.type == TYPE_METADATA_ITEM || tp.item->key.type == TYPE_EXTENT_ITEM))
+    if (tp.item->key.objectid == t->header.bytenr && (tp.item->key.type == TYPE_METADATA_ITEM || tp.item->key.type == TYPE_EXTENT_ITEM))
         return false;
     else
         return true;
@@ -1109,11 +1109,11 @@ static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST
 
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
-    uint64_t rc = get_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, Irp);
-    uint64_t flags = get_extent_flags(Vcb, t->header.address, Irp);
+    uint64_t rc = get_extent_refcount(Vcb, t->header.bytenr, Vcb->superblock.node_size, Irp);
+    uint64_t flags = get_extent_flags(Vcb, t->header.bytenr, Irp);
 
     if (rc == 0) {
-        ERR("refcount for extent %I64x was 0\n", t->header.address);
+        ERR("refcount for extent %I64x was 0\n", t->header.bytenr);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1181,16 +1181,16 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                             }
 
                             if ((flags & EXTENT_ITEM_SHARED_BACKREFS && unique) || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
-                                uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, t->header.address, Irp);
+                                uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, t->header.bytenr, Irp);
 
                                 if (sdrrc > 0) {
                                     SHARED_DATA_REF sdr;
 
-                                    sdr.offset = t->header.address;
+                                    sdr.offset = t->header.bytenr;
                                     sdr.count = 1;
 
                                     Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
-                                                                      t->header.address, ce ? ce->superseded : false, Irp);
+                                                                      t->header.bytenr, ce ? ce->superseded : false, Irp);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("decrease_extent_refcount returned %08lx\n", Status);
                                         return Status;
@@ -1260,15 +1260,15 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                     }
 
                     if (unique || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
-                        uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, td->treeholder.address, t->header.address, Irp);
+                        uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, td->treeholder.address, t->header.bytenr, Irp);
 
                         if (sbrrc > 0) {
                             SHARED_BLOCK_REF sbr;
 
-                            sbr.offset = t->header.address;
+                            sbr.offset = t->header.bytenr;
 
                             Status = decrease_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                              t->header.address, false, Irp);
+                                                              t->header.bytenr, false, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("decrease_extent_refcount returned %08lx\n", Status);
                                 return Status;
@@ -1284,15 +1284,15 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         }
 
         if (unique) {
-            uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, t->header.address, t->parent->header.address, Irp);
+            uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, t->header.bytenr, t->parent->header.bytenr, Irp);
 
             if (sbrrc == 1) {
                 SHARED_BLOCK_REF sbr;
 
-                sbr.offset = t->parent->header.address;
+                sbr.offset = t->parent->header.bytenr;
 
-                Status = decrease_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                  t->parent->header.address, false, Irp);
+                Status = decrease_extent_refcount(Vcb, t->header.bytenr, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
+                                                  t->parent->header.bytenr, false, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("decrease_extent_refcount returned %08lx\n", Status);
                     return Status;
@@ -1301,11 +1301,11 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         }
 
         if (t->parent)
-            tbr.offset = t->parent->header.tree_id;
+            tbr.offset = t->parent->header.owner;
         else
-            tbr.offset = t->header.tree_id;
+            tbr.offset = t->header.owner;
 
-        Status = increase_extent_refcount(Vcb, t->header.address, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr,
+        Status = increase_extent_refcount(Vcb, t->header.bytenr, Vcb->superblock.node_size, TYPE_TREE_BLOCK_REF, &tbr,
                                           t->parent ? &t->paritem->key : NULL, t->header.level, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("increase_extent_refcount returned %08lx\n", Status);
@@ -1317,8 +1317,8 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
     }
 
-    if (rc > 1 || t->header.tree_id == t->root->id) {
-        Status = reduce_tree_extent(Vcb, t->header.address, t, t->parent ? t->parent->header.tree_id : t->header.tree_id, t->header.level, Irp, rollback);
+    if (rc > 1 || t->header.owner == t->root->id) {
+        Status = reduce_tree_extent(Vcb, t->header.bytenr, t, t->parent ? t->parent->header.owner : t->header.owner, t->header.level, Irp, rollback);
 
         if (!NT_SUCCESS(Status)) {
             ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -1328,10 +1328,10 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
     t->has_address = false;
 
-    if ((rc > 1 || t->header.tree_id != t->root->id) && !(flags & EXTENT_ITEM_SHARED_BACKREFS)) {
-        if (t->header.tree_id == t->root->id) {
+    if ((rc > 1 || t->header.owner != t->root->id) && !(flags & EXTENT_ITEM_SHARED_BACKREFS)) {
+        if (t->header.owner == t->root->id) {
             flags |= EXTENT_ITEM_SHARED_BACKREFS;
-            update_extent_flags(Vcb, t->header.address, flags, Irp);
+            update_extent_flags(Vcb, t->header.bytenr, flags, Irp);
         }
 
         if (t->header.level > 0) {
@@ -1342,10 +1342,10 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
 
                 if (!td->inserted) {
-                    if (t->header.tree_id == t->root->id) {
+                    if (t->header.owner == t->root->id) {
                         SHARED_BLOCK_REF sbr;
 
-                        sbr.offset = t->header.address;
+                        sbr.offset = t->header.bytenr;
 
                         Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.node_size, TYPE_SHARED_BLOCK_REF, &sbr, &td->key, t->header.level - 1, Irp);
                     } else {
@@ -1397,10 +1397,10 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 }
                             }
 
-                            if (t->header.tree_id == t->root->id) {
+                            if (t->header.owner == t->root->id) {
                                 SHARED_DATA_REF sdr;
 
-                                sdr.offset = t->header.address;
+                                sdr.offset = t->header.bytenr;
                                 sdr.count = 1;
 
                                 if (ce) {
@@ -1457,7 +1457,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     }
 
     t->updated_extents = true;
-    t->header.tree_id = t->root->id;
+    t->header.owner = t->root->id;
 
     return STATUS_SUCCESS;
 }
@@ -1478,7 +1478,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
             chunk* c;
 
             if (t->has_address) {
-                c = get_chunk_from_address(Vcb, t->header.address);
+                c = get_chunk_from_address(Vcb, t->header.bytenr);
 
                 if (c) {
                     if (!c->cache_loaded) {
@@ -1803,22 +1803,22 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
     return STATUS_SUCCESS;
 }
 
-void calc_tree_checksum(device_extension* Vcb, tree_header* th) {
+void calc_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
     switch (Vcb->superblock.csum_type) {
         case CSUM_TYPE_CRC32C:
-            *((uint32_t*)th) = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+            *((uint32_t*)th) = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fsid, Vcb->superblock.node_size - sizeof(th->csum));
         break;
 
         case CSUM_TYPE_XXHASH:
-            *((uint64_t*)th) = XXH64((uint8_t*)&th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum), 0);
+            *((uint64_t*)th) = XXH64((uint8_t*)&th->fsid, Vcb->superblock.node_size - sizeof(th->csum), 0);
         break;
 
         case CSUM_TYPE_SHA256:
-            calc_sha256((uint8_t*)th, &th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+            calc_sha256((uint8_t*)th, &th->fsid, Vcb->superblock.node_size - sizeof(th->csum));
         break;
 
         case CSUM_TYPE_BLAKE2:
-            blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fs_uuid, Vcb->superblock.node_size - sizeof(th->csum));
+            blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fsid, Vcb->superblock.node_size - sizeof(th->csum));
         break;
     }
 }
@@ -1953,8 +1953,8 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             else
                 size += num_items * sizeof(internal_node);
 
-            if (num_items != t->header.num_items) {
-                ERR("tree %I64x, level %x: num_items was %x, expected %x\n", t->root->id, t->header.level, num_items, t->header.num_items);
+            if (num_items != t->header.nritems) {
+                ERR("tree %I64x, level %x: num_items was %x, expected %x\n", t->root->id, t->header.level, num_items, t->header.nritems);
                 crash = true;
             }
 
@@ -1963,13 +1963,13 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 crash = true;
             }
 
-            if (t->header.num_items == 0 && t->parent) {
+            if (t->header.nritems == 0 && t->parent) {
                 ERR("tree %I64x, level %x: tried to write empty tree with parent\n", t->root->id, t->header.level);
                 crash = true;
             }
 
-            if (t->size > Vcb->superblock.node_size - sizeof(tree_header)) {
-                ERR("tree %I64x, level %x: tried to write overlarge tree (%x > %Ix)\n", t->root->id, t->header.level, t->size, Vcb->superblock.node_size - sizeof(tree_header));
+            if (t->size > Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
+                ERR("tree %I64x, level %x: tried to write overlarge tree (%x > %Ix)\n", t->root->id, t->header.level, t->size, Vcb->superblock.node_size - sizeof(struct btrfs_header));
                 crash = true;
             }
 
@@ -1986,11 +1986,11 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 int3;
             }
 #endif
-            t->header.address = t->new_address;
+            t->header.bytenr = t->new_address;
             t->header.generation = Vcb->superblock.generation;
-            t->header.tree_id = t->root->id;
+            t->header.owner = t->root->id;
             t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
-            t->header.fs_uuid = Vcb->superblock.metadata_uuid;
+            t->header.fsid = Vcb->superblock.metadata_uuid;
             t->has_address = true;
 
             data = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
@@ -2000,10 +2000,10 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 goto end;
             }
 
-            body = data + sizeof(tree_header);
+            body = data + sizeof(struct btrfs_header);
 
-            RtlCopyMemory(data, &t->header, sizeof(tree_header));
-            RtlZeroMemory(body, Vcb->superblock.node_size - sizeof(tree_header));
+            RtlCopyMemory(data, &t->header, sizeof(struct btrfs_header));
+            RtlZeroMemory(body, Vcb->superblock.node_size - sizeof(struct btrfs_header));
 
             if (t->header.level == 0) {
                 leaf_node* itemptr = (leaf_node*)body;
@@ -2045,7 +2045,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 }
             }
 
-            calc_tree_checksum(Vcb, (tree_header*)data);
+            calc_tree_checksum(Vcb, (struct btrfs_header*)data);
 
             tw = ExAllocatePoolWithTag(PagedPool, sizeof(tree_write), ALLOC_TAG);
             if (!tw) {
@@ -3008,10 +3008,10 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     } else
         nt->nonpaged = NULL;
 
-    RtlCopyMemory(&nt->header, &t->header, sizeof(tree_header));
-    nt->header.address = 0;
+    RtlCopyMemory(&nt->header, &t->header, sizeof(struct btrfs_header));
+    nt->header.bytenr = 0;
     nt->header.generation = Vcb->superblock.generation;
-    nt->header.num_items = t->header.num_items - numitems;
+    nt->header.nritems = t->header.nritems - numitems;
     nt->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
 
     nt->has_address = false;
@@ -3044,7 +3044,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
 
     nt->size = t->size - size;
     t->size = size;
-    t->header.num_items = numitems;
+    t->header.nritems = numitems;
     nt->write = true;
 
     InsertTailList(&Vcb->trees, &nt->list_entry);
@@ -3103,7 +3103,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
         td->treeholder.tree = nt;
         nt->paritem = td;
 
-        nt->parent->header.num_items++;
+        nt->parent->header.nritems++;
         nt->parent->size += sizeof(internal_node);
 
         goto end;
@@ -3131,9 +3131,9 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
 
     ExInitializeFastMutex(&pt->nonpaged->mutex);
 
-    RtlCopyMemory(&pt->header, &nt->header, sizeof(tree_header));
-    pt->header.address = 0;
-    pt->header.num_items = 2;
+    RtlCopyMemory(&pt->header, &nt->header, sizeof(struct btrfs_header));
+    pt->header.bytenr = 0;
+    pt->header.nritems = 2;
     pt->header.level = nt->header.level + 1;
     pt->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
 
@@ -3145,7 +3145,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     pt->new_address = 0;
     pt->has_new_address = false;
     pt->updated_extents = false;
-    pt->size = pt->header.num_items * sizeof(internal_node);
+    pt->size = pt->header.nritems * sizeof(internal_node);
     pt->uniqueness_determined = true;
     pt->is_unique = true;
     pt->list_entry_hash.Flink = NULL;
@@ -3221,15 +3221,15 @@ static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
             else
                 ds = sizeof(internal_node);
 
-            if (numitems == 0 && ds > Vcb->superblock.node_size - sizeof(tree_header)) {
+            if (numitems == 0 && ds > Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
                 ERR("(%I64x,%x,%I64x) in tree %I64x is too large (%x > %Ix)\n",
                     td->key.objectid, td->key.type, td->key.offset, t->root->id,
-                    ds, Vcb->superblock.node_size - sizeof(tree_header));
+                    ds, Vcb->superblock.node_size - sizeof(struct btrfs_header));
                 return STATUS_INTERNAL_ERROR;
             }
 
             // FIXME - move back if previous item was deleted item with same key
-            if (size + ds > Vcb->superblock.node_size - sizeof(tree_header))
+            if (size + ds > Vcb->superblock.node_size - sizeof(struct btrfs_header))
                 return split_tree_at(Vcb, t, td, numitems, size);
 
             size += ds;
@@ -3257,7 +3257,7 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
         goto end;
 
     if (t->has_address) {
-        searchkey.objectid = t->header.address;
+        searchkey.objectid = t->header.bytenr;
         searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
         searchkey.offset = 0xffffffffffffffff;
 
@@ -3267,7 +3267,7 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
             goto end;
         }
 
-        if (tp.item->key.objectid != t->header.address || (tp.item->key.type != TYPE_METADATA_ITEM && tp.item->key.type != TYPE_EXTENT_ITEM))
+        if (tp.item->key.objectid != t->header.bytenr || (tp.item->key.type != TYPE_METADATA_ITEM && tp.item->key.type != TYPE_EXTENT_ITEM))
             goto end;
 
         if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(EXTENT_ITEM_V0))
@@ -3354,10 +3354,10 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
         }
     }
 
-    if (t->size + next_tree->size <= Vcb->superblock.node_size - sizeof(tree_header)) {
+    if (t->size + next_tree->size <= Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
         // merge two trees into one
 
-        t->header.num_items += next_tree->header.num_items;
+        t->header.nritems += next_tree->header.nritems;
         t->size += next_tree->size;
 
         if (next_tree->header.level > 0) {
@@ -3406,18 +3406,18 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
 
         next_tree->itemlist.Flink = next_tree->itemlist.Blink = &next_tree->itemlist;
 
-        next_tree->header.num_items = 0;
+        next_tree->header.nritems = 0;
         next_tree->size = 0;
 
         if (next_tree->has_new_address) { // delete associated EXTENT_ITEM
-            Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree, next_tree->parent->header.tree_id, next_tree->header.level, Irp, rollback);
+            Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree, next_tree->parent->header.owner, next_tree->header.level, Irp, rollback);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08lx\n", Status);
                 return Status;
             }
         } else if (next_tree->has_address) {
-            Status = reduce_tree_extent(Vcb, next_tree->header.address, next_tree, next_tree->parent->header.tree_id, next_tree->header.level, Irp, rollback);
+            Status = reduce_tree_extent(Vcb, next_tree->header.bytenr, next_tree, next_tree->parent->header.owner, next_tree->header.level, Irp, rollback);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3427,7 +3427,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
 
         if (!nextparitem->ignore) {
             nextparitem->ignore = true;
-            next_tree->parent->header.num_items--;
+            next_tree->parent->header.nritems--;
             next_tree->parent->size -= sizeof(internal_node);
 
             *done_deletions = true;
@@ -3457,7 +3457,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
         TRACE("attempting rebalance\n");
 
         le = next_tree->itemlist.Flink;
-        while (le != &next_tree->itemlist && t->size < avg_size && next_tree->header.num_items > 1) {
+        while (le != &next_tree->itemlist && t->size < avg_size && next_tree->header.nritems > 1) {
             tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
             ULONG size;
 
@@ -3469,7 +3469,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
             } else
                 size = 0;
 
-            if (t->size + size < Vcb->superblock.node_size - sizeof(tree_header)) {
+            if (t->size + size < Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
                 RemoveEntryList(&td->list_entry);
                 InsertTailList(&t->itemlist, &td->list_entry);
 
@@ -3495,8 +3495,8 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
                 if (!td->ignore) {
                     next_tree->size -= size;
                     t->size += size;
-                    next_tree->header.num_items--;
-                    t->header.num_items++;
+                    next_tree->header.nritems--;
+                    t->header.nritems++;
                 }
 
                 changed = true;
@@ -3681,7 +3681,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             if (t->write && t->header.level == level) {
                 empty = false;
 
-                if (t->header.num_items == 0) {
+                if (t->header.nritems == 0) {
                     if (t->parent) {
                         done_deletions = true;
 
@@ -3690,7 +3690,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                         t->root->root_item.bytes_used -= Vcb->superblock.node_size;
 
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
-                            Status = reduce_tree_extent(Vcb, t->new_address, t, t->parent->header.tree_id, t->header.level, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb, t->new_address, t, t->parent->header.owner, t->header.level, Irp, rollback);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3699,7 +3699,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
                             t->has_new_address = false;
                         } else if (t->has_address) {
-                            Status = reduce_tree_extent(Vcb,t->header.address, t, t->parent->header.tree_id, t->header.level, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb,t->header.bytenr, t, t->parent->header.owner, t->header.level, Irp, rollback);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3711,7 +3711,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
                         if (!t->paritem->ignore) {
                             t->paritem->ignore = true;
-                            t->parent->header.num_items--;
+                            t->parent->header.nritems--;
                             t->parent->size -= sizeof(internal_node);
                         }
 
@@ -3732,8 +3732,8 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
                         t->header.level = 0;
                     }
-                } else if (t->size > Vcb->superblock.node_size - sizeof(tree_header)) {
-                    TRACE("splitting overlarge tree (%x > %Ix)\n", t->size, Vcb->superblock.node_size - sizeof(tree_header));
+                } else if (t->size > Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
+                    TRACE("splitting overlarge tree (%x > %Ix)\n", t->size, Vcb->superblock.node_size - sizeof(struct btrfs_header));
 
                     if (!t->updated_extents && t->has_address) {
                         Status = update_tree_extents_recursive(Vcb, t, Irp, rollback);
@@ -3763,8 +3763,8 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         }
     }
 
-    min_size = (Vcb->superblock.node_size - sizeof(tree_header)) / 2;
-    min_size_fst = (Vcb->superblock.node_size - sizeof(tree_header)) / 4;
+    min_size = (Vcb->superblock.node_size - sizeof(struct btrfs_header)) / 2;
+    min_size_fst = (Vcb->superblock.node_size - sizeof(struct btrfs_header)) / 4;
 
     for (level = 0; level <= max_level; level++) {
         LIST_ENTRY* le;
@@ -3774,7 +3774,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         while (le != &Vcb->trees) {
             t = CONTAINING_RECORD(le, tree, list_entry);
 
-            if (t->write && t->header.level == level && t->header.num_items > 0 && t->parent &&
+            if (t->write && t->header.level == level && t->header.nritems > 0 && t->parent &&
                 ((t->size < min_size && t->root->id != BTRFS_ROOT_FREE_SPACE) || (t->size < min_size_fst && t->root->id == BTRFS_ROOT_FREE_SPACE)) &&
                 is_tree_unique(Vcb, t, Irp)) {
                 bool done;
@@ -3804,7 +3804,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                 t = CONTAINING_RECORD(le, tree, list_entry);
 
                 if (t->write && t->header.level == level) {
-                    if (!t->parent && t->header.num_items == 1) {
+                    if (!t->parent && t->header.nritems == 1) {
                         LIST_ENTRY* le2 = t->itemlist.Flink;
                         tree_data* td = NULL;
                         tree* child_tree = NULL;
@@ -3819,7 +3819,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                         TRACE("deleting top-level tree in root %I64x with one item\n", t->root->id);
 
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
-                            Status = reduce_tree_extent(Vcb, t->new_address, t, t->header.tree_id, t->header.level, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb, t->new_address, t, t->header.owner, t->header.level, Irp, rollback);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3828,7 +3828,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
                             t->has_new_address = false;
                         } else if (t->has_address) {
-                            Status = reduce_tree_extent(Vcb,t->header.address, t, t->header.tree_id, t->header.level, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb,t->header.bytenr, t, t->header.owner, t->header.level, Irp, rollback);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3933,7 +3933,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     }
 
     if (!th->tree || th->tree->has_address) {
-        Status = reduce_tree_extent(Vcb, th->address, NULL, parent ? parent->header.tree_id : r->id, level, Irp, rollback);
+        Status = reduce_tree_extent(Vcb, th->address, NULL, parent ? parent->header.owner : r->id, level, Irp, rollback);
 
         if (!NT_SUCCESS(Status)) {
             ERR("reduce_tree_extent(%I64x) returned %08lx\n", th->address, Status);
@@ -7119,7 +7119,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
         }
 
         if (!keycmp(tp.item->key, searchkey)) {
-            if (tp.item->size + sizeof(uint64_t) <= Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node)) {
+            if (tp.item->size + sizeof(uint64_t) <= Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node)) {
                 uint64_t* ids;
 
                 ids = ExAllocatePoolWithTag(PagedPool, tp.item->size + sizeof(uint64_t), ALLOC_TAG);
@@ -7772,7 +7772,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         struct btrfs_key searchkey;
         traverse_ptr tp;
 
-        searchkey.objectid = t->header.address;
+        searchkey.objectid = t->header.bytenr;
         searchkey.type = TYPE_METADATA_ITEM;
         searchkey.offset = 0xffffffffffffffff;
 
@@ -7783,7 +7783,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         }
 
         if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
-            searchkey.objectid = t->header.address;
+            searchkey.objectid = t->header.bytenr;
             searchkey.type = TYPE_EXTENT_ITEM;
             searchkey.offset = 0xffffffffffffffff;
 
@@ -7794,7 +7794,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             }
 
             if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
-                ERR("error - could not find entry in extent tree for tree at %I64x\n", t->header.address);
+                ERR("error - could not find entry in extent tree for tree at %I64x\n", t->header.bytenr);
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }

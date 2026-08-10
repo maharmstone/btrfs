@@ -88,7 +88,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
     write_data_context wtc;
     LIST_ENTRY* le;
     tree t;
-    tree_header* th;
+    struct btrfs_header* th;
     chunk* c;
 
     buf = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.node_size, ALLOC_TAG);
@@ -106,12 +106,12 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
         goto end;
     }
 
-    th = (tree_header*)buf;
+    th = (struct btrfs_header*)buf;
 
     RtlZeroMemory(&t, sizeof(tree));
     t.root = subvol;
     t.header.level = th->level;
-    t.header.tree_id = t.root->id;
+    t.header.owner = t.root->id;
 
     Status = get_tree_new_address(Vcb, &t, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
@@ -135,17 +135,17 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
         goto end;
     }
 
-    th->address = t.new_address;
-    th->tree_id = subvol->id;
+    th->bytenr = t.new_address;
+    th->owner = subvol->id;
     th->generation = Vcb->superblock.generation;
-    th->fs_uuid = Vcb->superblock.metadata_uuid;
+    th->fsid = Vcb->superblock.metadata_uuid;
 
     if (th->level == 0) {
         uint32_t i;
         leaf_node* ln = (leaf_node*)&th[1];
 
-        for (i = 0; i < th->num_items; i++) {
-            if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(tree_header)) {
+        for (i = 0; i < th->nritems; i++) {
+            if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
                 EXTENT_DATA* ed = (EXTENT_DATA*)(((uint8_t*)&th[1]) + ln[i].offset);
 
                 if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
@@ -166,7 +166,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
         uint32_t i;
         internal_node* in = (internal_node*)&th[1];
 
-        for (i = 0; i < th->num_items; i++) {
+        for (i = 0; i < th->nritems; i++) {
             TREE_BLOCK_REF tbr;
 
             tbr.offset = subvol->id;
@@ -4250,7 +4250,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (datalen < offsetof(btrfs_set_xattr, data[0]) + bsxa->namelen + bsxa->valuelen)
         return STATUS_INVALID_PARAMETER;
 
-    if (bsxa->namelen + bsxa->valuelen + sizeof(tree_header) + sizeof(leaf_node) + offsetof(DIR_ITEM, name[0]) > Vcb->superblock.node_size)
+    if (bsxa->namelen + bsxa->valuelen + sizeof(struct btrfs_header) + sizeof(leaf_node) + offsetof(DIR_ITEM, name[0]) > Vcb->superblock.node_size)
         return STATUS_INVALID_PARAMETER;
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)

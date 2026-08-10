@@ -397,7 +397,7 @@ typedef struct {
 
 typedef struct _tree {
     tree_nonpaged* nonpaged;
-    tree_header header;
+    struct btrfs_header header;
     uint32_t hash;
     bool has_address;
     uint32_t size;
@@ -1454,7 +1454,7 @@ bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* a
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, uint64_t address, uint64_t size);
 NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);
 NTSTATUS update_dev_item(device_extension* Vcb, device* device, PIRP Irp);
-void calc_tree_checksum(device_extension* Vcb, tree_header* th);
+void calc_tree_checksum(device_extension* Vcb, struct btrfs_header* th);
 
 // in read.c
 
@@ -1470,8 +1470,8 @@ NTSTATUS read_stream(fcb* fcb, uint8_t* data, uint64_t start, ULONG length, ULON
 NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read);
 NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* csum);
 void raid6_recover2(uint8_t* sectors, uint16_t num_stripes, ULONG sector_size, uint16_t missing1, uint16_t missing2, uint8_t* out);
-void get_tree_checksum(device_extension* Vcb, tree_header* th, void* csum);
-bool check_tree_checksum(device_extension* Vcb, tree_header* th);
+void get_tree_checksum(device_extension* Vcb, struct btrfs_header* th, void* csum);
+bool check_tree_checksum(device_extension* Vcb, struct btrfs_header* th);
 void get_sector_csum(device_extension* Vcb, void* buf, void* csum);
 bool check_sector_csum(device_extension* Vcb, void* buf, void* csum);
 

@@ -20,14 +20,14 @@
 
 __attribute__((nonnull(1,3,4,5)))
 NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, tree** pt) {
-    tree_header* th;
+    struct btrfs_header* th;
     tree* t;
     tree_data* td;
     uint8_t h;
     bool inserted;
     LIST_ENTRY* le;
 
-    th = (tree_header*)buf;
+    th = (struct btrfs_header*)buf;
 
     t = ExAllocatePoolWithTag(PagedPool, sizeof(tree), ALLOC_TAG);
     if (!t) {
@@ -47,7 +47,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
     } else
         t->nonpaged = NULL;
 
-    RtlCopyMemory(&t->header, th, sizeof(tree_header));
+    RtlCopyMemory(&t->header, th, sizeof(struct btrfs_header));
     t->hash = calc_crc32c(0xffffffff, (uint8_t*)&addr, sizeof(uint64_t));
     t->has_address = true;
     t->Vcb = Vcb;
@@ -64,16 +64,16 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
     InitializeListHead(&t->itemlist);
 
     if (t->header.level == 0) { // leaf node
-        leaf_node* ln = (leaf_node*)(buf + sizeof(tree_header));
+        leaf_node* ln = (leaf_node*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.num_items * sizeof(leaf_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
-            ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.num_items);
+        if ((t->header.nritems * sizeof(leaf_node)) + sizeof(struct btrfs_header) > Vcb->superblock.node_size) {
+            ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < t->header.num_items; i++) {
+        for (i = 0; i < t->header.nritems; i++) {
             td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
             if (!td) {
                 ERR("out of memory\n");
@@ -84,12 +84,12 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             td->key = ln[i].key;
 
             if (ln[i].size > 0)
-                td->data = buf + sizeof(tree_header) + ln[i].offset;
+                td->data = buf + sizeof(struct btrfs_header) + ln[i].offset;
             else
                 td->data = NULL;
 
-            if (ln[i].size + sizeof(tree_header) + sizeof(leaf_node) > Vcb->superblock.node_size) {
-                ERR("overlarge item in tree %I64x: %u > %Iu\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
+            if (ln[i].size + sizeof(struct btrfs_header) + sizeof(leaf_node) > Vcb->superblock.node_size) {
+                ERR("overlarge item in tree %I64x: %u > %Iu\n", addr, ln[i].size, Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node));
                 ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
                 ExFreePool(t);
                 return STATUS_INTERNAL_ERROR;
@@ -104,19 +104,19 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             t->size += ln[i].size;
         }
 
-        t->size += t->header.num_items * sizeof(leaf_node);
+        t->size += t->header.nritems * sizeof(leaf_node);
         t->buf = buf;
     } else {
-        internal_node* in = (internal_node*)(buf + sizeof(tree_header));
+        internal_node* in = (internal_node*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.num_items * sizeof(internal_node)) + sizeof(tree_header) > Vcb->superblock.node_size) {
-            ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.num_items);
+        if ((t->header.nritems * sizeof(internal_node)) + sizeof(struct btrfs_header) > Vcb->superblock.node_size) {
+            ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
             ExFreePool(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        for (i = 0; i < t->header.num_items; i++) {
+        for (i = 0; i < t->header.nritems; i++) {
             td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
             if (!td) {
                 ERR("out of memory\n");
@@ -135,7 +135,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             InsertTailList(&t->itemlist, &td->list_entry);
         }
 
-        t->size = t->header.num_items * sizeof(internal_node);
+        t->size = t->header.nritems * sizeof(internal_node);
         t->buf = NULL;
     }
 
@@ -388,7 +388,7 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
         td2 = t2->paritem;
         t1 = t1->parent;
         t2 = t2->parent;
-    } while (t1 && t2 && t1->header.address == t2->header.address);
+    } while (t1 && t2 && t1->header.bytenr == t2->header.bytenr);
 
     while (true) {
         traverse_ptr tp3, tp4;
@@ -427,7 +427,7 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
             return STATUS_SUCCESS;
         }
 
-        if (tp3.tree->header.address != tp4.tree->header.address) {
+        if (tp3.tree->header.bytenr != tp4.tree->header.bytenr) {
             Status = find_item(Vcb, t1->root, tp, &tp3.item->key, false, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("find_item returned %08lx\n", Status);
@@ -910,7 +910,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
             }
         }
 
-        if (r->treeholder.tree && r->treeholder.tree->header.num_items == 0) {
+        if (r->treeholder.tree && r->treeholder.tree->header.nritems == 0) {
             tp.tree = r->treeholder.tree;
             tp.item = NULL;
         } else {
@@ -958,7 +958,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         break;
     }
 
-    TRACE("inserting %I64x,%x,%I64x into tree beginning %I64x,%x,%I64x (num_items %x)\n", objectid, type, offset, firstitem.objectid, firstitem.type, firstitem.offset, tp.tree->header.num_items);
+    TRACE("inserting %I64x,%x,%I64x into tree beginning %I64x,%x,%I64x (num_items %x)\n", objectid, type, offset, firstitem.objectid, firstitem.type, firstitem.offset, tp.tree->header.nritems);
 #endif
 
     if (cmp == -1) { // very first key in root
@@ -978,7 +978,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
     else
         InsertHeadList(&tp.item->list_entry, &td->list_entry);
 
-    tp.tree->header.num_items++;
+    tp.tree->header.nritems++;
     tp.tree->size += size + sizeof(leaf_node);
 
     if (!tp.tree->write) {
@@ -993,7 +993,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
     while (t) {
         if (t->paritem && t->paritem->ignore) {
             t->paritem->ignore = false;
-            t->parent->header.num_items++;
+            t->parent->header.nritems++;
             t->parent->size += sizeof(internal_node);
         }
 
@@ -1029,7 +1029,7 @@ NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         Vcb->need_write = true;
     }
 
-    tp->tree->header.num_items--;
+    tp->tree->header.nritems--;
 
     if (tp->tree->header.level == 0)
         tp->tree->size -= sizeof(leaf_node) + tp->item->size;
@@ -1324,7 +1324,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
         bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) {
-        uint16_t maxlen = (uint16_t)(Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node));
+        uint16_t maxlen = (uint16_t)(Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node));
 
         switch (bi->operation) {
             case Batch_SetXattr: {
@@ -1600,7 +1600,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                                 InsertHeadList(td->list_entry.Blink, &td2->list_entry);
 
-                                t->header.num_items++;
+                                t->header.nritems++;
                                 t->size += newlen + sizeof(leaf_node);
                                 t->write = true;
                             }
@@ -1687,7 +1687,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                                 InsertHeadList(td->list_entry.Blink, &td2->list_entry);
 
-                                t->header.num_items++;
+                                t->header.nritems++;
                                 t->size += newlen + sizeof(leaf_node);
                                 t->write = true;
                             }
@@ -1781,7 +1781,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                                 InsertHeadList(td->list_entry.Blink, &td2->list_entry);
 
-                                t->header.num_items++;
+                                t->header.nritems++;
                                 t->size += newlen + sizeof(leaf_node);
                                 t->write = true;
                             }
@@ -1852,7 +1852,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                                 InsertHeadList(td->list_entry.Blink, &td2->list_entry);
 
-                                t->header.num_items++;
+                                t->header.nritems++;
                                 t->size += newlen + sizeof(leaf_node);
                                 t->write = true;
                             }
@@ -1885,7 +1885,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
         if (!td->ignore) {
             td->ignore = true;
 
-            t->header.num_items--;
+            t->header.nritems--;
             t->size -= sizeof(leaf_node) + td->size;
             t->write = true;
         }
@@ -1961,7 +1961,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
 
                 if (!tp.item->ignore) {
                     tp.item->ignore = true;
-                    tp.tree->header.num_items--;
+                    tp.tree->header.nritems--;
                     tp.tree->size -= tp.item->size + sizeof(leaf_node);
                     tp.tree->write = true;
                 }
@@ -1973,7 +1973,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                     if (td->key.objectid == bi->key.objectid) {
                         if (!td->ignore) {
                             td->ignore = true;
-                            tp.tree->header.num_items--;
+                            tp.tree->header.nritems--;
                             tp.tree->size -= td->size + sizeof(leaf_node);
                             tp.tree->write = true;
                         }
@@ -2002,7 +2002,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                         if (td->key.objectid == bi->key.objectid) {
                             if (!td->ignore) {
                                 td->ignore = true;
-                                tp.tree->header.num_items--;
+                                tp.tree->header.nritems--;
                                 tp.tree->size -= td->size + sizeof(leaf_node);
                                 tp.tree->write = true;
                             }
@@ -2038,7 +2038,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
 
                 if (!tp.item->ignore) {
                     tp.item->ignore = true;
-                    tp.tree->header.num_items--;
+                    tp.tree->header.nritems--;
                     tp.tree->size -= tp.item->size + sizeof(leaf_node);
                     tp.tree->write = true;
                 }
@@ -2050,7 +2050,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                     if (td->key.objectid == bi->key.objectid && td->key.type == bi->key.type) {
                         if (!td->ignore) {
                             td->ignore = true;
-                            tp.tree->header.num_items--;
+                            tp.tree->header.nritems--;
                             tp.tree->size -= td->size + sizeof(leaf_node);
                             tp.tree->write = true;
                         }
@@ -2079,7 +2079,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                         if (td->key.objectid == bi->key.objectid && td->key.type == bi->key.type) {
                             if (!td->ignore) {
                                 td->ignore = true;
-                                tp.tree->header.num_items--;
+                                tp.tree->header.nritems--;
                                 tp.tree->size -= td->size + sizeof(leaf_node);
                                 tp.tree->write = true;
                             }
@@ -2100,7 +2100,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
 
                 if (!tp.item->ignore) {
                     tp.item->ignore = true;
-                    tp.tree->header.num_items--;
+                    tp.tree->header.nritems--;
                     tp.tree->size -= tp.item->size + sizeof(leaf_node);
                     tp.tree->write = true;
                 }
@@ -2112,7 +2112,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                     if (td->key.objectid >= bi->key.objectid && td->key.objectid < bi->key.objectid + bi->key.offset) {
                         if (!td->ignore) {
                             td->ignore = true;
-                            tp.tree->header.num_items--;
+                            tp.tree->header.nritems--;
                             tp.tree->size -= td->size + sizeof(leaf_node);
                             tp.tree->write = true;
                         }
@@ -2141,7 +2141,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                         if (td->key.objectid >= bi->key.objectid && td->key.objectid < bi->key.objectid + bi->key.offset) {
                             if (!td->ignore) {
                                 td->ignore = true;
-                                tp.tree->header.num_items--;
+                                tp.tree->header.nritems--;
                                 tp.tree->size -= td->size + sizeof(leaf_node);
                                 tp.tree->write = true;
                             }
@@ -2217,7 +2217,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
             }
 
             if (!ignore && td) {
-                tp.tree->header.num_items++;
+                tp.tree->header.nritems++;
                 tp.tree->size += bi->datalen + sizeof(leaf_node);
                 tp.tree->write = true;
 
@@ -2309,7 +2309,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                             InsertTailList(&tp.tree->itemlist, &td->list_entry);
 
                         if (!ignore) {
-                            tp.tree->header.num_items++;
+                            tp.tree->header.nritems++;
                             tp.tree->size += bi2->datalen + sizeof(leaf_node);
 
                             listhead = td;
@@ -2338,7 +2338,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
             while (t) {
                 if (t->paritem && t->paritem->ignore) {
                     t->paritem->ignore = false;
-                    t->parent->header.num_items++;
+                    t->parent->header.nritems++;
                     t->parent->size += sizeof(internal_node);
                 }
 

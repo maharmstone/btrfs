@@ -1344,14 +1344,14 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
 
         r->treeholder.tree = t;
 
-        RtlZeroMemory(&t->header, sizeof(tree_header));
-        t->header.fs_uuid = tp.tree->header.fs_uuid;
-        t->header.address = 0;
+        RtlZeroMemory(&t->header, sizeof(struct btrfs_header));
+        t->header.fsid = tp.tree->header.fsid;
+        t->header.bytenr = 0;
         t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
         t->header.chunk_tree_uuid = tp.tree->header.chunk_tree_uuid;
         t->header.generation = Vcb->superblock.generation;
-        t->header.tree_id = id;
-        t->header.num_items = 0;
+        t->header.owner = id;
+        t->header.nritems = 0;
         t->header.level = 0;
 
         t->has_address = false;
@@ -2914,7 +2914,7 @@ static NTSTATUS read_superblock(_In_ device_extension* Vcb, _In_ PDEVICE_OBJECT 
                 WARN("superblock sector size was 0\n");
             else if (sb->sector_size & (sb->sector_size - 1))
                 WARN("superblock sector size was not power of 2\n");
-            else if (sb->node_size < sizeof(tree_header) + sizeof(internal_node) || sb->node_size > 0x10000)
+            else if (sb->node_size < sizeof(struct btrfs_header) + sizeof(internal_node) || sb->node_size > 0x10000)
                 WARN("invalid node size %x\n", sb->node_size);
             else if ((sb->node_size % sb->sector_size) != 0)
                 WARN("node size %x was not a multiple of sector_size %x\n", sb->node_size, sb->sector_size);

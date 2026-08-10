@@ -1437,7 +1437,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
 
     overhead = tp.item->size - xattrlen;
 
-    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - overhead;
+    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node) - overhead;
 
     fcb->adsdata.Buffer = (char*)xattrdata;
     fcb->adsdata.Length = fcb->adsdata.MaximumLength = xattrlen;
@@ -2838,7 +2838,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     else
         overhead = 0;
 
-    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
+    fcb->adsmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node) - (sizeof(DIR_ITEM) - 1);
 
     if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
         WARN("not enough room for new DIR_ITEM (%Iu + %lu > %lu)\n", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);

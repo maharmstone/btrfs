@@ -23,7 +23,7 @@
 typedef struct {
     uint64_t address;
     uint64_t new_address;
-    tree_header* data;
+    struct btrfs_header* data;
     EXTENT_ITEM* ei;
     tree* t;
     bool system;
@@ -445,7 +445,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             uint16_t i;
             internal_node* in = (internal_node*)&mr->data[1];
 
-            for (i = 0; i < mr->data->num_items; i++) {
+            for (i = 0; i < mr->data->nritems; i++) {
                 uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, in[i].address, mr->address, NULL);
 
                 if (sbrrc > 0) {
@@ -473,9 +473,9 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             uint16_t i;
             leaf_node* ln = (leaf_node*)&mr->data[1];
 
-            for (i = 0; i < mr->data->num_items; i++) {
+            for (i = 0; i < mr->data->nritems; i++) {
                 if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(tree_header) + ln[i].offset);
+                    EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
 
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
@@ -602,9 +602,9 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 leaf_node* ln = (leaf_node*)&mr->data[1];
                 uint16_t i;
 
-                for (i = 0; i < mr->data->num_items; i++) {
+                for (i = 0; i < mr->data->nritems; i++) {
                     if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                        EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(tree_header) + ln[i].offset);
+                        EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
 
                         if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
@@ -667,7 +667,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 else {
                     metadata_reloc* mr2;
 
-                    Status = add_metadata_reloc_parent(Vcb, items, t->header.address, &mr2, rollback);
+                    Status = add_metadata_reloc_parent(Vcb, items, t->header.bytenr, &mr2, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_metadata_reloc_parent returned %08lx\n", Status);
                         return Status;
@@ -709,7 +709,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
             while (le2 != &Vcb->trees_hash) {
                 tree* t = CONTAINING_RECORD(le2, tree, list_entry_hash);
 
-                if (t->header.address == mr->address) {
+                if (t->header.bytenr == mr->address) {
                     mr->t = t;
                     break;
                 } else if (t->hash > hash)
@@ -820,7 +820,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                         uint16_t i;
                         internal_node* in = (internal_node*)&ref->parent->data[1];
 
-                        for (i = 0; i < ref->parent->data->num_items; i++) {
+                        for (i = 0; i < ref->parent->data->nritems; i++) {
                             if (in[i].address == mr->address) {
                                 in[i].address = mr->new_address;
                                 break;
@@ -914,7 +914,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     le2 = le2->Flink;
                 }
 
-                mr->data->address = mr->new_address;
+                mr->data->bytenr = mr->new_address;
 
                 t3 = mr->t;
 
@@ -927,11 +927,11 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     if (t3->list_entry.Flink != &Vcb->trees_hash) {
                         tree* nt = CONTAINING_RECORD(t3->list_entry_hash.Flink, tree, list_entry_hash);
 
-                        if (nt->header.address == t3->header.address)
+                        if (nt->header.bytenr == t3->header.bytenr)
                             t4 = nt;
                     }
 
-                    t3->header.address = mr->new_address;
+                    t3->header.bytenr = mr->new_address;
 
                     h = t3->hash >> 24;
 
@@ -950,7 +950,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
 
                     RemoveEntryList(&t3->list_entry_hash);
 
-                    t3->hash = calc_crc32c(0xffffffff, (uint8_t*)&t3->header.address, sizeof(uint64_t));
+                    t3->hash = calc_crc32c(0xffffffff, (uint8_t*)&t3->header.bytenr, sizeof(uint64_t));
                     h = t3->hash >> 24;
 
                     if (!Vcb->trees_ptrs[h]) {
@@ -1275,7 +1275,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
 
                 if (ed2->address == dr->address && ed2->size == dr->size && tp.item->key.offset - ed2->offset == edr->offset) {
-                    if (ref && last_tree == tp.tree->header.address)
+                    if (ref && last_tree == tp.tree->header.bytenr)
                         ref->edr.count++;
                     else {
                         ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
@@ -1288,14 +1288,14 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
                         RtlCopyMemory(&ref->edr, edr, sizeof(EXTENT_DATA_REF));
                         ref->edr.count = 1;
 
-                        Status = add_metadata_reloc_parent(Vcb, metadata_items, tp.tree->header.address, &mr, rollback);
+                        Status = add_metadata_reloc_parent(Vcb, metadata_items, tp.tree->header.bytenr, &mr, rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("add_metadata_reloc_parent returned %08lx\n", Status);
                             ExFreePool(ref);
                             return Status;
                         }
 
-                        last_tree = tp.tree->header.address;
+                        last_tree = tp.tree->header.bytenr;
                         ref->parent = mr;
 
                         InsertTailList(&dr->refs, &ref->list_entry);

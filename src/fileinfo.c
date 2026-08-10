@@ -1963,7 +1963,7 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
 
     RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
 
-    newmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) -
+    newmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node) -
                 offsetof(DIR_ITEM, name[0]);
 
     if (newmaxlen < adsxattr.Length) {
@@ -2210,7 +2210,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
 
-    newmaxlen = Vcb->superblock.node_size - sizeof(tree_header) - sizeof(leaf_node) -
+    newmaxlen = Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node) -
                 offsetof(DIR_ITEM, name[0]);
 
     if (newmaxlen < adsxattr.Length) {

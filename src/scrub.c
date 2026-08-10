@@ -328,7 +328,7 @@ end:
 }
 
 static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treeaddr, uint64_t addr, uint64_t devid, uint64_t extent) {
-    tree_header* tree;
+    struct btrfs_header* tree;
     NTSTATUS Status;
     leaf_node* ln;
     ULONG i;
@@ -352,13 +352,13 @@ static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treea
 
     ln = (leaf_node*)&tree[1];
 
-    for (i = 0; i < tree->num_items; i++) {
+    for (i = 0; i < tree->nritems; i++) {
         if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-            EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)tree + sizeof(tree_header) + ln[i].offset);
+            EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)tree + sizeof(struct btrfs_header) + ln[i].offset);
             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
 
             if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0 && ed2->address == addr)
-                log_file_checksum_error(Vcb, addr, devid, tree->tree_id, ln[i].key.objectid, ln[i].key.offset + addr - extent);
+                log_file_checksum_error(Vcb, addr, devid, tree->owner, ln[i].key.objectid, ln[i].key.offset + addr - extent);
         }
     }
 
@@ -404,7 +404,7 @@ static void log_tree_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 }
 
 static void log_tree_checksum_error_shared(device_extension* Vcb, uint64_t offset, uint64_t address, uint64_t devid) {
-    tree_header* tree;
+    struct btrfs_header* tree;
     NTSTATUS Status;
     internal_node* in;
     ULONG i;
@@ -428,9 +428,9 @@ static void log_tree_checksum_error_shared(device_extension* Vcb, uint64_t offse
 
     in = (internal_node*)&tree[1];
 
-    for (i = 0; i < tree->num_items; i++) {
+    for (i = 0; i < tree->nritems; i++) {
         if (in[i].address == address) {
-            log_tree_checksum_error(Vcb, address, devid, tree->tree_id, tree->level - 1, &in[i].key);
+            log_tree_checksum_error(Vcb, address, devid, tree->owner, tree->level - 1, &in[i].key);
             break;
         }
     }
@@ -717,9 +717,9 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                     }
                 } else {
                     for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                        tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                        struct btrfs_header* th = (struct btrfs_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
 
-                        if (!check_tree_checksum(Vcb, th) || th->address != offset + UInt32x32To64(j, Vcb->superblock.node_size)) {
+                        if (!check_tree_checksum(Vcb, th) || th->bytenr != offset + UInt32x32To64(j, Vcb->superblock.node_size)) {
                             context->stripes[i].csum_error = true;
                             csum_error = true;
                             log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -758,7 +758,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                 }
 
                 for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                    struct btrfs_header* th = (struct btrfs_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
 
                     get_tree_checksum(Vcb, th, (uint8_t*)context->stripes[i].bad_csums + (Vcb->csum_size * j));
                 }
@@ -794,10 +794,10 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                         }
                     } else {
                         for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                            tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                            struct btrfs_header* th = (struct btrfs_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                             uint64_t addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
 
-                            if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), th, Vcb->csum_size) != Vcb->csum_size || th->address != addr) {
+                            if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), th, Vcb->csum_size) != Vcb->csum_size || th->bytenr != addr) {
                                 log_error(Vcb, addr, c->devices[i]->devitem.dev_id, true, true, false);
                                 log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                             }
@@ -858,18 +858,18 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                     }
                 } else {
                     for (ULONG j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                        tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                        struct btrfs_header* th = (struct btrfs_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                         uint64_t addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
 
-                        if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), th, Vcb->csum_size) != Vcb->csum_size || th->address != addr) {
+                        if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), th, Vcb->csum_size) != Vcb->csum_size || th->bytenr != addr) {
                             ULONG k;
                             bool recovered = false;
 
                             for (k = 0; k < c->chunk_item->num_stripes; k++) {
                                 if (i != k && c->devices[k]->devobj) {
-                                    tree_header* th2 = (tree_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
+                                    struct btrfs_header* th2 = (struct btrfs_header*)&context->stripes[k].buf[j * Vcb->superblock.node_size];
 
-                                    if (RtlCompareMemory((uint8_t*)context->stripes[k].bad_csums + (j * Vcb->csum_size), th2, Vcb->csum_size) == Vcb->csum_size && th2->address == addr) {
+                                    if (RtlCompareMemory((uint8_t*)context->stripes[k].bad_csums + (j * Vcb->csum_size), th2, Vcb->csum_size) == Vcb->csum_size && th2->bytenr == addr) {
                                         log_error(Vcb, addr, c->devices[i]->devitem.dev_id, true, true, false);
                                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
@@ -922,10 +922,10 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
                 }
             } else {
                 for (j = 0; j < context->stripes[i].length / Vcb->superblock.node_size; j++) {
-                    tree_header* th = (tree_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
+                    struct btrfs_header* th = (struct btrfs_header*)&context->stripes[i].buf[j * Vcb->superblock.node_size];
                     uint64_t addr = offset + UInt32x32To64(j, Vcb->superblock.node_size);
 
-                    if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), th, Vcb->csum_size) != Vcb->csum_size || th->address != addr)
+                    if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), th, Vcb->csum_size) != Vcb->csum_size || th->bytenr != addr)
                         log_error(Vcb, addr, c->devices[i]->devitem.dev_id, true, false, false);
                 }
             }
@@ -972,10 +972,10 @@ static NTSTATUS scrub_extent_raid0(device_extension* Vcb, chunk* c, uint64_t off
             }
         } else {
             for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
-                tree_header* th = (tree_header*)(context->stripes[stripe].buf + stripeoff[stripe]);
+                struct btrfs_header* th = (struct btrfs_header*)(context->stripes[stripe].buf + stripeoff[stripe]);
                 uint64_t addr = offset + pos;
 
-                if (!check_tree_checksum(Vcb, th) || th->address != addr) {
+                if (!check_tree_checksum(Vcb, th) || th->bytenr != addr) {
                     log_error(Vcb, addr, c->devices[stripe]->devitem.dev_id, true, false, false);
                     log_device_error(Vcb, c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
                 }
@@ -1070,10 +1070,10 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                         }
                     } else {
                         for (j = 0; j < readlen; j += Vcb->superblock.node_size) {
-                            tree_header* th = (tree_header*)(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe] + j);
+                            struct btrfs_header* th = (struct btrfs_header*)(context->stripes[(stripe * sub_stripes) + k].buf + stripeoff[stripe] + j);
                             uint64_t addr = offset + pos + j;
 
-                            if (!check_tree_checksum(Vcb, th) || th->address != addr) {
+                            if (!check_tree_checksum(Vcb, th) || th->bytenr != addr) {
                                 csum_error = true;
                                 context->stripes[(stripe * sub_stripes) + k].csum_error = true;
                                 log_device_error(Vcb, c->devices[(stripe * sub_stripes) + k], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
@@ -1227,7 +1227,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                             }
 
                             for (l = 0; l < context->stripes[j + k].length / Vcb->superblock.node_size; l++) {
-                                tree_header* th = (tree_header*)&context->stripes[j + k].buf[l * Vcb->superblock.node_size];
+                                struct btrfs_header* th = (struct btrfs_header*)&context->stripes[j + k].buf[l * Vcb->superblock.node_size];
 
                                 get_tree_checksum(Vcb, th, (uint8_t*)context->stripes[j + k].bad_csums + (Vcb->csum_size * l));
                             }
@@ -1302,19 +1302,19 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                             for (l = 0; l < readlen; l += Vcb->superblock.node_size) {
                                 for (k = 0; k < sub_stripes; k++) {
                                     if (c->devices[j + k]->devobj) {
-                                        tree_header* th = (tree_header*)&context->stripes[j + k].buf[so];
+                                        struct btrfs_header* th = (struct btrfs_header*)&context->stripes[j + k].buf[so];
                                         uint64_t addr = offset + pos;
 
-                                        if (RtlCompareMemory((uint8_t*)context->stripes[j + k].bad_csums + (so * Vcb->csum_size / Vcb->superblock.node_size), th, Vcb->csum_size) != Vcb->csum_size || th->address != addr) {
+                                        if (RtlCompareMemory((uint8_t*)context->stripes[j + k].bad_csums + (so * Vcb->csum_size / Vcb->superblock.node_size), th, Vcb->csum_size) != Vcb->csum_size || th->bytenr != addr) {
                                             ULONG m;
 
                                             recovered = false;
 
                                             for (m = 0; m < sub_stripes; m++) {
                                                 if (m != k) {
-                                                    tree_header* th2 = (tree_header*)&context->stripes[j + m].buf[so];
+                                                    struct btrfs_header* th2 = (struct btrfs_header*)&context->stripes[j + m].buf[so];
 
-                                                    if (RtlCompareMemory((uint8_t*)context->stripes[j + m].bad_csums + (so * Vcb->csum_size / Vcb->superblock.node_size), th2, Vcb->csum_size) == Vcb->csum_size && th2->address == addr) {
+                                                    if (RtlCompareMemory((uint8_t*)context->stripes[j + m].bad_csums + (so * Vcb->csum_size / Vcb->superblock.node_size), th2, Vcb->csum_size) == Vcb->csum_size && th2->bytenr == addr) {
                                                         log_error(Vcb, addr, c->devices[j + k]->devitem.dev_id, true, true, false);
 
                                                         RtlCopyMemory(th, th2, Vcb->superblock.node_size);
@@ -1722,10 +1722,10 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         for (ULONG i = 0; i < sectors_per_stripe; i++) {
             if (c->devices[stripe]->devobj && RtlCheckBit(&context->alloc, off)) {
                 if (RtlCheckBit(&context->is_tree, off)) {
-                    tree_header* th = (tree_header*)&context->stripes[stripe].buf[stripeoff << Vcb->sector_shift];
+                    struct btrfs_header* th = (struct btrfs_header*)&context->stripes[stripe].buf[stripeoff << Vcb->sector_shift];
                     uint64_t addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (off << Vcb->sector_shift);
 
-                    if (!check_tree_checksum(Vcb, th) || th->address != addr) {
+                    if (!check_tree_checksum(Vcb, th) || th->bytenr != addr) {
                         RtlSetBits(&context->stripes[stripe].error, i, Vcb->superblock.node_size >> Vcb->sector_shift);
                         log_device_error(Vcb, c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
@@ -1834,15 +1834,15 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             uint64_t addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 1) * c->chunk_item->stripe_length) + (bad_off << Vcb->sector_shift);
 
             if (RtlCheckBit(&context->is_tree, bad_off)) {
-                tree_header* th;
+                struct btrfs_header* th;
 
                 do_xor(&context->parity_scratch[i << Vcb->sector_shift],
                        &context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i << Vcb->sector_shift)],
                        Vcb->superblock.node_size);
 
-                th = (tree_header*)&context->parity_scratch[i << Vcb->sector_shift];
+                th = (struct btrfs_header*)&context->parity_scratch[i << Vcb->sector_shift];
 
-                if (check_tree_checksum(Vcb, th) && th->address == addr) {
+                if (check_tree_checksum(Vcb, th) && th->bytenr == addr) {
                     RtlCopyMemory(&context->stripes[bad_stripe].buf[(num * c->chunk_item->stripe_length) + (i << Vcb->sector_shift)],
                                   &context->parity_scratch[i << Vcb->sector_shift], Vcb->superblock.node_size);
 
@@ -1915,10 +1915,10 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
         for (ULONG i = 0; i < sectors_per_stripe; i++) {
             if (c->devices[stripe]->devobj && RtlCheckBit(&context->alloc, off)) {
                 if (RtlCheckBit(&context->is_tree, off)) {
-                    tree_header* th = (tree_header*)&context->stripes[stripe].buf[stripeoff << Vcb->sector_shift];
+                    struct btrfs_header* th = (struct btrfs_header*)&context->stripes[stripe].buf[stripeoff << Vcb->sector_shift];
                     uint64_t addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (off << Vcb->sector_shift);
 
-                    if (!check_tree_checksum(Vcb, th) || th->address != addr) {
+                    if (!check_tree_checksum(Vcb, th) || th->bytenr != addr) {
                         RtlSetBits(&context->stripes[stripe].error, i, Vcb->superblock.node_size >> Vcb->sector_shift);
                         log_device_error(Vcb, c->devices[stripe], BTRFS_DEV_STAT_CORRUPTION_ERRORS);
 
@@ -2114,21 +2114,21 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             if (RtlCheckBit(&context->is_tree, bad_off1)) {
                 uint8_t hash1[MAX_HASH_SIZE];
                 uint8_t hash2[MAX_HASH_SIZE];
-                tree_header *th1 = NULL, *th2 = NULL;
+                struct btrfs_header *th1 = NULL, *th2 = NULL;
 
                 if (c->devices[parity1]->devobj) {
-                    th1 = (tree_header*)&context->parity_scratch[i << Vcb->sector_shift];
+                    th1 = (struct btrfs_header*)&context->parity_scratch[i << Vcb->sector_shift];
                     get_tree_checksum(Vcb, th1, hash1);
                 }
 
                 if (c->devices[parity2]->devobj) {
-                    th2 = (tree_header*)scratch;
+                    th2 = (struct btrfs_header*)scratch;
                     get_tree_checksum(Vcb, th2, hash2);
                 }
 
-                if ((c->devices[parity1]->devobj && RtlCompareMemory(hash1, th1, Vcb->csum_size) == Vcb->csum_size && th1->address == addr) ||
-                    (c->devices[parity2]->devobj && RtlCompareMemory(hash2, th2, Vcb->csum_size) == Vcb->csum_size && th2->address == addr)) {
-                    if (!c->devices[parity1]->devobj || RtlCompareMemory(hash1, th1, Vcb->csum_size) != Vcb->csum_size || th1->address != addr) {
+                if ((c->devices[parity1]->devobj && RtlCompareMemory(hash1, th1, Vcb->csum_size) == Vcb->csum_size && th1->bytenr == addr) ||
+                    (c->devices[parity2]->devobj && RtlCompareMemory(hash2, th2, Vcb->csum_size) == Vcb->csum_size && th2->bytenr == addr)) {
+                    if (!c->devices[parity1]->devobj || RtlCompareMemory(hash1, th1, Vcb->csum_size) != Vcb->csum_size || th1->bytenr != addr) {
                         RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i << Vcb->sector_shift)],
                                       scratch, Vcb->superblock.node_size);
 
@@ -2160,7 +2160,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
                         RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i << Vcb->sector_shift)],
                                       &context->parity_scratch[i << Vcb->sector_shift], Vcb->superblock.node_size);
 
-                        if (!c->devices[parity2]->devobj || RtlCompareMemory(hash2, th2, Vcb->csum_size) != Vcb->csum_size || th2->address != addr) {
+                        if (!c->devices[parity2]->devobj || RtlCompareMemory(hash2, th2, Vcb->csum_size) != Vcb->csum_size || th2->bytenr != addr) {
                             // fix parity 2
                             stripe = parity1 == 0 ? (c->chunk_item->num_stripes - 1) : (parity1 - 1);
 
@@ -2350,9 +2350,9 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off1 << Vcb->sector_shift);
 
             if (RtlCheckBit(&context->is_tree, bad_off1)) {
-                tree_header* th = (tree_header*)&context->parity_scratch[i << Vcb->sector_shift];
+                struct btrfs_header* th = (struct btrfs_header*)&context->parity_scratch[i << Vcb->sector_shift];
 
-                if (check_tree_checksum(Vcb, th) && th->address == addr) {
+                if (check_tree_checksum(Vcb, th) && th->bytenr == addr) {
                     RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_length) + (i << Vcb->sector_shift)],
                                   &context->parity_scratch[i << Vcb->sector_shift], Vcb->superblock.node_size);
 
@@ -2378,9 +2378,9 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             addr = c->offset + (stripe_start * (c->chunk_item->num_stripes - 2) * c->chunk_item->stripe_length) + (bad_off2 << Vcb->sector_shift);
 
             if (RtlCheckBit(&context->is_tree, bad_off2)) {
-                tree_header* th = (tree_header*)&context->parity_scratch2[i << Vcb->sector_shift];
+                struct btrfs_header* th = (struct btrfs_header*)&context->parity_scratch2[i << Vcb->sector_shift];
 
-                if (check_tree_checksum(Vcb, th) && th->address == addr) {
+                if (check_tree_checksum(Vcb, th) && th->bytenr == addr) {
                     RtlCopyMemory(&context->stripes[bad_stripe2].buf[(num * c->chunk_item->stripe_length) + (i << Vcb->sector_shift)],
                                   &context->parity_scratch2[i << Vcb->sector_shift], Vcb->superblock.node_size);
 

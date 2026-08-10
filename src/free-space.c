@@ -2006,7 +2006,7 @@ after_tree_walk:
             while (t) {
                 if (t->paritem && t->paritem->ignore) {
                     t->paritem->ignore = false;
-                    t->parent->header.num_items++;
+                    t->parent->header.nritems++;
                     t->parent->size += sizeof(internal_node);
                 }
 

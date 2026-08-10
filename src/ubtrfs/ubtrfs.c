@@ -133,7 +133,7 @@ typedef struct {
 
 typedef struct {
     uint64_t id;
-    tree_header header;
+    struct btrfs_header header;
     btrfs_chunk* c;
     LIST_ENTRY items;
     LIST_ENTRY list_entry;
@@ -252,7 +252,7 @@ static btrfs_root* add_root(LIST_ENTRY* roots, uint64_t id) {
     root = malloc(sizeof(btrfs_root));
 
     root->id = id;
-    RtlZeroMemory(&root->header, sizeof(tree_header));
+    RtlZeroMemory(&root->header, sizeof(struct btrfs_header));
     InitializeListHead(&root->items);
     InsertTailList(roots, &root->list_entry);
 
@@ -487,12 +487,12 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
         btrfs_chunk* c = r->id == BTRFS_ROOT_CHUNK ? sys_chunk : metadata_chunk;
         bool done_use = false;
 
-        r->header.address = get_next_address(c);
+        r->header.bytenr = get_next_address(c);
 
         if (!IsListEmpty(&c->used_space)) {
             used_space_extent* use = CONTAINING_RECORD(c->used_space.Blink, used_space_extent, list_entry);
 
-            if (use->address + use->size == r->header.address) {
+            if (use->address + use->size == r->header.bytenr) {
                 use->size += node_size;
                 done_use = true;
             }
@@ -500,13 +500,13 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
 
         if (!done_use) {
             used_space_extent* use = malloc(sizeof(used_space_extent));
-            use->address = r->header.address;
+            use->address = r->header.bytenr;
             use->size = node_size;
             InsertTailList(&c->used_space, &use->list_entry);
         }
 
         r->c = c;
-        c->lastoff = r->header.address + node_size;
+        c->lastoff = r->header.bytenr + node_size;
         c->used += node_size;
 
         if (skinny) {
@@ -518,7 +518,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim.type = TYPE_TREE_BLOCK_REF;
             eim.tbr.offset = r->id;
 
-            add_item(extent_root, r->header.address, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
+            add_item(extent_root, r->header.bytenr, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
         } else {
             EXTENT_ITEM_METADATA2 eim2;
             struct btrfs_key firstitem;
@@ -541,7 +541,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim2.type = TYPE_TREE_BLOCK_REF;
             eim2.tbr.offset = r->id;
 
-            add_item(extent_root, r->header.address, TYPE_EXTENT_ITEM, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
+            add_item(extent_root, r->header.bytenr, TYPE_EXTENT_ITEM, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
         }
 
         if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
@@ -556,7 +556,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             ri.inode.st_mode = 040755;
             ri.generation = 1;
             ri.objid = r->id == 5 || r->id >= 0x100 ? SUBVOL_ROOT_INODE : 0;
-            ri.block_number = r->header.address;
+            ri.block_number = r->header.bytenr;
             ri.bytes_used = node_size;
             ri.num_references = 1;
             ri.generation2 = ri.generation;
@@ -588,22 +588,22 @@ static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* dat
     return STATUS_SUCCESS;
 }
 
-static void calc_tree_checksum(tree_header* th, uint32_t node_size) {
+static void calc_tree_checksum(struct btrfs_header* th, uint32_t node_size) {
     switch (def_csum_type) {
         case CSUM_TYPE_CRC32C:
-            *(uint32_t*)th = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum));
+            *(uint32_t*)th = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fsid, node_size - sizeof(th->csum));
         break;
 
         case CSUM_TYPE_XXHASH:
-            *(uint64_t*)th = XXH64((uint8_t*)&th->fs_uuid, node_size - sizeof(th->csum), 0);
+            *(uint64_t*)th = XXH64((uint8_t*)&th->fsid, node_size - sizeof(th->csum), 0);
         break;
 
         case CSUM_TYPE_SHA256:
-            calc_sha256((uint8_t*)th, &th->fs_uuid, node_size - sizeof(th->csum));
+            calc_sha256((uint8_t*)th, &th->fsid, node_size - sizeof(th->csum));
         break;
 
         case CSUM_TYPE_BLAKE2:
-            blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fs_uuid, node_size - sizeof(th->csum));
+            blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fsid, node_size - sizeof(th->csum));
         break;
     }
 }
@@ -623,14 +623,14 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
 
         memset(tree, 0, node_size);
 
-        r->header.num_items = 0;
-        r->header.fs_uuid = *fsuuid;
+        r->header.nritems = 0;
+        r->header.fsid = *fsuuid;
         r->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
         r->header.chunk_tree_uuid = *chunkuuid;
         r->header.generation = 1;
-        r->header.tree_id = r->id;
+        r->header.owner = r->id;
 
-        ln = (leaf_node*)(tree + sizeof(tree_header));
+        ln = (leaf_node*)(tree + sizeof(struct btrfs_header));
 
         dp = tree + node_size;
 
@@ -646,20 +646,20 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
                 memcpy(dp, item->data, item->size);
             }
 
-            ln->offset = (uint32_t)(dp - tree - sizeof(tree_header));
+            ln->offset = (uint32_t)(dp - tree - sizeof(struct btrfs_header));
 
             ln = &ln[1];
 
-            r->header.num_items++;
+            r->header.nritems++;
 
             le2 = le2->Flink;
         }
 
-        memcpy(tree, &r->header, sizeof(tree_header));
+        memcpy(tree, &r->header, sizeof(struct btrfs_header));
 
-        calc_tree_checksum((tree_header*)tree, node_size);
+        calc_tree_checksum((struct btrfs_header*)tree, node_size);
 
-        Status = write_data(h, r->header.address, r->c, tree, node_size);
+        Status = write_data(h, r->header.bytenr, r->c, tree, node_size);
         if (!NT_SUCCESS(Status)) {
             free(tree);
             return Status;
@@ -760,8 +760,8 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->flags = 1;
     sb->magic = BTRFS_MAGIC;
     sb->generation = 1;
-    sb->root_tree_addr = root_root->header.address;
-    sb->chunk_tree_addr = chunk_root->header.address;
+    sb->root_tree_addr = root_root->header.bytenr;
+    sb->chunk_tree_addr = chunk_root->header.bytenr;
     sb->total_bytes = dev->dev_item.num_bytes;
     sb->bytes_used = bytes_used;
     sb->root_dir_objectid = BTRFS_ROOT_TREEDIR;

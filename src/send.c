@@ -3078,7 +3078,7 @@ static void __stdcall send_thread(void* ctx) {
                 }
             }
 
-            while (!ended1 && !ended2 && tp.tree->header.address == tp2.tree->header.address) {
+            while (!ended1 && !ended2 && tp.tree->header.bytenr == tp2.tree->header.bytenr) {
                 Status = skip_to_difference(context->Vcb, &tp, &tp2, &ended1, &ended2);
                 if (!NT_SUCCESS(Status)) {
                     ERR("skip_to_difference returned %08lx\n", Status);
