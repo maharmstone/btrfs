@@ -126,11 +126,6 @@ typedef struct _FILE_LINKS_FULL_ID_INFORMATION {
 #define FILE_RENAME_FORCE_RESIZE_TARGET_SR                  0x080
 #define FILE_RENAME_FORCE_RESIZE_SOURCE_SR                  0x100
 
-#define FILE_DISPOSITION_DELETE                         0x1
-#define FILE_DISPOSITION_POSIX_SEMANTICS                0x2
-#define FILE_DISPOSITION_FORCE_IMAGE_SECTION_CHECK      0x4
-#define FILE_DISPOSITION_ON_CLOSE                       0x8
-
 #define FILE_LINK_REPLACE_IF_EXISTS                       0x001
 #define FILE_LINK_POSIX_SEMANTICS                         0x002
 #define FILE_LINK_SUPPRESS_STORAGE_RESERVE_INHERITANCE    0x008

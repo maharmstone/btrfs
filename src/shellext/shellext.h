@@ -156,13 +156,6 @@ typedef struct _REPARSE_DATA_BUFFER {
 
 #ifndef _MSC_VER
 
-typedef struct _DUPLICATE_EXTENTS_DATA {
-    HANDLE FileHandle;
-    LARGE_INTEGER SourceFileOffset;
-    LARGE_INTEGER TargetFileOffset;
-    LARGE_INTEGER ByteCount;
-} DUPLICATE_EXTENTS_DATA, *PDUPLICATE_EXTENTS_DATA;
-
 typedef struct _FSCTL_GET_INTEGRITY_INFORMATION_BUFFER {
     WORD ChecksumAlgorithm;
     WORD Reserved;
