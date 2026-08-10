@@ -199,31 +199,31 @@ struct btrfs_dev_item {
 #define SYS_CHUNK_ARRAY_SIZE 0x800
 #define BTRFS_NUM_BACKUP_ROOTS 4
 
-typedef struct {
-    uint64_t root_tree_addr;
-    uint64_t root_tree_generation;
-    uint64_t chunk_tree_addr;
-    uint64_t chunk_tree_generation;
-    uint64_t extent_tree_addr;
-    uint64_t extent_tree_generation;
-    uint64_t fs_tree_addr;
-    uint64_t fs_tree_generation;
-    uint64_t dev_root_addr;
-    uint64_t dev_root_generation;
-    uint64_t csum_root_addr;
-    uint64_t csum_root_generation;
+struct btrfs_root_backup {
+    uint64_t tree_root;
+    uint64_t tree_root_gen;
+    uint64_t chunk_root;
+    uint64_t chunk_root_gen;
+    uint64_t extent_root;
+    uint64_t extent_root_gen;
+    uint64_t fs_root;
+    uint64_t fs_root_gen;
+    uint64_t dev_root;
+    uint64_t dev_root_gen;
+    uint64_t csum_root;
+    uint64_t csum_root_gen;
     uint64_t total_bytes;
     uint64_t bytes_used;
     uint64_t num_devices;
-    uint64_t reserved[4];
-    uint8_t root_level;
+    uint64_t unused_64[4];
+    uint8_t tree_root_level;
     uint8_t chunk_root_level;
     uint8_t extent_root_level;
     uint8_t fs_root_level;
     uint8_t dev_root_level;
     uint8_t csum_root_level;
-    uint8_t reserved2[10];
-} superblock_backup;
+    uint8_t unused_8[10];
+};
 
 typedef struct {
     uint8_t checksum[32];
@@ -260,7 +260,7 @@ typedef struct {
     BTRFS_UUID metadata_uuid;
     uint64_t reserved[28];
     uint8_t sys_chunk_array[SYS_CHUNK_ARRAY_SIZE];
-    superblock_backup backup[BTRFS_NUM_BACKUP_ROOTS];
+    struct btrfs_root_backup backup[BTRFS_NUM_BACKUP_ROOTS];
     uint8_t reserved2[565];
 } superblock;
 

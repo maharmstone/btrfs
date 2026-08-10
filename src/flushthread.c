@@ -2108,18 +2108,18 @@ end:
     return Status;
 }
 
-static void update_backup_superblock(device_extension* Vcb, superblock_backup* sb, PIRP Irp) {
+static void update_backup_superblock(device_extension* Vcb, struct btrfs_root_backup* sb, PIRP Irp) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
 
-    RtlZeroMemory(sb, sizeof(superblock_backup));
+    RtlZeroMemory(sb, sizeof(struct btrfs_root_backup));
 
-    sb->root_tree_addr = Vcb->superblock.root_tree_addr;
-    sb->root_tree_generation = Vcb->superblock.generation;
-    sb->root_level = Vcb->superblock.root_level;
+    sb->tree_root = Vcb->superblock.root_tree_addr;
+    sb->tree_root_gen = Vcb->superblock.generation;
+    sb->tree_root_level = Vcb->superblock.root_level;
 
-    sb->chunk_tree_addr = Vcb->superblock.chunk_tree_addr;
-    sb->chunk_tree_generation = Vcb->superblock.chunk_root_generation;
+    sb->chunk_root = Vcb->superblock.chunk_tree_addr;
+    sb->chunk_root_gen = Vcb->superblock.chunk_root_generation;
     sb->chunk_root_level = Vcb->superblock.chunk_root_level;
 
     searchkey.objectid = BTRFS_ROOT_EXTENT;
@@ -2130,8 +2130,8 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
-            sb->extent_tree_addr = ri->block_number;
-            sb->extent_tree_generation = ri->generation;
+            sb->extent_root = ri->block_number;
+            sb->extent_root_gen = ri->generation;
             sb->extent_root_level = ri->root_level;
         }
     }
@@ -2142,8 +2142,8 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
-            sb->fs_tree_addr = ri->block_number;
-            sb->fs_tree_generation = ri->generation;
+            sb->fs_root = ri->block_number;
+            sb->fs_root_gen = ri->generation;
             sb->fs_root_level = ri->root_level;
         }
     }
@@ -2154,8 +2154,8 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
-            sb->dev_root_addr = ri->block_number;
-            sb->dev_root_generation = ri->generation;
+            sb->dev_root = ri->block_number;
+            sb->dev_root_gen = ri->generation;
             sb->dev_root_level = ri->root_level;
         }
     }
@@ -2166,8 +2166,8 @@ static void update_backup_superblock(device_extension* Vcb, superblock_backup* s
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
-            sb->csum_root_addr = ri->block_number;
-            sb->csum_root_generation = ri->generation;
+            sb->csum_root = ri->block_number;
+            sb->csum_root_gen = ri->generation;
             sb->csum_root_level = ri->root_level;
         }
     }
@@ -2350,7 +2350,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
     }
 
     for (i = 0; i < BTRFS_NUM_BACKUP_ROOTS - 1; i++) {
-        RtlCopyMemory(&Vcb->superblock.backup[i], &Vcb->superblock.backup[i+1], sizeof(superblock_backup));
+        RtlCopyMemory(&Vcb->superblock.backup[i], &Vcb->superblock.backup[i+1], sizeof(struct btrfs_root_backup));
     }
 
     update_backup_superblock(Vcb, &Vcb->superblock.backup[BTRFS_NUM_BACKUP_ROOTS - 1], Irp);
