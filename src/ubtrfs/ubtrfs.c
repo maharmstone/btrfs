@@ -114,7 +114,7 @@ typedef struct {
     uint16_t size;
     void* data;
     LIST_ENTRY list_entry;
-} btrfs_item;
+} pending_item;
 
 typedef struct {
     uint64_t address;
@@ -270,7 +270,7 @@ static void free_roots(LIST_ENTRY* roots) {
         le3 = r->items.Flink;
         while (le3 != &r->items) {
             LIST_ENTRY* le4 = le3->Flink;
-            btrfs_item* item = CONTAINING_RECORD(le3, btrfs_item, list_entry);
+            pending_item* item = CONTAINING_RECORD(le3, pending_item, list_entry);
 
             if (item->data)
                 free(item->data);
@@ -309,9 +309,9 @@ static void free_chunks(LIST_ENTRY* chunks) {
 
 static void add_item(btrfs_root* r, uint64_t objectid, uint8_t type, uint64_t offset, void* data, uint16_t size) {
     LIST_ENTRY* le;
-    btrfs_item* item;
+    pending_item* item;
 
-    item = malloc(sizeof(btrfs_item));
+    item = malloc(sizeof(pending_item));
 
     item->key.objectid = objectid;
     item->key.type = type;
@@ -327,7 +327,7 @@ static void add_item(btrfs_root* r, uint64_t objectid, uint8_t type, uint64_t of
 
     le = r->items.Flink;
     while (le != &r->items) {
-        btrfs_item* i2 = CONTAINING_RECORD(le, btrfs_item, list_entry);
+        pending_item* i2 = CONTAINING_RECORD(le, pending_item, list_entry);
 
         if (keycmp(item->key, i2->key) != 1) {
             InsertTailList(le, &item->list_entry);
@@ -528,7 +528,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
                 firstitem.type = 0;
                 firstitem.offset = 0;
             } else {
-                btrfs_item* bi = CONTAINING_RECORD(r->items.Flink, btrfs_item, list_entry);
+                pending_item* bi = CONTAINING_RECORD(r->items.Flink, pending_item, list_entry);
 
                 firstitem = bi->key;
             }
@@ -636,7 +636,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
 
         le2 = r->items.Flink;
         while (le2 != &r->items) {
-            btrfs_item* item = CONTAINING_RECORD(le2, btrfs_item, list_entry);
+            pending_item* item = CONTAINING_RECORD(le2, pending_item, list_entry);
 
             ln->key = item->key;
             ln->size = item->size;
@@ -743,7 +743,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
 
     le = extent_root->items.Flink;
     while (le != &extent_root->items) {
-        btrfs_item* item = CONTAINING_RECORD(le, btrfs_item, list_entry);
+        pending_item* item = CONTAINING_RECORD(le, pending_item, list_entry);
 
         if (item->key.type == TYPE_EXTENT_ITEM)
             bytes_used += item->key.offset;
