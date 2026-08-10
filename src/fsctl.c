@@ -142,7 +142,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
 
     if (th->level == 0) {
         uint32_t i;
-        leaf_node* ln = (leaf_node*)&th[1];
+        struct btrfs_item* ln = (struct btrfs_item*)&th[1];
 
         for (i = 0; i < th->nritems; i++) {
             if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(struct btrfs_header)) {
@@ -4250,7 +4250,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     if (datalen < offsetof(btrfs_set_xattr, data[0]) + bsxa->namelen + bsxa->valuelen)
         return STATUS_INVALID_PARAMETER;
 
-    if (bsxa->namelen + bsxa->valuelen + sizeof(struct btrfs_header) + sizeof(leaf_node) + offsetof(DIR_ITEM, name[0]) > Vcb->superblock.node_size)
+    if (bsxa->namelen + bsxa->valuelen + sizeof(struct btrfs_header) + sizeof(struct btrfs_item) + offsetof(DIR_ITEM, name[0]) > Vcb->superblock.node_size)
         return STATUS_INVALID_PARAMETER;
 
     if (!FileObject || !FileObject->FsContext || !FileObject->FsContext2 || FileObject->FsContext == Vcb->volume_fcb)

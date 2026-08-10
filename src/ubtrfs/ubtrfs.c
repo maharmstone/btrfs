@@ -619,7 +619,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
     while (le != roots) {
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
         uint8_t* dp;
-        leaf_node* ln;
+        struct btrfs_item* ln;
 
         memset(tree, 0, node_size);
 
@@ -630,7 +630,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
         r->header.generation = 1;
         r->header.owner = r->id;
 
-        ln = (leaf_node*)(tree + sizeof(struct btrfs_header));
+        ln = (struct btrfs_item*)(tree + sizeof(struct btrfs_header));
 
         dp = tree + node_size;
 

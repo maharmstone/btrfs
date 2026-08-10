@@ -330,7 +330,7 @@ end:
 static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treeaddr, uint64_t addr, uint64_t devid, uint64_t extent) {
     struct btrfs_header* tree;
     NTSTATUS Status;
-    leaf_node* ln;
+    struct btrfs_item* ln;
     ULONG i;
 
     tree = ExAllocatePoolWithTag(PagedPool, Vcb->superblock.node_size, ALLOC_TAG);
@@ -350,7 +350,7 @@ static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treea
         goto end;
     }
 
-    ln = (leaf_node*)&tree[1];
+    ln = (struct btrfs_item*)&tree[1];
 
     for (i = 0; i < tree->nritems; i++) {
         if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {

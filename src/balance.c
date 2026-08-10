@@ -471,7 +471,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             }
         } else {
             uint16_t i;
-            leaf_node* ln = (leaf_node*)&mr->data[1];
+            struct btrfs_item* ln = (struct btrfs_item*)&mr->data[1];
 
             for (i = 0; i < mr->data->nritems; i++) {
                 if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
@@ -599,7 +599,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
             le2 = data_items->Flink;
             while (le2 != data_items) {
                 data_reloc* dr = CONTAINING_RECORD(le2, data_reloc, list_entry);
-                leaf_node* ln = (leaf_node*)&mr->data[1];
+                struct btrfs_item* ln = (struct btrfs_item*)&mr->data[1];
                 uint16_t i;
 
                 for (i = 0; i < mr->data->nritems; i++) {

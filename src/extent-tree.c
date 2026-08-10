@@ -681,7 +681,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
     offset = get_extent_hash(type, data);
 
-    max_extent_item_size = (Vcb->superblock.node_size >> 4) - sizeof(leaf_node);
+    max_extent_item_size = (Vcb->superblock.node_size >> 4) - sizeof(struct btrfs_item);
 
     // If we can, add entry as inline extent item
 

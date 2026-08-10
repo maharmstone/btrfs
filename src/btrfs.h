@@ -167,11 +167,11 @@ struct btrfs_header {
     uint8_t level;
 };
 
-typedef struct {
+struct btrfs_item {
     struct btrfs_key key;
     uint32_t offset;
     uint32_t size;
-} leaf_node;
+};
 
 typedef struct {
     struct btrfs_key key;

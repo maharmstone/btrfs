@@ -22,10 +22,10 @@
 #include <ntddscsi.h>
 #include <ntddstor.h>
 
-/* cf. __MAX_CSUM_ITEMS in Linux - it needs sizeof(leaf_node) bytes free
+/* cf. __MAX_CSUM_ITEMS in Linux - it needs sizeof(struct btrfs_item) bytes free
  * so it can do a split. Linux tries to get it so a run will fit in a
  * sector, but the MAX_CSUM_ITEMS logic is wrong... */
-#define MAX_CSUM_SIZE (4096 - sizeof(struct btrfs_header) - (2 * sizeof(leaf_node)))
+#define MAX_CSUM_SIZE (4096 - sizeof(struct btrfs_header) - (2 * sizeof(struct btrfs_item)))
 
 // #define DEBUG_WRITE_LOOPS
 
@@ -1949,7 +1949,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             }
 
             if (t->header.level == 0)
-                size += num_items * sizeof(leaf_node);
+                size += num_items * sizeof(struct btrfs_item);
             else
                 size += num_items * sizeof(internal_node);
 
@@ -2006,7 +2006,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             RtlZeroMemory(body, Vcb->superblock.node_size - sizeof(struct btrfs_header));
 
             if (t->header.level == 0) {
-                leaf_node* itemptr = (leaf_node*)body;
+                struct btrfs_item* itemptr = (struct btrfs_item*)body;
                 int i = 0;
                 uint8_t* dataptr = data + Vcb->superblock.node_size;
 
@@ -3217,7 +3217,7 @@ static NTSTATUS split_tree(device_extension* Vcb, tree* t) {
 
         if (!td->ignore) {
             if (t->header.level == 0)
-                ds = sizeof(leaf_node) + td->size;
+                ds = sizeof(struct btrfs_item) + td->size;
             else
                 ds = sizeof(internal_node);
 
@@ -3463,7 +3463,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
 
             if (!td->ignore) {
                 if (next_tree->header.level == 0)
-                    size = sizeof(leaf_node) + td->size;
+                    size = sizeof(struct btrfs_item) + td->size;
                 else
                     size = sizeof(internal_node);
             } else
@@ -7119,7 +7119,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
         }
 
         if (!keycmp(tp.item->key, searchkey)) {
-            if (tp.item->size + sizeof(uint64_t) <= Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(leaf_node)) {
+            if (tp.item->size + sizeof(uint64_t) <= Vcb->superblock.node_size - sizeof(struct btrfs_header) - sizeof(struct btrfs_item)) {
                 uint64_t* ids;
 
                 ids = ExAllocatePoolWithTag(PagedPool, tp.item->size + sizeof(uint64_t), ALLOC_TAG);
