@@ -1691,7 +1691,7 @@ static NTSTATUS copy_space_list(LIST_ENTRY* old_list, LIST_ENTRY* new_list) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, BTRFS_TIME* now, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs_timespec* now, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
@@ -2045,7 +2045,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     NTSTATUS Status;
     chunk* c;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);

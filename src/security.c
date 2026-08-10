@@ -760,7 +760,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
     file_ref* fileref = ccb ? ccb->fileref : NULL;
     SECURITY_DESCRIPTOR* oldsd;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     TRACE("(%p, %p, %p, %lx)\n", Vcb, FileObject, sd, *flags);
 

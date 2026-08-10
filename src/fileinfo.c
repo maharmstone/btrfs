@@ -245,7 +245,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     // FileAttributes == 0 means don't set - undocumented, but seen in fastfat
     if (fbi->FileAttributes != 0) {
         LARGE_INTEGER time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         fbi->FileAttributes &= ~FILE_ATTRIBUTE_NORMAL;
 
@@ -741,7 +741,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     PSID owner;
     BOOLEAN defaulted;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     fcb = create_fcb(Vcb, PagedPool);
     if (!fcb) {
@@ -907,7 +907,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     LIST_ENTRY move_list, *le;
     move_entry* me;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     file_ref* origparent;
 
     // FIXME - make sure me->dummyfileref and me->dummyfcb get freed properly
@@ -2490,7 +2490,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     ANSI_STRING utf8;
     NTSTATUS Status;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     LIST_ENTRY rollback, *le;
     hardlink* hl;
     SECURITY_SUBJECT_CONTEXT subjcont;
@@ -3124,7 +3124,7 @@ end:
 
 NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end, fcb* fcb, file_ref* fileref, bool advance_only) {
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     TRACE("setting new end to %x bytes (currently %x)\n", end, fcb->adsdata.Length);
 
@@ -3513,7 +3513,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     ANSI_STRING utf8;
     NTSTATUS Status;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     LIST_ENTRY rollback;
     hardlink* hl;
     ACCESS_MASK access;
@@ -5810,7 +5810,7 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     FILE_FULL_EA_INFORMATION* ea;
     LIST_ENTRY* le;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     FsRtlEnterFileSystem();
 

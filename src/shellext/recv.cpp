@@ -1062,15 +1062,15 @@ void BtrfsRecv::cmd_chown(btrfs_send_command* cmd, uint8_t* data) {
     }
 }
 
-static __inline uint64_t unix_time_to_win(BTRFS_TIME* t) {
-    return (t->seconds * 10000000) + (t->nanoseconds / 100) + 116444736000000000;
+static __inline uint64_t unix_time_to_win(struct btrfs_timespec* t) {
+    return (t->sec * 10000000) + (t->nsec / 100) + 116444736000000000;
 }
 
 void BtrfsRecv::cmd_utimes(btrfs_send_command* cmd, uint8_t* data) {
     wstring pathu;
     win_handle h;
     FILE_BASIC_INFO fbi;
-    BTRFS_TIME* time;
+    struct btrfs_timespec* time;
     ULONG timelen;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
@@ -1092,16 +1092,16 @@ void BtrfsRecv::cmd_utimes(btrfs_send_command* cmd, uint8_t* data) {
 
     memset(&fbi, 0, sizeof(FILE_BASIC_INFO));
 
-    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_OTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_OTIME, (void**)&time, &timelen) && timelen >= sizeof(struct btrfs_timespec))
         fbi.CreationTime.QuadPart = unix_time_to_win(time);
 
-    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_ATIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_ATIME, (void**)&time, &timelen) && timelen >= sizeof(struct btrfs_timespec))
         fbi.LastAccessTime.QuadPart = unix_time_to_win(time);
 
-    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_MTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_MTIME, (void**)&time, &timelen) && timelen >= sizeof(struct btrfs_timespec))
         fbi.LastWriteTime.QuadPart = unix_time_to_win(time);
 
-    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_CTIME, (void**)&time, &timelen) && timelen >= sizeof(BTRFS_TIME))
+    if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_CTIME, (void**)&time, &timelen) && timelen >= sizeof(struct btrfs_timespec))
         fbi.ChangeTime.QuadPart = unix_time_to_win(time);
 
     Status = NtSetInformationFile(h, &iosb, &fbi, sizeof(FILE_BASIC_INFO), FileBasicInformation);

@@ -287,10 +287,10 @@ typedef struct {
     char name[1];
 } DIR_ITEM;
 
-typedef struct {
-    uint64_t seconds;
-    uint32_t nanoseconds;
-} BTRFS_TIME;
+struct btrfs_timespec {
+    uint64_t sec;
+    uint32_t nsec;
+};
 
 typedef struct {
     uint64_t generation;
@@ -307,10 +307,10 @@ typedef struct {
     uint32_t flags_ro;
     uint64_t sequence;
     uint8_t reserved[32];
-    BTRFS_TIME st_atime;
-    BTRFS_TIME st_ctime;
-    BTRFS_TIME st_mtime;
-    BTRFS_TIME otime;
+    struct btrfs_timespec st_atime;
+    struct btrfs_timespec st_ctime;
+    struct btrfs_timespec st_mtime;
+    struct btrfs_timespec otime;
 } INODE_ITEM;
 
 static_assert(sizeof(INODE_ITEM) == 0xa0, "INODE_ITEM has wrong size");
@@ -336,10 +336,10 @@ typedef struct {
     uint64_t otransid;
     uint64_t stransid;
     uint64_t rtransid;
-    BTRFS_TIME ctime;
-    BTRFS_TIME otime;
-    BTRFS_TIME stime;
-    BTRFS_TIME rtime;
+    struct btrfs_timespec ctime;
+    struct btrfs_timespec otime;
+    struct btrfs_timespec stime;
+    struct btrfs_timespec rtime;
     uint64_t reserved[8];
 } ROOT_ITEM;
 

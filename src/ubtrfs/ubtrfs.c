@@ -834,11 +834,11 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     return STATUS_SUCCESS;
 }
 
-static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
+static __inline void win_time_to_unix(LARGE_INTEGER t, struct btrfs_timespec* out) {
     ULONGLONG l = t.QuadPart - 116444736000000000;
 
-    out->seconds = l / 10000000;
-    out->nanoseconds = (l % 10000000) * 100;
+    out->sec = l / 10000000;
+    out->nsec = (l % 10000000) * 100;
 }
 
 static void add_inode_ref(btrfs_root* r, uint64_t inode, uint64_t parent, uint64_t index, const char* name) {

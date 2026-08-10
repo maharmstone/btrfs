@@ -2187,7 +2187,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     uint64_t inode;
     uint8_t type;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     POOL_TYPE pool_type = IrpSp->Flags & SL_OPEN_PAGING_FILE ? NonPagedPool : PagedPool;
     USHORT defda;
@@ -2647,7 +2647,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     static const WCHAR reparse[] = L"reparse";
     static const WCHAR casesensitive_str[] = L"casesensitive";
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     ULONG utf8len, overhead;
     NTSTATUS Status;
     struct btrfs_key searchkey;
@@ -3600,7 +3600,7 @@ static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_
     if (RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF || RequestedDisposition == FILE_SUPERSEDE) {
         ULONG defda, oldatts, filter;
         LARGE_INTEGER time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         if (!fileref->fcb->ads && (IrpSp->Parameters.Create.FileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != ((fileref->fcb->atts & (FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN))))
             return STATUS_ACCESS_DENIED;

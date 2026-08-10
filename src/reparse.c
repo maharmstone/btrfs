@@ -182,7 +182,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     ANSI_STRING target;
     bool target_alloc = false;
     LARGE_INTEGER offset, time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     if (rdb->ReparseTag == IO_REPARSE_TAG_SYMLINK) {
         UNICODE_STRING subname;
@@ -344,7 +344,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
     } else {
         LARGE_INTEGER offset, time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         if (fcb->type == BTRFS_TYPE_DIRECTORY || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV) { // store as xattr
             ANSI_STRING buf;
@@ -548,7 +548,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
 
     if (fcb->type == BTRFS_TYPE_SYMLINK) {
         LARGE_INTEGER time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         if (rdb->ReparseTag != IO_REPARSE_TAG_SYMLINK) {
             WARN("reparse tag was not IO_REPARSE_TAG_SYMLINK\n");
@@ -586,7 +586,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         fileref->fcb->subvol->root_item.ctime = now;
     } else if (fcb->type == BTRFS_TYPE_FILE) {
         LARGE_INTEGER time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         // FIXME - do we need to check that the reparse tags match?
 
@@ -618,7 +618,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         fcb->subvol->root_item.ctime = now;
     } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
         LARGE_INTEGER time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         // FIXME - do we need to check that the reparse tags match?
 

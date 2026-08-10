@@ -957,15 +957,15 @@ static __inline void* map_user_buffer(PIRP Irp, ULONG priority) {
     }
 }
 
-static __inline uint64_t unix_time_to_win(BTRFS_TIME* t) {
-    return (t->seconds * 10000000) + (t->nanoseconds / 100) + 116444736000000000;
+static __inline uint64_t unix_time_to_win(struct btrfs_timespec* t) {
+    return (t->sec * 10000000) + (t->nsec / 100) + 116444736000000000;
 }
 
-static __inline void win_time_to_unix(LARGE_INTEGER t, BTRFS_TIME* out) {
+static __inline void win_time_to_unix(LARGE_INTEGER t, struct btrfs_timespec* out) {
     ULONGLONG l = (ULONGLONG)t.QuadPart - 116444736000000000;
 
-    out->seconds = l / 10000000;
-    out->nanoseconds = (uint32_t)((l % 10000000) * 100);
+    out->sec = l / 10000000;
+    out->nsec = (uint32_t)((l % 10000000) * 100);
 }
 
 _Post_satisfies_(*stripe>=0&&*stripe<num_stripes)

@@ -2259,7 +2259,7 @@ static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT
 
 NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_ bool make_orphan, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback) {
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     NTSTATUS Status;
     ULONG utf8len = 0;
 
@@ -3125,7 +3125,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         uint16_t irlen;
         INODE_REF* ir;
         LARGE_INTEGER time;
-        BTRFS_TIME now;
+        struct btrfs_timespec now;
 
         WARN("data reloc root doesn't exist, creating it\n");
 

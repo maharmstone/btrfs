@@ -264,7 +264,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     traverse_ptr tp;
     uint64_t address, *root_num;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     fcb* fcb = parent->FsContext;
     ccb* ccb = parent->FsContext2;
     LIST_ENTRY* le;
@@ -750,7 +750,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     uint64_t id;
     root* r = NULL;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     ULONG len;
     uint16_t irsize;
     UNICODE_STRING nameus;
@@ -1914,7 +1914,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     file_ref* fileref;
     LIST_ENTRY rollback, *le;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     uint64_t start, end;
     extent* ext;
     IO_STATUS_BLOCK iosb;
@@ -3266,7 +3266,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     uint64_t sourcelen, nbytes = 0;
     LIST_ENTRY rollback, *le, newexts;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     bool make_inline;
 
     if (!ded || datalen < sizeof(DUPLICATE_EXTENTS_DATA))
@@ -3745,7 +3745,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     uint64_t inode;
     dir_child* dc;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     ANSI_STRING utf8;
     ULONG len, i;
     SECURITY_SUBJECT_CONTEXT subjcont;
@@ -4120,7 +4120,7 @@ static NTSTATUS recvd_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, voi
     fcb* fcb;
     NTSTATUS Status;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
 
     TRACE("(%p, %p, %p, %lu)\n", Vcb, FileObject, data, datalen);
 

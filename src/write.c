@@ -4108,7 +4108,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     bool changed_length = false;
     NTSTATUS Status;
     LARGE_INTEGER time;
-    BTRFS_TIME now;
+    struct btrfs_timespec now;
     fcb* fcb;
     ccb* ccb;
     file_ref* fileref;

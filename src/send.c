@@ -22,9 +22,9 @@ typedef struct send_dir {
     LIST_ENTRY list_entry;
     uint64_t inode;
     bool dummy;
-    BTRFS_TIME atime;
-    BTRFS_TIME mtime;
-    BTRFS_TIME ctime;
+    struct btrfs_timespec atime;
+    struct btrfs_timespec mtime;
+    struct btrfs_timespec ctime;
     struct send_dir* parent;
     uint16_t namelen;
     char* name;
@@ -93,9 +93,9 @@ typedef struct {
         uint64_t oldmode;
         uint64_t size;
         uint64_t flags;
-        BTRFS_TIME atime;
-        BTRFS_TIME mtime;
-        BTRFS_TIME ctime;
+        struct btrfs_timespec atime;
+        struct btrfs_timespec mtime;
+        struct btrfs_timespec ctime;
         bool file;
         char* path;
         orphan* o;
@@ -653,16 +653,16 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     return STATUS_SUCCESS;
 }
 
-static void send_utimes_command_dir(send_context* context, send_dir* sd, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime) {
+static void send_utimes_command_dir(send_context* context, send_dir* sd, struct btrfs_timespec* atime, struct btrfs_timespec* mtime, struct btrfs_timespec* ctime) {
     ULONG pos = context->datalen;
 
     send_command(context, BTRFS_SEND_CMD_UTIMES);
 
     send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, sd->parent, sd->name, sd->namelen);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(BTRFS_TIME));
-    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(BTRFS_TIME));
-    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(BTRFS_TIME));
+    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(struct btrfs_timespec));
 
     send_command_finish(context, pos);
 }
@@ -1010,15 +1010,15 @@ static void send_chmod_command(send_context* context, char* path, uint64_t mode)
     send_command_finish(context, pos);
 }
 
-static void send_utimes_command(send_context* context, char* path, BTRFS_TIME* atime, BTRFS_TIME* mtime, BTRFS_TIME* ctime) {
+static void send_utimes_command(send_context* context, char* path, struct btrfs_timespec* atime, struct btrfs_timespec* mtime, struct btrfs_timespec* ctime) {
     ULONG pos = context->datalen;
 
     send_command(context, BTRFS_SEND_CMD_UTIMES);
 
     send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (uint16_t)strlen(path) : 0);
-    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(BTRFS_TIME));
-    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(BTRFS_TIME));
-    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(BTRFS_TIME));
+    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(struct btrfs_timespec));
 
     send_command_finish(context, pos);
 }
