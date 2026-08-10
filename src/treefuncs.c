@@ -451,10 +451,10 @@ NTSTATUS skip_to_difference(device_extension* Vcb, traverse_ptr* tp, traverse_pt
 }
 
 __attribute__((nonnull(1,2,3,4)))
-static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const KEY* searchkey, bool ignore, uint8_t level, PIRP Irp) {
+static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* tp, const struct btrfs_key* searchkey, bool ignore, uint8_t level, PIRP Irp) {
     int cmp;
     tree_data *td, *lasttd;
-    KEY key2;
+    struct btrfs_key key2;
 
     cmp = 1;
     td = first_item(t);
@@ -558,7 +558,7 @@ static NTSTATUS find_item_in_tree(device_extension* Vcb, tree* t, traverse_ptr* 
 
 __attribute__((nonnull(1,2,3,4)))
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
-                   _In_ const KEY* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp) {
+                   _In_ const struct btrfs_key* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
 
     if (!r->treeholder.tree) {
@@ -578,7 +578,7 @@ NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension
 }
 
 __attribute__((nonnull(1,2,3,4)))
-NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, bool ignore, uint8_t level, PIRP Irp) {
+NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const struct btrfs_key* searchkey, bool ignore, uint8_t level, PIRP Irp) {
     NTSTATUS Status;
 
     if (!r->treeholder.tree) {
@@ -880,24 +880,24 @@ void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ 
 #pragma warning(suppress: 28194)
 #endif
 __attribute__((nonnull(1,2)))
-NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t obj_id,
-                          _In_ uint8_t obj_type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
+NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t objectid,
+                          _In_ uint8_t type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
                           _In_ uint16_t size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp) {
     traverse_ptr tp;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     int cmp;
     tree_data *td, *paritem;
     tree* t;
 #ifdef _DEBUG
     LIST_ENTRY* le;
-    KEY firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
+    struct btrfs_key firstitem = {0xcccccccccccccccc,0xcc,0xcccccccccccccccc};
 #endif
     NTSTATUS Status;
 
-    TRACE("(%p, %p, %I64x, %x, %I64x, %p, %x, %p)\n", Vcb, r, obj_id, obj_type, offset, data, size, ptp);
+    TRACE("(%p, %p, %I64x, %x, %I64x, %p, %x, %p)\n", Vcb, r, objectid, type, offset, data, size, ptp);
 
-    searchkey.obj_id = obj_id;
-    searchkey.obj_type = obj_type;
+    searchkey.objectid = objectid;
+    searchkey.type = type;
     searchkey.offset = offset;
 
     Status = find_item(Vcb, r, &tp, &searchkey, true, Irp);
@@ -929,7 +929,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         cmp = keycmp(searchkey, tp.item->key);
 
         if (cmp == 0 && !tp.item->ignore) {
-            ERR("error: key (%I64x,%x,%I64x) already present\n", obj_id, obj_type, offset);
+            ERR("error: key (%I64x,%x,%I64x) already present\n", objectid, type, offset);
 #ifdef DEBUG_PARANOID
             int3;
 #endif
@@ -958,7 +958,7 @@ NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
         break;
     }
 
-    TRACE("inserting %I64x,%x,%I64x into tree beginning %I64x,%x,%I64x (num_items %x)\n", obj_id, obj_type, offset, firstitem.obj_id, firstitem.obj_type, firstitem.offset, tp.tree->header.num_items);
+    TRACE("inserting %I64x,%x,%I64x into tree beginning %I64x,%x,%I64x (num_items %x)\n", objectid, type, offset, firstitem.objectid, firstitem.type, firstitem.offset, tp.tree->header.num_items);
 #endif
 
     if (cmp == -1) { // very first key in root
@@ -1012,11 +1012,11 @@ NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
     tree* t;
     uint64_t gen;
 
-    TRACE("deleting item %I64x,%x,%I64x (ignore = %s)\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, tp->item->ignore ? "true" : "false");
+    TRACE("deleting item %I64x,%x,%I64x (ignore = %s)\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, tp->item->ignore ? "true" : "false");
 
 #ifdef DEBUG_PARANOID
     if (tp->item->ignore) {
-        ERR("trying to delete already-deleted item %I64x,%x,%I64x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+        ERR("trying to delete already-deleted item %I64x,%x,%I64x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
         int3;
         return STATUS_INTERNAL_ERROR;
     }
@@ -1217,7 +1217,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 }
 
 __attribute__((nonnull(1,2,3)))
-static NTSTATUS find_tree_end(tree* t, KEY* tree_end, bool* no_end) {
+static NTSTATUS find_tree_end(tree* t, struct btrfs_key* tree_end, bool* no_end) {
     tree* p;
 
     p = t;
@@ -1225,8 +1225,8 @@ static NTSTATUS find_tree_end(tree* t, KEY* tree_end, bool* no_end) {
         tree_data* pi;
 
         if (!p->parent) {
-            tree_end->obj_id = 0xffffffffffffffff;
-            tree_end->obj_type = 0xff;
+            tree_end->objectid = 0xffffffffffffffff;
+            tree_end->type = 0xff;
             tree_end->offset = 0xffffffffffffffff;
             *no_end = true;
             return STATUS_SUCCESS;
@@ -1297,8 +1297,8 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     ier->n = delir->n;
     RtlCopyMemory(ier->name, delir->name, delir->n);
 
-    bi2->key.obj_id = bi->key.obj_id;
-    bi2->key.obj_type = TYPE_INODE_EXTREF;
+    bi2->key.objectid = bi->key.objectid;
+    bi2->key.type = TYPE_INODE_EXTREF;
     bi2->key.offset = calc_crc32c((uint32_t)bi->key.offset, (uint8_t*)ier->name, ier->n);
     bi2->data = ier;
     bi2->datalen = sizeof(INODE_EXTREF) - 1 + ier->n;
@@ -1329,7 +1329,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
         switch (bi->operation) {
             case Batch_SetXattr: {
                 if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", bi->key.objectid, bi->key.type, bi->key.offset, td->size, sizeof(DIR_ITEM));
                 } else {
                     uint8_t* newdata;
                     ULONG size = td->size;
@@ -1340,7 +1340,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                         ULONG oldxasize;
 
                         if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
-                            ERR("(%I64x,%x,%I64x) was truncated\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+                            ERR("(%I64x,%x,%I64x) was truncated\n", bi->key.objectid, bi->key.type, bi->key.offset);
                             break;
                         }
 
@@ -1472,8 +1472,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
-                        bi2->key.obj_id = bi->key.obj_id;
-                        bi2->key.obj_type = TYPE_INODE_EXTREF;
+                        bi2->key.objectid = bi->key.objectid;
+                        bi2->key.type = TYPE_INODE_EXTREF;
                         bi2->key.offset = calc_crc32c((uint32_t)ier->dir, (uint8_t*)ier->name, ier->n);
                         bi2->data = ier;
                         bi2->datalen = ierlen;
@@ -1896,7 +1896,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
             InsertHeadList(td->list_entry.Blink, &newtd->list_entry);
         }
     } else {
-        ERR("(%I64x,%x,%I64x) already exists\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        ERR("(%I64x,%x,%I64x) already exists\n", bi->key.objectid, bi->key.type, bi->key.offset);
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -1932,14 +1932,14 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
         batch_item* bi = CONTAINING_RECORD(le, batch_item, list_entry);
         LIST_ENTRY* le2;
         traverse_ptr tp;
-        KEY tree_end;
+        struct btrfs_key tree_end;
         bool no_end;
         tree_data *td, *listhead;
         int cmp;
         tree* t;
         bool ignore = false;
 
-        TRACE("(%I64x,%x,%I64x)\n", bi->key.obj_id, bi->key.obj_type, bi->key.offset);
+        TRACE("(%I64x,%x,%I64x)\n", bi->key.objectid, bi->key.type, bi->key.offset);
 
         Status = find_item(Vcb, br->r, &tp, &bi->key, true, Irp);
         if (!NT_SUCCESS(Status)) { // FIXME - handle STATUS_NOT_FOUND
@@ -1954,7 +1954,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
         }
 
         if (bi->operation == Batch_DeleteInode) {
-            if (tp.item->key.obj_id == bi->key.obj_id) {
+            if (tp.item->key.objectid == bi->key.objectid) {
                 bool ended = false;
 
                 td = tp.item;
@@ -1970,7 +1970,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 while (le2 != &tp.tree->itemlist) {
                     td = CONTAINING_RECORD(le2, tree_data, list_entry);
 
-                    if (td->key.obj_id == bi->key.obj_id) {
+                    if (td->key.objectid == bi->key.objectid) {
                         if (!td->ignore) {
                             td->ignore = true;
                             tp.tree->header.num_items--;
@@ -1999,7 +1999,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                     while (le2 != &tp.tree->itemlist) {
                         td = CONTAINING_RECORD(le2, tree_data, list_entry);
 
-                        if (td->key.obj_id == bi->key.obj_id) {
+                        if (td->key.objectid == bi->key.objectid) {
                             if (!td->ignore) {
                                 td->ignore = true;
                                 tp.tree->header.num_items--;
@@ -2016,11 +2016,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 }
             }
         } else if (bi->operation == Batch_DeleteExtentData) {
-            if (tp.item->key.obj_id < bi->key.obj_id || (tp.item->key.obj_id == bi->key.obj_id && tp.item->key.obj_type < bi->key.obj_type)) {
+            if (tp.item->key.objectid < bi->key.objectid || (tp.item->key.objectid == bi->key.objectid && tp.item->key.type < bi->key.type)) {
                 traverse_ptr tp2;
 
                 if (find_next_item(Vcb, &tp, &tp2, false, Irp)) {
-                    if (tp2.item->key.obj_id == bi->key.obj_id && tp2.item->key.obj_type == bi->key.obj_type) {
+                    if (tp2.item->key.objectid == bi->key.objectid && tp2.item->key.type == bi->key.type) {
                         tp = tp2;
                         Status = find_tree_end(tp.tree, &tree_end, &no_end);
                         if (!NT_SUCCESS(Status)) {
@@ -2031,7 +2031,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 }
             }
 
-            if (tp.item->key.obj_id == bi->key.obj_id && tp.item->key.obj_type == bi->key.obj_type) {
+            if (tp.item->key.objectid == bi->key.objectid && tp.item->key.type == bi->key.type) {
                 bool ended = false;
 
                 td = tp.item;
@@ -2047,7 +2047,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 while (le2 != &tp.tree->itemlist) {
                     td = CONTAINING_RECORD(le2, tree_data, list_entry);
 
-                    if (td->key.obj_id == bi->key.obj_id && td->key.obj_type == bi->key.obj_type) {
+                    if (td->key.objectid == bi->key.objectid && td->key.type == bi->key.type) {
                         if (!td->ignore) {
                             td->ignore = true;
                             tp.tree->header.num_items--;
@@ -2076,7 +2076,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                     while (le2 != &tp.tree->itemlist) {
                         td = CONTAINING_RECORD(le2, tree_data, list_entry);
 
-                        if (td->key.obj_id == bi->key.obj_id && td->key.obj_type == bi->key.obj_type) {
+                        if (td->key.objectid == bi->key.objectid && td->key.type == bi->key.type) {
                             if (!td->ignore) {
                                 td->ignore = true;
                                 tp.tree->header.num_items--;
@@ -2093,7 +2093,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 }
             }
         } else if (bi->operation == Batch_DeleteFreeSpace) {
-            if (tp.item->key.obj_id >= bi->key.obj_id && tp.item->key.obj_id < bi->key.obj_id + bi->key.offset) {
+            if (tp.item->key.objectid >= bi->key.objectid && tp.item->key.objectid < bi->key.objectid + bi->key.offset) {
                 bool ended = false;
 
                 td = tp.item;
@@ -2109,7 +2109,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 while (le2 != &tp.tree->itemlist) {
                     td = CONTAINING_RECORD(le2, tree_data, list_entry);
 
-                    if (td->key.obj_id >= bi->key.obj_id && td->key.obj_id < bi->key.obj_id + bi->key.offset) {
+                    if (td->key.objectid >= bi->key.objectid && td->key.objectid < bi->key.objectid + bi->key.offset) {
                         if (!td->ignore) {
                             td->ignore = true;
                             tp.tree->header.num_items--;
@@ -2138,7 +2138,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                     while (le2 != &tp.tree->itemlist) {
                         td = CONTAINING_RECORD(le2, tree_data, list_entry);
 
-                        if (td->key.obj_id >= bi->key.obj_id && td->key.obj_id < bi->key.obj_id + bi->key.offset) {
+                        if (td->key.objectid >= bi->key.objectid && td->key.objectid < bi->key.objectid + bi->key.offset) {
                             if (!td->ignore) {
                                 td->ignore = true;
                                 tp.tree->header.num_items--;

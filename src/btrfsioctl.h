@@ -215,7 +215,7 @@ typedef struct {
         struct {
             uint64_t root;
             uint8_t level;
-            KEY firstitem;
+            struct btrfs_key firstitem;
         } metadata;
     };
 } btrfs_scrub_error;

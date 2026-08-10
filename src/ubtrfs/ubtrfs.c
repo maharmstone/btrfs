@@ -110,7 +110,7 @@ FORCEINLINE VOID InsertTailList(PLIST_ENTRY ListHead, PLIST_ENTRY Entry) {
 }
 
 typedef struct {
-    KEY key;
+    struct btrfs_key key;
     uint16_t size;
     void* data;
     LIST_ENTRY list_entry;
@@ -145,10 +145,10 @@ typedef struct {
 } btrfs_dev;
 
 #define keycmp(key1, key2)\
-    ((key1.obj_id < key2.obj_id) ? -1 :\
-    ((key1.obj_id > key2.obj_id) ? 1 :\
-    ((key1.obj_type < key2.obj_type) ? -1 :\
-    ((key1.obj_type > key2.obj_type) ? 1 :\
+    ((key1.objectid < key2.objectid) ? -1 :\
+    ((key1.objectid > key2.objectid) ? 1 :\
+    ((key1.type < key2.type) ? -1 :\
+    ((key1.type > key2.type) ? 1 :\
     ((key1.offset < key2.offset) ? -1 :\
     ((key1.offset > key2.offset) ? 1 :\
     0))))))
@@ -307,14 +307,14 @@ static void free_chunks(LIST_ENTRY* chunks) {
     }
 }
 
-static void add_item(btrfs_root* r, uint64_t obj_id, uint8_t obj_type, uint64_t offset, void* data, uint16_t size) {
+static void add_item(btrfs_root* r, uint64_t objectid, uint8_t type, uint64_t offset, void* data, uint16_t size) {
     LIST_ENTRY* le;
     btrfs_item* item;
 
     item = malloc(sizeof(btrfs_item));
 
-    item->key.obj_id = obj_id;
-    item->key.obj_type = obj_type;
+    item->key.objectid = objectid;
+    item->key.type = type;
     item->key.offset = offset;
     item->size = size;
 
@@ -521,11 +521,11 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             add_item(extent_root, r->header.address, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
         } else {
             EXTENT_ITEM_METADATA2 eim2;
-            KEY firstitem;
+            struct btrfs_key firstitem;
 
             if (r->items.Flink == &r->items) {
-                firstitem.obj_id = 0;
-                firstitem.obj_type = 0;
+                firstitem.objectid = 0;
+                firstitem.type = 0;
                 firstitem.offset = 0;
             } else {
                 btrfs_item* bi = CONTAINING_RECORD(r->items.Flink, btrfs_item, list_entry);
@@ -731,7 +731,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     ULONG sblen;
     int i;
     superblock* sb;
-    KEY* key;
+    struct btrfs_key* key;
     uint64_t bytes_used;
     LIST_ENTRY* le;
 
@@ -745,9 +745,9 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     while (le != &extent_root->items) {
         btrfs_item* item = CONTAINING_RECORD(le, btrfs_item, list_entry);
 
-        if (item->key.obj_type == TYPE_EXTENT_ITEM)
+        if (item->key.type == TYPE_EXTENT_ITEM)
             bytes_used += item->key.offset;
-        else if (item->key.obj_type == TYPE_METADATA_ITEM)
+        else if (item->key.type == TYPE_METADATA_ITEM)
             bytes_used += node_size;
 
         le = le->Flink;
@@ -770,7 +770,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->node_size = node_size;
     sb->leaf_size = node_size;
     sb->stripe_size = sector_size;
-    sb->n = sizeof(KEY) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
+    sb->n = sizeof(struct btrfs_key) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
     sb->chunk_root_generation = 1;
     sb->compat_ro_flags = compat_ro_flags;
     sb->incompat_flags = incompat_flags;
@@ -801,9 +801,9 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     }
     sb->cache_generation = 0xffffffffffffffff;
 
-    key = (KEY*)sb->sys_chunk_array;
-    key->obj_id = 0x100;
-    key->obj_type = TYPE_CHUNK_ITEM;
+    key = (struct btrfs_key*)sb->sys_chunk_array;
+    key->objectid = 0x100;
+    key->type = TYPE_CHUNK_ITEM;
     key->offset = sys_chunk->offset;
     memcpy(&key[1], sys_chunk->chunk_item, sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE)));
 
@@ -953,8 +953,8 @@ static void add_dir_item(btrfs_root* root, uint64_t inode, uint32_t hash, uint64
     uint16_t name_len = (uint16_t)strlen(name);
     DIR_ITEM* di = malloc(offsetof(DIR_ITEM, name[0]) + name_len);
 
-    di->key.obj_id = key_objid;
-    di->key.obj_type = key_type;
+    di->key.objectid = key_objid;
+    di->key.type = key_type;
     di->key.offset = key_offset;
     di->transid = transid;
     di->m = 0;

@@ -222,7 +222,7 @@ typedef struct {
 struct _file_ref;
 
 typedef struct {
-    KEY key;
+    struct btrfs_key key;
     uint64_t index;
     uint8_t type;
     ANSI_STRING utf8;
@@ -376,7 +376,7 @@ typedef struct {
 } tree_holder;
 
 typedef struct _tree_data {
-    KEY key;
+    struct btrfs_key key;
     LIST_ENTRY list_entry;
     bool ignore;
     bool inserted;
@@ -458,7 +458,7 @@ enum batch_operation {
 };
 
 typedef struct {
-    KEY key;
+    struct btrfs_key key;
     void* data;
     uint16_t datalen;
     enum batch_operation operation;
@@ -466,7 +466,7 @@ typedef struct {
 } batch_item;
 
 typedef struct {
-    KEY key;
+    struct btrfs_key key;
     LIST_ENTRY items;
     unsigned int num_items;
     LIST_ENTRY list_entry;
@@ -592,7 +592,7 @@ typedef struct {
 } changed_extent_ref;
 
 typedef struct {
-    KEY key;
+    struct btrfs_key key;
     void* data;
     USHORT size;
     LIST_ENTRY list_entry;
@@ -703,7 +703,7 @@ typedef struct {
         struct {
             uint64_t root;
             uint8_t level;
-            KEY firstitem;
+            struct btrfs_key firstitem;
         } metadata;
     };
 } scrub_error;
@@ -989,10 +989,10 @@ static __inline uint64_t make_file_id(root* r, uint64_t inode) {
 }
 
 #define keycmp(key1, key2)\
-    ((key1.obj_id < key2.obj_id) ? -1 :\
-    ((key1.obj_id > key2.obj_id) ? 1 :\
-    ((key1.obj_type < key2.obj_type) ? -1 :\
-    ((key1.obj_type > key2.obj_type) ? 1 :\
+    ((key1.objectid < key2.objectid) ? -1 :\
+    ((key1.objectid > key2.objectid) ? 1 :\
+    ((key1.type < key2.type) ? -1 :\
+    ((key1.type > key2.type) ? 1 :\
     ((key1.offset < key2.offset) ? -1 :\
     ((key1.offset > key2.offset) ? 1 :\
     0))))))
@@ -1266,16 +1266,16 @@ static const char lxdev[] = "$LXDEV";
 
 // in treefuncs.c
 NTSTATUS find_item(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _Out_ traverse_ptr* tp,
-                   _In_ const KEY* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2,3,4)));
-NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const KEY* searchkey, bool ignore,
+                   _In_ const struct btrfs_key* searchkey, _In_ bool ignore, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2,3,4)));
+NTSTATUS find_item_to_level(device_extension* Vcb, root* r, traverse_ptr* tp, const struct btrfs_key* searchkey, bool ignore,
                             uint8_t level, PIRP Irp) __attribute__((nonnull(1,2,3,4)));
 bool find_next_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
                     traverse_ptr* next_tp, bool ignore, PIRP Irp) __attribute__((nonnull(1,2,3)));
 bool find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, const traverse_ptr* tp,
                     traverse_ptr* prev_tp, PIRP Irp) __attribute__((nonnull(1,2,3)));
 void free_trees(device_extension* Vcb) __attribute__((nonnull(1)));
-NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t obj_id,
-                          _In_ uint8_t obj_type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
+NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t objectid,
+                          _In_ uint8_t type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
                           _In_ uint16_t size, _Out_opt_ traverse_ptr* ptp, _In_opt_ PIRP Irp) __attribute__((nonnull(1,2)));
 NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
                           _Inout_ traverse_ptr* tp) __attribute__((nonnull(1,2)));
@@ -1505,7 +1505,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint8_t level, PIRP Irp);
 uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
 bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
-NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem, uint8_t level, PIRP Irp);
+NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem, uint8_t level, PIRP Irp);
 uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp);
 void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags, PIRP Irp);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset,
@@ -1513,7 +1513,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum);
 uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
 uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
-NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, KEY* firstitem,
+NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
                                   uint8_t level, uint64_t parent, bool superseded, PIRP Irp);
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset);
 
@@ -1655,7 +1655,7 @@ static __inline void print_open_trees(device_extension* Vcb) {
         tree* t = CONTAINING_RECORD(le, tree, list_entry);
         tree_data* td = CONTAINING_RECORD(t->itemlist.Flink, tree_data, list_entry);
         ERR("tree %p: root %I64x, level %u, first key (%I64x,%x,%I64x)\n",
-                      t, t->root->id, t->header.level, td->key.obj_id, td->key.obj_type, td->key.offset);
+                      t, t->root->id, t->header.level, td->key.objectid, td->key.type, td->key.offset);
 
         le = le->Flink;
     }

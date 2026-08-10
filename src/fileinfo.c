@@ -1148,8 +1148,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 goto end;
             }
 
-            me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
-            me->fileref->dc->key.obj_type = TYPE_INODE_ITEM;
+            me->fileref->dc->key.objectid = me->fileref->fcb->inode;
+            me->fileref->dc->key.type = TYPE_INODE_ITEM;
 
             me->dummyfileref->fcb = me->fileref->fcb->Vcb->dummy_fcb;
         } else if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
@@ -1251,8 +1251,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
                 }
 
-                if (me->fileref->dc->key.obj_type == TYPE_INODE_ITEM)
-                    me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+                if (me->fileref->dc->key.type == TYPE_INODE_ITEM)
+                    me->fileref->dc->key.objectid = me->fileref->fcb->inode;
 
                 // add to new parent
 
@@ -1303,7 +1303,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     InsertHeadList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
                 else {
                     if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE)
-                        me->fileref->dc->key.obj_id = me->fileref->fcb->inode;
+                        me->fileref->dc->key.objectid = me->fileref->fcb->inode;
 
                     if (IsListEmpty(&me->parent->fileref->fcb->dir_children_index))
                         me->fileref->dc->index = 2;

@@ -164,7 +164,7 @@ static char* uint64_to_char(uint64_t num, char* buf) {
 static NTSTATUS get_orphan_name(send_context* context, uint64_t inode, uint64_t generation, char* name) {
     char *ptr, *ptr2;
     uint64_t index = 0;
-    KEY searchkey;
+    struct btrfs_key searchkey;
 
     name[0] = 'o';
 
@@ -174,8 +174,8 @@ static NTSTATUS get_orphan_name(send_context* context, uint64_t inode, uint64_t 
     *ptr = '-'; ptr++;
     ptr2 = ptr;
 
-    searchkey.obj_id = SUBVOL_ROOT_INODE;
-    searchkey.obj_type = TYPE_DIR_ITEM;
+    searchkey.objectid = SUBVOL_ROOT_INODE;
+    searchkey.type = TYPE_DIR_ITEM;
 
     do {
         NTSTATUS Status;
@@ -234,12 +234,12 @@ static void add_orphan(send_context* context, orphan* o) {
 
 static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** link, uint16_t* linklen) {
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     EXTENT_DATA* ed;
 
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.objectid = inode;
+    searchkey.type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
 
     Status = find_item(context->Vcb, context->root, &tp, &searchkey, false, NULL);
@@ -249,12 +249,12 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        ERR("could not find (%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        ERR("could not find (%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
         return STATUS_INTERNAL_ERROR;
     }
 
     if (tp.item->size < sizeof(EXTENT_DATA)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
             tp.item->size, sizeof(EXTENT_DATA));
         return STATUS_INTERNAL_ERROR;
     }
@@ -269,7 +269,7 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     }
 
     if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
             tp.item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
         return STATUS_INTERNAL_ERROR;
     }
@@ -288,12 +288,12 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
 
         if (tp2->item->size < sizeof(INODE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                 tp2->item->size, sizeof(INODE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
 
-        context->lastinode.inode = tp2->item->key.obj_id;
+        context->lastinode.inode = tp2->item->key.objectid;
         context->lastinode.deleting = true;
         context->lastinode.gen = ii2->generation;
         context->lastinode.mode = ii2->st_mode;
@@ -307,12 +307,12 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     ii = (INODE_ITEM*)tp->item->data;
 
     if (tp->item->size < sizeof(INODE_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
-    context->lastinode.inode = tp->item->key.obj_id;
+    context->lastinode.inode = tp->item->key.objectid;
     context->lastinode.deleting = false;
     context->lastinode.gen = ii->generation;
     context->lastinode.uid = ii->st_uid;
@@ -337,7 +337,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         LIST_ENTRY* le;
 
         if (tp2->item->size < sizeof(INODE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                 tp2->item->size, sizeof(INODE_ITEM));
             return STATUS_INTERNAL_ERROR;
         }
@@ -355,10 +355,10 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         while (le != &context->orphans) {
             orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
 
-            if (o2->inode == tp->item->key.obj_id) {
+            if (o2->inode == tp->item->key.objectid) {
                 context->lastinode.o = o2;
                 break;
-            } else if (o2->inode > tp->item->key.obj_id)
+            } else if (o2->inode > tp->item->key.objectid)
                 break;
 
             le = le->Flink;
@@ -366,10 +366,10 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     } else
         context->lastinode.new = true;
 
-    if (tp->item->key.obj_id == SUBVOL_ROOT_INODE) {
+    if (tp->item->key.objectid == SUBVOL_ROOT_INODE) {
         send_dir* sd;
 
-        Status = find_send_dir(context, tp->item->key.obj_id, ii->generation, &sd, NULL);
+        Status = find_send_dir(context, tp->item->key.objectid, ii->generation, &sd, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("find_send_dir returned %08lx\n", Status);
             return Status;
@@ -395,14 +395,14 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             while (le != &context->orphans) {
                 orphan* o2 = CONTAINING_RECORD(le, orphan, list_entry);
 
-                if (o2->inode == tp->item->key.obj_id) {
+                if (o2->inode == tp->item->key.objectid) {
                     context->lastinode.o = o2;
                     o2->sd->atime = ii->st_atime;
                     o2->sd->mtime = ii->st_mtime;
                     o2->sd->ctime = ii->st_ctime;
                     o2->sd->dummy = false;
                     return STATUS_SUCCESS;
-                } else if (o2->inode > tp->item->key.obj_id)
+                } else if (o2->inode > tp->item->key.objectid)
                     break;
 
                 le = le->Flink;
@@ -426,14 +426,14 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
 
         send_command(context, cmd);
 
-        Status = get_orphan_name(context, tp->item->key.obj_id, ii->generation, name);
+        Status = get_orphan_name(context, tp->item->key.objectid, ii->generation, name);
         if (!NT_SUCCESS(Status)) {
             ERR("get_orphan_name returned %08lx\n", Status);
             return Status;
         }
 
         send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, (uint16_t)strlen(name));
-        send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.obj_id, sizeof(uint64_t));
+        send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.objectid, sizeof(uint64_t));
 
         if (cmd == BTRFS_SEND_CMD_MKNOD || cmd == BTRFS_SEND_CMD_MKFIFO || cmd == BTRFS_SEND_CMD_MKSOCK) {
             uint64_t rdev = makedev((ii->st_rdev & 0xFFFFFFFFFFF) >> 20, ii->st_rdev & 0xFFFFF), mode = ii->st_mode;
@@ -444,7 +444,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             char* link;
             uint16_t linklen;
 
-            Status = send_read_symlink(context, tp->item->key.obj_id, &link, &linklen);
+            Status = send_read_symlink(context, tp->item->key.objectid, &link, &linklen);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_read_symlink returned %08lx\n", Status);
                 return Status;
@@ -456,7 +456,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         send_command_finish(context, pos);
 
         if (ii->st_mode & __S_IFDIR) {
-            Status = find_send_dir(context, tp->item->key.obj_id, ii->generation, &sd, NULL);
+            Status = find_send_dir(context, tp->item->key.objectid, ii->generation, &sd, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("find_send_dir returned %08lx\n", Status);
                 return Status;
@@ -474,7 +474,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        o->inode = tp->item->key.obj_id;
+        o->inode = tp->item->key.objectid;
         o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? true : false;
         strcpy(o->tmpname, name);
         o->sd = sd;
@@ -704,11 +704,11 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
     }
 
     if (context->parent) {
-        KEY searchkey;
+        struct btrfs_key searchkey;
         traverse_ptr tp;
 
-        searchkey.obj_id = dir;
-        searchkey.obj_type = TYPE_INODE_REF; // directories should never have an extiref
+        searchkey.objectid = dir;
+        searchkey.type = TYPE_INODE_REF; // directories should never have an extiref
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(context->Vcb, context->parent, &tp, &searchkey, false, NULL);
@@ -717,12 +717,12 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
             return Status;
         }
 
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
             INODE_REF* ir = (INODE_REF*)tp.item->data;
             send_dir* parent;
 
             if (tp.item->size < sizeof(INODE_REF) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -769,7 +769,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
 
 static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tree2) {
     NTSTATUS Status;
-    uint64_t inode = tp ? tp->item->key.obj_id : 0, dir = tp ? tp->item->key.offset : 0;
+    uint64_t inode = tp ? tp->item->key.objectid : 0, dir = tp ? tp->item->key.offset : 0;
     LIST_ENTRY* le;
     INODE_REF* ir;
     uint16_t len;
@@ -780,7 +780,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
         return STATUS_SUCCESS;
 
     if (tp->item->size < sizeof(INODE_REF)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_REF));
         return STATUS_INTERNAL_ERROR;
     }
@@ -846,7 +846,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
         ref* r;
 
         if (len < sizeof(INODE_REF) || len < offsetof(INODE_REF, name[0]) + ir->n) {
-            ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -874,7 +874,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
     uint16_t len;
 
     if (tp->item->size < sizeof(INODE_EXTREF)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
             tp->item->size, sizeof(INODE_EXTREF));
         return STATUS_INTERNAL_ERROR;
     }
@@ -889,7 +889,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
         ref* r;
 
         if (len < sizeof(INODE_EXTREF) || len < offsetof(INODE_EXTREF, name[0]) + ier->n) {
-            ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1060,13 +1060,13 @@ static void send_rmdir_command(send_context* context, uint16_t pathlen, char* pa
 
 static NTSTATUS get_dir_last_child(send_context* context, uint64_t* last_inode) {
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
 
     *last_inode = 0;
 
-    searchkey.obj_id = context->lastinode.inode;
-    searchkey.obj_type = TYPE_DIR_INDEX;
+    searchkey.objectid = context->lastinode.inode;
+    searchkey.type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
 
     Status = find_item(context->Vcb, context->parent, &tp, &searchkey, false, NULL);
@@ -1078,16 +1078,16 @@ static NTSTATUS get_dir_last_child(send_context* context, uint64_t* last_inode) 
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
             DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
 
             if (tp.item->size < sizeof(DIR_ITEM) || tp.item->size < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
-            if (di->key.obj_type == TYPE_INODE_ITEM)
-                *last_inode = max(*last_inode, di->key.obj_id);
+            if (di->key.type == TYPE_INODE_ITEM)
+                *last_inode = max(*last_inode, di->key.objectid);
         } else
             break;
 
@@ -1132,13 +1132,13 @@ static NTSTATUS add_pending_rmdir(send_context* context, uint64_t last_inode) {
 
 static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* name, ULONG namelen, uint64_t* inode, bool* dir) {
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     DIR_ITEM* di;
     uint16_t len;
 
-    searchkey.obj_id = sd->inode;
-    searchkey.obj_type = TYPE_DIR_ITEM;
+    searchkey.objectid = sd->inode;
+    searchkey.type = TYPE_DIR_ITEM;
     searchkey.offset = calc_crc32c(0xfffffffe, (uint8_t*)name, namelen);
 
     Status = find_item(context->Vcb, context->parent, &tp, &searchkey, false, NULL);
@@ -1155,12 +1155,12 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
 
     do {
         if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-            ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (di->n == namelen && RtlCompareMemory(di->name, name, namelen) == namelen) {
-            *inode = di->key.obj_type == TYPE_INODE_ITEM ? di->key.obj_id : 0;
+            *inode = di->key.type == TYPE_INODE_ITEM ? di->key.objectid : 0;
             *dir = di->type == BTRFS_TYPE_DIRECTORY ? true: false;
             return STATUS_OBJECT_NAME_COLLISION;
         }
@@ -1601,7 +1601,7 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
 
 static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2) {
     NTSTATUS Status;
-    KEY key1, key2;
+    struct btrfs_key key1, key2;
 
     if (tp1)
         key1 = tp1->item->key;
@@ -1840,7 +1840,7 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
 
 static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t inode) {
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     uint16_t len = 0;
     uint64_t num;
@@ -1849,8 +1849,8 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
     num = inode;
 
     while (num != SUBVOL_ROOT_INODE) {
-        searchkey.obj_id = num;
-        searchkey.obj_type = TYPE_INODE_EXTREF;
+        searchkey.objectid = num;
+        searchkey.type = TYPE_INODE_EXTREF;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(context->Vcb, r, &tp, &searchkey, false, NULL);
@@ -1859,19 +1859,19 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             return false;
         }
 
-        if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_INODE_REF && tp.item->key.obj_type != TYPE_INODE_EXTREF)) {
-            ERR("could not find INODE_REF for inode %I64x\n", searchkey.obj_id);
+        if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_INODE_REF && tp.item->key.type != TYPE_INODE_EXTREF)) {
+            ERR("could not find INODE_REF for inode %I64x\n", searchkey.objectid);
             return false;
         }
 
         if (len > 0)
             len++;
 
-        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+        if (tp.item->key.type == TYPE_INODE_REF) {
             INODE_REF* ir = (INODE_REF*)tp.item->data;
 
             if (tp.item->size < sizeof(INODE_REF) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return false;
             }
 
@@ -1881,7 +1881,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
 
             if (tp.item->size < sizeof(INODE_EXTREF) || tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return false;
             }
 
@@ -1896,8 +1896,8 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
     num = inode;
 
     while (num != SUBVOL_ROOT_INODE) {
-        searchkey.obj_id = num;
-        searchkey.obj_type = TYPE_INODE_EXTREF;
+        searchkey.objectid = num;
+        searchkey.type = TYPE_INODE_EXTREF;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(context->Vcb, r, &tp, &searchkey, false, NULL);
@@ -1906,8 +1906,8 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             return false;
         }
 
-        if (tp.item->key.obj_id != searchkey.obj_id || (tp.item->key.obj_type != TYPE_INODE_REF && tp.item->key.obj_type != TYPE_INODE_EXTREF)) {
-            ERR("could not find INODE_REF for inode %I64x\n", searchkey.obj_id);
+        if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_INODE_REF && tp.item->key.type != TYPE_INODE_EXTREF)) {
+            ERR("could not find INODE_REF for inode %I64x\n", searchkey.objectid);
             return false;
         }
 
@@ -1916,7 +1916,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             *ptr = '/';
         }
 
-        if (tp.item->key.obj_type == TYPE_INODE_REF) {
+        if (tp.item->key.type == TYPE_INODE_REF) {
             INODE_REF* ir = (INODE_REF*)tp.item->data;
 
             RtlCopyMemory(ptr - ir->n, ir->name, ir->n);
@@ -1937,7 +1937,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
 static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
     NTSTATUS Status;
     root* r = NULL;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     EXTENT_DATA2* seed2 = (EXTENT_DATA2*)se->data.data;
 
@@ -1958,8 +1958,8 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
     if (!r)
         return false;
 
-    searchkey.obj_id = edr->objid;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.objectid = edr->objid;
+    searchkey.type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
 
     Status = find_item(context->Vcb, r, &tp, &searchkey, false, NULL);
@@ -1971,15 +1971,15 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
     while (true) {
         traverse_ptr next_tp;
 
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
             if (tp.item->size < sizeof(EXTENT_DATA))
-                ERR("(%I64x,%x,%I64x) has size %u, not at least %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+                ERR("(%I64x,%x,%I64x) has size %u, not at least %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
             else {
                 EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
 
                 if (ed->type == EXTENT_TYPE_REGULAR) {
                     if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2))
-                        ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                        ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                             tp.item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
                     else {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
@@ -1999,7 +1999,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
                                 send_add_tlv(context, BTRFS_SEND_TLV_CLONE_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, sizeof(BTRFS_UUID));
                                 send_add_tlv(context, BTRFS_SEND_TLV_CLONE_CTRANSID, &r->root_item.ctransid, sizeof(uint64_t));
 
-                                if (!send_add_tlv_clone_path(context, r, tp.item->key.obj_id))
+                                if (!send_add_tlv_clone_path(context, r, tp.item->key.objectid))
                                     context->datalen = pos;
                                 else {
                                     send_add_tlv(context, BTRFS_SEND_TLV_CLONE_OFFSET, &clone_offset, sizeof(uint64_t));
@@ -2013,7 +2013,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
                     }
                 }
             }
-        } else if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+        } else if (tp.item->key.objectid > searchkey.objectid || (tp.item->key.objectid == searchkey.objectid && tp.item->key.type > searchkey.type))
             break;
 
         if (find_next_item(context->Vcb, &tp, &next_tp, false, NULL))
@@ -2027,14 +2027,14 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
 
 static bool try_clone(send_context* context, send_ext* se) {
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)se->data.data;
     EXTENT_ITEM* ei;
     uint64_t rc = 0;
 
-    searchkey.obj_id = ed2->address;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.objectid = ed2->address;
+    searchkey.type = TYPE_EXTENT_ITEM;
     searchkey.offset = ed2->size;
 
     Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -2044,12 +2044,12 @@ static bool try_clone(send_context* context, send_ext* se) {
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        ERR("(%I64x,%x,%I64x) not found\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        ERR("(%I64x,%x,%I64x) not found\n", searchkey.objectid, searchkey.type, searchkey.offset);
         return false;
     }
 
     if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
         return false;
     }
 
@@ -2067,12 +2067,12 @@ static bool try_clone(send_context* context, send_ext* se) {
             len--;
 
             if (sectlen > len) {
-                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, len, sectlen);
+                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, len, sectlen);
                 return false;
             }
 
             if (sectlen == 0) {
-                ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, secttype);
+                ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, secttype);
                 return false;
             }
 
@@ -2093,7 +2093,7 @@ static bool try_clone(send_context* context, send_ext* se) {
     if (rc >= ei->refcount)
         return false;
 
-    searchkey.obj_type = TYPE_EXTENT_DATA_REF;
+    searchkey.type = TYPE_EXTENT_DATA_REF;
     searchkey.offset = 0;
 
     Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -2105,14 +2105,14 @@ static bool try_clone(send_context* context, send_ext* se) {
     while (true) {
         traverse_ptr next_tp;
 
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
             if (tp.item->size < sizeof(EXTENT_DATA_REF))
-                ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+                ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
             else {
                 if (try_clone_edr(context, se, (EXTENT_DATA_REF*)tp.item->data))
                     return true;
             }
-        } else if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+        } else if (tp.item->key.objectid > searchkey.objectid || (tp.item->key.objectid == searchkey.objectid && tp.item->key.type > searchkey.type))
             break;
 
         if (find_next_item(context->Vcb, &tp, &next_tp, false, NULL))
@@ -2641,7 +2641,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         EXTENT_DATA2* ed2 = NULL;
 
         if (tp->item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
                 tp->item->size, sizeof(EXTENT_DATA));
             return STATUS_INTERNAL_ERROR;
         }
@@ -2666,7 +2666,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
         if (ed->type == EXTENT_TYPE_REGULAR) {
             if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
                     tp->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2674,7 +2674,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             ed2 = (EXTENT_DATA2*)ed->data;
         } else if (ed->type == EXTENT_TYPE_INLINE) {
             if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size && ed->compression == BTRFS_COMPRESSION_NONE) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
                     tp->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2700,7 +2700,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         EXTENT_DATA2* ed2 = NULL;
 
         if (tp2->item->size < sizeof(EXTENT_DATA)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                 tp2->item->size, sizeof(EXTENT_DATA));
             return STATUS_INTERNAL_ERROR;
         }
@@ -2725,7 +2725,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
         if (ed->type == EXTENT_TYPE_REGULAR) {
             if (tp2->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                     tp2->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2733,7 +2733,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             ed2 = (EXTENT_DATA2*)ed->data;
         } else if (ed->type == EXTENT_TYPE_INLINE) {
             if (tp2->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                     tp2->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2783,13 +2783,13 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
     }
 
     if (tp && tp->item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
             tp->item->size, sizeof(DIR_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
 
     if (tp2 && tp2->item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset,
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
             tp2->item->size, sizeof(DIR_ITEM));
         return STATUS_INTERNAL_ERROR;
     }
@@ -2805,7 +2805,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             ULONG pos;
 
             if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -2830,7 +2830,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             ULONG pos;
 
             if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -2857,7 +2857,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             xattr_cmp* xa;
 
             if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -2894,7 +2894,7 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             bool found = false;
 
             if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
-                ERR("(%I64x,%x,%I64x) was truncated\n", tp2->item->key.obj_id, tp2->item->key.obj_type, tp2->item->key.offset);
+                ERR("(%I64x,%x,%I64x) was truncated\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -2971,7 +2971,7 @@ _Function_class_(KSTART_ROUTINE)
 static void __stdcall send_thread(void* ctx) {
     send_context* context = (send_context*)ctx;
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp, tp2;
 
     InterlockedIncrement(&context->root->send_ops);
@@ -3009,8 +3009,8 @@ static void __stdcall send_thread(void* ctx) {
 
     ExConvertExclusiveToSharedLite(&context->Vcb->tree_lock);
 
-    searchkey.obj_id = searchkey.offset = 0;
-    searchkey.obj_type = 0;
+    searchkey.objectid = searchkey.offset = 0;
+    searchkey.type = 0;
 
     Status = find_item(context->Vcb, context->root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -3032,7 +3032,7 @@ static void __stdcall send_thread(void* ctx) {
             traverse_ptr next_tp;
 
             if (context->datalen > SEND_BUFFER_LENGTH) {
-                KEY key1 = tp.item->key, key2 = tp2.item->key;
+                struct btrfs_key key1 = tp.item->key, key2 = tp2.item->key;
 
                 ExReleaseResourceLite(&context->Vcb->tree_lock);
 
@@ -3090,9 +3090,9 @@ static void __stdcall send_thread(void* ctx) {
             if (!ended1 && !ended2 && !keycmp(tp.item->key, tp2.item->key)) {
                 bool no_next = false, no_next2 = false;
 
-                TRACE("~ %I64x,%x,%I64x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                TRACE("~ %I64x,%x,%I64x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-                if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
+                if (context->lastinode.inode != 0 && tp.item->key.objectid > context->lastinode.inode) {
                     Status = finish_inode(context, ended1 ? NULL : &tp, ended2 ? NULL : &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("finish_inode returned %08lx\n", Status);
@@ -3106,9 +3106,9 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
 
-                if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+                if (tp.item->key.type == TYPE_INODE_ITEM) {
                     if (tp.item->size == tp2.item->size && tp.item->size > 0 && RtlCompareMemory(tp.item->data, tp2.item->data, tp.item->size) == tp.item->size) {
-                        uint64_t inode = tp.item->key.obj_id;
+                        uint64_t inode = tp.item->key.objectid;
 
                         while (true) {
                             if (!find_next_item(context->Vcb, &tp, &next_tp, false, NULL)) {
@@ -3118,7 +3118,7 @@ static void __stdcall send_thread(void* ctx) {
 
                             tp = next_tp;
 
-                            if (tp.item->key.obj_id != inode)
+                            if (tp.item->key.objectid != inode)
                                 break;
                         }
 
@@ -3130,13 +3130,13 @@ static void __stdcall send_thread(void* ctx) {
 
                             tp2 = next_tp;
 
-                            if (tp2.item->key.obj_id != inode)
+                            if (tp2.item->key.objectid != inode)
                                 break;
                         }
 
                         no_next = true;
                     } else if (tp.item->size > sizeof(uint64_t) && tp2.item->size > sizeof(uint64_t) && *(uint64_t*)tp.item->data != *(uint64_t*)tp2.item->data) {
-                        uint64_t inode = tp.item->key.obj_id;
+                        uint64_t inode = tp.item->key.objectid;
 
                         Status = send_inode(context, NULL, &tp2);
                         if (!NT_SUCCESS(Status)) {
@@ -3153,17 +3153,17 @@ static void __stdcall send_thread(void* ctx) {
 
                             tp2 = next_tp;
 
-                            if (tp2.item->key.obj_id != inode)
+                            if (tp2.item->key.objectid != inode)
                                 break;
 
-                            if (tp2.item->key.obj_type == TYPE_INODE_REF) {
+                            if (tp2.item->key.type == TYPE_INODE_REF) {
                                 Status = send_inode_ref(context, &tp2, true);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("send_inode_ref returned %08lx\n", Status);
                                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                                     goto end;
                                 }
-                            } else if (tp2.item->key.obj_type == TYPE_INODE_EXTREF) {
+                            } else if (tp2.item->key.type == TYPE_INODE_EXTREF) {
                                 Status = send_inode_extref(context, &tp2, true);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("send_inode_extref returned %08lx\n", Status);
@@ -3201,7 +3201,7 @@ static void __stdcall send_thread(void* ctx) {
                             goto end;
                         }
                     }
-                } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                } else if (tp.item->key.type == TYPE_INODE_REF) {
                     Status = send_inode_ref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08lx\n", Status);
@@ -3215,7 +3215,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
                     Status = send_inode_extref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08lx\n", Status);
@@ -3229,7 +3229,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+                } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
                     Status = send_extent_data(context, &tp, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08lx\n", Status);
@@ -3241,7 +3241,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+                } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
                     Status = send_xattr(context, &tp, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08lx\n", Status);
@@ -3269,9 +3269,9 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
             } else if (ended2 || (!ended1 && !ended2 && keycmp(tp.item->key, tp2.item->key) == -1)) {
-                TRACE("A %I64x,%x,%I64x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+                TRACE("A %I64x,%x,%I64x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-                if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
+                if (context->lastinode.inode != 0 && tp.item->key.objectid > context->lastinode.inode) {
                     Status = finish_inode(context, ended1 ? NULL : &tp, ended2 ? NULL : &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("finish_inode returned %08lx\n", Status);
@@ -3285,28 +3285,28 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
 
-                if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+                if (tp.item->key.type == TYPE_INODE_ITEM) {
                     Status = send_inode(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                } else if (tp.item->key.type == TYPE_INODE_REF) {
                     Status = send_inode_ref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
                     Status = send_inode_extref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+                } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
                     Status = send_extent_data(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08lx\n", Status);
@@ -3318,7 +3318,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+                } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
                     Status = send_xattr(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08lx\n", Status);
@@ -3337,9 +3337,9 @@ static void __stdcall send_thread(void* ctx) {
                 else
                     ended1 = true;
             } else if (ended1 || (!ended1 && !ended2 && keycmp(tp.item->key, tp2.item->key) == 1)) {
-                TRACE("B %I64x,%x,%I64x\n", tp2.item->key.obj_id, tp2.item->key.obj_type, tp2.item->key.offset);
+                TRACE("B %I64x,%x,%I64x\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset);
 
-                if (context->lastinode.inode != 0 && tp2.item->key.obj_id > context->lastinode.inode) {
+                if (context->lastinode.inode != 0 && tp2.item->key.objectid > context->lastinode.inode) {
                     Status = finish_inode(context, ended1 ? NULL : &tp, ended2 ? NULL : &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("finish_inode returned %08lx\n", Status);
@@ -3353,28 +3353,28 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
 
-                if (tp2.item->key.obj_type == TYPE_INODE_ITEM) {
+                if (tp2.item->key.type == TYPE_INODE_ITEM) {
                     Status = send_inode(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_INODE_REF) {
+                } else if (tp2.item->key.type == TYPE_INODE_REF) {
                     Status = send_inode_ref(context, &tp2, true);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_INODE_EXTREF) {
+                } else if (tp2.item->key.type == TYPE_INODE_EXTREF) {
                     Status = send_inode_extref(context, &tp2, true);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_EXTENT_DATA && !context->lastinode.deleting) {
+                } else if (tp2.item->key.type == TYPE_EXTENT_DATA && !context->lastinode.deleting) {
                     Status = send_extent_data(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08lx\n", Status);
@@ -3386,7 +3386,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_XATTR_ITEM && !context->lastinode.deleting) {
+                } else if (tp2.item->key.type == TYPE_XATTR_ITEM && !context->lastinode.deleting) {
                     Status = send_xattr(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08lx\n", Status);
@@ -3411,7 +3411,7 @@ static void __stdcall send_thread(void* ctx) {
             traverse_ptr next_tp;
 
             if (context->datalen > SEND_BUFFER_LENGTH) {
-                KEY key = tp.item->key;
+                struct btrfs_key key = tp.item->key;
 
                 ExReleaseResourceLite(&context->Vcb->tree_lock);
 
@@ -3439,7 +3439,7 @@ static void __stdcall send_thread(void* ctx) {
                 }
             }
 
-            if (context->lastinode.inode != 0 && tp.item->key.obj_id > context->lastinode.inode) {
+            if (context->lastinode.inode != 0 && tp.item->key.objectid > context->lastinode.inode) {
                 Status = finish_inode(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("finish_inode returned %08lx\n", Status);
@@ -3453,28 +3453,28 @@ static void __stdcall send_thread(void* ctx) {
                 }
             }
 
-            if (tp.item->key.obj_type == TYPE_INODE_ITEM) {
+            if (tp.item->key.type == TYPE_INODE_ITEM) {
                 Status = send_inode(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode returned %08lx\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.obj_type == TYPE_INODE_REF) {
+            } else if (tp.item->key.type == TYPE_INODE_REF) {
                 Status = send_inode_ref(context, &tp, false);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode_ref returned %08lx\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+            } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
                 Status = send_inode_extref(context, &tp, false);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode_extref returned %08lx\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+            } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
                 Status = send_extent_data(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_extent_data returned %08lx\n", Status);
@@ -3486,7 +3486,7 @@ static void __stdcall send_thread(void* ctx) {
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+            } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
                 Status = send_xattr(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_xattr returned %08lx\n", Status);

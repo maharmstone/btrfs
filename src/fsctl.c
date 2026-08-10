@@ -145,14 +145,14 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
         leaf_node* ln = (leaf_node*)&th[1];
 
         for (i = 0; i < th->num_items; i++) {
-            if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(tree_header)) {
+            if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) && ln[i].offset + ln[i].size <= Vcb->superblock.node_size - sizeof(tree_header)) {
                 EXTENT_DATA* ed = (EXTENT_DATA*)(((uint8_t*)&th[1]) + ln[i].offset);
 
                 if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
 
                     if (ed2->size != 0) { // not sparse
-                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, subvol->id, ln[i].key.obj_id, ln[i].key.offset - ed2->offset, 1, Irp);
+                        Status = increase_extent_refcount_data(Vcb, ed2->address, ed2->size, subvol->id, ln[i].key.objectid, ln[i].key.offset - ed2->offset, 1, Irp);
 
                         if (!NT_SUCCESS(Status)) {
                             ERR("increase_extent_refcount_data returned %08lx\n", Status);
@@ -260,7 +260,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     uint64_t id;
     NTSTATUS Status;
     root *r, *subvol = subvol_fcb->subvol;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     uint64_t address, *root_num;
     LARGE_INTEGER time;
@@ -345,8 +345,8 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     do {
         get_uuid(&r->root_item.uuid);
 
-        RtlCopyMemory(&searchkey.obj_id, &r->root_item.uuid, sizeof(uint64_t));
-        searchkey.obj_type = TYPE_SUBVOL_UUID;
+        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid, sizeof(uint64_t));
+        searchkey.type = TYPE_SUBVOL_UUID;
         RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
 
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
@@ -354,15 +354,15 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     *root_num = r->id;
 
-    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(uint64_t), NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.objectid, searchkey.type, searchkey.offset, root_num, sizeof(uint64_t), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(root_num);
         goto end;
     }
 
-    searchkey.obj_id = r->id;
-    searchkey.obj_type = TYPE_ROOT_ITEM;
+    searchkey.objectid = r->id;
+    searchkey.type = TYPE_ROOT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
@@ -407,7 +407,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     // FIXME - do we need to copy over the send and receive fields too?
 
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
         ERR("error - could not find ROOT_ITEM for subvol %I64x\n", r->id);
         Status = STATUS_INTERNAL_ERROR;
         goto end;
@@ -756,7 +756,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
     INODE_REF* ir;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     SECURITY_SUBJECT_CONTEXT subjcont;
     PSID owner;
@@ -913,8 +913,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     do {
         get_uuid(&r->root_item.uuid);
 
-        RtlCopyMemory(&searchkey.obj_id, &r->root_item.uuid, sizeof(uint64_t));
-        searchkey.obj_type = TYPE_SUBVOL_UUID;
+        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid, sizeof(uint64_t));
+        searchkey.type = TYPE_SUBVOL_UUID;
         RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
 
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
@@ -922,7 +922,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     *root_num = r->id;
 
-    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.obj_id, searchkey.obj_type, searchkey.offset, root_num, sizeof(uint64_t), NULL, Irp);
+    Status = insert_tree_item(Vcb, Vcb->uuid_root, searchkey.objectid, searchkey.type, searchkey.offset, root_num, sizeof(uint64_t), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(root_num);
@@ -2745,7 +2745,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     UNICODE_STRING mmdevpath, pnp_name, pnp_name2;
     volume_child* vc;
     PDEVICE_OBJECT mountmgr;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     STORAGE_DEVICE_NUMBER sdn;
     volume_device_extension* vde;
@@ -2972,8 +2972,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
 
     RtlZeroMemory(stats, sizeof(uint64_t) * 5);
 
-    searchkey.obj_id = 0;
-    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.objectid = 0;
+    searchkey.type = TYPE_DEV_STATS;
     searchkey.offset = di->dev_id;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
@@ -3698,7 +3698,7 @@ end:
 
 static NTSTATUS check_inode_used(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
                                  _In_ root* subvol, _In_ uint64_t inode, _In_ uint32_t hash, _In_opt_ PIRP Irp) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     uint8_t c = hash >> 24;
@@ -3718,8 +3718,8 @@ static NTSTATUS check_inode_used(_In_ _Requires_exclusive_lock_held_(_Curr_->tre
         }
     }
 
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.objectid = inode;
+    searchkey.type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
@@ -3728,7 +3728,7 @@ static NTSTATUS check_inode_used(_In_ _Requires_exclusive_lock_held_(_Curr_->tre
         return Status;
     }
 
-    if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type)
+    if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type)
         return STATUS_SUCCESS;
 
     return STATUS_NOT_FOUND;
@@ -4585,7 +4585,7 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
     btrfs_find_subvol* bfs;
     NTSTATUS Status;
     traverse_ptr tp;
-    KEY searchkey;
+    struct btrfs_key searchkey;
 
     if (!in || inlen < sizeof(btrfs_find_subvol))
         return STATUS_INVALID_PARAMETER;
@@ -4606,8 +4606,8 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
         goto end;
     }
 
-    RtlCopyMemory(&searchkey.obj_id, &bfs->uuid, sizeof(uint64_t));
-    searchkey.obj_type = TYPE_SUBVOL_UUID;
+    RtlCopyMemory(&searchkey.objectid, &bfs->uuid, sizeof(uint64_t));
+    searchkey.type = TYPE_SUBVOL_UUID;
     RtlCopyMemory(&searchkey.offset, &bfs->uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
 
     Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
@@ -4621,11 +4621,11 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
         uint64_t* id = (uint64_t*)tp.item->data;
 
         if (bfs->ctransid != 0) {
-            KEY searchkey2;
+            struct btrfs_key searchkey2;
             traverse_ptr tp2;
 
-            searchkey2.obj_id = *id;
-            searchkey2.obj_type = TYPE_ROOT_ITEM;
+            searchkey2.objectid = *id;
+            searchkey2.type = TYPE_ROOT_ITEM;
             searchkey2.offset = 0xffffffffffffffff;
 
             Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey2, false, Irp);
@@ -4634,7 +4634,7 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
                 goto end;
             }
 
-            if (tp2.item->key.obj_id == searchkey2.obj_id && tp2.item->key.obj_type == searchkey2.obj_type &&
+            if (tp2.item->key.objectid == searchkey2.objectid && tp2.item->key.type == searchkey2.type &&
                 tp2.item->size >= offsetof(ROOT_ITEM, otransid)) {
                 ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
 
@@ -4651,7 +4651,7 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
         }
     }
 
-    searchkey.obj_type = TYPE_SUBVOL_REC_UUID;
+    searchkey.type = TYPE_SUBVOL_REC_UUID;
 
     Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
 
@@ -4666,11 +4666,11 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
 
         for (i = 0; i < tp.item->size / sizeof(uint64_t); i++) {
             if (bfs->ctransid != 0) {
-                KEY searchkey2;
+                struct btrfs_key searchkey2;
                 traverse_ptr tp2;
 
-                searchkey2.obj_id = ids[i];
-                searchkey2.obj_type = TYPE_ROOT_ITEM;
+                searchkey2.objectid = ids[i];
+                searchkey2.type = TYPE_ROOT_ITEM;
                 searchkey2.offset = 0xffffffffffffffff;
 
                 Status = find_item(Vcb, Vcb->root_root, &tp2, &searchkey2, false, Irp);
@@ -4679,7 +4679,7 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
                     goto end;
                 }
 
-                if (tp2.item->key.obj_id == searchkey2.obj_id && tp2.item->key.obj_type == searchkey2.obj_type &&
+                if (tp2.item->key.objectid == searchkey2.objectid && tp2.item->key.type == searchkey2.type &&
                     tp2.item->size >= offsetof(ROOT_ITEM, otransid)) {
                     ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
 

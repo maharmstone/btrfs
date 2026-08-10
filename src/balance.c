@@ -85,7 +85,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    mr->address = tp->item->key.obj_id;
+    mr->address = tp->item->key.objectid;
     mr->data = NULL;
     mr->ei = (EXTENT_ITEM*)tp->item->data;
     mr->system = false;
@@ -99,14 +99,14 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
     }
 
     if (!c)
-        c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
+        c = get_chunk_from_address(Vcb, tp->item->key.objectid);
 
     if (c) {
         acquire_chunk_lock(c, Vcb);
 
         c->used -= Vcb->superblock.node_size;
 
-        space_list_add(c, tp->item->key.obj_id, Vcb->superblock.node_size, rollback);
+        space_list_add(c, tp->item->key.objectid, Vcb->superblock.node_size, rollback);
 
         release_chunk_lock(c, Vcb);
     }
@@ -129,12 +129,12 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         len--;
 
         if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
+            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, secttype);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -172,8 +172,8 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         while (find_next_item(Vcb, &tp2, &next_tp, false, NULL)) {
             tp2 = next_tp;
 
-            if (tp2.item->key.obj_id == tp->item->key.obj_id) {
-                if (tp2.item->key.obj_type == TYPE_TREE_BLOCK_REF) {
+            if (tp2.item->key.objectid == tp->item->key.objectid) {
+                if (tp2.item->key.type == TYPE_TREE_BLOCK_REF) {
                     metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                     if (!ref) {
                         ERR("out of memory\n");
@@ -191,7 +191,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
                         ERR("delete_tree_item returned %08lx\n", Status);
                         return Status;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_SHARED_BLOCK_REF) {
+                } else if (tp2.item->key.type == TYPE_SHARED_BLOCK_REF) {
                     metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                     if (!ref) {
                         ERR("out of memory\n");
@@ -226,7 +226,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
 static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* items,
                                           uint64_t address, metadata_reloc** mr2, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     bool skinny = false;
     NTSTATUS Status;
@@ -243,8 +243,8 @@ static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_-
         le = le->Flink;
     }
 
-    searchkey.obj_id = address;
-    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.objectid = address;
+    searchkey.type = TYPE_METADATA_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -253,9 +253,9 @@ static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_-
         return Status;
     }
 
-    if (tp.item->key.obj_id == address && tp.item->key.obj_type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM))
+    if (tp.item->key.objectid == address && tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM))
         skinny = true;
-    else if (tp.item->key.obj_id == address && tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
+    else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
              tp.item->size >= sizeof(EXTENT_ITEM)) {
         EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
@@ -372,7 +372,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
         EXTENT_ITEM2* ei2 = (EXTENT_ITEM2*)ptr;
 
-        ei2->firstitem = *(KEY*)&mr->data[1];
+        ei2->firstitem = *(struct btrfs_key*)&mr->data[1];
         ei2->level = mr->data->level;
 
         ptr += sizeof(EXTENT_ITEM2);
@@ -474,7 +474,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             leaf_node* ln = (leaf_node*)&mr->data[1];
 
             for (i = 0; i < mr->data->num_items; i++) {
-                if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                     EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(tree_header) + ln[i].offset);
 
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
@@ -603,7 +603,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 uint16_t i;
 
                 for (i = 0; i < mr->data->num_items; i++) {
-                    if (ln[i].key.obj_type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                    if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                         EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(tree_header) + ln[i].offset);
 
                         if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
@@ -627,12 +627,12 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
             metadata_reloc_ref* ref = CONTAINING_RECORD(le2, metadata_reloc_ref, list_entry);
 
             if (ref->type == TYPE_TREE_BLOCK_REF) {
-                KEY* firstitem;
+                struct btrfs_key* firstitem;
                 root* r = NULL;
                 LIST_ENTRY* le3;
                 tree* t;
 
-                firstitem = (KEY*)&mr->data[1];
+                firstitem = (struct btrfs_key*)&mr->data[1];
 
                 le3 = Vcb->roots.Flink;
                 while (le3 != &Vcb->roots) {
@@ -866,13 +866,13 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             else if (r == Vcb->chunk_root)
                                 Vcb->superblock.chunk_tree_addr = mr->new_address;
                             else if (r->root_item.block_number == mr->address) {
-                                KEY searchkey;
+                                struct btrfs_key searchkey;
                                 ROOT_ITEM* ri;
 
                                 r->root_item.block_number = mr->new_address;
 
-                                searchkey.obj_id = r->id;
-                                searchkey.obj_type = TYPE_ROOT_ITEM;
+                                searchkey.objectid = r->id;
+                                searchkey.type = TYPE_ROOT_ITEM;
                                 searchkey.offset = 0xffffffffffffffff;
 
                                 Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, NULL);
@@ -881,8 +881,8 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                     goto end;
                                 }
 
-                                if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
-                                    ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.obj_id);
+                                if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
+                                    ERR("could not find ROOT_ITEM for tree %I64x\n", searchkey.objectid);
                                     Status = STATUS_INTERNAL_ERROR;
                                     goto end;
                                 }
@@ -902,7 +902,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                     goto end;
                                 }
 
-                                Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, NULL);
+                                Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, NULL);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("insert_tree_item returned %08lx\n", Status);
                                     goto end;
@@ -1001,7 +1001,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             while (le3 != &t3->itemlist) {
                                 tree_data* td = CONTAINING_RECORD(le3, tree_data, list_entry);
 
-                                if (!td->inserted && td->key.obj_type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
                                     EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
 
                                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
@@ -1098,7 +1098,7 @@ end:
 }
 
 static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* changed) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     bool b;
@@ -1112,8 +1112,8 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* ch
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
-    searchkey.obj_id = c->offset;
-    searchkey.obj_type = TYPE_METADATA_ITEM;
+    searchkey.objectid = c->offset;
+    searchkey.type = TYPE_METADATA_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -1125,16 +1125,16 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* ch
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.obj_id >= c->offset + c->chunk_item->size)
+        if (tp.item->key.objectid >= c->offset + c->chunk_item->size)
             break;
 
-        if (tp.item->key.obj_id >= c->offset && (tp.item->key.obj_type == TYPE_EXTENT_ITEM || tp.item->key.obj_type == TYPE_METADATA_ITEM)) {
+        if (tp.item->key.objectid >= c->offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
             bool tree = false, skinny = false;
 
-            if (tp.item->key.obj_type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
+            if (tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
                 tree = true;
                 skinny = true;
-            } else if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
+            } else if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.node_size &&
                        tp.item->size >= sizeof(EXTENT_ITEM)) {
                 EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
@@ -1218,7 +1218,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
                                         data_reloc* dr, EXTENT_DATA_REF* edr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     root* r = NULL;
     metadata_reloc* mr;
@@ -1242,8 +1242,8 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
         return STATUS_INTERNAL_ERROR;
     }
 
-    searchkey.obj_id = edr->objid;
-    searchkey.obj_type = TYPE_EXTENT_DATA;
+    searchkey.objectid = edr->objid;
+    searchkey.type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
 
     Status = find_item(Vcb, r, &tp, &searchkey, false, NULL);
@@ -1252,20 +1252,20 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
         return Status;
     }
 
-    if (tp.item->key.obj_id < searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type < searchkey.obj_type)) {
+    if (tp.item->key.objectid < searchkey.objectid || (tp.item->key.objectid == searchkey.objectid && tp.item->key.type < searchkey.type)) {
         traverse_ptr tp2;
 
         if (find_next_item(Vcb, &tp, &tp2, false, NULL))
             tp = tp2;
         else {
-            ERR("could not find EXTENT_DATA for inode %I64x in root %I64x\n", searchkey.obj_id, r->id);
+            ERR("could not find EXTENT_DATA for inode %I64x in root %I64x\n", searchkey.objectid, r->id);
             return STATUS_INTERNAL_ERROR;
         }
     }
 
     ref = NULL;
 
-    while (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+    while (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
         traverse_ptr tp2;
 
         if (tp.item->size >= sizeof(EXTENT_DATA)) {
@@ -1328,7 +1328,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    dr->address = tp->item->key.obj_id;
+    dr->address = tp->item->key.objectid;
     dr->size = tp->item->key.offset;
     dr->ei = (EXTENT_ITEM*)tp->item->data;
     InitializeListHead(&dr->refs);
@@ -1340,14 +1340,14 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     }
 
     if (!c)
-        c = get_chunk_from_address(Vcb, tp->item->key.obj_id);
+        c = get_chunk_from_address(Vcb, tp->item->key.objectid);
 
     if (c) {
         acquire_chunk_lock(c, Vcb);
 
         c->used -= tp->item->key.offset;
 
-        space_list_add(c, tp->item->key.obj_id, tp->item->key.offset, rollback);
+        space_list_add(c, tp->item->key.objectid, tp->item->key.offset, rollback);
 
         release_chunk_lock(c, Vcb);
     }
@@ -1365,12 +1365,12 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         len--;
 
         if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, len, sectlen);
+            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
         if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.obj_id, tp->item->key.obj_type, tp->item->key.offset, secttype);
+            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, secttype);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1424,8 +1424,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         while (find_next_item(Vcb, &tp2, &next_tp, false, NULL)) {
             tp2 = next_tp;
 
-            if (tp2.item->key.obj_id == tp->item->key.obj_id) {
-                if (tp2.item->key.obj_type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(EXTENT_DATA_REF)) {
+            if (tp2.item->key.objectid == tp->item->key.objectid) {
+                if (tp2.item->key.type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(EXTENT_DATA_REF)) {
                     Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, (EXTENT_DATA_REF*)tp2.item->data, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
@@ -1437,7 +1437,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                         ERR("delete_tree_item returned %08lx\n", Status);
                         return Status;
                     }
-                } else if (tp2.item->key.obj_type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(uint32_t)) {
+                } else if (tp2.item->key.type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(uint32_t)) {
                     metadata_reloc* mr;
                     data_reloc_ref* ref;
 
@@ -1669,7 +1669,7 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
 }
 
 static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* changed) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     bool b;
@@ -1686,8 +1686,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
-    searchkey.obj_id = c->offset;
-    searchkey.obj_type = TYPE_EXTENT_ITEM;
+    searchkey.objectid = c->offset;
+    searchkey.type = TYPE_EXTENT_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -1699,13 +1699,13 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.obj_id >= c->offset + c->chunk_item->size)
+        if (tp.item->key.objectid >= c->offset + c->chunk_item->size)
             break;
 
-        if (tp.item->key.obj_id >= c->offset && tp.item->key.obj_type == TYPE_EXTENT_ITEM) {
+        if (tp.item->key.objectid >= c->offset && tp.item->key.type == TYPE_EXTENT_ITEM) {
             bool tree = false;
 
-            if (tp.item->key.obj_type == TYPE_EXTENT_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
+            if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
                 EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
 
                 if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
@@ -1850,8 +1850,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
         RtlInitializeBitMap(&bmp, bmparr, bmplen);
         RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
-        searchkey.obj_id = EXTENT_CSUM_ID;
-        searchkey.obj_type = TYPE_EXTENT_CSUM;
+        searchkey.objectid = EXTENT_CSUM_ID;
+        searchkey.type = TYPE_EXTENT_CSUM;
         searchkey.offset = dr->address;
 
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, false, NULL);
@@ -1866,7 +1866,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
             do {
                 traverse_ptr next_tp;
 
-                if (tp.item->key.obj_type == TYPE_EXTENT_CSUM) {
+                if (tp.item->key.type == TYPE_EXTENT_CSUM) {
                     if (tp.item->key.offset >= dr->address + dr->size)
                         break;
                     else if (tp.item->size >= Vcb->csum_size && tp.item->key.offset + (((unsigned int)tp.item->size << Vcb->sector_shift) / Vcb->csum_size) >= dr->address) {
@@ -2376,13 +2376,13 @@ static void copy_balance_args(btrfs_balance_opts* opts, BALANCE_ARGS* args) {
 }
 
 static NTSTATUS add_balance_item(device_extension* Vcb) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     BALANCE_ITEM* bi;
 
-    searchkey.obj_id = BALANCE_ITEM_ID;
-    searchkey.obj_type = TYPE_TEMP_ITEM;
+    searchkey.objectid = BALANCE_ITEM_ID;
+    searchkey.type = TYPE_TEMP_ITEM;
     searchkey.offset = 0;
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
@@ -2449,12 +2449,12 @@ end:
 }
 
 static NTSTATUS remove_balance_item(device_extension* Vcb) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
 
-    searchkey.obj_id = BALANCE_ITEM_ID;
-    searchkey.obj_type = TYPE_TEMP_ITEM;
+    searchkey.objectid = BALANCE_ITEM_ID;
+    searchkey.type = TYPE_TEMP_ITEM;
     searchkey.offset = 0;
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
@@ -2584,7 +2584,7 @@ static NTSTATUS remove_superblocks(device* dev) {
 }
 
 static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, device* dev) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     LIST_ENTRY* le;
@@ -2605,8 +2605,8 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
 
     // remove entry in chunk tree
 
-    searchkey.obj_id = 1;
-    searchkey.obj_type = TYPE_DEV_ITEM;
+    searchkey.objectid = 1;
+    searchkey.type = TYPE_DEV_ITEM;
     searchkey.offset = dev->devitem.dev_id;
 
     Status = find_item(Vcb, Vcb->chunk_root, &tp, &searchkey, false, NULL);
@@ -2626,8 +2626,8 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
 
     // remove stats entry in device tree
 
-    searchkey.obj_id = 0;
-    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.objectid = 0;
+    searchkey.type = TYPE_DEV_STATS;
     searchkey.offset = dev->devitem.dev_id;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, NULL);
@@ -2803,7 +2803,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     DEVICE_MANAGE_DATA_SET_ATTRIBUTES* dmdsa;
     DEVICE_DATA_SET_RANGE* ranges;
     ULONG datalen, i;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     bool b;
@@ -2812,8 +2812,8 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
     dev->num_trim_entries = 0;
 
-    searchkey.obj_id = dev->devitem.dev_id;
-    searchkey.obj_type = TYPE_DEV_EXTENT;
+    searchkey.objectid = dev->devitem.dev_id;
+    searchkey.type = TYPE_DEV_EXTENT;
     searchkey.offset = 0;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, NULL);
@@ -2825,7 +2825,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.obj_id == dev->devitem.dev_id && tp.item->key.obj_type == TYPE_DEV_EXTENT) {
+        if (tp.item->key.objectid == dev->devitem.dev_id && tp.item->key.type == TYPE_DEV_EXTENT) {
             if (tp.item->size >= sizeof(DEV_EXTENT)) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
 
@@ -2834,7 +2834,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
                 lastoff = tp.item->key.offset + de->length;
             } else {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
                 return;
             }
         }
@@ -2843,7 +2843,7 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
         if (b) {
             tp = next_tp;
-            if (tp.item->key.obj_id > searchkey.obj_id || (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type > searchkey.obj_type))
+            if (tp.item->key.objectid > searchkey.objectid || (tp.item->key.objectid == searchkey.objectid && tp.item->key.type > searchkey.type))
                 break;
         }
     } while (b);
@@ -3626,15 +3626,15 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
 }
 
 NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
     BALANCE_ITEM* bi;
     OBJECT_ATTRIBUTES oa;
     int i;
 
-    searchkey.obj_id = BALANCE_ITEM_ID;
-    searchkey.obj_type = TYPE_TEMP_ITEM;
+    searchkey.objectid = BALANCE_ITEM_ID;
+    searchkey.type = TYPE_TEMP_ITEM;
     searchkey.offset = 0;
 
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, NULL);
@@ -3649,7 +3649,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     }
 
     if (tp.item->size < sizeof(BALANCE_ITEM)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
              tp.item->size, sizeof(BALANCE_ITEM));
         return STATUS_INTERNAL_ERROR;
     }

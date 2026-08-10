@@ -220,7 +220,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
 
             if (dc->hash == hash) {
                 if (dc->name.Length == fnus.Length && RtlCompareMemory(dc->name.Buffer, fnus.Buffer, fnus.Length) == fnus.Length) {
-                    if (dc->key.obj_type == TYPE_ROOT_ITEM) {
+                    if (dc->key.type == TYPE_ROOT_ITEM) {
                         LIST_ENTRY* le2;
 
                         *subvol = NULL;
@@ -229,7 +229,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                         while (le2 != &fcb->Vcb->roots) {
                             root* r2 = CONTAINING_RECORD(le2, root, list_entry);
 
-                            if (r2->id == dc->key.obj_id) {
+                            if (r2->id == dc->key.objectid) {
                                 *subvol = r2;
                                 break;
                             }
@@ -240,7 +240,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                         *inode = SUBVOL_ROOT_INODE;
                     } else {
                         *subvol = fcb->subvol;
-                        *inode = dc->key.obj_id;
+                        *inode = dc->key.objectid;
                     }
 
                     *pdc = dc;
@@ -267,7 +267,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
 
             if (dc->hash_uc == hash) {
                 if (dc->name_uc.Length == fnus.Length && RtlCompareMemory(dc->name_uc.Buffer, fnus.Buffer, fnus.Length) == fnus.Length) {
-                    if (dc->key.obj_type == TYPE_ROOT_ITEM) {
+                    if (dc->key.type == TYPE_ROOT_ITEM) {
                         LIST_ENTRY* le2;
 
                         *subvol = NULL;
@@ -276,7 +276,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                         while (le2 != &fcb->Vcb->roots) {
                             root* r2 = CONTAINING_RECORD(le2, root, list_entry);
 
-                            if (r2->id == dc->key.obj_id) {
+                            if (r2->id == dc->key.objectid) {
                                 *subvol = r2;
                                 break;
                             }
@@ -287,7 +287,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                         *inode = SUBVOL_ROOT_INODE;
                     } else {
                         *subvol = fcb->subvol;
-                        *inode = dc->key.obj_id;
+                        *inode = dc->key.objectid;
                     }
 
                     *pdc = dc;
@@ -450,14 +450,14 @@ cleanup:
 
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp) {
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp, next_tp;
     uint64_t i, j;
     bool b;
     void* ptr = csum;
 
-    searchkey.obj_id = EXTENT_CSUM_ID;
-    searchkey.obj_type = TYPE_EXTENT_CSUM;
+    searchkey.objectid = EXTENT_CSUM_ID;
+    searchkey.type = TYPE_EXTENT_CSUM;
     searchkey.offset = start;
 
     Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, false, Irp);
@@ -468,7 +468,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
 
     i = 0;
     do {
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
             ULONG readlen;
 
             if (start < tp.item->key.offset)
@@ -506,7 +506,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
 }
 
 NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     ULONG num_children = 0;
@@ -531,8 +531,8 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     if (!ignore_size && fcb->inode_item.st_size == 0)
         return STATUS_SUCCESS;
 
-    searchkey.obj_id = fcb->inode;
-    searchkey.obj_type = TYPE_DIR_INDEX;
+    searchkey.objectid = fcb->inode;
+    searchkey.type = TYPE_DIR_INDEX;
     searchkey.offset = 2;
 
     Status = find_item(Vcb, fcb->subvol, &tp, &searchkey, false, Irp);
@@ -544,22 +544,22 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     if (keycmp(tp.item->key, searchkey) == -1) {
         if (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
             tp = next_tp;
-            TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
         }
     }
 
-    while (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+    while (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
         DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
         dir_child* dc;
         ULONG utf16len;
 
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             goto cont;
         }
 
         if (di->n == 0) {
-            WARN("(%I64x,%x,%I64x): DIR_ITEM name length is zero\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+            WARN("(%I64x,%x,%I64x): DIR_ITEM name length is zero\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
             goto cont;
         }
 
@@ -651,8 +651,8 @@ cont:
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            dc->key.obj_id = BTRFS_ROOT_FSTREE;
-            dc->key.obj_type = TYPE_ROOT_ITEM;
+            dc->key.objectid = BTRFS_ROOT_FSTREE;
+            dc->key.type = TYPE_ROOT_ITEM;
             dc->key.offset = 0;
             dc->index = max_index + 1;
             dc->type = BTRFS_TYPE_DIRECTORY;
@@ -703,7 +703,7 @@ cont:
 
 NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) device_extension* Vcb,
                   root* subvol, uint64_t inode, uint8_t type, PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     fcb *fcb, *deleted_fcb = NULL;
@@ -780,8 +780,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     fcb->hash = hash;
     fcb->type = type;
 
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.objectid = inode;
+    searchkey.type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
@@ -791,7 +791,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         return Status;
     }
 
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
         WARN("couldn't find INODE_ITEM for inode %I64x in subvol %I64x\n", inode, subvol->id);
         reap_fcb(fcb);
         return STATUS_INVALID_PARAMETER;
@@ -822,13 +822,13 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
         tp = next_tp;
 
-        if (tp.item->key.obj_id > inode)
+        if (tp.item->key.objectid > inode)
             break;
 
-        if ((no_data && tp.item->key.obj_type > TYPE_XATTR_ITEM) || tp.item->key.obj_type > TYPE_EXTENT_DATA)
+        if ((no_data && tp.item->key.type > TYPE_XATTR_ITEM) || tp.item->key.type > TYPE_EXTENT_DATA)
             break;
 
-        if ((always_add_hl || fcb->inode_item.st_nlink > 1) && tp.item->key.obj_type == TYPE_INODE_REF) {
+        if ((always_add_hl || fcb->inode_item.st_nlink > 1) && tp.item->key.type == TYPE_INODE_REF) {
             ULONG len;
             INODE_REF* ir;
 
@@ -893,7 +893,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 len -= sizeof(INODE_REF) - 1 + ir->n;
                 ir = (INODE_REF*)&ir->name[ir->n];
             }
-        } else if ((always_add_hl || fcb->inode_item.st_nlink > 1) && tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+        } else if ((always_add_hl || fcb->inode_item.st_nlink > 1) && tp.item->key.type == TYPE_INODE_EXTREF) {
             ULONG len;
             INODE_EXTREF* ier;
 
@@ -958,14 +958,14 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 len -= sizeof(INODE_EXTREF) - 1 + ier->n;
                 ier = (INODE_EXTREF*)&ier->name[ier->n];
             }
-        } else if (tp.item->key.obj_type == TYPE_XATTR_ITEM) {
+        } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
             ULONG len;
             DIR_ITEM* di;
 
             static const char xapref[] = "user.";
 
             if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
                 continue;
             }
 
@@ -1174,14 +1174,14 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 di = (DIR_ITEM*)&di->name[di->m + di->n];
             } while (true);
-        } else if (tp.item->key.obj_type == TYPE_EXTENT_DATA) {
+        } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
             extent* ext;
             bool unique = false;
 
             ed = (EXTENT_DATA*)tp.item->data;
 
             if (tp.item->size < sizeof(EXTENT_DATA)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                     tp.item->size, sizeof(EXTENT_DATA));
 
                 reap_fcb(fcb);
@@ -1192,7 +1192,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
 
                 if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset,
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                         tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
 
                     reap_fcb(fcb);
@@ -1367,7 +1367,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     uint8_t* xattrdata;
     uint16_t xattrlen, overhead;
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     static const char xapref[] = "user.";
     ANSI_STRING xattr;
@@ -1412,8 +1412,8 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
 
     // find XATTR_ITEM overhead and hence calculate maximum length
 
-    searchkey.obj_id = parent->inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
+    searchkey.objectid = parent->inode;
+    searchkey.type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
 
     Status = find_item(Vcb, parent->subvol, &tp, &searchkey, false, Irp);
@@ -1430,7 +1430,7 @@ static NTSTATUS open_fcb_stream(_Requires_lock_held_(_Curr_->tree_lock) _Require
     }
 
     if (tp.item->size < xattrlen) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, xattrlen);
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %u\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, xattrlen);
         reap_fcb(fcb);
         return STATUS_INTERNAL_ERROR;
     }
@@ -1894,8 +1894,8 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    dc->key.obj_id = inode;
-    dc->key.obj_type = subvol ? TYPE_ROOT_ITEM : TYPE_INODE_ITEM;
+    dc->key.objectid = inode;
+    dc->key.type = subvol ? TYPE_ROOT_ITEM : TYPE_INODE_ITEM;
     dc->key.offset = subvol ? 0xffffffffffffffff : 0;
     dc->type = type;
     dc->fileref = NULL;
@@ -2650,7 +2650,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     BTRFS_TIME now;
     ULONG utf8len, overhead;
     NTSTATUS Status;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     dir_child* dc;
     dir_child* existing_dc = NULL;
@@ -2821,8 +2821,8 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     fcb->adshash = calc_crc32c(0xfffffffe, (uint8_t*)fcb->adsxattr.Buffer, fcb->adsxattr.Length);
     TRACE("adshash = %08x\n", fcb->adshash);
 
-    searchkey.obj_id = parfileref->fcb->inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
+    searchkey.objectid = parfileref->fcb->inode;
+    searchkey.type = TYPE_XATTR_ITEM;
     searchkey.offset = fcb->adshash;
 
     Status = find_item(Vcb, parfileref->fcb->subvol, &tp, &searchkey, false, Irp);
@@ -4184,11 +4184,11 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
 
         {
-            KEY searchkey;
+            struct btrfs_key searchkey;
             traverse_ptr tp;
 
-            searchkey.obj_id = fcb->inode;
-            searchkey.obj_type = TYPE_INODE_REF;
+            searchkey.objectid = fcb->inode;
+            searchkey.type = TYPE_INODE_REF;
             searchkey.offset = 0;
 
             Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
@@ -4201,11 +4201,11 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             do {
                 traverse_ptr next_tp;
 
-                if (tp.item->key.obj_id > fcb->inode || (tp.item->key.obj_id == fcb->inode && tp.item->key.obj_type > TYPE_INODE_EXTREF))
+                if (tp.item->key.objectid > fcb->inode || (tp.item->key.objectid == fcb->inode && tp.item->key.type > TYPE_INODE_EXTREF))
                     break;
 
-                if (tp.item->key.obj_id == fcb->inode) {
-                    if (tp.item->key.obj_type == TYPE_INODE_REF) {
+                if (tp.item->key.objectid == fcb->inode) {
+                    if (tp.item->key.type == TYPE_INODE_REF) {
                         INODE_REF* ir = (INODE_REF*)tp.item->data;
 
                         if (tp.item->size < offsetof(INODE_REF, name[0]) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
@@ -4250,7 +4250,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                         parent = tp.item->key.offset;
 
                         break;
-                    } else if (tp.item->key.obj_type == TYPE_INODE_EXTREF) {
+                    } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
                         INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
 
                         if (tp.item->size < offsetof(INODE_EXTREF, name[0]) || tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
@@ -4320,11 +4320,11 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
     }
 
     if (parent == inode) { // subvolume root
-        KEY searchkey;
+        struct btrfs_key searchkey;
         traverse_ptr tp;
 
-        searchkey.obj_id = subvol->id;
-        searchkey.obj_type = TYPE_ROOT_BACKREF;
+        searchkey.objectid = subvol->id;
+        searchkey.type = TYPE_ROOT_BACKREF;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
@@ -4334,20 +4334,20 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             return Status;
         }
 
-        if (tp.item->key.obj_id == searchkey.obj_id && tp.item->key.obj_type == searchkey.obj_type) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
             ROOT_REF* rr = (ROOT_REF*)tp.item->data;
             LIST_ENTRY* le;
             root* r = NULL;
             ULONG stringlen;
 
             if (tp.item->size < sizeof(ROOT_REF)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }

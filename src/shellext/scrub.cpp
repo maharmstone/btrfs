@@ -142,7 +142,7 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
 
                     if (bse->recovered)
                         message = IDS_SCRUB_MSG_RECOVERABLE_METADATA;
-                    else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
+                    else if (bse->metadata.firstitem.objectid == 0 && bse->metadata.firstitem.type == 0 && bse->metadata.firstitem.offset == 0)
                         message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA;
                     else
                         message = IDS_SCRUB_MSG_UNRECOVERABLE_METADATA_FIRSTITEM;
@@ -152,11 +152,11 @@ void BtrfsScrub::UpdateTextBox(HWND hwndDlg, btrfs_query_scrub* bqs) {
 
                     if (bse->recovered)
                         wstring_sprintf(u, t, bse->address, bse->device);
-                    else if (bse->metadata.firstitem.obj_id == 0 && bse->metadata.firstitem.obj_type == 0 && bse->metadata.firstitem.offset == 0)
+                    else if (bse->metadata.firstitem.objectid == 0 && bse->metadata.firstitem.type == 0 && bse->metadata.firstitem.offset == 0)
                         wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level);
                     else
-                        wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.obj_id,
-                                        bse->metadata.firstitem.obj_type, bse->metadata.firstitem.offset);
+                        wstring_sprintf(u, t, bse->address, bse->device, bse->metadata.root, bse->metadata.level, bse->metadata.firstitem.objectid,
+                                        bse->metadata.firstitem.type, bse->metadata.firstitem.offset);
                 } else {
                     int message;
 

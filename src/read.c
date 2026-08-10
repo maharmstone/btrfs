@@ -1515,7 +1515,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         while (le != &Vcb->sys_chunks) {
             sys_chunk* sc = CONTAINING_RECORD(le, sys_chunk, list_entry);
 
-            if (sc->key.obj_id == 0x100 && sc->key.obj_type == TYPE_CHUNK_ITEM && sc->key.offset <= addr) {
+            if (sc->key.objectid == 0x100 && sc->key.type == TYPE_CHUNK_ITEM && sc->key.offset <= addr) {
                 CHUNK_ITEM* chunk_item = sc->data;
 
                 if ((addr - sc->key.offset) < chunk_item->size && chunk_item->num_stripes > 0) {

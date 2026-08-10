@@ -385,13 +385,13 @@ static void __stdcall DriverUnload(_In_ PDRIVER_OBJECT DriverObject) {
 }
 
 static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_opt_ PIRP Irp) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp, prev_tp;
     NTSTATUS Status;
 
     // get last entry
-    searchkey.obj_id = 0xffffffffffffffff;
-    searchkey.obj_type = 0xff;
+    searchkey.objectid = 0xffffffffffffffff;
+    searchkey.type = 0xff;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, r, &tp, &searchkey, false, Irp);
@@ -400,8 +400,8 @@ static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
         return false;
     }
 
-    if ((tp.item->key.obj_type == TYPE_INODE_ITEM || tp.item->key.obj_type == TYPE_ROOT_ITEM) && tp.item->key.obj_id <= BTRFS_LAST_FREE_OBJECTID) {
-        r->lastinode = tp.item->key.obj_id;
+    if ((tp.item->key.type == TYPE_INODE_ITEM || tp.item->key.type == TYPE_ROOT_ITEM) && tp.item->key.objectid <= BTRFS_LAST_FREE_OBJECTID) {
+        r->lastinode = tp.item->key.objectid;
         TRACE("last inode for tree %I64x is %I64x\n", r->id, r->lastinode);
         return true;
     }
@@ -409,10 +409,10 @@ static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
     while (find_prev_item(Vcb, &tp, &prev_tp, Irp)) {
         tp = prev_tp;
 
-        TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-        if ((tp.item->key.obj_type == TYPE_INODE_ITEM || tp.item->key.obj_type == TYPE_ROOT_ITEM) && tp.item->key.obj_id <= BTRFS_LAST_FREE_OBJECTID) {
-            r->lastinode = tp.item->key.obj_id;
+        if ((tp.item->key.type == TYPE_INODE_ITEM || tp.item->key.type == TYPE_ROOT_ITEM) && tp.item->key.objectid <= BTRFS_LAST_FREE_OBJECTID) {
+            r->lastinode = tp.item->key.objectid;
             TRACE("last inode for tree %I64x is %I64x\n", r->id, r->lastinode);
             return true;
         }
@@ -472,14 +472,14 @@ static bool extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _
 _Success_(return)
 bool get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* subvol, _In_ uint64_t inode, _In_z_ char* name, _In_ uint32_t crc32,
                _Out_ uint8_t** data, _Out_ uint16_t* datalen, _In_opt_ PIRP Irp) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
 
     TRACE("(%p, %I64x, %I64x, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
 
-    searchkey.obj_id = inode;
-    searchkey.obj_type = TYPE_XATTR_ITEM;
+    searchkey.objectid = inode;
+    searchkey.type = TYPE_XATTR_ITEM;
     searchkey.offset = crc32;
 
     Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
@@ -489,12 +489,12 @@ bool get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
     }
 
     if (keycmp(tp.item->key, searchkey)) {
-        TRACE("could not find item (%I64x,%x,%I64x)\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+        TRACE("could not find item (%I64x,%x,%I64x)\n", searchkey.objectid, searchkey.type, searchkey.offset);
         return false;
     }
 
     if (tp.item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
         return false;
     }
 
@@ -3075,12 +3075,12 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
 
 static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock) _In_ device_extension* Vcb, _In_opt_ PIRP Irp) {
     traverse_ptr tp, next_tp;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     bool b;
     NTSTATUS Status;
 
-    searchkey.obj_id = 0;
-    searchkey.obj_type = 0;
+    searchkey.objectid = 0;
+    searchkey.type = 0;
     searchkey.offset = 0;
 
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
@@ -3090,26 +3090,26 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     }
 
     do {
-        TRACE("(%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        TRACE("(%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-        if (tp.item->key.obj_type == TYPE_ROOT_ITEM) {
+        if (tp.item->key.type == TYPE_ROOT_ITEM) {
             ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
 
             if (tp.item->size < offsetof(ROOT_ITEM, byte_limit)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
             } else {
-                TRACE("root %I64x - address %I64x\n", tp.item->key.obj_id, ri->block_number);
+                TRACE("root %I64x - address %I64x\n", tp.item->key.objectid, ri->block_number);
 
-                Status = add_root(Vcb, tp.item->key.obj_id, ri->block_number, ri->generation, &tp);
+                Status = add_root(Vcb, tp.item->key.objectid, ri->block_number, ri->generation, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_root returned %08lx\n", Status);
                     return Status;
                 }
             }
-        } else if (tp.item->key.obj_type == TYPE_ROOT_BACKREF && !IsListEmpty(&Vcb->roots)) {
+        } else if (tp.item->key.type == TYPE_ROOT_BACKREF && !IsListEmpty(&Vcb->roots)) {
             root* lastroot = CONTAINING_RECORD(Vcb->roots.Blink, root, list_entry);
 
-            if (lastroot->id == tp.item->key.obj_id)
+            if (lastroot->id == tp.item->key.objectid)
                 lastroot->parent = tp.item->key.offset;
         }
 
@@ -3198,7 +3198,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 }
 
 static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ device* dev, _In_opt_ PIRP Irp) {
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp, next_tp;
     bool b;
     uint64_t lastaddr;
@@ -3206,16 +3206,16 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
     InitializeListHead(&dev->space);
 
-    searchkey.obj_id = 0;
-    searchkey.obj_type = TYPE_DEV_STATS;
+    searchkey.objectid = 0;
+    searchkey.type = TYPE_DEV_STATS;
     searchkey.offset = dev->devitem.dev_id;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
     if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey))
         RtlCopyMemory(dev->stats, tp.item->data, min(sizeof(uint64_t) * 5, tp.item->size));
 
-    searchkey.obj_id = dev->devitem.dev_id;
-    searchkey.obj_type = TYPE_DEV_EXTENT;
+    searchkey.objectid = dev->devitem.dev_id;
+    searchkey.type = TYPE_DEV_EXTENT;
     searchkey.offset = 0;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
@@ -3227,7 +3227,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     lastaddr = 0;
 
     do {
-        if (tp.item->key.obj_id == dev->devitem.dev_id && tp.item->key.obj_type == TYPE_DEV_EXTENT) {
+        if (tp.item->key.objectid == dev->devitem.dev_id && tp.item->key.type == TYPE_DEV_EXTENT) {
             if (tp.item->size >= sizeof(DEV_EXTENT)) {
                 DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
 
@@ -3241,7 +3241,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 lastaddr = tp.item->key.offset + de->length;
             } else {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
             }
         }
 
@@ -3249,7 +3249,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
         if (b) {
             tp = next_tp;
-            if (tp.item->key.obj_id > searchkey.obj_id || tp.item->key.obj_type > searchkey.obj_type)
+            if (tp.item->key.objectid > searchkey.objectid || tp.item->key.type > searchkey.type)
                 break;
         }
     } while (b);
@@ -3505,13 +3505,13 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ bool get_
 
 static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     traverse_ptr tp, next_tp;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     bool b;
     chunk* c;
     NTSTATUS Status;
 
-    searchkey.obj_id = 0;
-    searchkey.obj_type = 0;
+    searchkey.objectid = 0;
+    searchkey.type = 0;
     searchkey.offset = 0;
 
     Vcb->data_flags = 0;
@@ -3525,11 +3525,11 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     }
 
     do {
-        TRACE("(%I64x,%x,%I64x)\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset);
+        TRACE("(%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-        if (tp.item->key.obj_id == 1 && tp.item->key.obj_type == TYPE_DEV_ITEM) {
+        if (tp.item->key.objectid == 1 && tp.item->key.type == TYPE_DEV_ITEM) {
             if (tp.item->size < sizeof(DEV_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DEV_ITEM));
             } else {
                 DEV_ITEM* di = (DEV_ITEM*)tp.item->data;
                 LIST_ENTRY* le;
@@ -3632,9 +3632,9 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                     ExReleaseResourceLite(&pdode->child_lock);
                 }
             }
-        } else if (tp.item->key.obj_type == TYPE_CHUNK_ITEM) {
+        } else if (tp.item->key.type == TYPE_CHUNK_ITEM) {
             if (tp.item->size < sizeof(CHUNK_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
             } else {
                 c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
 
@@ -3869,7 +3869,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {
     LIST_ENTRY* le = Vcb->chunks.Flink;
     chunk* c;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     BLOCK_GROUP_ITEM* bgi;
     NTSTATUS Status;
@@ -3885,14 +3885,14 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     } else
         r = Vcb->extent_root;
 
-    searchkey.obj_type = TYPE_BLOCK_GROUP_ITEM;
+    searchkey.type = TYPE_BLOCK_GROUP_ITEM;
 
     Vcb->superblock.bytes_used = 0;
 
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        searchkey.obj_id = c->offset;
+        searchkey.objectid = c->offset;
         searchkey.offset = c->chunk_item->size;
 
         Status = find_item(Vcb, r, &tp, &searchkey, false, Irp);
@@ -3912,7 +3912,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
                 Vcb->superblock.bytes_used += bgi->used;
             } else {
                 ERR("(%I64x;%I64x,%x,%I64x) is %u bytes, expected %Iu\n",
-                    r->id, tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+                    r->id, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
             }
         }
 
@@ -3925,19 +3925,19 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 }
 
 static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
-    KEY key;
+    struct btrfs_key key;
     ULONG n = Vcb->superblock.n;
 
     while (n > 0) {
-        if (n > sizeof(KEY)) {
-            RtlCopyMemory(&key, &Vcb->superblock.sys_chunk_array[Vcb->superblock.n - n], sizeof(KEY));
-            n -= sizeof(KEY);
+        if (n > sizeof(struct btrfs_key)) {
+            RtlCopyMemory(&key, &Vcb->superblock.sys_chunk_array[Vcb->superblock.n - n], sizeof(struct btrfs_key));
+            n -= sizeof(struct btrfs_key);
         } else
             return STATUS_SUCCESS;
 
-        TRACE("bootstrap: %I64x,%x,%I64x\n", key.obj_id, key.obj_type, key.offset);
+        TRACE("bootstrap: %I64x,%x,%I64x\n", key.objectid, key.type, key.offset);
 
-        if (key.obj_type == TYPE_CHUNK_ITEM) {
+        if (key.type == TYPE_CHUNK_ITEM) {
             CHUNK_ITEM* ci;
             USHORT cisize;
             sys_chunk* sc;
@@ -3973,7 +3973,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
 
             n -= cisize;
         } else {
-            ERR("unexpected item %I64x,%x,%I64x in bootstrap\n", key.obj_id, key.obj_type, key.offset);
+            ERR("unexpected item %I64x,%x,%I64x in bootstrap\n", key.objectid, key.type, key.offset);
             return STATUS_INTERNAL_ERROR;
         }
     }
@@ -4002,12 +4002,12 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL) {
         NTSTATUS Status;
-        KEY searchkey;
+        struct btrfs_key searchkey;
         traverse_ptr tp;
         DIR_ITEM* di;
 
-        searchkey.obj_id = Vcb->superblock.root_dir_objectid;
-        searchkey.obj_type = TYPE_DIR_ITEM;
+        searchkey.objectid = Vcb->superblock.root_dir_objectid;
+        searchkey.type = TYPE_DIR_ITEM;
         searchkey.offset = crc32;
 
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
@@ -4017,19 +4017,19 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         }
 
         if (keycmp(tp.item->key, searchkey)) {
-            ERR("could not find (%I64x,%x,%I64x) in root tree\n", searchkey.obj_id, searchkey.obj_type, searchkey.offset);
+            ERR("could not find (%I64x,%x,%I64x) in root tree\n", searchkey.objectid, searchkey.type, searchkey.offset);
             goto end;
         }
 
         if (tp.item->size < sizeof(DIR_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
             goto end;
         }
 
         di = (DIR_ITEM*)tp.item->data;
 
         if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.obj_id, tp.item->key.obj_type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
             goto end;
         }
 
@@ -4038,8 +4038,8 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             goto end;
         }
 
-        if (di->key.obj_type != TYPE_ROOT_ITEM) {
-            ERR("default root has key (%I64x,%x,%I64x), expected subvolume\n", di->key.obj_id, di->key.obj_type, di->key.offset);
+        if (di->key.type != TYPE_ROOT_ITEM) {
+            ERR("default root has key (%I64x,%x,%I64x), expected subvolume\n", di->key.objectid, di->key.type, di->key.offset);
             goto end;
         }
 
@@ -4047,13 +4047,13 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         while (le != &Vcb->roots) {
             root* r = CONTAINING_RECORD(le, root, list_entry);
 
-            if (r->id == di->key.obj_id)
+            if (r->id == di->key.objectid)
                 return r;
 
             le = le->Flink;
         }
 
-        ERR("could not find root %I64x, using default instead\n", di->key.obj_id);
+        ERR("could not find root %I64x, using default instead\n", di->key.objectid);
     }
 
 end:
@@ -4383,7 +4383,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     NTSTATUS Status;
     device_extension* Vcb = NULL;
     LIST_ENTRY *le, batchlist;
-    KEY searchkey;
+    struct btrfs_key searchkey;
     traverse_ptr tp;
     fcb* root_fcb = NULL;
     ccb* root_ccb = NULL;
@@ -4917,8 +4917,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    searchkey.obj_id = root_fcb->inode;
-    searchkey.obj_type = TYPE_INODE_ITEM;
+    searchkey.objectid = root_fcb->inode;
+    searchkey.type = TYPE_INODE_ITEM;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, root_fcb->subvol, &tp, &searchkey, false, Irp);
@@ -4927,7 +4927,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (tp.item->key.obj_id != searchkey.obj_id || tp.item->key.obj_type != searchkey.obj_type) {
+    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
         ERR("couldn't find INODE_ITEM for root directory\n");
         Status = STATUS_INTERNAL_ERROR;
         goto exit;
