@@ -93,17 +93,17 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
             }
 
             if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-                ROOT_REF* rr = (ROOT_REF*)tp.item->data;
+                struct btrfs_root_ref* rr = (struct btrfs_root_ref*)tp.item->data;
                 path_part* pp;
 
-                if (tp.item->size < sizeof(ROOT_REF)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+                if (tp.item->size < sizeof(struct btrfs_root_ref)) {
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_root_ref));
                     goto end;
                 }
 
-                if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
+                if (tp.item->size < sizeof(struct btrfs_root_ref) + rr->name_len) {
                     ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                        tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+                        tp.item->size, sizeof(struct btrfs_root_ref) + rr->name_len);
                     goto end;
                 }
 
@@ -113,8 +113,8 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                     goto end;
                 }
 
-                pp->name.Buffer = rr->name;
-                pp->name.Length = pp->name.MaximumLength = rr->n;
+                pp->name.Buffer = (char*)&rr[1];
+                pp->name.Length = pp->name.MaximumLength = rr->name_len;
                 pp->orig_subvol = false;
 
                 InsertTailList(&parts, &pp->list_entry);
@@ -138,7 +138,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                     goto end;
                 }
 
-                dir = rr->dir;
+                dir = rr->dirid;
                 orig_subvol = false;
             } else {
                 not_in_tree = true;

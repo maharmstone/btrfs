@@ -4335,19 +4335,19 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
         }
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-            ROOT_REF* rr = (ROOT_REF*)tp.item->data;
+            struct btrfs_root_ref* rr = (struct btrfs_root_ref*)tp.item->data;
             LIST_ENTRY* le;
             root* r = NULL;
             ULONG stringlen;
 
-            if (tp.item->size < sizeof(ROOT_REF)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+            if (tp.item->size < sizeof(struct btrfs_root_ref)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_root_ref));
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
 
-            if (tp.item->size < offsetof(ROOT_REF, name[0]) + rr->n) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(ROOT_REF, name[0]) + rr->n);
+            if (tp.item->size < sizeof(struct btrfs_root_ref) + rr->name_len) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_root_ref) + rr->name_len);
                 free_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -4370,14 +4370,14 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                 return STATUS_INTERNAL_ERROR;
             }
 
-            Status = open_fileref_by_inode(Vcb, r, rr->dir, &parfr, Irp);
+            Status = open_fileref_by_inode(Vcb, r, rr->dirid, &parfr, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("open_fileref_by_inode returned %08lx\n", Status);
                 free_fcb(fcb);
                 return Status;
             }
 
-            Status = utf8_to_utf16(NULL, 0, &stringlen, rr->name, rr->n);
+            Status = utf8_to_utf16(NULL, 0, &stringlen, (char*)&rr[1], rr->name_len);
             if (!NT_SUCCESS(Status)) {
                 ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                 free_fcb(fcb);
@@ -4400,7 +4400,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, rr->name, rr->n);
+                Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, (char*)&rr[1], rr->name_len);
                 if (!NT_SUCCESS(Status)) {
                     ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                     ExFreePool(name.Buffer);

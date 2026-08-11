@@ -6255,27 +6255,27 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        if (tp.item->size < sizeof(ROOT_REF)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(ROOT_REF));
+        if (tp.item->size < sizeof(struct btrfs_root_ref)) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_root_ref));
             return STATUS_INTERNAL_ERROR;
         } else {
-            ROOT_REF* rr;
+            struct btrfs_root_ref* rr;
             ULONG len;
 
-            rr = (ROOT_REF*)tp.item->data;
+            rr = (struct btrfs_root_ref*)tp.item->data;
             len = tp.item->size;
 
             do {
                 uint16_t itemlen;
 
-                if (len < sizeof(ROOT_REF) || len < offsetof(ROOT_REF, name[0]) + rr->n) {
+                if (len < sizeof(struct btrfs_root_ref) || len < sizeof(struct btrfs_root_ref) + rr->name_len) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                     break;
                 }
 
-                itemlen = (uint16_t)offsetof(ROOT_REF, name[0]) + rr->n;
+                itemlen = (uint16_t)sizeof(struct btrfs_root_ref) + rr->name_len;
 
-                if (rr->dir == parinode && rr->n == utf8->Length && RtlCompareMemory(rr->name, utf8->Buffer, rr->n) == rr->n) {
+                if (rr->dirid == parinode && rr->name_len == utf8->Length && RtlCompareMemory(&rr[1], utf8->Buffer, rr->name_len) == rr->name_len) {
                     uint16_t newlen = tp.item->size - itemlen;
 
                     Status = delete_tree_item(Vcb, &tp);
@@ -6303,8 +6303,8 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
                             rroff = newrr;
                         }
 
-                        if ((uint8_t*)&rr->name[rr->n] < tp.item->data + tp.item->size)
-                            RtlCopyMemory(rroff, &rr->name[rr->n], tp.item->size - ((uint8_t*)&rr->name[rr->n] - tp.item->data));
+                        if ((uint8_t*)&rr[1] + rr->name_len < tp.item->data + tp.item->size)
+                            RtlCopyMemory(rroff, (uint8_t*)&rr[1] + rr->name_len, tp.item->size - (((uint8_t*)&rr[1] + rr->name_len) - tp.item->data));
 
                         Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newrr, newlen, NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
@@ -6319,7 +6319,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
 
                 if (len > itemlen) {
                     len -= itemlen;
-                    rr = (ROOT_REF*)&rr->name[rr->n];
+                    rr = (struct btrfs_root_ref*)((uint8_t*)&rr[1] + rr->name_len);
                 } else
                     break;
             } while (len > 0);
@@ -6336,7 +6336,7 @@ static NTSTATUS delete_root_ref(device_extension* Vcb, uint64_t subvolid, uint64
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid, _In_ uint64_t parsubvolid, _In_ __drv_aliasesMem ROOT_REF* rr, _In_opt_ PIRP Irp) {
+static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid, _In_ uint64_t parsubvolid, _In_ __drv_aliasesMem struct btrfs_root_ref* rr, _In_opt_ PIRP Irp) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
@@ -6352,7 +6352,7 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid,
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        uint16_t rrsize = tp.item->size + (uint16_t)offsetof(ROOT_REF, name[0]) + rr->n;
+        uint16_t rrsize = tp.item->size + (uint16_t)sizeof(struct btrfs_root_ref) + rr->name_len;
         uint8_t* rr2;
 
         rr2 = ExAllocatePoolWithTag(PagedPool, rrsize, ALLOC_TAG);
@@ -6364,7 +6364,7 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid,
         if (tp.item->size > 0)
             RtlCopyMemory(rr2, tp.item->data, tp.item->size);
 
-        RtlCopyMemory(rr2 + tp.item->size, rr, offsetof(ROOT_REF, name[0]) + rr->n);
+        RtlCopyMemory(rr2 + tp.item->size, rr, sizeof(struct btrfs_root_ref) + rr->name_len);
         ExFreePool(rr);
 
         Status = delete_tree_item(Vcb, &tp);
@@ -6381,7 +6381,7 @@ static NTSTATUS add_root_ref(_In_ device_extension* Vcb, _In_ uint64_t subvolid,
             return Status;
         }
     } else {
-        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.objectid, searchkey.type, searchkey.offset, rr, (uint16_t)offsetof(ROOT_REF, name[0]) + rr->n, NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.objectid, searchkey.type, searchkey.offset, rr, (uint16_t)sizeof(struct btrfs_root_ref) + rr->name_len, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(rr);
@@ -6604,9 +6604,9 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             }
         } else if (fileref->fcb != fileref->fcb->Vcb->dummy_fcb) {
             ULONG rrlen;
-            ROOT_REF* rr;
+            struct btrfs_root_ref* rr;
 
-            rrlen = sizeof(ROOT_REF) - 1 + fileref->dc->utf8.Length;
+            rrlen = sizeof(struct btrfs_root_ref) + fileref->dc->utf8.Length;
 
             rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
             if (!rr) {
@@ -6614,10 +6614,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            rr->dir = fileref->parent->fcb->inode;
-            rr->index = fileref->dc->index;
-            rr->n = fileref->dc->utf8.Length;
-            RtlCopyMemory(rr->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
+            rr->dirid = fileref->parent->fcb->inode;
+            rr->sequence = fileref->dc->index;
+            rr->name_len = fileref->dc->utf8.Length;
+            RtlCopyMemory(&rr[1], fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
             Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -6835,7 +6835,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             }
         } else if (fileref->fcb != fileref->fcb->Vcb->dummy_fcb) { // subvolume
             ULONG rrlen;
-            ROOT_REF* rr;
+            struct btrfs_root_ref* rr;
 
             Status = delete_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, fileref->parent->fcb->inode, oldutf8, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -6844,7 +6844,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return Status;
             }
 
-            rrlen = sizeof(ROOT_REF) - 1 + fileref->dc->utf8.Length;
+            rrlen = sizeof(struct btrfs_root_ref) + fileref->dc->utf8.Length;
 
             rr = ExAllocatePoolWithTag(PagedPool, rrlen, ALLOC_TAG);
             if (!rr) {
@@ -6853,10 +6853,10 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            rr->dir = fileref->parent->fcb->inode;
-            rr->index = fileref->dc->index;
-            rr->n = fileref->dc->utf8.Length;
-            RtlCopyMemory(rr->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
+            rr->dirid = fileref->parent->fcb->inode;
+            rr->sequence = fileref->dc->index;
+            rr->name_len = fileref->dc->utf8.Length;
+            RtlCopyMemory(&rr[1], fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
             Status = add_root_ref(fileref->fcb->Vcb, fileref->fcb->subvol->id, fileref->parent->fcb->subvol->id, rr, Irp);
             if (!NT_SUCCESS(Status)) {

@@ -466,12 +466,11 @@ typedef struct {
     uint64_t num_bitmaps;
 } FREE_SPACE_ITEM;
 
-typedef struct {
-    uint64_t dir;
-    uint64_t index;
-    uint16_t n;
-    char name[1];
-} ROOT_REF;
+struct btrfs_root_ref {
+    uint64_t dirid;
+    uint64_t sequence;
+    uint16_t name_len;
+};
 
 typedef struct {
     uint64_t chunktree;
