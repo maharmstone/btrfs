@@ -1500,6 +1500,9 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset, uint32_t refcount, PIRP Irp);
+NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t address,
+                                              uint64_t size, uint64_t offset,
+                                              uint32_t count, PIRP Irp);
 NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t offset, struct btrfs_key* firstitem, uint8_t level, PIRP Irp);
 NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
                                                uint64_t offset, struct btrfs_key* firstitem,
@@ -1509,7 +1512,6 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint8_t level, PIRP Irp);
 uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
 bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
-NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem, uint8_t level, PIRP Irp);
 uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp);
 void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags, PIRP Irp);
 NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset,
