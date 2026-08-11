@@ -549,21 +549,21 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     }
 
     while (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-        DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+        struct btrfs_dir_item* di = (struct btrfs_dir_item*)tp.item->data;
         dir_child* dc;
         ULONG utf16len;
 
-        if (tp.item->size < sizeof(DIR_ITEM)) {
-            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        if (tp.item->size < sizeof(struct btrfs_dir_item)) {
+            WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dir_item));
             goto cont;
         }
 
-        if (di->n == 0) {
+        if (di->name_len == 0) {
             WARN("(%I64x,%x,%I64x): DIR_ITEM name length is zero\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
             goto cont;
         }
 
-        Status = utf8_to_utf16(NULL, 0, &utf16len, di->name, di->n);
+        Status = utf8_to_utf16(NULL, 0, &utf16len, (char*)&di[1], di->name_len);
         if (!NT_SUCCESS(Status)) {
             ERR("utf8_to_utf16 1 returned %08lx\n", Status);
             goto cont;
@@ -575,7 +575,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        dc->key = di->key;
+        dc->key = di->location;
         dc->index = tp.item->key.offset;
         dc->type = di->type;
         dc->fileref = NULL;
@@ -583,15 +583,15 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
         max_index = dc->index;
 
-        dc->utf8.MaximumLength = dc->utf8.Length = di->n;
-        dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, di->n, ALLOC_TAG);
+        dc->utf8.MaximumLength = dc->utf8.Length = di->name_len;
+        dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, di->name_len, ALLOC_TAG);
         if (!dc->utf8.Buffer) {
             ERR("out of memory\n");
             ExFreePool(dc);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        RtlCopyMemory(dc->utf8.Buffer, di->name, di->n);
+        RtlCopyMemory(dc->utf8.Buffer, &di[1], di->name_len);
 
         dc->name.MaximumLength = dc->name.Length = (uint16_t)utf16len;
         dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
@@ -602,7 +602,7 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        Status = utf8_to_utf16(dc->name.Buffer, utf16len, &utf16len, di->name, di->n);
+        Status = utf8_to_utf16(dc->name.Buffer, utf16len, &utf16len, (char*)&di[1], di->name_len);
         if (!NT_SUCCESS(Status)) {
             ERR("utf8_to_utf16 2 returned %08lx\n", Status);
             ExFreePool(dc->utf8.Buffer);
@@ -960,62 +960,62 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             }
         } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
             ULONG len;
-            DIR_ITEM* di;
+            struct btrfs_dir_item* di;
 
             static const char xapref[] = "user.";
 
-            if (tp.item->size < offsetof(DIR_ITEM, name[0])) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(DIR_ITEM, name[0]));
+            if (tp.item->size < sizeof(struct btrfs_dir_item)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dir_item));
                 continue;
             }
 
             len = tp.item->size;
-            di = (DIR_ITEM*)tp.item->data;
+            di = (struct btrfs_dir_item*)tp.item->data;
 
             do {
-                if (len < offsetof(DIR_ITEM, name[0]) + di->m + di->n)
+                if (len < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len)
                     break;
 
-                if (tp.item->key.offset == EA_REPARSE_HASH && di->n == sizeof(EA_REPARSE) - 1 && RtlCompareMemory(EA_REPARSE, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
-                        fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
+                if (tp.item->key.offset == EA_REPARSE_HASH && di->name_len == sizeof(EA_REPARSE) - 1 && RtlCompareMemory(EA_REPARSE, &di[1], di->name_len) == di->name_len) {
+                    if (di->data_len > 0) {
+                        fcb->reparse_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->data_len, ALLOC_TAG);
                         if (!fcb->reparse_xattr.Buffer) {
                             ERR("out of memory\n");
                             reap_fcb(fcb);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
-                        RtlCopyMemory(fcb->reparse_xattr.Buffer, &di->name[di->n], di->m);
+                        RtlCopyMemory(fcb->reparse_xattr.Buffer, (uint8_t*)&di[1] + di->name_len, di->data_len);
                     } else
                         fcb->reparse_xattr.Buffer = NULL;
 
-                    fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = di->m;
-                } else if (tp.item->key.offset == EA_EA_HASH && di->n == sizeof(EA_EA) - 1 && RtlCompareMemory(EA_EA, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
+                    fcb->reparse_xattr.Length = fcb->reparse_xattr.MaximumLength = di->data_len;
+                } else if (tp.item->key.offset == EA_EA_HASH && di->name_len == sizeof(EA_EA) - 1 && RtlCompareMemory(EA_EA, &di[1], di->name_len) == di->name_len) {
+                    if (di->data_len > 0) {
                         ULONG offset;
 
-                        Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)&di->name[di->n], di->m, &offset);
+                        Status = IoCheckEaBufferValidity((FILE_FULL_EA_INFORMATION*)((uint8_t*)&di[1] + di->name_len), di->data_len, &offset);
 
                         if (!NT_SUCCESS(Status))
                             WARN("IoCheckEaBufferValidity returned %08lx (error at offset %lu)\n", Status, offset);
                         else {
                             FILE_FULL_EA_INFORMATION* eainfo;
 
-                            fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
+                            fcb->ea_xattr.Buffer = ExAllocatePoolWithTag(PagedPool, di->data_len, ALLOC_TAG);
                             if (!fcb->ea_xattr.Buffer) {
                                 ERR("out of memory\n");
                                 reap_fcb(fcb);
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
 
-                            RtlCopyMemory(fcb->ea_xattr.Buffer, &di->name[di->n], di->m);
+                            RtlCopyMemory(fcb->ea_xattr.Buffer, (uint8_t*)&di[1] + di->name_len, di->data_len);
 
-                            fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = di->m;
+                            fcb->ea_xattr.Length = fcb->ea_xattr.MaximumLength = di->data_len;
 
                             fcb->ealen = 4;
 
                             // calculate ealen
-                            eainfo = (FILE_FULL_EA_INFORMATION*)&di->name[di->n];
+                            eainfo = (FILE_FULL_EA_INFORMATION*)((uint8_t*)&di[1] + di->name_len);
                             do {
                                 fcb->ealen += 5 + eainfo->EaNameLength + eainfo->EaValueLength;
 
@@ -1026,9 +1026,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                             } while (true);
                         }
                     }
-                } else if (tp.item->key.offset == EA_DOSATTRIB_HASH && di->n == sizeof(EA_DOSATTRIB) - 1 && RtlCompareMemory(EA_DOSATTRIB, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
-                        if (get_file_attributes_from_xattr(&di->name[di->n], di->m, &fcb->atts)) {
+                } else if (tp.item->key.offset == EA_DOSATTRIB_HASH && di->name_len == sizeof(EA_DOSATTRIB) - 1 && RtlCompareMemory(EA_DOSATTRIB, &di[1], di->name_len) == di->name_len) {
+                    if (di->data_len > 0) {
+                        if (get_file_attributes_from_xattr((char*)&di[1] + di->name_len, di->data_len, &fcb->atts)) {
                             atts_set = true;
 
                             if (fcb->type == BTRFS_TYPE_DIRECTORY)
@@ -1047,49 +1047,49 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                             }
                         }
                     }
-                } else if (tp.item->key.offset == EA_NTACL_HASH && di->n == sizeof(EA_NTACL) - 1 && RtlCompareMemory(EA_NTACL, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
-                        fcb->sd = ExAllocatePoolWithTag(PagedPool, di->m, ALLOC_TAG);
+                } else if (tp.item->key.offset == EA_NTACL_HASH && di->name_len == sizeof(EA_NTACL) - 1 && RtlCompareMemory(EA_NTACL, &di[1], di->name_len) == di->name_len) {
+                    if (di->data_len > 0) {
+                        fcb->sd = ExAllocatePoolWithTag(PagedPool, di->data_len, ALLOC_TAG);
                         if (!fcb->sd) {
                             ERR("out of memory\n");
                             reap_fcb(fcb);
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
-                        RtlCopyMemory(fcb->sd, &di->name[di->n], di->m);
+                        RtlCopyMemory(fcb->sd, (uint8_t*)&di[1] + di->name_len, di->data_len);
 
                         // We have to test against our copy rather than the source, as RtlValidRelativeSecurityDescriptor
                         // will fail if the ACLs aren't 32-bit aligned.
-                        if (!RtlValidRelativeSecurityDescriptor(fcb->sd, di->m, 0))
+                        if (!RtlValidRelativeSecurityDescriptor(fcb->sd, di->data_len, 0))
                             ExFreePool(fcb->sd);
                         else
                             sd_set = true;
                     }
-                } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->n == sizeof(EA_PROP_COMPRESSION) - 1 && RtlCompareMemory(EA_PROP_COMPRESSION, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
+                } else if (tp.item->key.offset == EA_PROP_COMPRESSION_HASH && di->name_len == sizeof(EA_PROP_COMPRESSION) - 1 && RtlCompareMemory(EA_PROP_COMPRESSION, &di[1], di->name_len) == di->name_len) {
+                    if (di->data_len > 0) {
                         static const char lzo[] = "lzo";
                         static const char zlib[] = "zlib";
                         static const char zstd[] = "zstd";
 
-                        if (di->m == sizeof(lzo) - 1 && RtlCompareMemory(&di->name[di->n], lzo, di->m) == di->m)
+                        if (di->data_len == sizeof(lzo) - 1 && RtlCompareMemory((uint8_t*)&di[1] + di->name_len, lzo, di->data_len) == di->data_len)
                             fcb->prop_compression = PropCompression_LZO;
-                        else if (di->m == sizeof(zlib) - 1 && RtlCompareMemory(&di->name[di->n], zlib, di->m) == di->m)
+                        else if (di->data_len == sizeof(zlib) - 1 && RtlCompareMemory((uint8_t*)&di[1] + di->name_len, zlib, di->data_len) == di->data_len)
                             fcb->prop_compression = PropCompression_Zlib;
-                        else if (di->m == sizeof(zstd) - 1 && RtlCompareMemory(&di->name[di->n], zstd, di->m) == di->m)
+                        else if (di->data_len == sizeof(zstd) - 1 && RtlCompareMemory((uint8_t*)&di[1] + di->name_len, zstd, di->data_len) == di->data_len)
                             fcb->prop_compression = PropCompression_ZSTD;
                         else
                             fcb->prop_compression = PropCompression_None;
                     }
-                } else if (tp.item->key.offset == EA_CASE_SENSITIVE_HASH && di->n == sizeof(EA_CASE_SENSITIVE) - 1 && RtlCompareMemory(EA_CASE_SENSITIVE, di->name, di->n) == di->n) {
-                    if (di->m > 0) {
-                        fcb->case_sensitive = di->m == 1 && di->name[di->n] == '1';
+                } else if (tp.item->key.offset == EA_CASE_SENSITIVE_HASH && di->name_len == sizeof(EA_CASE_SENSITIVE) - 1 && RtlCompareMemory(EA_CASE_SENSITIVE, &di[1], di->name_len) == di->name_len) {
+                    if (di->data_len > 0) {
+                        fcb->case_sensitive = di->data_len == 1 && *((char*)&di[1] + di->name_len) == '1';
                         fcb->case_sensitive_set = true;
                     }
-                } else if (di->n > sizeof(xapref) - 1 && RtlCompareMemory(xapref, di->name, sizeof(xapref) - 1) == sizeof(xapref) - 1) {
+                } else if (di->name_len > sizeof(xapref) - 1 && RtlCompareMemory(xapref, &di[1], sizeof(xapref) - 1) == sizeof(xapref) - 1) {
                     dir_child* dc;
                     ULONG utf16len;
 
-                    Status = utf8_to_utf16(NULL, 0, &utf16len, &di->name[sizeof(xapref) - 1], di->n + 1 - sizeof(xapref));
+                    Status = utf8_to_utf16(NULL, 0, &utf16len, (char*)&di[1] + sizeof(xapref) - 1, di->name_len + 1 - sizeof(xapref));
                     if (!NT_SUCCESS(Status)) {
                         ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                         reap_fcb(fcb);
@@ -1105,7 +1105,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                     RtlZeroMemory(dc, sizeof(dir_child));
 
-                    dc->utf8.MaximumLength = dc->utf8.Length = di->n + 1 - sizeof(xapref);
+                    dc->utf8.MaximumLength = dc->utf8.Length = di->name_len + 1 - sizeof(xapref);
                     dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, dc->utf8.MaximumLength, ALLOC_TAG);
                     if (!dc->utf8.Buffer) {
                         ERR("out of memory\n");
@@ -1114,7 +1114,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    RtlCopyMemory(dc->utf8.Buffer, &di->name[sizeof(xapref) - 1], dc->utf8.Length);
+                    RtlCopyMemory(dc->utf8.Buffer, (char*)&di[1] + sizeof(xapref) - 1, dc->utf8.Length);
 
                     dc->name.MaximumLength = dc->name.Length = (uint16_t)utf16len;
                     dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, dc->name.MaximumLength, ALLOC_TAG);
@@ -1146,33 +1146,33 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return Status;
                     }
 
-                    dc->size = di->m;
+                    dc->size = di->data_len;
 
                     InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
                 } else {
                     xattr* xa;
 
-                    xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + di->m + di->n, ALLOC_TAG);
+                    xa = ExAllocatePoolWithTag(PagedPool, offsetof(xattr, data[0]) + di->data_len + di->name_len, ALLOC_TAG);
                     if (!xa) {
                         ERR("out of memory\n");
                         reap_fcb(fcb);
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    xa->namelen = di->n;
-                    xa->valuelen = di->m;
+                    xa->namelen = di->name_len;
+                    xa->valuelen = di->data_len;
                     xa->dirty = false;
-                    RtlCopyMemory(xa->data, di->name, di->m + di->n);
+                    RtlCopyMemory(xa->data, &di[1], di->data_len + di->name_len);
 
                     InsertTailList(&fcb->xattrs, &xa->list_entry);
                 }
 
-                len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+                len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
 
-                if (len < offsetof(DIR_ITEM, name[0]))
+                if (len < sizeof(struct btrfs_dir_item))
                     break;
 
-                di = (DIR_ITEM*)&di->name[di->m + di->n];
+                di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
             } while (true);
         } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
             extent* ext;
@@ -2838,7 +2838,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     else
         overhead = 0;
 
-    fcb->adsmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - (sizeof(DIR_ITEM) - 1);
+    fcb->adsmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - sizeof(struct btrfs_dir_item);
 
     if (utf8len + sizeof(xapref) - 1 + overhead > fcb->adsmaxlen) {
         WARN("not enough room for new DIR_ITEM (%Iu + %lu > %lu)\n", utf8len + sizeof(xapref) - 1, overhead, fcb->adsmaxlen);

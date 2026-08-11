@@ -951,18 +951,18 @@ static bool is_ssd(HANDLE h) {
 static void add_dir_item(btrfs_root* root, uint64_t inode, uint32_t hash, uint64_t key_objid, uint8_t key_type,
                          uint64_t key_offset, uint64_t transid, uint8_t type, const char* name) {
     uint16_t name_len = (uint16_t)strlen(name);
-    DIR_ITEM* di = malloc(offsetof(DIR_ITEM, name[0]) + name_len);
+    struct btrfs_dir_item* di = malloc(sizeof(struct btrfs_dir_item) + name_len);
 
-    di->key.objectid = key_objid;
-    di->key.type = key_type;
-    di->key.offset = key_offset;
+    di->location.objectid = key_objid;
+    di->location.type = key_type;
+    di->location.offset = key_offset;
     di->transid = transid;
-    di->m = 0;
-    di->n = name_len;
+    di->data_len = 0;
+    di->name_len = name_len;
     di->type = type;
-    memcpy(di->name, name, name_len);
+    memcpy(&di[1], name, name_len);
 
-    add_item(root, inode, TYPE_DIR_ITEM, hash, di, (uint16_t)(offsetof(DIR_ITEM, name[0]) + di->m + di->n));
+    add_item(root, inode, TYPE_DIR_ITEM, hash, di, (uint16_t)(sizeof(struct btrfs_dir_item) + di->data_len + di->name_len));
 
     free(di);
 }

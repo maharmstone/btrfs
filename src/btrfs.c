@@ -427,39 +427,39 @@ static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
 
 _Success_(return)
 static bool extract_xattr(_In_reads_bytes_(size) void* item, _In_ USHORT size, _In_z_ char* name, _Out_ uint8_t** data, _Out_ uint16_t* datalen) {
-    DIR_ITEM* xa = (DIR_ITEM*)item;
+    struct btrfs_dir_item* xa = (struct btrfs_dir_item*)item;
     USHORT xasize;
 
     while (true) {
-        if (size < sizeof(DIR_ITEM) || size < (sizeof(DIR_ITEM) - 1 + xa->m + xa->n)) {
+        if (size < sizeof(struct btrfs_dir_item) || size < (sizeof(struct btrfs_dir_item) + xa->data_len + xa->name_len)) {
             WARN("DIR_ITEM is truncated\n");
             return false;
         }
 
-        if (xa->n == strlen(name) && RtlCompareMemory(name, xa->name, xa->n) == xa->n) {
+        if (xa->name_len == strlen(name) && RtlCompareMemory(name, &xa[1], xa->name_len) == xa->name_len) {
             TRACE("found xattr %s\n", name);
 
-            *datalen = xa->m;
+            *datalen = xa->data_len;
 
-            if (xa->m > 0) {
-                *data = ExAllocatePoolWithTag(PagedPool, xa->m, ALLOC_TAG);
+            if (xa->data_len > 0) {
+                *data = ExAllocatePoolWithTag(PagedPool, xa->data_len, ALLOC_TAG);
                 if (!*data) {
                     ERR("out of memory\n");
                     return false;
                 }
 
-                RtlCopyMemory(*data, &xa->name[xa->n], xa->m);
+                RtlCopyMemory(*data, (char*)&xa[1] + xa->name_len, xa->data_len);
             } else
                 *data = NULL;
 
             return true;
         }
 
-        xasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
+        xasize = sizeof(struct btrfs_dir_item) + xa->data_len + xa->name_len;
 
         if (size > xasize) {
             size -= xasize;
-            xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+            xa = (struct btrfs_dir_item*)((uint8_t*)&xa[1] + xa->data_len + xa->name_len);
         } else
             break;
     }
@@ -493,8 +493,8 @@ bool get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
         return false;
     }
 
-    if (tp.item->size < sizeof(DIR_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+    if (tp.item->size < sizeof(struct btrfs_dir_item)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dir_item));
         return false;
     }
 
@@ -4003,7 +4003,7 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         NTSTATUS Status;
         struct btrfs_key searchkey;
         traverse_ptr tp;
-        DIR_ITEM* di;
+        struct btrfs_dir_item* di;
 
         searchkey.objectid = Vcb->superblock.root_dir_objectid;
         searchkey.type = TYPE_DIR_ITEM;
@@ -4020,25 +4020,25 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             goto end;
         }
 
-        if (tp.item->size < sizeof(DIR_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM));
+        if (tp.item->size < sizeof(struct btrfs_dir_item)) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dir_item));
             goto end;
         }
 
-        di = (DIR_ITEM*)tp.item->data;
+        di = (struct btrfs_dir_item*)tp.item->data;
 
-        if (tp.item->size < sizeof(DIR_ITEM) - 1 + di->n) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DIR_ITEM) - 1 + di->n);
+        if (tp.item->size < sizeof(struct btrfs_dir_item) + di->name_len) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dir_item) + di->name_len);
             goto end;
         }
 
-        if (di->n != strlen(fn) || RtlCompareMemory(di->name, fn, di->n) != di->n) {
+        if (di->name_len != strlen(fn) || RtlCompareMemory(&di[1], fn, di->name_len) != di->name_len) {
             ERR("root DIR_ITEM had same CRC32, but was not \"default\"\n");
             goto end;
         }
 
-        if (di->key.type != TYPE_ROOT_ITEM) {
-            ERR("default root has key (%I64x,%x,%I64x), expected subvolume\n", di->key.objectid, di->key.type, di->key.offset);
+        if (di->location.type != TYPE_ROOT_ITEM) {
+            ERR("default root has key (%I64x,%x,%I64x), expected subvolume\n", di->location.objectid, di->location.type, di->location.offset);
             goto end;
         }
 
@@ -4046,13 +4046,13 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         while (le != &Vcb->roots) {
             root* r = CONTAINING_RECORD(le, root, list_entry);
 
-            if (r->id == di->key.objectid)
+            if (r->id == di->location.objectid)
                 return r;
 
             le = le->Flink;
         }
 
-        ERR("could not find root %I64x, using default instead\n", di->key.objectid);
+        ERR("could not find root %I64x, using default instead\n", di->location.objectid);
     }
 
 end:

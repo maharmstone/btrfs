@@ -280,14 +280,13 @@ struct btrfs_super_block {
 #define BTRFS_TYPE_SYMLINK   7
 #define BTRFS_TYPE_EA        8
 
-typedef struct {
-    struct btrfs_key key;
+struct btrfs_dir_item {
+    struct btrfs_key location;
     uint64_t transid;
-    uint16_t m;
-    uint16_t n;
+    uint16_t data_len;
+    uint16_t name_len;
     uint8_t type;
-    char name[1];
-} DIR_ITEM;
+};
 
 struct btrfs_timespec {
     uint64_t sec;

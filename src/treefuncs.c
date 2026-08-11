@@ -1328,25 +1328,25 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
         switch (bi->operation) {
             case Batch_SetXattr: {
-                if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", bi->key.objectid, bi->key.type, bi->key.offset, td->size, sizeof(DIR_ITEM));
+                if (td->size < sizeof(struct btrfs_dir_item)) {
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", bi->key.objectid, bi->key.type, bi->key.offset, td->size, sizeof(struct btrfs_dir_item));
                 } else {
                     uint8_t* newdata;
                     ULONG size = td->size;
-                    DIR_ITEM* newxa = (DIR_ITEM*)bi->data;
-                    DIR_ITEM* xa = (DIR_ITEM*)td->data;
+                    struct btrfs_dir_item* newxa = (struct btrfs_dir_item*)bi->data;
+                    struct btrfs_dir_item* xa = (struct btrfs_dir_item*)td->data;
 
                     while (true) {
                         ULONG oldxasize;
 
-                        if (size < sizeof(DIR_ITEM) || size < sizeof(DIR_ITEM) - 1 + xa->m + xa->n) {
+                        if (size < sizeof(struct btrfs_dir_item) || size < sizeof(struct btrfs_dir_item) + xa->data_len + xa->name_len) {
                             ERR("(%I64x,%x,%I64x) was truncated\n", bi->key.objectid, bi->key.type, bi->key.offset);
                             break;
                         }
 
-                        oldxasize = sizeof(DIR_ITEM) - 1 + xa->m + xa->n;
+                        oldxasize = sizeof(struct btrfs_dir_item) + xa->data_len + xa->name_len;
 
-                        if (xa->n == newxa->n && RtlCompareMemory(newxa->name, xa->name, xa->n) == xa->n) {
+                        if (xa->name_len == newxa->name_len && RtlCompareMemory(&newxa[1], &xa[1], xa->name_len) == xa->name_len) {
                             uint64_t pos;
 
                             // replace
@@ -1366,9 +1366,9 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                             if (pos > 0) { // copy before changed xattr
                                 RtlCopyMemory(newdata, td->data, (ULONG)pos);
-                                xa = (DIR_ITEM*)(newdata + pos);
+                                xa = (struct btrfs_dir_item*)(newdata + pos);
                             } else
-                                xa = (DIR_ITEM*)newdata;
+                                xa = (struct btrfs_dir_item*)newdata;
 
                             RtlCopyMemory(xa, bi->data, bi->datalen);
 
@@ -1394,7 +1394,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                             RtlCopyMemory(newdata, td->data, td->size);
 
-                            xa = (DIR_ITEM*)((uint8_t*)newdata + td->size);
+                            xa = (struct btrfs_dir_item*)((uint8_t*)newdata + td->size);
                             RtlCopyMemory(xa, bi->data, bi->datalen);
 
                             bi->datalen = min(bi->datalen + td->size, maxlen);
@@ -1404,7 +1404,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                             break;
                         } else {
-                            xa = (DIR_ITEM*)&xa->name[xa->m + xa->n];
+                            xa = (struct btrfs_dir_item*)((uint8_t*)&xa[1] + xa->data_len + xa->name_len);
                             size -= oldxasize;
                         }
                     }
@@ -1547,20 +1547,20 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
             }
 
             case Batch_DeleteDirItem: {
-                if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("DIR_ITEM was %u bytes, expected at least %Iu\n", td->size, sizeof(DIR_ITEM));
+                if (td->size < sizeof(struct btrfs_dir_item)) {
+                    ERR("DIR_ITEM was %u bytes, expected at least %Iu\n", td->size, sizeof(struct btrfs_dir_item));
                     return STATUS_INTERNAL_ERROR;
                 } else {
-                    DIR_ITEM *di, *deldi;
+                    struct btrfs_dir_item *di, *deldi;
                     LONG len;
 
-                    deldi = (DIR_ITEM*)bi->data;
-                    di = (DIR_ITEM*)td->data;
+                    deldi = (struct btrfs_dir_item*)bi->data;
+                    di = (struct btrfs_dir_item*)td->data;
                     len = td->size;
 
                     do {
-                        if (di->m == deldi->m && di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n + di->m) == di->n + di->m) {
-                            uint16_t newlen = td->size - (sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m);
+                        if (di->data_len == deldi->data_len && di->name_len == deldi->name_len && RtlCompareMemory(&di[1], &deldi[1], di->name_len + di->data_len) == di->name_len + di->data_len) {
+                            uint16_t newlen = td->size - (sizeof(struct btrfs_dir_item) + di->name_len + di->data_len);
 
                             if (newlen == 0) {
                                 TRACE("deleting DIR_ITEM\n");
@@ -1582,8 +1582,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                     dioff = newdi;
                                 }
 
-                                if ((uint8_t*)&di->name[di->n + di->m] < td->data + td->size)
-                                    RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((uint8_t*)&di->name[di->n + di->m] - td->data));
+                                if ((uint8_t*)&di[1] + di->name_len + di->data_len < td->data + td->size)
+                                    RtlCopyMemory(dioff, (uint8_t*)&di[1] + di->name_len + di->data_len, td->size - (((uint8_t*)&di[1] + di->name_len + di->data_len) - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
@@ -1608,8 +1608,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             break;
                         }
 
-                        len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
-                        di = (DIR_ITEM*)&di->name[di->n + di->m];
+                        len -= sizeof(struct btrfs_dir_item) + di->name_len + di->data_len;
+                        di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
 
                         if (len == 0) {
                             TRACE("could not find DIR_ITEM to delete\n");
@@ -1800,20 +1800,20 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
             }
 
             case Batch_DeleteXattr: {
-                if (td->size < sizeof(DIR_ITEM)) {
-                    ERR("XATTR_ITEM was %u bytes, expected at least %Iu\n", td->size, sizeof(DIR_ITEM));
+                if (td->size < sizeof(struct btrfs_dir_item)) {
+                    ERR("XATTR_ITEM was %u bytes, expected at least %Iu\n", td->size, sizeof(struct btrfs_dir_item));
                     return STATUS_INTERNAL_ERROR;
                 } else {
-                    DIR_ITEM *di, *deldi;
+                    struct btrfs_dir_item *di, *deldi;
                     LONG len;
 
-                    deldi = (DIR_ITEM*)bi->data;
-                    di = (DIR_ITEM*)td->data;
+                    deldi = (struct btrfs_dir_item*)bi->data;
+                    di = (struct btrfs_dir_item*)td->data;
                     len = td->size;
 
                     do {
-                        if (di->n == deldi->n && RtlCompareMemory(di->name, deldi->name, di->n) == di->n) {
-                            uint16_t newlen = td->size - ((uint16_t)offsetof(DIR_ITEM, name[0]) + di->n + di->m);
+                        if (di->name_len == deldi->name_len && RtlCompareMemory(&di[1], &deldi[1], di->name_len) == di->name_len) {
+                            uint16_t newlen = td->size - ((uint16_t)sizeof(struct btrfs_dir_item) + di->name_len + di->data_len);
 
                             if (newlen == 0)
                                 TRACE("deleting XATTR_ITEM\n");
@@ -1834,8 +1834,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                 } else
                                     dioff = newdi;
 
-                                if ((uint8_t*)&di->name[di->n + di->m] < td->data + td->size)
-                                    RtlCopyMemory(dioff, &di->name[di->n + di->m], td->size - ((uint8_t*)&di->name[di->n + di->m] - td->data));
+                                if ((uint8_t*)&di[1] + di->name_len + di->data_len < td->data + td->size)
+                                    RtlCopyMemory(dioff, (uint8_t*)&di[1] + di->name_len + di->data_len, td->size - (((uint8_t*)&di[1] + di->name_len + di->data_len) - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
@@ -1860,8 +1860,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             break;
                         }
 
-                        len -= sizeof(DIR_ITEM) - sizeof(char) + di->n + di->m;
-                        di = (DIR_ITEM*)&di->name[di->n + di->m];
+                        len -= sizeof(struct btrfs_dir_item) + di->name_len + di->data_len;
+                        di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
 
                         if (len == 0) {
                             TRACE("could not find DIR_ITEM to delete\n");

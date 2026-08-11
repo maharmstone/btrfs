@@ -1079,15 +1079,15 @@ static NTSTATUS get_dir_last_child(send_context* context, uint64_t* last_inode) 
         traverse_ptr next_tp;
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-            DIR_ITEM* di = (DIR_ITEM*)tp.item->data;
+            struct btrfs_dir_item* di = (struct btrfs_dir_item*)tp.item->data;
 
-            if (tp.item->size < sizeof(DIR_ITEM) || tp.item->size < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            if (tp.item->size < sizeof(struct btrfs_dir_item) || tp.item->size < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
 
-            if (di->key.type == TYPE_INODE_ITEM)
-                *last_inode = max(*last_inode, di->key.objectid);
+            if (di->location.type == TYPE_INODE_ITEM)
+                *last_inode = max(*last_inode, di->location.objectid);
         } else
             break;
 
@@ -1134,7 +1134,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    DIR_ITEM* di;
+    struct btrfs_dir_item* di;
     uint16_t len;
 
     searchkey.objectid = sd->inode;
@@ -1150,23 +1150,23 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     if (keycmp(tp.item->key, searchkey))
         return STATUS_SUCCESS;
 
-    di = (DIR_ITEM*)tp.item->data;
+    di = (struct btrfs_dir_item*)tp.item->data;
     len = tp.item->size;
 
     do {
-        if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+        if (len < sizeof(struct btrfs_dir_item) || len < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len) {
             ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (di->n == namelen && RtlCompareMemory(di->name, name, namelen) == namelen) {
-            *inode = di->key.type == TYPE_INODE_ITEM ? di->key.objectid : 0;
+        if (di->name_len == namelen && RtlCompareMemory(&di[1], name, namelen) == namelen) {
+            *inode = di->location.type == TYPE_INODE_ITEM ? di->location.objectid : 0;
             *dir = di->type == BTRFS_TYPE_DIRECTORY ? true: false;
             return STATUS_OBJECT_NAME_COLLISION;
         }
 
-        di = (DIR_ITEM*)&di->name[di->m + di->n];
-        len -= (uint16_t)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
+        di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
+        len -= (uint16_t)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
     } while (len > 0);
 
     return STATUS_SUCCESS;
@@ -2782,29 +2782,29 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             return STATUS_SUCCESS;
     }
 
-    if (tp && tp->item->size < sizeof(DIR_ITEM)) {
+    if (tp && tp->item->size < sizeof(struct btrfs_dir_item)) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-            tp->item->size, sizeof(DIR_ITEM));
+            tp->item->size, sizeof(struct btrfs_dir_item));
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (tp2 && tp2->item->size < sizeof(DIR_ITEM)) {
+    if (tp2 && tp2->item->size < sizeof(struct btrfs_dir_item)) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
-            tp2->item->size, sizeof(DIR_ITEM));
+            tp2->item->size, sizeof(struct btrfs_dir_item));
         return STATUS_INTERNAL_ERROR;
     }
 
     if (tp && !tp2) {
         ULONG len;
-        DIR_ITEM* di;
+        struct btrfs_dir_item* di;
 
         len = tp->item->size;
-        di = (DIR_ITEM*)tp->item->data;
+        di = (struct btrfs_dir_item*)tp->item->data;
 
         do {
             ULONG pos;
 
-            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            if (len < sizeof(struct btrfs_dir_item) || len < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2812,24 +2812,24 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             pos = context->datalen;
             send_command(context, BTRFS_SEND_CMD_SET_XATTR);
             send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
-            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, &di->name[di->n], di->m);
+            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, &di[1], di->name_len);
+            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, (uint8_t*)&di[1] + di->name_len, di->data_len);
             send_command_finish(context, pos);
 
-            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
-            di = (DIR_ITEM*)&di->name[di->m + di->n];
+            len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
+            di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
         } while (len > 0);
     } else if (!tp && tp2) {
         ULONG len;
-        DIR_ITEM* di;
+        struct btrfs_dir_item* di;
 
         len = tp2->item->size;
-        di = (DIR_ITEM*)tp2->item->data;
+        di = (struct btrfs_dir_item*)tp2->item->data;
 
         do {
             ULONG pos;
 
-            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            if (len < sizeof(struct btrfs_dir_item) || len < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2837,26 +2837,26 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             pos = context->datalen;
             send_command(context, BTRFS_SEND_CMD_REMOVE_XATTR);
             send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, di->name, di->n);
+            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, &di[1], di->name_len);
             send_command_finish(context, pos);
 
-            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
-            di = (DIR_ITEM*)&di->name[di->m + di->n];
+            len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
+            di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
         } while (len > 0);
     } else {
         ULONG len;
-        DIR_ITEM* di;
+        struct btrfs_dir_item* di;
         LIST_ENTRY xattrs;
 
         InitializeListHead(&xattrs);
 
         len = tp->item->size;
-        di = (DIR_ITEM*)tp->item->data;
+        di = (struct btrfs_dir_item*)tp->item->data;
 
         do {
             xattr_cmp* xa;
 
-            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            if (len < sizeof(struct btrfs_dir_item) || len < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2872,28 +2872,28 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            xa->namelen = di->n;
-            xa->name = di->name;
-            xa->value1len = di->m;
-            xa->value1 = di->name + di->n;
+            xa->namelen = di->name_len;
+            xa->name = (char*)&di[1];
+            xa->value1len = di->data_len;
+            xa->value1 = (char*)&di[1] + di->name_len;
             xa->value2len = 0;
             xa->value2 = NULL;
 
             InsertTailList(&xattrs, &xa->list_entry);
 
-            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
-            di = (DIR_ITEM*)&di->name[di->m + di->n];
+            len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
+            di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
         } while (len > 0);
 
         len = tp2->item->size;
-        di = (DIR_ITEM*)tp2->item->data;
+        di = (struct btrfs_dir_item*)tp2->item->data;
 
         do {
             xattr_cmp* xa;
             LIST_ENTRY* le;
             bool found = false;
 
-            if (len < sizeof(DIR_ITEM) || len < offsetof(DIR_ITEM, name[0]) + di->m + di->n) {
+            if (len < sizeof(struct btrfs_dir_item) || len < sizeof(struct btrfs_dir_item) + di->data_len + di->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -2902,9 +2902,9 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
             while (le != &xattrs) {
                 xa = CONTAINING_RECORD(le, xattr_cmp, list_entry);
 
-                if (xa->namelen == di->n && RtlCompareMemory(xa->name, di->name, di->n) == di->n) {
-                    xa->value2len = di->m;
-                    xa->value2 = di->name + di->n;
+                if (xa->namelen == di->name_len && RtlCompareMemory(xa->name, &di[1], di->name_len) == di->name_len) {
+                    xa->value2len = di->data_len;
+                    xa->value2 = (char*)&di[1] + di->name_len;
                     found = true;
                     break;
                 }
@@ -2924,18 +2924,18 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                xa->namelen = di->n;
-                xa->name = di->name;
+                xa->namelen = di->name_len;
+                xa->name = (char*)&di[1];
                 xa->value1len = 0;
                 xa->value1 = NULL;
-                xa->value2len = di->m;
-                xa->value2 = di->name + di->n;
+                xa->value2len = di->data_len;
+                xa->value2 = (char*)&di[1] + di->name_len;
 
                 InsertTailList(&xattrs, &xa->list_entry);
             }
 
-            len -= (ULONG)offsetof(DIR_ITEM, name[0]) + di->m + di->n;
-            di = (DIR_ITEM*)&di->name[di->m + di->n];
+            len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
+            di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
         } while (len > 0);
 
         while (!IsListEmpty(&xattrs)) {

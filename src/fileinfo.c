@@ -1964,7 +1964,7 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
     RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
 
     newmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) -
-                offsetof(DIR_ITEM, name[0]);
+                sizeof(struct btrfs_dir_item);
 
     if (newmaxlen < adsxattr.Length) {
         WARN("cannot rename as data too long\n");
@@ -2211,7 +2211,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     RtlCopyMemory(utf16.Buffer, fn.Buffer, fn.Length);
 
     newmaxlen = Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) -
-                offsetof(DIR_ITEM, name[0]);
+                sizeof(struct btrfs_dir_item);
 
     if (newmaxlen < adsxattr.Length) {
         WARN("cannot rename as data too long\n");

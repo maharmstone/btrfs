@@ -4335,11 +4335,11 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
                           uint32_t crc32, uint8_t* data, uint16_t datalen) {
     NTSTATUS Status;
     uint16_t xasize;
-    DIR_ITEM* xa;
+    struct btrfs_dir_item* xa;
 
     TRACE("(%p, %I64x, %I64x, %.*s, %08x, %p, %u)\n", Vcb, subvol->id, inode, namelen, name, crc32, data, datalen);
 
-    xasize = (uint16_t)offsetof(DIR_ITEM, name[0]) + namelen + datalen;
+    xasize = (uint16_t)sizeof(struct btrfs_dir_item) + namelen + datalen;
 
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
@@ -4347,15 +4347,15 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    xa->key.objectid = 0;
-    xa->key.type = 0;
-    xa->key.offset = 0;
+    xa->location.objectid = 0;
+    xa->location.type = 0;
+    xa->location.offset = 0;
     xa->transid = Vcb->superblock.generation;
-    xa->m = datalen;
-    xa->n = namelen;
+    xa->data_len = datalen;
+    xa->name_len = namelen;
     xa->type = BTRFS_TYPE_EA;
-    RtlCopyMemory(xa->name, name, namelen);
-    RtlCopyMemory(xa->name + namelen, data, datalen);
+    RtlCopyMemory(&xa[1], name, namelen);
+    RtlCopyMemory((uint8_t*)&xa[1] + namelen, data, datalen);
 
     Status = insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_SetXattr);
     if (!NT_SUCCESS(Status)) {
@@ -4371,11 +4371,11 @@ static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root*
                              uint16_t namelen, uint32_t crc32) {
     NTSTATUS Status;
     uint16_t xasize;
-    DIR_ITEM* xa;
+    struct btrfs_dir_item* xa;
 
     TRACE("(%p, %I64x, %I64x, %.*s, %08x)\n", Vcb, subvol->id, inode, namelen, name, crc32);
 
-    xasize = (uint16_t)offsetof(DIR_ITEM, name[0]) + namelen;
+    xasize = (uint16_t)sizeof(struct btrfs_dir_item) + namelen;
 
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
@@ -4383,14 +4383,14 @@ static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root*
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    xa->key.objectid = 0;
-    xa->key.type = 0;
-    xa->key.offset = 0;
+    xa->location.objectid = 0;
+    xa->location.type = 0;
+    xa->location.offset = 0;
     xa->transid = Vcb->superblock.generation;
-    xa->m = 0;
-    xa->n = namelen;
+    xa->data_len = 0;
+    xa->name_len = namelen;
     xa->type = BTRFS_TYPE_EA;
-    RtlCopyMemory(xa->name, name, namelen);
+    RtlCopyMemory(&xa[1], name, namelen);
 
     Status = insert_tree_item_batch(batchlist, Vcb, subvol, inode, TYPE_XATTR_ITEM, crc32, xa, xasize, Batch_DeleteXattr);
     if (!NT_SUCCESS(Status)) {
@@ -6541,12 +6541,12 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
     if (fileref->created) {
         uint16_t disize;
-        DIR_ITEM *di, *di2;
+        struct btrfs_dir_item *di, *di2;
         uint32_t crc32;
 
         crc32 = calc_crc32c(0xfffffffe, (uint8_t*)fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
-        disize = (uint16_t)(offsetof(DIR_ITEM, name[0]) + fileref->dc->utf8.Length);
+        disize = (uint16_t)(sizeof(struct btrfs_dir_item) + fileref->dc->utf8.Length);
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
@@ -6554,20 +6554,20 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
 
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            di->key.objectid = fileref->fcb->inode;
-            di->key.type = TYPE_INODE_ITEM;
-            di->key.offset = 0;
+            di->location.objectid = fileref->fcb->inode;
+            di->location.type = TYPE_INODE_ITEM;
+            di->location.offset = 0;
         } else { // subvolume
-            di->key.objectid = fileref->fcb->subvol->id;
-            di->key.type = TYPE_ROOT_ITEM;
-            di->key.offset = 0xffffffffffffffff;
+            di->location.objectid = fileref->fcb->subvol->id;
+            di->location.type = TYPE_ROOT_ITEM;
+            di->location.offset = 0xffffffffffffffff;
         }
 
         di->transid = fileref->fcb->Vcb->superblock.generation;
-        di->m = 0;
-        di->n = (uint16_t)fileref->dc->utf8.Length;
+        di->data_len = 0;
+        di->name_len = (uint16_t)fileref->dc->utf8.Length;
         di->type = fileref->fcb->type;
-        RtlCopyMemory(di->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
+        RtlCopyMemory(&di[1], fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
         di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di2) {
@@ -6644,26 +6644,26 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     } else if (fileref->deleted) {
         uint32_t crc32;
         ANSI_STRING* name;
-        DIR_ITEM* di;
+        struct btrfs_dir_item* di;
 
         name = &fileref->oldutf8;
 
         crc32 = calc_crc32c(0xfffffffe, (uint8_t*)name->Buffer, name->Length);
 
-        di = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + name->Length, ALLOC_TAG);
+        di = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dir_item) + name->Length, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        di->m = 0;
-        di->n = name->Length;
-        RtlCopyMemory(di->name, name->Buffer, name->Length);
+        di->data_len = 0;
+        di->name_len = name->Length;
+        RtlCopyMemory(&di[1], name->Buffer, name->Length);
 
         // delete DIR_ITEM (0x54)
 
         Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM,
-                                        crc32, di, sizeof(DIR_ITEM) - 1 + name->Length, Batch_DeleteDirItem);
+                                        crc32, di, sizeof(struct btrfs_dir_item) + name->Length, Batch_DeleteDirItem);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
             return Status;
@@ -6721,7 +6721,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         PANSI_STRING oldutf8 = fileref->oldutf8.Buffer ? &fileref->oldutf8 : &fileref->dc->utf8;
         uint32_t crc32, oldcrc32;
         uint16_t disize;
-        DIR_ITEM *olddi, *di, *di2;
+        struct btrfs_dir_item *olddi, *di, *di2;
 
         crc32 = calc_crc32c(0xfffffffe, (uint8_t*)fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
@@ -6730,20 +6730,20 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         else
             oldcrc32 = calc_crc32c(0xfffffffe, (uint8_t*)fileref->oldutf8.Buffer, fileref->oldutf8.Length);
 
-        olddi = ExAllocatePoolWithTag(PagedPool, sizeof(DIR_ITEM) - 1 + oldutf8->Length, ALLOC_TAG);
+        olddi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dir_item) + oldutf8->Length, ALLOC_TAG);
         if (!olddi) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        olddi->m = 0;
-        olddi->n = (uint16_t)oldutf8->Length;
-        RtlCopyMemory(olddi->name, oldutf8->Buffer, oldutf8->Length);
+        olddi->data_len = 0;
+        olddi->name_len = (uint16_t)oldutf8->Length;
+        RtlCopyMemory(&olddi[1], oldutf8->Buffer, oldutf8->Length);
 
         // delete DIR_ITEM (0x54)
 
         Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->parent->fcb->inode, TYPE_DIR_ITEM,
-                                        oldcrc32, olddi, sizeof(DIR_ITEM) - 1 + oldutf8->Length, Batch_DeleteDirItem);
+                                        oldcrc32, olddi, sizeof(struct btrfs_dir_item) + oldutf8->Length, Batch_DeleteDirItem);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
             ExFreePool(olddi);
@@ -6752,7 +6752,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
         // add DIR_ITEM (0x54)
 
-        disize = (uint16_t)(offsetof(DIR_ITEM, name[0]) + fileref->dc->utf8.Length);
+        disize = (uint16_t)(sizeof(struct btrfs_dir_item) + fileref->dc->utf8.Length);
         di = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di) {
             ERR("out of memory\n");
@@ -6767,22 +6767,22 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
 
         if (fileref->dc)
-            di->key = fileref->dc->key;
+            di->location = fileref->dc->key;
         else if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            di->key.objectid = fileref->fcb->inode;
-            di->key.type = TYPE_INODE_ITEM;
-            di->key.offset = 0;
+            di->location.objectid = fileref->fcb->inode;
+            di->location.type = TYPE_INODE_ITEM;
+            di->location.offset = 0;
         } else { // subvolume
-            di->key.objectid = fileref->fcb->subvol->id;
-            di->key.type = TYPE_ROOT_ITEM;
-            di->key.offset = 0xffffffffffffffff;
+            di->location.objectid = fileref->fcb->subvol->id;
+            di->location.type = TYPE_ROOT_ITEM;
+            di->location.offset = 0xffffffffffffffff;
         }
 
         di->transid = fileref->fcb->Vcb->superblock.generation;
-        di->m = 0;
-        di->n = (uint16_t)fileref->dc->utf8.Length;
+        di->data_len = 0;
+        di->name_len = (uint16_t)fileref->dc->utf8.Length;
         di->type = fileref->fcb->type;
-        RtlCopyMemory(di->name, fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
+        RtlCopyMemory(&di[1], fileref->dc->utf8.Buffer, fileref->dc->utf8.Length);
 
         RtlCopyMemory(di2, di, disize);
 
