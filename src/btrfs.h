@@ -421,12 +421,12 @@ typedef struct {
     uint64_t offset;
 } TREE_BLOCK_REF;
 
-typedef struct {
+struct btrfs_extent_data_ref {
     uint64_t root;
-    uint64_t objid;
+    uint64_t objectid;
     uint64_t offset;
     uint32_t count;
-} EXTENT_DATA_REF;
+};
 
 typedef struct {
     uint64_t used;

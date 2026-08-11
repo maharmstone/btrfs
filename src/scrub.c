@@ -515,21 +515,21 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
             ptr += sizeof(TREE_BLOCK_REF);
             len -= sizeof(TREE_BLOCK_REF);
         } else if (type == TYPE_EXTENT_DATA_REF) {
-            EXTENT_DATA_REF* edr;
+            struct btrfs_extent_data_ref* edr;
 
-            if (len < sizeof(EXTENT_DATA_REF)) {
-                ERR("EXTENT_DATA_REF takes up %Iu bytes, but only %lu remaining\n", sizeof(EXTENT_DATA_REF), len);
+            if (len < sizeof(struct btrfs_extent_data_ref)) {
+                ERR("EXTENT_DATA_REF takes up %Iu bytes, but only %lu remaining\n", sizeof(struct btrfs_extent_data_ref), len);
                 break;
             }
 
-            edr = (EXTENT_DATA_REF*)ptr;
+            edr = (struct btrfs_extent_data_ref*)ptr;
 
-            log_file_checksum_error(Vcb, address, devid, edr->root, edr->objid, edr->offset + address - tp.item->key.objectid);
+            log_file_checksum_error(Vcb, address, devid, edr->root, edr->objectid, edr->offset + address - tp.item->key.objectid);
 
             rc += edr->count;
 
-            ptr += sizeof(EXTENT_DATA_REF);
-            len -= sizeof(EXTENT_DATA_REF);
+            ptr += sizeof(struct btrfs_extent_data_ref);
+            len -= sizeof(struct btrfs_extent_data_ref);
         } else if (type == TYPE_SHARED_BLOCK_REF) {
             SHARED_BLOCK_REF* sbr;
 
@@ -581,17 +581,17 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
                 if (tp.item->key.type == TYPE_TREE_BLOCK_REF)
                     log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
                 else if (tp.item->key.type == TYPE_EXTENT_DATA_REF) {
-                    EXTENT_DATA_REF* edr;
+                    struct btrfs_extent_data_ref* edr;
 
-                    if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
+                    if (tp.item->size < sizeof(struct btrfs_extent_data_ref)) {
                         ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                                                                             tp.item->size, sizeof(EXTENT_DATA_REF));
+                                                                             tp.item->size, sizeof(struct btrfs_extent_data_ref));
                         break;
                     }
 
-                    edr = (EXTENT_DATA_REF*)tp.item->data;
+                    edr = (struct btrfs_extent_data_ref*)tp.item->data;
 
-                    log_file_checksum_error(Vcb, address, devid, edr->root, edr->objid, edr->offset + address - tp.item->key.objectid);
+                    log_file_checksum_error(Vcb, address, devid, edr->root, edr->objectid, edr->offset + address - tp.item->key.objectid);
                 } else if (tp.item->key.type == TYPE_SHARED_BLOCK_REF)
                     log_tree_checksum_error_shared(Vcb, tp.item->key.offset, address, devid);
                 else if (tp.item->key.type == TYPE_SHARED_DATA_REF)

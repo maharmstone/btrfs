@@ -1002,7 +1002,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS add_changed_extent_ref_edr(changed_extent* ce, EXTENT_DATA_REF* edr, bool old) {
+static NTSTATUS add_changed_extent_ref_edr(changed_extent* ce, struct btrfs_extent_data_ref* edr, bool old) {
     LIST_ENTRY *le2, *list;
     changed_extent_ref* cer;
 
@@ -1012,7 +1012,7 @@ static NTSTATUS add_changed_extent_ref_edr(changed_extent* ce, EXTENT_DATA_REF* 
     while (le2 != list) {
         cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr->root && cer->edr.objid == edr->objid && cer->edr.offset == edr->offset) {
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == edr->root && cer->edr.objectid == edr->objectid && cer->edr.offset == edr->offset) {
             cer->edr.count += edr->count;
             goto end;
         }
@@ -1027,7 +1027,7 @@ static NTSTATUS add_changed_extent_ref_edr(changed_extent* ce, EXTENT_DATA_REF* 
     }
 
     cer->type = TYPE_EXTENT_DATA_REF;
-    RtlCopyMemory(&cer->edr, edr, sizeof(EXTENT_DATA_REF));
+    RtlCopyMemory(&cer->edr, edr, sizeof(struct btrfs_extent_data_ref));
     InsertTailList(list, &cer->list_entry);
 
 end:
@@ -1133,7 +1133,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
 
                         if (ed2->size > 0) {
-                            EXTENT_DATA_REF edr;
+                            struct btrfs_extent_data_ref edr;
                             changed_extent* ce = NULL;
                             chunk* c = get_chunk_from_address(Vcb, ed2->address);
 
@@ -1154,7 +1154,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                             }
 
                             edr.root = t->root->id;
-                            edr.objid = td->key.objectid;
+                            edr.objectid = td->key.objectid;
                             edr.offset = td->key.offset - ed2->offset;
                             edr.count = 1;
 
@@ -1417,10 +1417,10 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
                                 Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp);
                             } else {
-                                EXTENT_DATA_REF edr;
+                                struct btrfs_extent_data_ref edr;
 
                                 edr.root = t->root->id;
-                                edr.objid = td->key.objectid;
+                                edr.objectid = td->key.objectid;
                                 edr.offset = td->key.offset - ed2->offset;
                                 edr.count = 1;
 
@@ -2457,7 +2457,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             while (le2 != &ce->old_refs) {
                 changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-                if (cer2->type == TYPE_EXTENT_DATA_REF && cer2->edr.root == cer->edr.root && cer2->edr.objid == cer->edr.objid && cer2->edr.offset == cer->edr.offset) {
+                if (cer2->type == TYPE_EXTENT_DATA_REF && cer2->edr.root == cer->edr.root && cer2->edr.objectid == cer->edr.objectid && cer2->edr.offset == cer->edr.offset) {
                     old_count = cer2->edr.count;
                     break;
                 }
@@ -2468,7 +2468,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             old_size = ce->old_count > 0 ? ce->old_size : ce->size;
 
             if (cer->edr.count > old_count) {
-                Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset, cer->edr.count - old_count, Irp);
+                Status = increase_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objectid, cer->edr.offset, cer->edr.count - old_count, Irp);
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("increase_extent_refcount_data returned %08lx\n", Status);
@@ -2504,7 +2504,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             while (le2 != &ce->old_refs) {
                 changed_extent_ref* cer2 = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-                if (cer2->type == TYPE_EXTENT_DATA_REF && cer2->edr.root == cer->edr.root && cer2->edr.objid == cer->edr.objid && cer2->edr.offset == cer->edr.offset) {
+                if (cer2->type == TYPE_EXTENT_DATA_REF && cer2->edr.root == cer->edr.root && cer2->edr.objectid == cer->edr.objectid && cer2->edr.offset == cer->edr.offset) {
                     old_count = cer2->edr.count;
 
                     RemoveEntryList(&cer2->list_entry);
@@ -2518,7 +2518,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             old_size = ce->old_count > 0 ? ce->old_size : ce->size;
 
             if (cer->edr.count < old_count) {
-                Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objid, cer->edr.offset,
+                Status = decrease_extent_refcount_data(Vcb, ce->address, old_size, cer->edr.root, cer->edr.objectid, cer->edr.offset,
                                                        old_count - cer->edr.count, ce->superseded, Irp);
 
                 if (!NT_SUCCESS(Status)) {

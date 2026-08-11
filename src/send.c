@@ -1934,7 +1934,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
     return true;
 }
 
-static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* edr) {
+static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_extent_data_ref* edr) {
     NTSTATUS Status;
     root* r = NULL;
     struct btrfs_key searchkey;
@@ -1958,7 +1958,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, EXTENT_DATA_REF* 
     if (!r)
         return false;
 
-    searchkey.objectid = edr->objid;
+    searchkey.objectid = edr->objectid;
     searchkey.type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
 
@@ -2079,7 +2079,7 @@ static bool try_clone(send_context* context, send_ext* se) {
             rc += sectcount;
 
             if (secttype == TYPE_EXTENT_DATA_REF) {
-                EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(uint8_t));
+                struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
 
                 if (try_clone_edr(context, se, sectedr))
                     return true;
@@ -2106,10 +2106,10 @@ static bool try_clone(send_context* context, send_ext* se) {
         traverse_ptr next_tp;
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-            if (tp.item->size < sizeof(EXTENT_DATA_REF))
-                ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+            if (tp.item->size < sizeof(struct btrfs_extent_data_ref))
+                ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_data_ref));
             else {
-                if (try_clone_edr(context, se, (EXTENT_DATA_REF*)tp.item->data))
+                if (try_clone_edr(context, se, (struct btrfs_extent_data_ref*)tp.item->data))
                     return true;
             }
         } else if (tp.item->key.objectid > searchkey.objectid || (tp.item->key.objectid == searchkey.objectid && tp.item->key.type > searchkey.type))

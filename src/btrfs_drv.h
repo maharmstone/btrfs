@@ -584,7 +584,7 @@ typedef struct {
     uint8_t type;
 
     union {
-        EXTENT_DATA_REF edr;
+        struct btrfs_extent_data_ref edr;
         SHARED_DATA_REF sdr;
     };
 
@@ -1021,7 +1021,7 @@ __inline static uint16_t get_extent_data_len(uint8_t type) {
             return sizeof(TREE_BLOCK_REF);
 
         case TYPE_EXTENT_DATA_REF:
-            return sizeof(EXTENT_DATA_REF);
+            return sizeof(struct btrfs_extent_data_ref);
 
         case TYPE_EXTENT_REF_V0:
             return sizeof(EXTENT_REF_V0);
@@ -1044,7 +1044,7 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
 
         case TYPE_EXTENT_DATA_REF:
         {
-            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
+            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
             return edr->count;
         }
 

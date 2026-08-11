@@ -60,7 +60,7 @@ typedef struct {
     uint64_t hash;
 
     union {
-        EXTENT_DATA_REF edr;
+        struct btrfs_extent_data_ref edr;
         SHARED_DATA_REF sdr;
     };
 
@@ -1215,7 +1215,7 @@ end:
 }
 
 static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, LIST_ENTRY* metadata_items,
-                                        data_reloc* dr, EXTENT_DATA_REF* edr, LIST_ENTRY* rollback) {
+                                        data_reloc* dr, struct btrfs_extent_data_ref* edr, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
     struct btrfs_key searchkey;
@@ -1242,7 +1242,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
         return STATUS_INTERNAL_ERROR;
     }
 
-    searchkey.objectid = edr->objid;
+    searchkey.objectid = edr->objectid;
     searchkey.type = TYPE_EXTENT_DATA;
     searchkey.offset = 0;
 
@@ -1285,7 +1285,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
                         }
 
                         ref->type = TYPE_EXTENT_DATA_REF;
-                        RtlCopyMemory(&ref->edr, edr, sizeof(EXTENT_DATA_REF));
+                        RtlCopyMemory(&ref->edr, edr, sizeof(struct btrfs_extent_data_ref));
                         ref->edr.count = 1;
 
                         Status = add_metadata_reloc_parent(Vcb, metadata_items, tp.tree->header.bytenr, &mr, rollback);
@@ -1360,7 +1360,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
     while (len > 0) {
         uint8_t secttype = *ptr;
-        uint16_t sectlen = secttype == TYPE_EXTENT_DATA_REF ? sizeof(EXTENT_DATA_REF) : (secttype == TYPE_SHARED_DATA_REF ? sizeof(SHARED_DATA_REF) : 0);
+        uint16_t sectlen = secttype == TYPE_EXTENT_DATA_REF ? sizeof(struct btrfs_extent_data_ref) : (secttype == TYPE_SHARED_DATA_REF ? sizeof(SHARED_DATA_REF) : 0);
 
         len--;
 
@@ -1375,7 +1375,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         }
 
         if (secttype == TYPE_EXTENT_DATA_REF) {
-            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)(ptr + sizeof(uint8_t));
+            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
 
             inline_rc += edr->count;
 
@@ -1425,8 +1425,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
             tp2 = next_tp;
 
             if (tp2.item->key.objectid == tp->item->key.objectid) {
-                if (tp2.item->key.type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(EXTENT_DATA_REF)) {
-                    Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, (EXTENT_DATA_REF*)tp2.item->data, rollback);
+                if (tp2.item->key.type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(struct btrfs_extent_data_ref)) {
+                    Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, (struct btrfs_extent_data_ref*)tp2.item->data, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
                         return Status;
@@ -1492,7 +1492,7 @@ static void sort_data_reloc_refs(data_reloc* dr) {
         bool inserted = false;
 
         if (ref->type == TYPE_EXTENT_DATA_REF)
-            ref->hash = get_extent_data_ref_hash2(ref->edr.root, ref->edr.objid, ref->edr.offset);
+            ref->hash = get_extent_data_ref_hash2(ref->edr.root, ref->edr.objectid, ref->edr.offset);
         else if (ref->type == TYPE_SHARED_DATA_REF)
             ref->hash = ref->parent->new_address;
 
@@ -1521,7 +1521,7 @@ static void sort_data_reloc_refs(data_reloc* dr) {
             data_reloc_ref* ref2 = CONTAINING_RECORD(le->Flink, data_reloc_ref, list_entry);
 
             if (ref->type == TYPE_EXTENT_DATA_REF && ref2->type == TYPE_EXTENT_DATA_REF && ref->edr.root == ref2->edr.root &&
-                ref->edr.objid == ref2->edr.objid && ref->edr.offset == ref2->edr.offset) {
+                ref->edr.objectid == ref2->edr.objectid && ref->edr.offset == ref2->edr.offset) {
                 RemoveEntryList(&ref2->list_entry);
                 ref->edr.count += ref2->edr.count;
                 ExFreePool(ref2);
@@ -1558,7 +1558,7 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
         uint16_t extlen = 0;
 
         if (ref->type == TYPE_EXTENT_DATA_REF) {
-            extlen += sizeof(EXTENT_DATA_REF);
+            extlen += sizeof(struct btrfs_extent_data_ref);
             rc += ref->edr.count;
         } else if (ref->type == TYPE_SHARED_DATA_REF) {
             extlen += sizeof(SHARED_DATA_REF);
@@ -1598,11 +1598,11 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
         ptr++;
 
         if (ref->type == TYPE_EXTENT_DATA_REF) {
-            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)ptr;
+            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)ptr;
 
-            RtlCopyMemory(edr, &ref->edr, sizeof(EXTENT_DATA_REF));
+            RtlCopyMemory(edr, &ref->edr, sizeof(struct btrfs_extent_data_ref));
 
-            ptr += sizeof(EXTENT_DATA_REF);
+            ptr += sizeof(struct btrfs_extent_data_ref);
         } else if (ref->type == TYPE_SHARED_DATA_REF) {
             SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)ptr;
 
@@ -1628,17 +1628,17 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
             data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
 
             if (ref->type == TYPE_EXTENT_DATA_REF) {
-                EXTENT_DATA_REF* edr;
+                struct btrfs_extent_data_ref* edr;
 
-                edr = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA_REF), ALLOC_TAG);
+                edr = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_extent_data_ref), ALLOC_TAG);
                 if (!edr) {
                     ERR("out of memory\n");
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                RtlCopyMemory(edr, &ref->edr, sizeof(EXTENT_DATA_REF));
+                RtlCopyMemory(edr, &ref->edr, sizeof(struct btrfs_extent_data_ref));
 
-                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_DATA_REF, ref->hash, edr, sizeof(EXTENT_DATA_REF), NULL, NULL);
+                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_DATA_REF, ref->hash, edr, sizeof(struct btrfs_extent_data_ref), NULL, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     return Status;

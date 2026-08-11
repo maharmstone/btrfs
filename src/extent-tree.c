@@ -22,7 +22,7 @@ typedef struct {
     uint8_t type;
 
     union {
-        EXTENT_DATA_REF edr;
+        struct btrfs_extent_data_ref edr;
         SHARED_DATA_REF sdr;
         TREE_BLOCK_REF tbr;
         SHARED_BLOCK_REF sbr;
@@ -42,13 +42,13 @@ uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offse
     return ((uint64_t)high_crc << 31) ^ (uint64_t)low_crc;
 }
 
-static __inline uint64_t get_extent_data_ref_hash(EXTENT_DATA_REF* edr) {
-    return get_extent_data_ref_hash2(edr->root, edr->objid, edr->offset);
+static __inline uint64_t get_extent_data_ref_hash(struct btrfs_extent_data_ref* edr) {
+    return get_extent_data_ref_hash2(edr->root, edr->objectid, edr->offset);
 }
 
 static uint64_t get_extent_hash(uint8_t type, void* data) {
     if (type == TYPE_EXTENT_DATA_REF) {
-        return get_extent_data_ref_hash((EXTENT_DATA_REF*)data);
+        return get_extent_data_ref_hash((struct btrfs_extent_data_ref*)data);
     } else if (type == TYPE_SHARED_BLOCK_REF) {
         SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
         return sbr->offset;
@@ -329,7 +329,7 @@ static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, u
             uint8_t* data;
 
             if (er->type == TYPE_EXTENT_DATA_REF) {
-                len = sizeof(EXTENT_DATA_REF);
+                len = sizeof(struct btrfs_extent_data_ref);
 
                 data = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
 
@@ -585,12 +585,12 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
         if (secttype == type) {
             if (type == TYPE_EXTENT_DATA_REF) {
-                EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(uint8_t));
-                EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
+                struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
+                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
 
-                if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
+                if (sectedr->root == edr->root && sectedr->objectid == edr->objectid && sectedr->offset == edr->offset) {
                     uint32_t rc = get_extent_data_refcount(type, data);
-                    EXTENT_DATA_REF* sectedr2;
+                    struct btrfs_extent_data_ref* sectedr2;
 
                     newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
                     if (!newei) {
@@ -602,7 +602,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
                     newei->refcount += rc;
 
-                    sectedr2 = (EXTENT_DATA_REF*)((uint8_t*)newei + ((uint8_t*)sectedr - tp.item->data));
+                    sectedr2 = (struct btrfs_extent_data_ref*)((uint8_t*)newei + ((uint8_t*)sectedr - tp.item->data));
                     sectedr2->count += rc;
 
                     Status = delete_tree_item(Vcb, &tp);
@@ -776,7 +776,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
             RtlCopyMemory(data2, tp2.item->data, tp2.item->size);
 
             if (type == TYPE_EXTENT_DATA_REF) {
-                EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data2;
+                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data2;
 
                 edr->count += get_extent_data_refcount(type, data);
             } else if (type == TYPE_TREE_BLOCK_REF) {
@@ -890,10 +890,10 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 }
 
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset, uint32_t refcount, PIRP Irp) {
-    EXTENT_DATA_REF edr;
+    struct btrfs_extent_data_ref edr;
 
     edr.root = root;
-    edr.objid = inode;
+    edr.objectid = inode;
     edr.offset = offset;
     edr.count = refcount;
 
@@ -1009,10 +1009,10 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
         if (secttype == type) {
             if (type == TYPE_EXTENT_DATA_REF) {
-                EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(uint8_t));
-                EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
+                struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
+                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
 
-                if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
+                if (sectedr->root == edr->root && sectedr->objectid == edr->objectid && sectedr->offset == edr->offset) {
                     uint16_t neweilen;
                     EXTENT_ITEM* newei;
 
@@ -1046,7 +1046,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
                     }
 
                     if (sectedr->count > edr->count) {
-                        EXTENT_DATA_REF* newedr = (EXTENT_DATA_REF*)((uint8_t*)newei + ((uint8_t*)sectedr - tp.item->data));
+                        struct btrfs_extent_data_ref* newedr = (struct btrfs_extent_data_ref*)((uint8_t*)newei + ((uint8_t*)sectedr - tp.item->data));
 
                         RtlCopyMemory(newei, ei, neweilen);
 
@@ -1276,10 +1276,10 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
     }
 
     if (type == TYPE_EXTENT_DATA_REF) {
-        EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)tp2.item->data;
-        EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)data;
+        struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)tp2.item->data;
+        struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
 
-        if (sectedr->root == edr->root && sectedr->objid == edr->objid && sectedr->offset == edr->offset) {
+        if (sectedr->root == edr->root && sectedr->objectid == edr->objectid && sectedr->offset == edr->offset) {
             EXTENT_ITEM* newei;
 
             if (ei->refcount == edr->count) {
@@ -1313,7 +1313,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
             }
 
             if (sectedr->count > edr->count) {
-                EXTENT_DATA_REF* newedr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+                struct btrfs_extent_data_ref* newedr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
 
                 if (!newedr) {
                     ERR("out of memory\n");
@@ -1547,10 +1547,10 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode,
                                        uint64_t offset, uint32_t refcount, bool superseded, PIRP Irp) {
-    EXTENT_DATA_REF edr;
+    struct btrfs_extent_data_ref edr;
 
     edr.root = root;
-    edr.objid = inode;
+    edr.objectid = inode;
     edr.offset = offset;
     edr.count = refcount;
 
@@ -1614,9 +1614,9 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
             }
 
             if (secttype == TYPE_EXTENT_DATA_REF) {
-                EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(uint8_t));
+                struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
 
-                if (sectedr->root == root && sectedr->objid == objid && sectedr->offset == offset)
+                if (sectedr->root == root && sectedr->objectid == objid && sectedr->offset == offset)
                     return sectcount;
             }
 
@@ -1636,10 +1636,10 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        if (tp.item->size < sizeof(EXTENT_DATA_REF))
-            ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA_REF));
+        if (tp.item->size < sizeof(struct btrfs_extent_data_ref))
+            ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_data_ref));
         else {
-            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
+            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)tp.item->data;
 
             return edr->count;
         }
@@ -1772,13 +1772,13 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         }
 
         if (secttype == TYPE_EXTENT_DATA_REF) {
-            EXTENT_DATA_REF* sectedr = (EXTENT_DATA_REF*)(ptr + sizeof(uint8_t));
+            struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
 
             if (root == 0 && inode == 0) {
                 root = sectedr->root;
-                inode = sectedr->objid;
+                inode = sectedr->objectid;
                 offset = sectedr->offset;
-            } else if (root != sectedr->root || inode != sectedr->objid || offset != sectedr->offset)
+            } else if (root != sectedr->root || inode != sectedr->objectid || offset != sectedr->offset)
                 return false;
         } else
             return false;
@@ -1797,9 +1797,9 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         b = find_next_item(Vcb, &tp, &next_tp, false, Irp);
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == TYPE_EXTENT_DATA_REF) {
-            EXTENT_DATA_REF* edr = (EXTENT_DATA_REF*)tp.item->data;
+            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)tp.item->data;
 
-            if (tp.item->size < sizeof(EXTENT_DATA_REF)) {
+            if (tp.item->size < sizeof(struct btrfs_extent_data_ref)) {
                 WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                      tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
                 return false;
@@ -1807,9 +1807,9 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
 
             if (root == 0 && inode == 0) {
                 root = edr->root;
-                inode = edr->objid;
+                inode = edr->objectid;
                 offset = edr->offset;
-            } else if (root != edr->root || inode != edr->objid || offset != edr->offset)
+            } else if (root != edr->root || inode != edr->objectid || offset != edr->offset)
                 return false;
 
             rcrun += edr->count;
@@ -2010,7 +2010,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
 
-        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
             Status = STATUS_SUCCESS;
@@ -2037,7 +2037,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
         cer->type = TYPE_EXTENT_DATA_REF;
         cer->edr.root = root;
-        cer->edr.objid = objid;
+        cer->edr.objectid = objid;
         cer->edr.offset = offset;
         cer->edr.count = old_count;
 
@@ -2054,7 +2054,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
     cer->type = TYPE_EXTENT_DATA_REF;
     cer->edr.root = root;
-    cer->edr.objid = objid;
+    cer->edr.objectid = objid;
     cer->edr.offset = offset;
     cer->edr.count = old_count + count;
 
@@ -2089,7 +2089,7 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
 
-        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objid == objid && cer->edr.offset == offset) {
+        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
             return;
@@ -2107,7 +2107,7 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
 
     cer->type = TYPE_EXTENT_DATA_REF;
     cer->edr.root = root;
-    cer->edr.objid = objid;
+    cer->edr.objectid = objid;
     cer->edr.offset = offset;
     cer->edr.count = count;
 
