@@ -1173,9 +1173,11 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 }
                             }
 
-                            Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
+                            Status = increase_extent_refcount_data(Vcb, ed->disk_bytenr, ed->disk_num_bytes,
+                                                                   edr.root, edr.objectid, edr.offset,
+                                                                   edr.count, Irp);
                             if (!NT_SUCCESS(Status)) {
-                                ERR("increase_extent_refcount returned %08lx\n", Status);
+                                ERR("increase_extent_refcount_data returned %08lx\n", Status);
                                 return Status;
                             }
 
@@ -1413,6 +1415,10 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 }
 
                                 Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("increase_extent_refcount returned %08lx\n", Status);
+                                    return Status;
+                                }
                             } else {
                                 struct btrfs_extent_data_ref edr;
 
@@ -1435,13 +1441,15 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     }
                                 }
 
-                                Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
+                                Status = increase_extent_refcount_data(Vcb, ed->disk_bytenr, ed->disk_num_bytes,
+                                                                       edr.root, edr.objectid, edr.offset,
+                                                                       edr.count, Irp);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("increase_extent_refcount_data returned %08lx\n", Status);
+                                    return Status;
+                                }
                             }
 
-                            if (!NT_SUCCESS(Status)) {
-                                ERR("increase_extent_refcount returned %08lx\n", Status);
-                                return Status;
-                            }
                         }
                     }
                 }
