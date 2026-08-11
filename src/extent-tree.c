@@ -900,6 +900,18 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     return increase_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
 }
 
+NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
+                                       uint64_t offset, struct btrfs_key* firstitem,
+                                       uint8_t level, PIRP Irp) {
+    TREE_BLOCK_REF tbr;
+
+    tbr.offset = offset;
+
+    return increase_extent_refcount(Vcb, address, Vcb->superblock.nodesize,
+                                    TYPE_TREE_BLOCK_REF, &tbr, firstitem,
+                                    level, Irp);
+}
+
 NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
                                   uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
     struct btrfs_key searchkey;

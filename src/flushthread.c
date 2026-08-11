@@ -1119,8 +1119,8 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     }
 
     if (flags & EXTENT_ITEM_SHARED_BACKREFS || t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
-        TREE_BLOCK_REF tbr;
         bool unique = rc > 1 ? false : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp, rollback) : false);
+        uint64_t offset;
 
         if (t->header.level == 0) {
             LIST_ENTRY* le;
@@ -1249,12 +1249,11 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
 
                 if (!td->inserted) {
-                    tbr.offset = t->root->id;
-
-                    Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.nodesize, TYPE_TREE_BLOCK_REF,
-                                                      &tbr, &td->key, t->header.level - 1, Irp);
+                    Status = increase_extent_refcount_tree(Vcb, td->treeholder.address,
+                                                           t->root->id, &td->key,
+                                                           t->header.level - 1, Irp);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("increase_extent_refcount returned %08lx\n", Status);
+                        ERR("increase_extent_refcount_tree returned %08lx\n", Status);
                         return Status;
                     }
 
@@ -1300,12 +1299,12 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         }
 
         if (t->parent)
-            tbr.offset = t->parent->header.owner;
+            offset = t->parent->header.owner;
         else
-            tbr.offset = t->header.owner;
+            offset = t->header.owner;
 
-        Status = increase_extent_refcount(Vcb, t->header.bytenr, Vcb->superblock.nodesize, TYPE_TREE_BLOCK_REF, &tbr,
-                                          t->parent ? &t->paritem->key : NULL, t->header.level, Irp);
+        Status = increase_extent_refcount_tree(Vcb, t->header.bytenr, offset,
+                                               t->parent ? &t->paritem->key : NULL, t->header.level, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("increase_extent_refcount returned %08lx\n", Status);
             return Status;
@@ -1348,11 +1347,9 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
                         Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, &td->key, t->header.level - 1, Irp);
                     } else {
-                        TREE_BLOCK_REF tbr;
-
-                        tbr.offset = t->root->id;
-
-                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.nodesize, TYPE_TREE_BLOCK_REF, &tbr, &td->key, t->header.level - 1, Irp);
+                        Status = increase_extent_refcount_tree(Vcb, td->treeholder.address,
+                                                               t->root->id, &td->key,
+                                                               t->header.level - 1, Irp);
                     }
 
                     if (!NT_SUCCESS(Status)) {
