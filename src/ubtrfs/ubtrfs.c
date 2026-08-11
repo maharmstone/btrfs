@@ -545,9 +545,9 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
         }
 
         if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
-            ROOT_ITEM ri;
+            struct btrfs_root_item ri;
 
-            memset(&ri, 0, sizeof(ROOT_ITEM));
+            memset(&ri, 0, sizeof(struct btrfs_root_item));
 
             ri.inode.generation = 1;
             ri.inode.size = 3;
@@ -555,13 +555,13 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             ri.inode.nlink = 1;
             ri.inode.mode = 040755;
             ri.generation = 1;
-            ri.objid = r->id == 5 || r->id >= 0x100 ? SUBVOL_ROOT_INODE : 0;
-            ri.block_number = r->header.bytenr;
+            ri.root_dirid = r->id == 5 || r->id >= 0x100 ? SUBVOL_ROOT_INODE : 0;
+            ri.bytenr = r->header.bytenr;
             ri.bytes_used = node_size;
-            ri.num_references = 1;
-            ri.generation2 = ri.generation;
+            ri.refs = 1;
+            ri.generation_v2 = ri.generation;
 
-            add_item(root_root, r->id, TYPE_ROOT_ITEM, 0, &ri, sizeof(ROOT_ITEM));
+            add_item(root_root, r->id, TYPE_ROOT_ITEM, 0, &ri, sizeof(struct btrfs_root_item));
         }
 
         le = le->Flink;

@@ -655,15 +655,15 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                         return STATUS_INTERNAL_ERROR;
                     }
 
-                    if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, delete and create new entry
-                        ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+                    if (tp.item->size < sizeof(struct btrfs_root_item)) { // if not full length, delete and create new entry
+                        struct btrfs_root_item* ri = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_root_item), ALLOC_TAG);
 
                         if (!ri) {
                             ERR("out of memory\n");
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
-                        RtlCopyMemory(ri, &t->root->root_item, sizeof(ROOT_ITEM));
+                        RtlCopyMemory(ri, &t->root->root_item, sizeof(struct btrfs_root_item));
 
                         Status = delete_tree_item(Vcb, &tp);
                         if (!NT_SUCCESS(Status)) {
@@ -672,7 +672,7 @@ static NTSTATUS add_parents(device_extension* Vcb, PIRP Irp) {
                             return Status;
                         }
 
-                        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
+                        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(struct btrfs_root_item), NULL, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("insert_tree_item returned %08lx\n", Status);
                             ExFreePool(ri);
@@ -1586,14 +1586,14 @@ static NTSTATUS update_root_root(device_extension* Vcb, bool no_cache, PIRP Irp,
 
                 TRACE("updating the address for root %I64x to %I64x\n", searchkey.objectid, t->new_address);
 
-                t->root->root_item.block_number = t->new_address;
-                t->root->root_item.root_level = t->header.level;
+                t->root->root_item.bytenr = t->new_address;
+                t->root->root_item.level = t->header.level;
                 t->root->root_item.generation = Vcb->superblock.generation;
-                t->root->root_item.generation2 = Vcb->superblock.generation;
+                t->root->root_item.generation_v2 = Vcb->superblock.generation;
 
-                // item is guaranteed to be at least sizeof(ROOT_ITEM), due to add_parents
+                // item is guaranteed to be at least sizeof(struct btrfs_root_item), due to add_parents
 
-                RtlCopyMemory(tp.item->data, &t->root->root_item, sizeof(ROOT_ITEM));
+                RtlCopyMemory(tp.item->data, &t->root->root_item, sizeof(struct btrfs_root_item));
             }
 
             t->root->treeholder.address = t->new_address;
@@ -2127,48 +2127,48 @@ static void update_backup_superblock(device_extension* Vcb, struct btrfs_root_ba
     searchkey.offset = 0xffffffffffffffff;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
-        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
-            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
+            struct btrfs_root_item* ri = (struct btrfs_root_item*)tp.item->data;
 
-            sb->extent_root = ri->block_number;
+            sb->extent_root = ri->bytenr;
             sb->extent_root_gen = ri->generation;
-            sb->extent_root_level = ri->root_level;
+            sb->extent_root_level = ri->level;
         }
     }
 
     searchkey.objectid = BTRFS_ROOT_FSTREE;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
-        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
-            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
+            struct btrfs_root_item* ri = (struct btrfs_root_item*)tp.item->data;
 
-            sb->fs_root = ri->block_number;
+            sb->fs_root = ri->bytenr;
             sb->fs_root_gen = ri->generation;
-            sb->fs_root_level = ri->root_level;
+            sb->fs_root_level = ri->level;
         }
     }
 
     searchkey.objectid = BTRFS_ROOT_DEVTREE;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
-        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
-            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
+            struct btrfs_root_item* ri = (struct btrfs_root_item*)tp.item->data;
 
-            sb->dev_root = ri->block_number;
+            sb->dev_root = ri->bytenr;
             sb->dev_root_gen = ri->generation;
-            sb->dev_root_level = ri->root_level;
+            sb->dev_root_level = ri->level;
         }
     }
 
     searchkey.objectid = BTRFS_ROOT_CHECKSUM;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
-        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(ROOT_ITEM)) {
-            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
+            struct btrfs_root_item* ri = (struct btrfs_root_item*)tp.item->data;
 
-            sb->csum_root = ri->block_number;
+            sb->csum_root = ri->bytenr;
             sb->csum_root_gen = ri->generation;
-            sb->csum_root_level = ri->root_level;
+            sb->csum_root_level = ri->level;
         }
     }
 
@@ -3949,7 +3949,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
     struct btrfs_key searchkey;
     traverse_ptr tp;
 
-    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.root_level, NULL, Irp, rollback);
+    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.level, NULL, Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("remove_root_extents returned %08lx\n", Status);
         return Status;
@@ -6493,8 +6493,8 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, uint64_t root, PIR
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (tp.item->size < sizeof(ROOT_ITEM)) { // if not full length, create new entry with new bits zeroed
-        ROOT_ITEM* ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+    if (tp.item->size < sizeof(struct btrfs_root_item)) { // if not full length, create new entry with new bits zeroed
+        struct btrfs_root_item* ri = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_root_item), ALLOC_TAG);
         if (!ri) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -6503,7 +6503,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, uint64_t root, PIR
         if (tp.item->size > 0)
             RtlCopyMemory(ri, tp.item->data, tp.item->size);
 
-        RtlZeroMemory(((uint8_t*)ri) + tp.item->size, sizeof(ROOT_ITEM) - tp.item->size);
+        RtlZeroMemory(((uint8_t*)ri) + tp.item->size, sizeof(struct btrfs_root_item) - tp.item->size);
 
         Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
@@ -6512,7 +6512,7 @@ static NTSTATUS add_root_item_to_cache(device_extension* Vcb, uint64_t root, PIR
             return Status;
         }
 
-        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.objectid, searchkey.type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->root_root, searchkey.objectid, searchkey.type, tp.item->key.offset, ri, sizeof(struct btrfs_root_item), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(ri);
@@ -7051,7 +7051,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
     if (r != Vcb->root_root && r != Vcb->chunk_root) {
         struct btrfs_key searchkey;
         traverse_ptr tp;
-        ROOT_ITEM* ri;
+        struct btrfs_root_item* ri;
 
         searchkey.objectid = r->id;
         searchkey.type = TYPE_ROOT_ITEM;
@@ -7068,13 +7068,13 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
             return STATUS_INTERNAL_ERROR;
         }
 
-        ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+        ri = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_root_item), ALLOC_TAG);
         if (!ri) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
+        RtlCopyMemory(ri, &r->root_item, sizeof(struct btrfs_root_item));
 
         Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
@@ -7082,7 +7082,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
             return Status;
         }
 
-        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(struct btrfs_root_item), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             return Status;

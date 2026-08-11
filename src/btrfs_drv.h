@@ -426,7 +426,7 @@ typedef struct _root {
     LONGLONG lastinode; // signed so we can use InterlockedIncrement64
     tree_holder treeholder;
     root_nonpaged* nonpaged;
-    ROOT_ITEM root_item;
+    struct btrfs_root_item root_item;
     bool dirty;
     bool received;
     PEPROCESS reserved;

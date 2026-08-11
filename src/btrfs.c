@@ -1262,7 +1262,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
                      _Out_ root** rootptr, _In_ bool no_tree, _In_ uint64_t offset, _In_opt_ PIRP Irp) {
     NTSTATUS Status;
     root* r;
-    ROOT_ITEM* ri;
+    struct btrfs_root_item* ri;
     traverse_ptr tp;
 
     r = ExAllocatePoolWithTag(PagedPool, sizeof(root), ALLOC_TAG);
@@ -1278,7 +1278,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+    ri = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_root_item), ALLOC_TAG);
     if (!ri) {
         ERR("out of memory\n");
 
@@ -1297,20 +1297,20 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     r->reserved = NULL;
     r->parent = 0;
     r->send_ops = 0;
-    RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
-    r->root_item.num_references = 1;
+    RtlZeroMemory(&r->root_item, sizeof(struct btrfs_root_item));
+    r->root_item.refs = 1;
     r->fcbs_version = 0;
     r->checked_for_orphans = true;
     r->dropped = false;
     InitializeListHead(&r->fcbs);
     RtlZeroMemory(r->fcbs_ptrs, sizeof(LIST_ENTRY*) * 256);
 
-    RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
+    RtlCopyMemory(ri, &r->root_item, sizeof(struct btrfs_root_item));
 
     // We ask here for a traverse_ptr to the item we're inserting, so we can
     // copy some of the tree's variables
 
-    Status = insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(ROOT_ITEM), &tp, Irp);
+    Status = insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(struct btrfs_root_item), &tp, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(ri);
@@ -2329,8 +2329,8 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
                 }
             }
         } else if (fileref->fcb->subvol->parent == fileref->parent->fcb->subvol->id) { // valid subvolume
-            if (fileref->fcb->subvol->root_item.num_references > 1) {
-                fileref->fcb->subvol->root_item.num_references--;
+            if (fileref->fcb->subvol->root_item.refs > 1) {
+                fileref->fcb->subvol->root_item.refs--;
 
                 mark_fcb_dirty(fileref->fcb); // so ROOT_ITEM gets updated
             } else {
@@ -3015,11 +3015,11 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
     r->lastinode = 0;
 
     if (tp) {
-        RtlCopyMemory(&r->root_item, tp->item->data, min(sizeof(ROOT_ITEM), tp->item->size));
-        if (tp->item->size < sizeof(ROOT_ITEM))
-            RtlZeroMemory(((uint8_t*)&r->root_item) + tp->item->size, sizeof(ROOT_ITEM) - tp->item->size);
+        RtlCopyMemory(&r->root_item, tp->item->data, min(sizeof(struct btrfs_root_item), tp->item->size));
+        if (tp->item->size < sizeof(struct btrfs_root_item))
+            RtlZeroMemory(((uint8_t*)&r->root_item) + tp->item->size, sizeof(struct btrfs_root_item) - tp->item->size);
     } else
-        RtlZeroMemory(&r->root_item, sizeof(ROOT_ITEM));
+        RtlZeroMemory(&r->root_item, sizeof(struct btrfs_root_item));
 
     if (!Vcb->readonly && (r->id == BTRFS_ROOT_ROOT || r->id == BTRFS_ROOT_FSTREE || (r->id >= 0x100 && !(r->id & 0xf000000000000000)))) { // FS tree root
         // FIXME - don't call this if subvol is readonly (though we will have to if we ever toggle this flag)
@@ -3093,14 +3093,14 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         TRACE("(%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
         if (tp.item->key.type == TYPE_ROOT_ITEM) {
-            ROOT_ITEM* ri = (ROOT_ITEM*)tp.item->data;
+            struct btrfs_root_item* ri = (struct btrfs_root_item*)tp.item->data;
 
-            if (tp.item->size < offsetof(ROOT_ITEM, byte_limit)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(ROOT_ITEM, byte_limit));
+            if (tp.item->size < offsetof(struct btrfs_root_item, byte_limit)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(struct btrfs_root_item, byte_limit));
             } else {
-                TRACE("root %I64x - address %I64x\n", tp.item->key.objectid, ri->block_number);
+                TRACE("root %I64x - address %I64x\n", tp.item->key.objectid, ri->bytenr);
 
-                Status = add_root(Vcb, tp.item->key.objectid, ri->block_number, ri->generation, &tp);
+                Status = add_root(Vcb, tp.item->key.objectid, ri->bytenr, ri->generation, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_root returned %08lx\n", Status);
                     return Status;
@@ -3142,7 +3142,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         reloc_root->root_item.inode.nlink = 1;
         reloc_root->root_item.inode.mode = 040755;
         reloc_root->root_item.inode.flags = BTRFS_INODE_ROOT_ITEM_INIT;
-        reloc_root->root_item.objid = SUBVOL_ROOT_INODE;
+        reloc_root->root_item.root_dirid = SUBVOL_ROOT_INODE;
         reloc_root->root_item.bytes_used = Vcb->superblock.nodesize;
 
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_item), ALLOC_TAG);

@@ -316,20 +316,20 @@ struct btrfs_inode_item {
 
 static_assert(sizeof(struct btrfs_inode_item) == 0xa0, "btrfs_inode_item has wrong size");
 
-typedef struct {
+struct btrfs_root_item {
     struct btrfs_inode_item inode;
     uint64_t generation;
-    uint64_t objid;
-    uint64_t block_number;
+    uint64_t root_dirid;
+    uint64_t bytenr;
     uint64_t byte_limit;
     uint64_t bytes_used;
-    uint64_t last_snapshot_generation;
+    uint64_t last_snapshot;
     uint64_t flags;
-    uint32_t num_references;
+    uint32_t refs;
     struct btrfs_key drop_progress;
     uint8_t drop_level;
-    uint8_t root_level;
-    uint64_t generation2;
+    uint8_t level;
+    uint64_t generation_v2;
     BTRFS_UUID uuid;
     BTRFS_UUID parent_uuid;
     BTRFS_UUID received_uuid;
@@ -342,7 +342,7 @@ typedef struct {
     struct btrfs_timespec stime;
     struct btrfs_timespec rtime;
     uint64_t reserved[8];
-} ROOT_ITEM;
+};
 
 typedef struct {
     uint64_t size;

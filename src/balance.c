@@ -865,11 +865,11 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                 Vcb->superblock.root = mr->new_address;
                             else if (r == Vcb->chunk_root)
                                 Vcb->superblock.chunk_root = mr->new_address;
-                            else if (r->root_item.block_number == mr->address) {
+                            else if (r->root_item.bytenr == mr->address) {
                                 struct btrfs_key searchkey;
-                                ROOT_ITEM* ri;
+                                struct btrfs_root_item* ri;
 
-                                r->root_item.block_number = mr->new_address;
+                                r->root_item.bytenr = mr->new_address;
 
                                 searchkey.objectid = r->id;
                                 searchkey.type = TYPE_ROOT_ITEM;
@@ -887,14 +887,14 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                     goto end;
                                 }
 
-                                ri = ExAllocatePoolWithTag(PagedPool, sizeof(ROOT_ITEM), ALLOC_TAG);
+                                ri = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_root_item), ALLOC_TAG);
                                 if (!ri) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
                                     goto end;
                                 }
 
-                                RtlCopyMemory(ri, &r->root_item, sizeof(ROOT_ITEM));
+                                RtlCopyMemory(ri, &r->root_item, sizeof(struct btrfs_root_item));
 
                                 Status = delete_tree_item(Vcb, &tp);
                                 if (!NT_SUCCESS(Status)) {
@@ -902,7 +902,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                     goto end;
                                 }
 
-                                Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(ROOT_ITEM), NULL, NULL);
+                                Status = insert_tree_item(Vcb, Vcb->root_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ri, sizeof(struct btrfs_root_item), NULL, NULL);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("insert_tree_item returned %08lx\n", Status);
                                     goto end;

@@ -371,7 +371,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
 
-    Status = snapshot_tree_copy(Vcb, subvol->root_item.block_number, r, &address, Irp, &rollback);
+    Status = snapshot_tree_copy(Vcb, subvol->root_item.bytenr, r, &address, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("snapshot_tree_copy returned %08lx\n", Status);
         goto end;
@@ -387,12 +387,12 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     r->root_item.inode.mode = __S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH; // 40755
     r->root_item.inode.flags = BTRFS_INODE_ROOT_ITEM_INIT;
     r->root_item.generation = Vcb->superblock.generation;
-    r->root_item.objid = subvol->root_item.objid;
-    r->root_item.block_number = address;
+    r->root_item.root_dirid = subvol->root_item.root_dirid;
+    r->root_item.bytenr = address;
     r->root_item.bytes_used = subvol->root_item.bytes_used;
-    r->root_item.last_snapshot_generation = Vcb->superblock.generation;
-    r->root_item.root_level = subvol->root_item.root_level;
-    r->root_item.generation2 = Vcb->superblock.generation;
+    r->root_item.last_snapshot = Vcb->superblock.generation;
+    r->root_item.level = subvol->root_item.level;
+    r->root_item.generation_v2 = Vcb->superblock.generation;
     r->root_item.parent_uuid = subvol->root_item.uuid;
     r->root_item.ctransid = subvol->root_item.ctransid;
     r->root_item.otransid = Vcb->superblock.generation;
@@ -412,11 +412,11 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
 
-    RtlCopyMemory(tp.item->data, &r->root_item, sizeof(ROOT_ITEM));
+    RtlCopyMemory(tp.item->data, &r->root_item, sizeof(struct btrfs_root_item));
 
     // update ROOT_ITEM of original subvol
 
-    subvol->root_item.last_snapshot_generation = Vcb->superblock.generation;
+    subvol->root_item.last_snapshot = Vcb->superblock.generation;
 
     mark_subvol_dirty(Vcb, subvol);
 
@@ -429,7 +429,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
 
-    Status = open_fcb(Vcb, r, r->root_item.objid, BTRFS_TYPE_DIRECTORY, utf8, false, fcb, &fr->fcb, PagedPool, Irp);
+    Status = open_fcb(Vcb, r, r->root_item.root_dirid, BTRFS_TYPE_DIRECTORY, utf8, false, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08lx\n", Status);
         free_fileref(fr);
@@ -666,8 +666,8 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
         goto end;
     }
 
-    if (subvol_fcb->inode != subvol_fcb->subvol->root_item.objid) {
-        WARN("handle inode was %I64x, expected %I64x\n", subvol_fcb->inode, subvol_fcb->subvol->root_item.objid);
+    if (subvol_fcb->inode != subvol_fcb->subvol->root_item.root_dirid) {
+        WARN("handle inode was %I64x, expected %I64x\n", subvol_fcb->inode, subvol_fcb->subvol->root_item.root_dirid);
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
@@ -938,7 +938,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (bcs->readonly)
         r->root_item.flags |= BTRFS_SUBVOL_READONLY;
 
-    r->root_item.objid = SUBVOL_ROOT_INODE;
+    r->root_item.root_dirid = SUBVOL_ROOT_INODE;
     r->root_item.bytes_used = Vcb->superblock.nodesize;
     r->root_item.ctransid = Vcb->superblock.generation;
     r->root_item.otransid = Vcb->superblock.generation;
@@ -1037,7 +1037,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     ir->n = sizeof(DOTDOT) - 1;
     RtlCopyMemory(ir->name, DOTDOT, ir->n);
 
-    Status = insert_tree_item(Vcb, r, r->root_item.objid, TYPE_INODE_REF, r->root_item.objid, ir, irsize, NULL, Irp);
+    Status = insert_tree_item(Vcb, r, r->root_item.root_dirid, TYPE_INODE_REF, r->root_item.root_dirid, ir, irsize, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(ir);
@@ -4554,7 +4554,7 @@ static NTSTATUS get_subvol_path(device_extension* Vcb, uint64_t id, WCHAR* out, 
 
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
 
-    Status = open_fileref_by_inode(Vcb, r, r->root_item.objid, &fr, Irp);
+    Status = open_fileref_by_inode(Vcb, r, r->root_item.root_dirid, &fr, Irp);
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&Vcb->fileref_lock);
         ERR("open_fileref_by_inode returned %08lx\n", Status);
@@ -4633,8 +4633,8 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
             }
 
             if (tp2.item->key.objectid == searchkey2.objectid && tp2.item->key.type == searchkey2.type &&
-                tp2.item->size >= offsetof(ROOT_ITEM, otransid)) {
-                ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
+                tp2.item->size >= offsetof(struct btrfs_root_item, otransid)) {
+                struct btrfs_root_item* ri = (struct btrfs_root_item*)tp2.item->data;
 
                 if (ri->ctransid == bfs->ctransid) {
                     TRACE("found subvol %I64x\n", *id);
@@ -4678,8 +4678,8 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
                 }
 
                 if (tp2.item->key.objectid == searchkey2.objectid && tp2.item->key.type == searchkey2.type &&
-                    tp2.item->size >= offsetof(ROOT_ITEM, otransid)) {
-                    ROOT_ITEM* ri = (ROOT_ITEM*)tp2.item->data;
+                    tp2.item->size >= offsetof(struct btrfs_root_item, otransid)) {
+                    struct btrfs_root_item* ri = (struct btrfs_root_item*)tp2.item->data;
 
                     if (ri->ctransid == bfs->ctransid) {
                         TRACE("found subvol %I64x\n", ids[i]);

@@ -78,7 +78,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     dir = inode;
 
     while (true) {
-        if (dir == r->root_item.objid) {
+        if (dir == r->root_item.root_dirid) {
             if (r == Vcb->root_fileref->fcb->subvol)
                 break;
 
