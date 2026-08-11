@@ -3264,7 +3264,7 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
         if (tp.item->key.objectid != t->header.bytenr || (tp.item->key.type != TYPE_METADATA_ITEM && tp.item->key.type != TYPE_EXTENT_ITEM))
             goto end;
 
-        if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(EXTENT_ITEM_V0))
+        if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(struct btrfs_extent_item_v0))
             goto end;
 
         if (tp.item->size < sizeof(struct btrfs_extent_item))

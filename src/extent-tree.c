@@ -529,7 +529,7 @@ NTSTATUS increase_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
     skinny = tp.item->key.type == TYPE_METADATA_ITEM;
 
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0) && !skinny) {
+    if (tp.item->size == sizeof(struct btrfs_extent_item_v0) && !skinny) {
         Status = convert_old_extent(Vcb, address, is_tree, firstitem, level, Irp);
 
         if (!NT_SUCCESS(Status)) {
@@ -949,7 +949,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
+        if (tp.item->size == sizeof(struct btrfs_extent_item_v0)) {
             Status = convert_old_extent(Vcb, address, is_tree, firstitem, level, Irp);
 
             if (!NT_SUCCESS(Status)) {
@@ -1679,10 +1679,10 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
         return 0;
     }
 
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-        EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+    if (tp.item->size == sizeof(struct btrfs_extent_item_v0)) {
+        struct btrfs_extent_item_v0* eiv0 = (struct btrfs_extent_item_v0*)tp.item->data;
 
-        return eiv0->refcount;
+        return eiv0->refs;
     } else if (tp.item->size < sizeof(struct btrfs_extent_item)) {
         ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %Ix\n", tp.item->key.objectid, tp.item->key.type,
                                                                       tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
@@ -1727,7 +1727,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         return false;
     }
 
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+    if (tp.item->size == sizeof(struct btrfs_extent_item_v0))
         return false;
 
     if (tp.item->size < sizeof(struct btrfs_extent_item)) {
@@ -1860,7 +1860,7 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
         return 0;
     }
 
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+    if (tp.item->size == sizeof(struct btrfs_extent_item_v0))
         return 0;
     else if (tp.item->size < sizeof(struct btrfs_extent_item)) {
         ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %Ix\n", tp.item->key.objectid, tp.item->key.type,
@@ -1901,7 +1901,7 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
         return;
     }
 
-    if (tp.item->size == sizeof(EXTENT_ITEM_V0))
+    if (tp.item->size == sizeof(struct btrfs_extent_item_v0))
         return;
     else if (tp.item->size < sizeof(struct btrfs_extent_item)) {
         ERR("(%I64x,%x,%I64x) was %x bytes, expected at least %Ix\n", tp.item->key.objectid, tp.item->key.type,
@@ -1991,10 +1991,10 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
             goto end;
         }
 
-        if (tp.item->size == sizeof(EXTENT_ITEM_V0)) {
-            EXTENT_ITEM_V0* eiv0 = (EXTENT_ITEM_V0*)tp.item->data;
+        if (tp.item->size == sizeof(struct btrfs_extent_item_v0)) {
+            struct btrfs_extent_item_v0* eiv0 = (struct btrfs_extent_item_v0*)tp.item->data;
 
-            ce->count = ce->old_count = eiv0->refcount;
+            ce->count = ce->old_count = eiv0->refs;
         } else if (tp.item->size >= sizeof(struct btrfs_extent_item)) {
             struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 

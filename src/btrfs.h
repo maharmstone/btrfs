@@ -402,9 +402,9 @@ typedef struct {
     uint8_t level;
 } EXTENT_ITEM2;
 
-typedef struct {
-    uint32_t refcount;
-} EXTENT_ITEM_V0;
+struct btrfs_extent_item_v0 {
+    uint32_t refs;
+};
 
 typedef struct {
     struct btrfs_extent_item extent_item;
