@@ -462,16 +462,18 @@ static uint64_t get_next_address(btrfs_chunk* c) {
 
 typedef struct {
     struct btrfs_extent_item ei;
-    uint8_t type;
-    TREE_BLOCK_REF tbr;
+    struct btrfs_extent_inline_ref eir;
 } EXTENT_ITEM_METADATA;
+
+static_assert(sizeof(EXTENT_ITEM_METADATA) == 33, "EXTENT_ITEM_METADATA has wrong size");
 
 typedef struct {
     struct btrfs_extent_item ei;
     struct btrfs_tree_block_info ei2;
-    uint8_t type;
-    TREE_BLOCK_REF tbr;
+    struct btrfs_extent_inline_ref eir;
 } EXTENT_ITEM_METADATA2;
+
+static_assert(sizeof(EXTENT_ITEM_METADATA2) == 51, "EXTENT_ITEM_METADATA2 has wrong size");
 
 static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_chunk* metadata_chunk, uint32_t node_size,
                              btrfs_root* root_root, btrfs_root* extent_root, bool skinny) {
@@ -511,8 +513,8 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim.ei.refs = 1;
             eim.ei.generation = 1;
             eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
-            eim.type = TYPE_TREE_BLOCK_REF;
-            eim.tbr.offset = r->id;
+            eim.eir.type = TYPE_TREE_BLOCK_REF;
+            eim.eir.offset = r->id;
 
             add_item(extent_root, r->header.bytenr, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
         } else {
@@ -534,8 +536,8 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim2.ei.flags = EXTENT_ITEM_TREE_BLOCK;
             eim2.ei2.key = firstitem;
             eim2.ei2.level = 0;
-            eim2.type = TYPE_TREE_BLOCK_REF;
-            eim2.tbr.offset = r->id;
+            eim2.eir.type = TYPE_TREE_BLOCK_REF;
+            eim2.eir.offset = r->id;
 
             add_item(extent_root, r->header.bytenr, TYPE_EXTENT_ITEM, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
         }

@@ -406,6 +406,11 @@ struct btrfs_extent_item_v0 {
     uint32_t refs;
 };
 
+struct btrfs_extent_inline_ref {
+    uint8_t type;
+    uint64_t offset;
+};
+
 typedef struct {
     uint64_t offset;
 } TREE_BLOCK_REF;
