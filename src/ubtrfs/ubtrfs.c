@@ -1000,9 +1000,9 @@ static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_
         btrfs_chunk* c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
         uint64_t last_end = c->offset;
         LIST_ENTRY* le2;
-        FREE_SPACE_INFO fsi;
+        struct btrfs_free_space_info fsi;
 
-        fsi.count = 0;
+        fsi.extent_count = 0;
         fsi.flags = 0;
 
         le2 = c->used_space.Flink;
@@ -1012,7 +1012,7 @@ static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_
             if (use->address > last_end) {
                 add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, use->address - last_end,
                          NULL, 0);
-                fsi.count++;
+                fsi.extent_count++;
             }
 
             last_end = use->address + use->size;
@@ -1023,7 +1023,7 @@ static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_
         if (c->offset + c->chunk_item->length > last_end) {
             add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, c->offset + c->chunk_item->length - last_end,
                      NULL, 0);
-            fsi.count++;
+            fsi.extent_count++;
         }
 
         add_item(free_space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length, &fsi, sizeof(fsi));

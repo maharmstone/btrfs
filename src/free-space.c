@@ -753,8 +753,8 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
         return STATUS_NOT_FOUND;
     }
 
-    if (tp.item->size < sizeof(FREE_SPACE_INFO)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_INFO));
+    if (tp.item->size < sizeof(struct btrfs_free_space_info)) {
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_info));
         return STATUS_NOT_FOUND;
     }
 
@@ -1836,7 +1836,7 @@ end:
 static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY space_list;
-    FREE_SPACE_INFO* fsi;
+    struct btrfs_free_space_info* fsi;
     struct btrfs_key searchkey;
     traverse_ptr tp;
     uint32_t fsi_count = 0;
@@ -1989,14 +1989,14 @@ after_tree_walk:
     }
 
     if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey)) {
-        if (tp.item->size == sizeof(FREE_SPACE_INFO)) {
+        if (tp.item->size == sizeof(struct btrfs_free_space_info)) {
             tree* t;
 
             // change in place if possible
 
-            fsi = (FREE_SPACE_INFO*)tp.item->data;
+            fsi = (struct btrfs_free_space_info*)tp.item->data;
 
-            fsi->count = fsi_count;
+            fsi->extent_count = fsi_count;
             fsi->flags = 0;
 
             tp.tree->write = true;
@@ -2020,13 +2020,13 @@ after_tree_walk:
 
     // insert FREE_SPACE_INFO
 
-    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_INFO), ALLOC_TAG);
+    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_free_space_info), ALLOC_TAG);
     if (!fsi) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    fsi->count = fsi_count;
+    fsi->extent_count = fsi_count;
     fsi->flags = 0;
 
     Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length, fsi, sizeof(*fsi),
