@@ -3868,7 +3868,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     chunk* c;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    BLOCK_GROUP_ITEM* bgi;
+    struct btrfs_block_group_item* bgi;
     NTSTATUS Status;
     root* r;
 
@@ -3899,8 +3899,8 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         }
 
         if (!keycmp(searchkey, tp.item->key)) {
-            if (tp.item->size >= sizeof(BLOCK_GROUP_ITEM)) {
-                bgi = (BLOCK_GROUP_ITEM*)tp.item->data;
+            if (tp.item->size >= sizeof(struct btrfs_block_group_item)) {
+                bgi = (struct btrfs_block_group_item*)tp.item->data;
 
                 c->used = c->oldused = bgi->used;
 
@@ -3909,7 +3909,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
                 Vcb->superblock.bytes_used += bgi->used;
             } else {
                 ERR("(%I64x;%I64x,%x,%I64x) is %u bytes, expected %Iu\n",
-                    r->id, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+                    r->id, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_block_group_item));
             }
         }
 

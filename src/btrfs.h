@@ -428,11 +428,11 @@ struct btrfs_extent_data_ref {
     uint32_t count;
 };
 
-typedef struct {
+struct btrfs_block_group_item {
     uint64_t used;
-    uint64_t chunk_tree;
+    uint64_t chunk_objectid;
     uint64_t flags;
-} BLOCK_GROUP_ITEM;
+};
 
 typedef struct {
     uint64_t root;

@@ -877,12 +877,12 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* root) {
     le = chunks->Flink;
     while (le != chunks) {
         btrfs_chunk* c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
-        BLOCK_GROUP_ITEM bgi;
+        struct btrfs_block_group_item bgi;
 
         bgi.used = c->used;
-        bgi.chunk_tree = 0x100;
+        bgi.chunk_objectid = 0x100;
         bgi.flags = c->chunk_item->type;
-        add_item(root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, &bgi, sizeof(BLOCK_GROUP_ITEM));
+        add_item(root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, &bgi, sizeof(struct btrfs_block_group_item));
 
         le = le->Flink;
     }

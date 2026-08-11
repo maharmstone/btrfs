@@ -2810,7 +2810,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
     chunk* c;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    BLOCK_GROUP_ITEM* bgi;
+    struct btrfs_block_group_item* bgi;
     NTSTATUS Status;
 
     TRACE("(%p)\n", Vcb);
@@ -2909,8 +2909,8 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
                 goto end;
             }
 
-            if (tp.item->size < sizeof(BLOCK_GROUP_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(BLOCK_GROUP_ITEM));
+            if (tp.item->size < sizeof(struct btrfs_block_group_item)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_block_group_item));
                 Status = STATUS_INTERNAL_ERROR;
                 release_chunk_lock(c, Vcb);
                 goto end;
@@ -4205,7 +4205,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, uint64_t objectid, uint8
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     struct btrfs_chunk* ci;
-    BLOCK_GROUP_ITEM* bgi;
+    struct btrfs_block_group_item* bgi;
     uint16_t i, factor;
     NTSTATUS Status;
 
@@ -4234,18 +4234,18 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
 
     // add BLOCK_GROUP_ITEM to tree 2
 
-    bgi = ExAllocatePoolWithTag(PagedPool, sizeof(BLOCK_GROUP_ITEM), ALLOC_TAG);
+    bgi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_block_group_item), ALLOC_TAG);
     if (!bgi) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     bgi->used = c->used;
-    bgi->chunk_tree = 0x100;
+    bgi->chunk_objectid = 0x100;
     bgi->flags = c->chunk_item->type;
 
     Status = insert_tree_item(Vcb, Vcb->block_group_root ? Vcb->block_group_root : Vcb->extent_root, c->offset,
-                              TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp);
+                              TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, bgi, sizeof(struct btrfs_block_group_item), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(bgi);
