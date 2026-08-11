@@ -2365,7 +2365,7 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
-    BALANCE_ITEM* bi;
+    struct btrfs_balance_item* bi;
 
     searchkey.objectid = BALANCE_ITEM_ID;
     searchkey.type = TYPE_TEMP_ITEM;
@@ -2387,14 +2387,14 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
         }
     }
 
-    bi = ExAllocatePoolWithTag(PagedPool, sizeof(BALANCE_ITEM), ALLOC_TAG);
+    bi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_balance_item), ALLOC_TAG);
     if (!bi) {
         ERR("out of memory\n");
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
-    RtlZeroMemory(bi, sizeof(BALANCE_ITEM));
+    RtlZeroMemory(bi, sizeof(struct btrfs_balance_item));
 
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED) {
         bi->flags |= BALANCE_FLAGS_DATA;
@@ -2403,15 +2403,15 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
 
     if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) {
         bi->flags |= BALANCE_FLAGS_METADATA;
-        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->metadata);
+        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->meta);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED) {
         bi->flags |= BALANCE_FLAGS_SYSTEM;
-        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
+        copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->sys);
     }
 
-    Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(BALANCE_ITEM), NULL, NULL);
+    Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, TYPE_TEMP_ITEM, 0, bi, sizeof(struct btrfs_balance_item), NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(bi);
@@ -3614,7 +3614,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
-    BALANCE_ITEM* bi;
+    struct btrfs_balance_item* bi;
     OBJECT_ATTRIBUTES oa;
     int i;
 
@@ -3633,22 +3633,22 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
         return STATUS_NOT_FOUND;
     }
 
-    if (tp.item->size < sizeof(BALANCE_ITEM)) {
+    if (tp.item->size < sizeof(struct btrfs_balance_item)) {
         WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-             tp.item->size, sizeof(BALANCE_ITEM));
+             tp.item->size, sizeof(struct btrfs_balance_item));
         return STATUS_INTERNAL_ERROR;
     }
 
-    bi = (BALANCE_ITEM*)tp.item->data;
+    bi = (struct btrfs_balance_item*)tp.item->data;
 
     if (bi->flags & BALANCE_FLAGS_DATA)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bi->data);
 
     if (bi->flags & BALANCE_FLAGS_METADATA)
-        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->metadata);
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->meta);
 
     if (bi->flags & BALANCE_FLAGS_SYSTEM)
-        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->system);
+        load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->sys);
 
     // do the heuristics that Linux driver does
 

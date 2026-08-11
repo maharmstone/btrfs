@@ -523,13 +523,13 @@ struct btrfs_disk_balance_args {
     uint64_t unused[6];
 };
 
-typedef struct {
+struct btrfs_balance_item {
     uint64_t flags;
     struct btrfs_disk_balance_args data;
-    struct btrfs_disk_balance_args metadata;
-    struct btrfs_disk_balance_args system;
-    uint8_t reserved[32];
-} BALANCE_ITEM;
+    struct btrfs_disk_balance_args meta;
+    struct btrfs_disk_balance_args sys;
+    uint64_t unused[4];
+};
 
 #define BTRFS_FREE_SPACE_USING_BITMAPS      1
 
