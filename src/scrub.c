@@ -668,7 +668,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
     NTSTATUS Status;
     bool csum_error = false;
     ULONG i;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
     uint16_t present_devices = 0;
 
     if (csum) {
@@ -1181,7 +1181,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                             // write good data over bad
 
                             if (!c->devices[j + k]->readonly) {
-                                CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                                struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
                                 Status = write_data_phys(c->devices[j + k]->devobj, c->devices[j + k]->fileobj, cis[j + k].offset + offset - c->offset,
                                                          context->stripes[j + goodstripe].buf, context->stripes[j + goodstripe].length);
@@ -1347,7 +1347,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
 
                     for (k = 0; k < sub_stripes; k++) {
                         if (c->devices[j + k]->devobj && !c->devices[j + k]->readonly) {
-                            CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                            struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
                             Status = write_data_phys(c->devices[j + k]->devobj, c->devices[j + k]->fileobj, cis[j + k].offset + offset - c->offset,
                                                      context->stripes[j + k].buf, context->stripes[j + k].length);
@@ -1375,7 +1375,7 @@ end:
 static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64_t offset, uint32_t size, void* csum) {
     ULONG i;
     scrub_context context;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
     NTSTATUS Status;
     uint16_t startoffstripe = 0, num_missing, allowed_missing;
 
@@ -1392,7 +1392,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
 
     context.stripes_left = 0;
 
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     if (type == BLOCK_FLAG_RAID0) {
         uint64_t startoff, endoff;
@@ -2432,7 +2432,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
     ULONG arrlen, *allocarr, *csumarr = NULL, *treearr, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
     scrub_context_raid56 context;
     uint16_t i;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     TRACE("(%p, %p, %I64x, %I64x)\n", Vcb, c, stripe_start, stripe_end);
 

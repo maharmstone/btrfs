@@ -355,11 +355,11 @@ typedef struct {
     uint16_t sub_stripes;
 } CHUNK_ITEM;
 
-typedef struct {
-    uint64_t dev_id;
+struct btrfs_stripe {
+    uint64_t devid;
     uint64_t offset;
     BTRFS_UUID dev_uuid;
-} CHUNK_ITEM_STRIPE;
+};
 
 typedef struct {
     uint64_t generation;

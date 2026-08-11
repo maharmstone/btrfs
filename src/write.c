@@ -371,7 +371,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     uint16_t i, type, num_stripes, sub_stripes, max_stripes, min_stripes, allowed_missing;
     stripe* stripes = NULL;
     uint16_t cisize;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
     chunk* c = NULL;
     space* s = NULL;
     LIST_ENTRY* le;
@@ -532,7 +532,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
 
     c->devices = NULL;
 
-    cisize = sizeof(CHUNK_ITEM) + (num_stripes * sizeof(CHUNK_ITEM_STRIPE));
+    cisize = sizeof(CHUNK_ITEM) + (num_stripes * sizeof(struct btrfs_stripe));
     c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, cisize, ALLOC_TAG);
     if (!c->chunk_item) {
         ERR("out of memory\n");
@@ -592,9 +592,9 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         goto end;
     }
 
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    cis = (struct btrfs_stripe*)&c->chunk_item[1];
     for (i = 0; i < num_stripes; i++) {
-        cis[i].dev_id = stripes[i].device->devitem.devid;
+        cis[i].devid = stripes[i].device->devitem.devid;
 
         if (type == BLOCK_FLAG_DUPLICATE && i == 1 && stripes[i].dh == stripes[0].dh)
             cis[i].offset = stripes[0].dh->address + stripe_size;
@@ -1910,7 +1910,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
                     _In_opt_ PIRP Irp, _In_opt_ chunk* c, _In_ bool file_write, _In_ uint64_t irp_offset, _In_ ULONG priority) {
     NTSTATUS Status;
     uint32_t i;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
     write_stripe* stripes = NULL;
     uint64_t total_writing = 0;
     ULONG allowed_missing, missing;
@@ -1933,7 +1933,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
 
     RtlZeroMemory(stripes, sizeof(write_stripe) * c->chunk_item->num_stripes);
 
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
         Status = prepare_raid0_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);

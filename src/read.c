@@ -238,7 +238,7 @@ static NTSTATUS read_data_dup(device_extension* Vcb, uint8_t* buf, uint64_t addr
     bool checksum_error = false;
     uint16_t j, stripe = 0;
     NTSTATUS Status;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
 
     for (j = 0; j < ci->num_stripes; j++) {
         if (context->stripes[j].status == ReadDataStatus_Error) {
@@ -469,7 +469,7 @@ static NTSTATUS read_data_raid10(device_extension* Vcb, uint8_t* buf, uint64_t a
     uint16_t stripe = 0;
     NTSTATUS Status;
     bool checksum_error = false;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
 
     for (uint16_t j = 0; j < ci->num_stripes; j++) {
         if (context->stripes[j].status == ReadDataStatus_Error) {
@@ -652,7 +652,7 @@ static NTSTATUS read_data_raid5(device_extension* Vcb, uint8_t* buf, uint64_t ad
                                 device** devices, uint64_t offset, uint64_t generation, chunk* c, bool degraded) {
     NTSTATUS Status;
     bool checksum_error = false;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
     uint16_t j, stripe = 0;
     bool no_success = true;
 
@@ -997,7 +997,7 @@ static NTSTATUS read_data_raid6(device_extension* Vcb, uint8_t* buf, uint64_t ad
                                 device** devices, uint64_t offset, uint64_t generation, chunk* c, bool degraded) {
     NTSTATUS Status;
     bool checksum_error = false;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
     uint16_t stripe = 0, j;
     bool no_success = true;
 
@@ -1479,7 +1479,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                    _In_ bool is_tree, _Out_writes_bytes_(length) uint8_t* buf, _In_opt_ chunk* c, _Out_opt_ chunk** pc, _In_opt_ PIRP Irp, _In_ uint64_t generation, _In_ bool file_read,
                    _In_ ULONG priority) {
     CHUNK_ITEM* ci;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
     read_data_context context;
     uint64_t type, offset, total_reading = 0;
     NTSTATUS Status;
@@ -1521,7 +1521,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                 if ((addr - sc->key.offset) < chunk_item->size && chunk_item->num_stripes > 0) {
                     ci = chunk_item;
                     offset = sc->key.offset;
-                    cis = (CHUNK_ITEM_STRIPE*)&chunk_item[1];
+                    cis = (struct btrfs_stripe*)&chunk_item[1];
 
                     devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * ci->num_stripes, ALLOC_TAG);
                     if (!devices) {
@@ -1578,7 +1578,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         allowed_missing = 0;
     }
 
-    cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    cis = (struct btrfs_stripe*)&ci[1];
 
     RtlZeroMemory(&context, sizeof(read_data_context));
     KeInitializeEvent(&context.Event, NotificationEvent, false);

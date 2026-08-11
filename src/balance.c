@@ -2239,11 +2239,11 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
 
     if (opts->flags & BTRFS_BALANCE_OPTS_DEVID) {
         uint16_t i;
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+        struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
         bool b = false;
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (cis[i].dev_id == opts->devid) {
+            if (cis[i].devid == opts->devid) {
                 b = true;
                 break;
             }
@@ -2256,7 +2256,7 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
     if (opts->flags & BTRFS_BALANCE_OPTS_DRANGE) {
         uint16_t i, factor;
         uint64_t physsize;
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+        struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
         bool b = false;
 
         if (c->chunk_item->type & BLOCK_FLAG_RAID0)
@@ -2274,7 +2274,7 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (cis[i].offset < opts->drange_end && cis[i].offset + physsize >= opts->drange_start &&
-                (!(opts->flags & BTRFS_BALANCE_OPTS_DEVID) || cis[i].dev_id == opts->devid)) {
+                (!(opts->flags & BTRFS_BALANCE_OPTS_DEVID) || cis[i].devid == opts->devid)) {
                 b = true;
                 break;
             }
@@ -3011,12 +3011,12 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
     while (le != &Vcb->chunks) {
         uint16_t n;
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+        struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
         for (n = 0; n < c->chunk_item->num_stripes; n++) {
             uint64_t stripe_size = 0;
 
-            if (cis[n].dev_id == dev->devitem.devid) {
+            if (cis[n].devid == dev->devitem.devid) {
                 if (stripe_size == 0) {
                     uint16_t factor;
 

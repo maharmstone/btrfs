@@ -364,7 +364,7 @@ static NTSTATUS add_superblock_stripe(LIST_ENTRY* stripes, uint64_t off, uint64_
 static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
     NTSTATUS Status;
     CHUNK_ITEM* ci = c->chunk_item;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
     uint64_t off_start, off_end, space = 0;
     uint16_t i = 0, j;
     LIST_ENTRY stripes;

@@ -3683,7 +3683,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                 }
 
                 if (c->chunk_item->num_stripes > 0) {
-                    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+                    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
                     uint16_t i;
 
                     c->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
@@ -3778,7 +3778,7 @@ void protect_superblocks(_Inout_ chunk* c) {
 
     while (superblock_addrs[i] != 0) {
         CHUNK_ITEM* ci = c->chunk_item;
-        CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&ci[1];
+        struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
 
         if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
@@ -3945,7 +3945,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
                 return STATUS_SUCCESS;
 
             ci = (CHUNK_ITEM*)&Vcb->superblock.sys_chunk_array[Vcb->superblock.sys_chunk_array_size - n];
-            cisize = sizeof(CHUNK_ITEM) + (ci->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
+            cisize = sizeof(CHUNK_ITEM) + (ci->num_stripes * sizeof(struct btrfs_stripe));
 
             if (n < cisize)
                 return STATUS_SUCCESS;

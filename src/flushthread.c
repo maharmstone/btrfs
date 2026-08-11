@@ -196,7 +196,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
         if (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA)) {
-            CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+            struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
             if (type == BLOCK_FLAG_DUPLICATE) {
                 uint16_t i;
@@ -4207,7 +4207,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, uint64_t objectid, uint8
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     CHUNK_ITEM* ci;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
     BLOCK_GROUP_ITEM* bgi;
     uint16_t i, factor;
     NTSTATUS Status;
@@ -4268,7 +4268,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
 
     // add DEV_EXTENTs to tree 4
 
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         DEV_EXTENT* de;
@@ -5536,7 +5536,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     struct btrfs_key searchkey;
     traverse_ptr tp;
     uint64_t i, factor;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];;
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];;
 
     TRACE("dropping chunk %I64x\n", c->offset);
 
@@ -5621,7 +5621,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (!c->created) {
             // remove DEV_EXTENTs from tree 4
-            searchkey.objectid = cis[i].dev_id;
+            searchkey.objectid = cis[i].devid;
             searchkey.type = TYPE_DEV_EXTENT;
             searchkey.offset = cis[i].offset;
 
@@ -5837,7 +5837,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_stripe* ps, uint64_t startoff, uint16_t parity, ULONG offset, ULONG len) {
     NTSTATUS Status;
     ULONG sl = (ULONG)(c->chunk_item->stripe_length >> Vcb->sector_shift);
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     while (len > 0) {
         ULONG readlen = min(offset + len, offset + (sl - (offset % sl))) - offset;
@@ -5965,7 +5965,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     uint8_t* data;
     uint64_t startoff;
     ULONG runlength, index, last1;
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
     LIST_ENTRY* le;
     uint16_t k, num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
     uint64_t ps_length = num_data_stripes * c->chunk_item->stripe_length;

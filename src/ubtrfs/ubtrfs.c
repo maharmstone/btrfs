@@ -365,7 +365,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     uint16_t stripes, i;
     btrfs_chunk* c;
     LIST_ENTRY* le;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
     uint64_t stripe_length = max(sector_size, 0x10000);
 
     off = 0xc00000;
@@ -401,7 +401,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     c->used = 0;
     InitializeListHead(&c->used_space);
 
-    c->chunk_item = malloc(sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE)));
+    c->chunk_item = malloc(sizeof(CHUNK_ITEM) + (stripes * sizeof(struct btrfs_stripe)));
 
     c->chunk_item->size = size;
     c->chunk_item->root_id = BTRFS_ROOT_EXTENT;
@@ -413,15 +413,15 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     c->chunk_item->num_stripes = stripes;
     c->chunk_item->sub_stripes = 0;
 
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     for (i = 0; i < stripes; i++) {
-        cis[i].dev_id = dev->dev_item.devid;
+        cis[i].devid = dev->dev_item.devid;
         cis[i].offset = find_chunk_offset(size, c->offset, dev, dev_root, chunkuuid);
         cis[i].dev_uuid = dev->dev_item.uuid;
     }
 
-    add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, sizeof(CHUNK_ITEM) + (stripes * sizeof(CHUNK_ITEM_STRIPE)));
+    add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, sizeof(CHUNK_ITEM) + (stripes * sizeof(struct btrfs_stripe)));
 
     InsertTailList(chunks, &c->list_entry);
 
@@ -429,7 +429,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
 }
 
 static bool superblock_collision(btrfs_chunk* c, uint64_t address) {
-    CHUNK_ITEM_STRIPE* cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
     uint64_t stripe = (address - c->offset) / c->chunk_item->stripe_length;
     uint16_t i, j;
 
@@ -573,9 +573,9 @@ static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* dat
     uint16_t i;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
-    CHUNK_ITEM_STRIPE* cis;
+    struct btrfs_stripe* cis;
 
-    cis = (CHUNK_ITEM_STRIPE*)&c->chunk_item[1];
+    cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         off.QuadPart = cis[i].offset + address - c->offset;
@@ -770,7 +770,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->nodesize = node_size;
     sb->__unused_leafsize = node_size;
     sb->stripesize = sector_size;
-    sb->sys_chunk_array_size = sizeof(struct btrfs_key) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE));
+    sb->sys_chunk_array_size = sizeof(struct btrfs_key) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe));
     sb->chunk_root_generation = 1;
     sb->compat_ro_flags = compat_ro_flags;
     sb->incompat_flags = incompat_flags;
@@ -805,7 +805,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     key->objectid = 0x100;
     key->type = TYPE_CHUNK_ITEM;
     key->offset = sys_chunk->offset;
-    memcpy(&key[1], sys_chunk->chunk_item, sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(CHUNK_ITEM_STRIPE)));
+    memcpy(&key[1], sys_chunk->chunk_item, sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe)));
 
     i = 0;
     while (superblock_addrs[i] != 0) {
