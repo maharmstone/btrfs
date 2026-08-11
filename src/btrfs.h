@@ -454,12 +454,12 @@ struct btrfs_free_space_entry {
     uint8_t type;
 };
 
-typedef struct {
-    struct btrfs_key key;
+struct btrfs_free_space_header {
+    struct btrfs_key location;
     uint64_t generation;
     uint64_t num_entries;
     uint64_t num_bitmaps;
-} FREE_SPACE_ITEM;
+};
 
 struct btrfs_root_ref {
     uint64_t dirid;

@@ -86,18 +86,18 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                 return Status;
             }
 
-            if (tp.item->size >= sizeof(FREE_SPACE_ITEM)) {
-                FREE_SPACE_ITEM* fsi = (FREE_SPACE_ITEM*)tp.item->data;
+            if (tp.item->size >= sizeof(struct btrfs_free_space_header)) {
+                struct btrfs_free_space_header* fsi = (struct btrfs_free_space_header*)tp.item->data;
 
-                if (fsi->key.type != TYPE_INODE_ITEM)
-                    WARN("key (%I64x,%x,%I64x) does not point to an INODE_ITEM\n", fsi->key.objectid, fsi->key.type, fsi->key.offset);
+                if (fsi->location.type != TYPE_INODE_ITEM)
+                    WARN("key (%I64x,%x,%I64x) does not point to an INODE_ITEM\n", fsi->location.objectid, fsi->location.type, fsi->location.offset);
                 else {
                     LIST_ENTRY* le;
 
-                    Status = remove_free_space_inode(Vcb, fsi->key.objectid, batchlist, Irp, &rollback);
+                    Status = remove_free_space_inode(Vcb, fsi->location.objectid, batchlist, Irp, &rollback);
 
                     if (!NT_SUCCESS(Status))
-                        ERR("remove_free_space_inode for (%I64x,%x,%I64x) returned %08lx\n", fsi->key.objectid, fsi->key.type, fsi->key.offset, Status);
+                        ERR("remove_free_space_inode for (%I64x,%x,%I64x) returned %08lx\n", fsi->location.objectid, fsi->location.type, fsi->location.offset, Status);
 
                     le = Vcb->chunks.Flink;
                     while (le != &Vcb->chunks) {
@@ -112,7 +112,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                     }
                 }
             } else
-                WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+                WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_header));
         }
 
         b = find_next_item(Vcb, &tp, &next_tp, false, Irp);
@@ -465,7 +465,7 @@ end:
 NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load_only, PIRP Irp) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    FREE_SPACE_ITEM* fsi;
+    struct btrfs_free_space_header* fsi;
     uint64_t inode, *generation;
     uint8_t* data;
     NTSTATUS Status;
@@ -493,19 +493,19 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         return STATUS_NOT_FOUND;
     }
 
-    if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+    if (tp.item->size < sizeof(struct btrfs_free_space_header)) {
+        WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_header));
         return STATUS_NOT_FOUND;
     }
 
-    fsi = (FREE_SPACE_ITEM*)tp.item->data;
+    fsi = (struct btrfs_free_space_header*)tp.item->data;
 
-    if (fsi->key.type != TYPE_INODE_ITEM) {
+    if (fsi->location.type != TYPE_INODE_ITEM) {
         WARN("cache pointed to something other than an INODE_ITEM\n");
         return STATUS_NOT_FOUND;
     }
 
-    inode = fsi->key.objectid;
+    inode = fsi->location.objectid;
     num_entries = fsi->num_entries;
     num_bitmaps = fsi->num_bitmaps;
 
@@ -1119,7 +1119,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
     }
 
     if (!c->cache) {
-        FREE_SPACE_ITEM* fsi;
+        struct btrfs_free_space_header* fsi;
         struct btrfs_key searchkey;
         traverse_ptr tp;
 
@@ -1154,7 +1154,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         // create new free space entry
 
-        fsi = ExAllocatePoolWithTag(PagedPool, sizeof(FREE_SPACE_ITEM), ALLOC_TAG);
+        fsi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_free_space_header), ALLOC_TAG);
         if (!fsi) {
             ERR("out of memory\n");
             reap_fcb(c->cache);
@@ -1186,11 +1186,11 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             }
         }
 
-        fsi->key.objectid = c->cache->inode;
-        fsi->key.type = TYPE_INODE_ITEM;
-        fsi->key.offset = 0;
+        fsi->location.objectid = c->cache->inode;
+        fsi->location.type = TYPE_INODE_ITEM;
+        fsi->location.offset = 0;
 
-        Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(FREE_SPACE_ITEM), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(struct btrfs_free_space_header), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(fsi);
@@ -1246,8 +1246,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        if (tp.item->size < sizeof(struct btrfs_free_space_header)) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_header));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1361,8 +1361,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+        if (tp.item->size < sizeof(struct btrfs_free_space_header)) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_header));
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -1690,7 +1690,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    FREE_SPACE_ITEM* fsi;
+    struct btrfs_free_space_header* fsi;
     void* data;
     uint64_t num_entries, *cachegen, off;
     uint32_t *checksums, num_sectors;
@@ -1779,13 +1779,13 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
         goto end;
     }
 
-    if (tp.item->size < sizeof(FREE_SPACE_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(FREE_SPACE_ITEM));
+    if (tp.item->size < sizeof(struct btrfs_free_space_header)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_header));
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
 
-    fsi = (FREE_SPACE_ITEM*)tp.item->data;
+    fsi = (struct btrfs_free_space_header*)tp.item->data;
 
     fsi->generation = Vcb->superblock.generation;
     fsi->num_entries = num_entries;
