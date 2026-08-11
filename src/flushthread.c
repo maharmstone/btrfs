@@ -196,42 +196,40 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
         if (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA)) {
-            struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
-
             if (type == BLOCK_FLAG_DUPLICATE) {
                 uint16_t i;
 
                 for (i = 0; i < c->chunk_item->num_stripes; i++) {
                     if (c->devices[i] && c->devices[i]->devobj && !c->devices[i]->readonly && c->devices[i]->trim)
-                        add_trim_entry(c->devices[i], s->address - c->offset + cis[i].offset, s->size);
+                        add_trim_entry(c->devices[i], s->address - c->offset + c->chunk_item->stripe[i].offset, s->size);
                 }
             } else if (type == BLOCK_FLAG_RAID0) {
                 uint64_t startoff, endoff;
                 uint16_t startoffstripe, endoffstripe, i;
 
-                get_raid0_offset(s->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &startoff, &startoffstripe);
-                get_raid0_offset(s->address - c->offset + s->size - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes, &endoff, &endoffstripe);
+                get_raid0_offset(s->address - c->offset, c->chunk_item->stripe_len, c->chunk_item->num_stripes, &startoff, &startoffstripe);
+                get_raid0_offset(s->address - c->offset + s->size - 1, c->chunk_item->stripe_len, c->chunk_item->num_stripes, &endoff, &endoffstripe);
 
                 for (i = 0; i < c->chunk_item->num_stripes; i++) {
                     if (c->devices[i] && c->devices[i]->devobj && !c->devices[i]->readonly && c->devices[i]->trim) {
                         uint64_t stripestart, stripeend;
 
                         if (startoffstripe > i)
-                            stripestart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                            stripestart = startoff - (startoff % c->chunk_item->stripe_len) + c->chunk_item->stripe_len;
                         else if (startoffstripe == i)
                             stripestart = startoff;
                         else
-                            stripestart = startoff - (startoff % c->chunk_item->stripe_length);
+                            stripestart = startoff - (startoff % c->chunk_item->stripe_len);
 
                         if (endoffstripe > i)
-                            stripeend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                            stripeend = endoff - (endoff % c->chunk_item->stripe_len) + c->chunk_item->stripe_len;
                         else if (endoffstripe == i)
                             stripeend = endoff + 1;
                         else
-                            stripeend = endoff - (endoff % c->chunk_item->stripe_length);
+                            stripeend = endoff - (endoff % c->chunk_item->stripe_len);
 
                         if (stripestart != stripeend)
-                            add_trim_entry(c->devices[i], stripestart + cis[i].offset, stripeend - stripestart);
+                            add_trim_entry(c->devices[i], stripestart + c->chunk_item->stripe[i].offset, stripeend - stripestart);
                     }
                 }
             } else if (type == BLOCK_FLAG_RAID10) {
@@ -240,8 +238,8 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
 
                 sub_stripes = max(1, c->chunk_item->sub_stripes);
 
-                get_raid0_offset(s->address - c->offset, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &startoff, &startoffstripe);
-                get_raid0_offset(s->address - c->offset + s->size - 1, c->chunk_item->stripe_length, c->chunk_item->num_stripes / sub_stripes, &endoff, &endoffstripe);
+                get_raid0_offset(s->address - c->offset, c->chunk_item->stripe_len, c->chunk_item->num_stripes / sub_stripes, &startoff, &startoffstripe);
+                get_raid0_offset(s->address - c->offset + s->size - 1, c->chunk_item->stripe_len, c->chunk_item->num_stripes / sub_stripes, &endoff, &endoffstripe);
 
                 startoffstripe *= sub_stripes;
                 endoffstripe *= sub_stripes;
@@ -251,23 +249,23 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
                     uint64_t stripestart, stripeend;
 
                     if (startoffstripe > i)
-                        stripestart = startoff - (startoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                        stripestart = startoff - (startoff % c->chunk_item->stripe_len) + c->chunk_item->stripe_len;
                     else if (startoffstripe == i)
                         stripestart = startoff;
                     else
-                        stripestart = startoff - (startoff % c->chunk_item->stripe_length);
+                        stripestart = startoff - (startoff % c->chunk_item->stripe_len);
 
                     if (endoffstripe > i)
-                        stripeend = endoff - (endoff % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+                        stripeend = endoff - (endoff % c->chunk_item->stripe_len) + c->chunk_item->stripe_len;
                     else if (endoffstripe == i)
                         stripeend = endoff + 1;
                     else
-                        stripeend = endoff - (endoff % c->chunk_item->stripe_length);
+                        stripeend = endoff - (endoff % c->chunk_item->stripe_len);
 
                     if (stripestart != stripeend) {
                         for (j = 0; j < sub_stripes; j++) {
                             if (c->devices[i+j] && c->devices[i+j]->devobj && !c->devices[i+j]->readonly && c->devices[i+j]->trim)
-                                add_trim_entry(c->devices[i+j], stripestart + cis[i+j].offset, stripeend - stripestart);
+                                add_trim_entry(c->devices[i+j], stripestart + c->chunk_item->stripe[i+j].offset, stripeend - stripestart);
                         }
                     }
                 }
@@ -747,7 +745,7 @@ bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* a
 
     TRACE("(%p, %I64x, %p)\n", Vcb, c->offset, address);
 
-    if (Vcb->superblock.nodesize > c->chunk_item->size - c->used)
+    if (Vcb->superblock.nodesize > c->chunk_item->length - c->used)
         return false;
 
     if (!c->cache_loaded) {
@@ -906,7 +904,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
         if (!c->readonly && !c->reloc) {
             acquire_chunk_lock(c, Vcb);
 
-            if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= Vcb->superblock.nodesize) {
+            if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= Vcb->superblock.nodesize) {
                 if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
                     release_chunk_lock(c, Vcb);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -934,7 +932,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
 
     acquire_chunk_lock(c, Vcb);
 
-    if ((c->chunk_item->size - c->used) >= Vcb->superblock.nodesize) {
+    if ((c->chunk_item->length - c->used) >= Vcb->superblock.nodesize) {
         if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
             release_chunk_lock(c, Vcb);
             ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -1633,7 +1631,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
     while (le != tree_writes) {
         tw = CONTAINING_RECORD(le, tree_write, list_entry);
 
-        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->size)
+        if (!c || tw->address < c->offset || tw->address >= c->offset + c->chunk_item->length)
             c = get_chunk_from_address(Vcb, tw->address);
         else {
             tree_write* tw2 = CONTAINING_RECORD(le->Blink, tree_write, list_entry);
@@ -2895,7 +2893,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
 
             searchkey.objectid = c->offset;
             searchkey.type = TYPE_BLOCK_GROUP_ITEM;
-            searchkey.offset = c->chunk_item->size;
+            searchkey.offset = c->chunk_item->length;
 
             Status = find_item(Vcb, r, &tp, &searchkey, false, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -4206,8 +4204,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, uint64_t objectid, uint8
 }
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
-    CHUNK_ITEM* ci;
-    struct btrfs_stripe* cis;
+    struct btrfs_chunk* ci;
     BLOCK_GROUP_ITEM* bgi;
     uint16_t i, factor;
     NTSTATUS Status;
@@ -4248,7 +4245,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     bgi->flags = c->chunk_item->type;
 
     Status = insert_tree_item(Vcb, Vcb->block_group_root ? Vcb->block_group_root : Vcb->extent_root, c->offset,
-                              TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp);
+                              TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, bgi, sizeof(BLOCK_GROUP_ITEM), NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item failed\n");
         ExFreePool(bgi);
@@ -4268,8 +4265,6 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
 
     // add DEV_EXTENTs to tree 4
 
-    cis = (struct btrfs_stripe*)&c->chunk_item[1];
-
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         DEV_EXTENT* de;
 
@@ -4282,10 +4277,10 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         de->chunktree = Vcb->chunk_root->id;
         de->objid = 0x100;
         de->address = c->offset;
-        de->length = c->chunk_item->size / factor;
+        de->length = c->chunk_item->length / factor;
         de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
 
-        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.devid, TYPE_DEV_EXTENT, cis[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.devid, TYPE_DEV_EXTENT, c->chunk_item->stripe[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(de);
@@ -4709,7 +4704,7 @@ cont:
             while (le2 != &extent_ranges) {
                 extent_range* er2 = CONTAINING_RECORD(le2, extent_range, list_entry);
 
-                if (!er2->chunk && er2->address >= er->chunk->offset && er2->address < er->chunk->offset + er->chunk->chunk_item->size)
+                if (!er2->chunk && er2->address >= er->chunk->offset && er2->address < er->chunk->offset + er->chunk->chunk_item->length)
                     er2->chunk = er->chunk;
 
                 le2 = le2->Flink;
@@ -5536,7 +5531,6 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     struct btrfs_key searchkey;
     traverse_ptr tp;
     uint64_t i, factor;
-    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];;
 
     TRACE("dropping chunk %I64x\n", c->offset);
 
@@ -5553,11 +5547,11 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
     // do TRIM
     if (Vcb->trim && !Vcb->options.no_trim) {
-        uint64_t len = c->chunk_item->size / factor;
+        uint64_t len = c->chunk_item->length / factor;
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (c->devices[i] && c->devices[i]->devobj && !c->devices[i]->readonly && c->devices[i]->trim)
-                add_trim_entry_avoid_sb(Vcb, c->devices[i], cis[i].offset, len);
+                add_trim_entry_avoid_sb(Vcb, c->devices[i], c->chunk_item->stripe[i].offset, len);
         }
     }
 
@@ -5610,7 +5604,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     }
 
     if (Vcb->space_root) {
-        Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size,
+        Status = insert_tree_item_batch(batchlist, Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length,
                                         NULL, 0, Batch_DeleteFreeSpace);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
@@ -5621,9 +5615,9 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         if (!c->created) {
             // remove DEV_EXTENTs from tree 4
-            searchkey.objectid = cis[i].devid;
+            searchkey.objectid = c->chunk_item->stripe[i].devid;
             searchkey.type = TYPE_DEV_EXTENT;
-            searchkey.offset = cis[i].offset;
+            searchkey.offset = c->chunk_item->stripe[i].offset;
 
             Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
             if (!NT_SUCCESS(Status)) {
@@ -5644,23 +5638,23 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                     c->devices[i]->devitem.bytes_used -= de->length;
 
                     if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.devid) {
-                        if (cis[i].offset < Vcb->balance.opts[0].drange_start && cis[i].offset + de->length > Vcb->balance.opts[0].drange_start)
-                            space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, Vcb->balance.opts[0].drange_start - cis[i].offset, NULL, rollback);
+                        if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start && c->chunk_item->stripe[i].offset + de->length > Vcb->balance.opts[0].drange_start)
+                            space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, Vcb->balance.opts[0].drange_start - c->chunk_item->stripe[i].offset, NULL, rollback);
                     } else
-                        space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, de->length, NULL, rollback);
+                        space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, de->length, NULL, rollback);
                 }
             } else
                 WARN("could not find (%I64x,%x,%I64x) in dev tree\n", searchkey.objectid, searchkey.type, searchkey.offset);
         } else {
-            uint64_t len = c->chunk_item->size / factor;
+            uint64_t len = c->chunk_item->length / factor;
 
             c->devices[i]->devitem.bytes_used -= len;
 
             if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.devid) {
-                if (cis[i].offset < Vcb->balance.opts[0].drange_start && cis[i].offset + len > Vcb->balance.opts[0].drange_start)
-                    space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, Vcb->balance.opts[0].drange_start - cis[i].offset, NULL, rollback);
+                if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start && c->chunk_item->stripe[i].offset + len > Vcb->balance.opts[0].drange_start)
+                    space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, Vcb->balance.opts[0].drange_start - c->chunk_item->stripe[i].offset, NULL, rollback);
             } else
-                space_list_add2(&c->devices[i]->space, NULL, cis[i].offset, len, NULL, rollback);
+                space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, len, NULL, rollback);
         }
     }
 
@@ -5836,8 +5830,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
 static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_stripe* ps, uint64_t startoff, uint16_t parity, ULONG offset, ULONG len) {
     NTSTATUS Status;
-    ULONG sl = (ULONG)(c->chunk_item->stripe_length >> Vcb->sector_shift);
-    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
+    ULONG sl = (ULONG)(c->chunk_item->stripe_len >> Vcb->sector_shift);
 
     while (len > 0) {
         ULONG readlen = min(offset + len, offset + (sl - (offset % sl))) - offset;
@@ -5846,7 +5839,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
         stripe = (parity + (offset / sl) + 1) % c->chunk_item->num_stripes;
 
         if (c->devices[stripe]->devobj) {
-            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+            Status = sync_read_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, c->chunk_item->stripe[stripe].offset + startoff + ((offset % sl) << Vcb->sector_shift),
                                     readlen << Vcb->sector_shift, ps->data + (offset << Vcb->sector_shift), false);
             if (!NT_SUCCESS(Status)) {
                 ERR("sync_read_phys returned %08lx\n", Status);
@@ -5870,7 +5863,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                     }
 
                     if (i == 0 || (stripe == 0 && i == 1)) {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, c->chunk_item->stripe[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
                                                 readlen << Vcb->sector_shift, ps->data + (offset << Vcb->sector_shift), false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
@@ -5878,7 +5871,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                             return Status;
                         }
                     } else {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, c->chunk_item->stripe[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
                                                 readlen << Vcb->sector_shift, scratch, false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
@@ -5908,7 +5901,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
             for (k = 0; k < c->chunk_item->num_stripes; k++) {
                 if (i != stripe) {
                     if (c->devices[i]->devobj) {
-                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, cis[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
+                        Status = sync_read_phys(c->devices[i]->devobj, c->devices[i]->fileobj, c->chunk_item->stripe[i].offset + startoff + ((offset % sl) << Vcb->sector_shift),
                                                 readlen << Vcb->sector_shift, scratch + (k * readlen << Vcb->sector_shift), false);
                         if (!NT_SUCCESS(Status)) {
                             ERR("sync_read_phys returned %08lx\n", Status);
@@ -5965,11 +5958,10 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     uint8_t* data;
     uint64_t startoff;
     ULONG runlength, index, last1;
-    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
     LIST_ENTRY* le;
     uint16_t k, num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
-    uint64_t ps_length = num_data_stripes * c->chunk_item->stripe_length;
-    ULONG stripe_length = (ULONG)c->chunk_item->stripe_length;
+    uint64_t ps_length = num_data_stripes * c->chunk_item->stripe_len;
+    ULONG stripe_length = (ULONG)c->chunk_item->stripe_len;
 
     // FIXME - do writes asynchronously?
 
@@ -6050,7 +6042,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     data = ps->data;
     for (k = 0; k < num_data_stripes; k++) {
         if (c->devices[stripe]->devobj) {
-            Status = write_data_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, cis[stripe].offset + startoff, data, stripe_length);
+            Status = write_data_phys(c->devices[stripe]->devobj, c->devices[stripe]->fileobj, c->chunk_item->stripe[stripe].offset + startoff, data, stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08lx\n", Status);
                 return Status;
@@ -6070,7 +6062,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
                 do_xor(ps->data, ps->data + (i * stripe_length), stripe_length);
             }
 
-            Status = write_data_phys(c->devices[parity2]->devobj, c->devices[parity2]->fileobj, cis[parity2].offset + startoff, ps->data, stripe_length);
+            Status = write_data_phys(c->devices[parity2]->devobj, c->devices[parity2]->fileobj, c->chunk_item->stripe[parity2].offset + startoff, ps->data, stripe_length);
             if (!NT_SUCCESS(Status)) {
                 ERR("write_data_phys returned %08lx\n", Status);
                 return Status;
@@ -6109,7 +6101,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             }
 
             if (c->devices[parity1]->devobj) {
-                Status = write_data_phys(c->devices[parity1]->devobj, c->devices[parity1]->fileobj, cis[parity1].offset + startoff, scratch, stripe_length);
+                Status = write_data_phys(c->devices[parity1]->devobj, c->devices[parity1]->fileobj, c->chunk_item->stripe[parity1].offset + startoff, scratch, stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08lx\n", Status);
                     ExFreePool(scratch);
@@ -6118,7 +6110,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
             }
 
             if (c->devices[parity2]->devobj) {
-                Status = write_data_phys(c->devices[parity2]->devobj, c->devices[parity2]->fileobj, cis[parity2].offset + startoff,
+                Status = write_data_phys(c->devices[parity2]->devobj, c->devices[parity2]->fileobj, c->chunk_item->stripe[parity2].offset + startoff,
                                          scratch + stripe_length, stripe_length);
                 if (!NT_SUCCESS(Status)) {
                     ERR("write_data_phys returned %08lx\n", Status);
@@ -6202,7 +6194,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                             if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
                                 EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
 
-                                if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->size)
+                                if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->length)
                                     used_minus_cache -= ed2->size;
                             }
                         }
@@ -7364,7 +7356,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
         if (!c->reloc && !c->readonly && c->chunk_item->type & BLOCK_FLAG_METADATA) {
-            free_space += c->chunk_item->size - c->used;
+            free_space += c->chunk_item->length - c->used;
 
             if (free_space + could_alloc >= reserve)
                 return STATUS_SUCCESS;

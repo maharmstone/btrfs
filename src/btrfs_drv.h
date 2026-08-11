@@ -533,7 +533,7 @@ typedef struct {
 } partial_stripe;
 
 typedef struct {
-    CHUNK_ITEM* chunk_item;
+    struct btrfs_chunk* chunk_item;
     uint16_t size;
     uint64_t offset;
     uint64_t used;

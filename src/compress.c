@@ -1010,7 +1010,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         if (!c2->readonly && !c2->reloc) {
             acquire_chunk_lock(c2, fcb->Vcb);
 
-            if (c2->chunk_item->type == fcb->Vcb->data_flags && (c2->chunk_item->size - c2->used) >= buflen) {
+            if (c2->chunk_item->type == fcb->Vcb->data_flags && (c2->chunk_item->length - c2->used) >= buflen) {
                 if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
                     c = c2;
                     c->used += buflen;

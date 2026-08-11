@@ -3632,8 +3632,8 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                 }
             }
         } else if (tp.item->key.type == TYPE_CHUNK_ITEM) {
-            if (tp.item->size < sizeof(CHUNK_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(CHUNK_ITEM));
+            if (tp.item->size < offsetof(struct btrfs_chunk, stripe)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(struct btrfs_chunk, stripe));
             } else {
                 c = ExAllocatePoolWithTag(NonPagedPool, sizeof(chunk), ALLOC_TAG);
 
@@ -3683,7 +3683,6 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                 }
 
                 if (c->chunk_item->num_stripes > 0) {
-                    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
                     uint16_t i;
 
                     c->devices = ExAllocatePoolWithTag(NonPagedPool, sizeof(device*) * c->chunk_item->num_stripes, ALLOC_TAG);
@@ -3696,7 +3695,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                     }
 
                     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                        c->devices[i] = find_device_from_uuid(Vcb, &cis[i].dev_uuid);
+                        c->devices[i] = find_device_from_uuid(Vcb, &c->chunk_item->stripe[i].dev_uuid);
                         TRACE("device %u = %p\n", i, c->devices[i]);
 
                         if (!c->devices[i]) {
@@ -3777,14 +3776,13 @@ void protect_superblocks(_Inout_ chunk* c) {
         space_list_subtract(c, c->offset, superblock_addrs[0] - c->offset, NULL);
 
     while (superblock_addrs[i] != 0) {
-        CHUNK_ITEM* ci = c->chunk_item;
-        struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
+        struct btrfs_chunk* ci = c->chunk_item;
 
         if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint16_t sub_stripes = max(ci->sub_stripes, 1);
 
-                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                if (c->chunk_item->stripe[j].offset + (ci->length * ci->num_stripes / sub_stripes) > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
 #ifdef _DEBUG
                     uint64_t startoff;
                     uint16_t startoffstripe;
@@ -3792,34 +3790,34 @@ void protect_superblocks(_Inout_ chunk* c) {
 
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
-                    off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % ci->stripe_length;
+                    off_start = superblock_addrs[i] - c->chunk_item->stripe[j].offset;
+                    off_start -= off_start % ci->stripe_len;
                     off_start *= ci->num_stripes / sub_stripes;
-                    off_start += (j / sub_stripes) * ci->stripe_length;
+                    off_start += (j / sub_stripes) * ci->stripe_len;
 
-                    off_end = off_start + ci->stripe_length;
+                    off_end = off_start + ci->stripe_len;
 
 #ifdef _DEBUG
-                    get_raid0_offset(off_start, ci->stripe_length, ci->num_stripes / sub_stripes, &startoff, &startoffstripe);
+                    get_raid0_offset(off_start, ci->stripe_len, ci->num_stripes / sub_stripes, &startoff, &startoffstripe);
                     TRACE("j = %u, startoffstripe = %u\n", j, startoffstripe);
-                    TRACE("startoff = %I64x, superblock = %I64x\n", startoff + cis[j].offset, superblock_addrs[i]);
+                    TRACE("startoff = %I64x, superblock = %I64x\n", startoff + c->chunk_item->stripe[j].offset, superblock_addrs[i]);
 #endif
 
                     space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
-            uint64_t stripe_size = ci->size / (ci->num_stripes - 1);
+            uint64_t stripe_size = ci->length / (ci->num_stripes - 1);
 
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                if (c->chunk_item->stripe[j].offset + stripe_size > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
-                    off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % ci->stripe_length;
+                    off_start = superblock_addrs[i] - c->chunk_item->stripe[j].offset;
+                    off_start -= off_start % ci->stripe_len;
                     off_start *= ci->num_stripes - 1;
 
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), ci->stripe_length);
+                    off_end = sector_align(superblock_addrs[i] - c->chunk_item->stripe[j].offset + sizeof(struct btrfs_super_block), ci->stripe_len);
                     off_end *= ci->num_stripes - 1;
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
@@ -3828,17 +3826,17 @@ void protect_superblocks(_Inout_ chunk* c) {
                 }
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
-            uint64_t stripe_size = ci->size / (ci->num_stripes - 2);
+            uint64_t stripe_size = ci->length / (ci->num_stripes - 2);
 
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                if (c->chunk_item->stripe[j].offset + stripe_size > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
-                    off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % ci->stripe_length;
+                    off_start = superblock_addrs[i] - c->chunk_item->stripe[j].offset;
+                    off_start -= off_start % ci->stripe_len;
                     off_start *= ci->num_stripes - 2;
 
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), ci->stripe_length);
+                    off_end = sector_align(superblock_addrs[i] - c->chunk_item->stripe[j].offset + sizeof(struct btrfs_super_block), ci->stripe_len);
                     off_end *= ci->num_stripes - 2;
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
@@ -3848,13 +3846,13 @@ void protect_superblocks(_Inout_ chunk* c) {
             }
         } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                if (c->chunk_item->stripe[j].offset + ci->length > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
                     TRACE("cut out superblock in chunk %I64x\n", c->offset);
 
                     // The Linux driver protects the whole stripe in which the superblock lives
 
-                    off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_length);
+                    off_start = ((superblock_addrs[i] - c->chunk_item->stripe[j].offset) / c->chunk_item->stripe_len) * c->chunk_item->stripe_len;
+                    off_end = sector_align(superblock_addrs[i] - c->chunk_item->stripe[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_len);
 
                     space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
@@ -3892,7 +3890,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
         searchkey.objectid = c->offset;
-        searchkey.offset = c->chunk_item->size;
+        searchkey.offset = c->chunk_item->length;
 
         Status = find_item(Vcb, r, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
@@ -3937,15 +3935,15 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
         TRACE("bootstrap: %I64x,%x,%I64x\n", key.objectid, key.type, key.offset);
 
         if (key.type == TYPE_CHUNK_ITEM) {
-            CHUNK_ITEM* ci;
+            struct btrfs_chunk* ci;
             USHORT cisize;
             sys_chunk* sc;
 
-            if (n < sizeof(CHUNK_ITEM))
+            if (n < offsetof(struct btrfs_chunk, stripe))
                 return STATUS_SUCCESS;
 
-            ci = (CHUNK_ITEM*)&Vcb->superblock.sys_chunk_array[Vcb->superblock.sys_chunk_array_size - n];
-            cisize = sizeof(CHUNK_ITEM) + (ci->num_stripes * sizeof(struct btrfs_stripe));
+            ci = (struct btrfs_chunk*)&Vcb->superblock.sys_chunk_array[Vcb->superblock.sys_chunk_array_size - n];
+            cisize = offsetof(struct btrfs_chunk, stripe) + (ci->num_stripes * sizeof(struct btrfs_stripe));
 
             if (n < cisize)
                 return STATUS_SUCCESS;

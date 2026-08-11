@@ -1603,20 +1603,19 @@ static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length, PIRP 
 
                 if (c2->chunk_item->type == c->chunk_item->type) {
                     uint16_t i;
-                    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c2->chunk_item[1];
                     uint64_t stripesize;
 
-                    bue->size += c2->chunk_item->size;
+                    bue->size += c2->chunk_item->length;
                     bue->used += c2->used;
 
-                    stripesize = c2->chunk_item->size / factor;
+                    stripesize = c2->chunk_item->length / factor;
 
                     for (i = 0; i < c2->chunk_item->num_stripes; i++) {
                         uint64_t j;
                         bool found = false;
 
                         for (j = 0; j < bue->num_devices; j++) {
-                            if (bue->devices[j].dev_id == cis[i].devid) {
+                            if (bue->devices[j].dev_id == c2->chunk_item->stripe[i].devid) {
                                 bue->devices[j].alloc += stripesize;
                                 found = true;
                                 break;
@@ -1631,7 +1630,7 @@ static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length, PIRP 
 
                             length -= sizeof(btrfs_usage_device);
 
-                            bue->devices[bue->num_devices].dev_id = cis[i].devid;
+                            bue->devices[bue->num_devices].dev_id = c2->chunk_item->stripe[i].devid;
                             bue->devices[bue->num_devices].alloc = stripesize;
                             bue->num_devices++;
                         }

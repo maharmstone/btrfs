@@ -586,7 +586,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
         }
 
         Status = read_data(Vcb, mr->address, Vcb->superblock.nodesize, NULL, true, (uint8_t*)mr->data,
-                           c && mr->address >= c->offset && mr->address < c->offset + c->chunk_item->size ? c : NULL, &pc, NULL, 0, false, NormalPagePriority);
+                           c && mr->address >= c->offset && mr->address < c->offset + c->chunk_item->length ? c : NULL, &pc, NULL, 0, false, NormalPagePriority);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data returned %08lx\n", Status);
             return Status;
@@ -763,7 +763,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                         if (!c2->readonly && !c2->reloc && c2 != newchunk && c2->chunk_item->type == flags) {
                             acquire_chunk_lock(c2, Vcb);
 
-                            if ((c2->chunk_item->size - c2->used) >= Vcb->superblock.nodesize) {
+                            if ((c2->chunk_item->length - c2->used) >= Vcb->superblock.nodesize) {
                                 if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
                                     c2->used += Vcb->superblock.nodesize;
                                     space_list_subtract(c2, mr->new_address, Vcb->superblock.nodesize, rollback);
@@ -1125,7 +1125,7 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* ch
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.objectid >= c->offset + c->chunk_item->size)
+        if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
             break;
 
         if (tp.item->key.objectid >= c->offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
@@ -1699,7 +1699,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
     do {
         traverse_ptr next_tp;
 
-        if (tp.item->key.objectid >= c->offset + c->chunk_item->size)
+        if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
             break;
 
         if (tp.item->key.objectid >= c->offset && tp.item->key.type == TYPE_EXTENT_ITEM) {
@@ -1780,7 +1780,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 if (!c2->readonly && !c2->reloc && c2 != newchunk && c2->chunk_item->type == Vcb->data_flags) {
                     acquire_chunk_lock(c2, Vcb);
 
-                    if ((c2->chunk_item->size - c2->used) >= dr->size) {
+                    if ((c2->chunk_item->length - c2->used) >= dr->size) {
                         if (find_data_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
                             c2->used += dr->size;
                             space_list_subtract(c2, dr->new_address, dr->size, &rollback);
@@ -2087,7 +2087,7 @@ end:
                         if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
                             EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
-                            if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->size) {
+                            if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->length) {
                                 LIST_ENTRY* le3 = items.Flink;
                                 while (le3 != &items) {
                                     data_reloc* dr = CONTAINING_RECORD(le3, data_reloc, list_entry);
@@ -2138,7 +2138,7 @@ end:
                     if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
                         EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
-                        if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->size) {
+                        if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->length) {
                             LIST_ENTRY* le3 = items.Flink;
                             while (le3 != &items) {
                                 data_reloc* dr = CONTAINING_RECORD(le3, data_reloc, list_entry);
@@ -2239,11 +2239,10 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
 
     if (opts->flags & BTRFS_BALANCE_OPTS_DEVID) {
         uint16_t i;
-        struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
         bool b = false;
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (cis[i].devid == opts->devid) {
+            if (c->chunk_item->stripe[i].devid == opts->devid) {
                 b = true;
                 break;
             }
@@ -2256,7 +2255,6 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
     if (opts->flags & BTRFS_BALANCE_OPTS_DRANGE) {
         uint16_t i, factor;
         uint64_t physsize;
-        struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
         bool b = false;
 
         if (c->chunk_item->type & BLOCK_FLAG_RAID0)
@@ -2270,11 +2268,11 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
         else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             factor = 1;
 
-        physsize = c->chunk_item->size / factor;
+        physsize = c->chunk_item->length / factor;
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
-            if (cis[i].offset < opts->drange_end && cis[i].offset + physsize >= opts->drange_start &&
-                (!(opts->flags & BTRFS_BALANCE_OPTS_DEVID) || cis[i].devid == opts->devid)) {
+            if (c->chunk_item->stripe[i].offset < opts->drange_end && c->chunk_item->stripe[i].offset + physsize >= opts->drange_start &&
+                (!(opts->flags & BTRFS_BALANCE_OPTS_DEVID) || c->chunk_item->stripe[i].devid == opts->devid)) {
                 b = true;
                 break;
             }
@@ -2285,7 +2283,7 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_VRANGE) {
-        if (c->offset + c->chunk_item->size <= opts->vrange_start || c->offset > opts->vrange_end)
+        if (c->offset + c->chunk_item->length <= opts->vrange_start || c->offset > opts->vrange_end)
             return false;
     }
 
@@ -2295,7 +2293,7 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_USAGE) {
-        uint64_t usage = c->used * 100 / c->chunk_item->size;
+        uint64_t usage = c->used * 100 / c->chunk_item->length;
 
         // usage == 0 should mean completely empty, not just that usage rounds to 0%
         if (c->used > 0 && usage == 0)
@@ -3011,12 +3009,11 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
     while (le != &Vcb->chunks) {
         uint16_t n;
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
-        struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
         for (n = 0; n < c->chunk_item->num_stripes; n++) {
             uint64_t stripe_size = 0;
 
-            if (cis[n].devid == dev->devitem.devid) {
+            if (c->chunk_item->stripe[n].devid == dev->devitem.devid) {
                 if (stripe_size == 0) {
                     uint16_t factor;
 
@@ -3031,10 +3028,10 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
                     else // SINGLE, DUP, RAID1, RAID1C3, RAID1C4
                         factor = 1;
 
-                    stripe_size = c->chunk_item->size / factor;
+                    stripe_size = c->chunk_item->length / factor;
                 }
 
-                space_list_subtract2(&dev->space, NULL, cis[n].offset, stripe_size, NULL, NULL);
+                space_list_subtract2(&dev->space, NULL, c->chunk_item->stripe[n].offset, stripe_size, NULL, NULL);
             }
         }
 

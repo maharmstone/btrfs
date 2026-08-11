@@ -343,22 +343,23 @@ struct btrfs_root_item {
     uint64_t reserved[8];
 };
 
-typedef struct {
-    uint64_t size;
-    uint64_t root_id;
-    uint64_t stripe_length;
-    uint64_t type;
-    uint32_t opt_io_alignment;
-    uint32_t opt_io_width;
-    uint32_t sector_size;
-    uint16_t num_stripes;
-    uint16_t sub_stripes;
-} CHUNK_ITEM;
-
 struct btrfs_stripe {
     uint64_t devid;
     uint64_t offset;
     BTRFS_UUID dev_uuid;
+};
+
+struct btrfs_chunk {
+    uint64_t length;
+    uint64_t owner;
+    uint64_t stripe_len;
+    uint64_t type;
+    uint32_t io_align;
+    uint32_t io_width;
+    uint32_t sector_size;
+    uint16_t num_stripes;
+    uint16_t sub_stripes;
+    struct btrfs_stripe stripe[1];
 };
 
 typedef struct {

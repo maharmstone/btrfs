@@ -363,8 +363,7 @@ static NTSTATUS add_superblock_stripe(LIST_ENTRY* stripes, uint64_t off, uint64_
 
 static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
     NTSTATUS Status;
-    CHUNK_ITEM* ci = c->chunk_item;
-    struct btrfs_stripe* cis = (struct btrfs_stripe*)&ci[1];
+    struct btrfs_chunk* ci = c->chunk_item;
     uint64_t off_start, off_end, space = 0;
     uint16_t i = 0, j;
     LIST_ENTRY stripes;
@@ -376,15 +375,15 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             for (j = 0; j < ci->num_stripes; j++) {
                 ULONG sub_stripes = max(ci->sub_stripes, 1);
 
-                if (cis[j].offset + (ci->size * ci->num_stripes / sub_stripes) > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
-                    off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % ci->stripe_length;
+                if (c->chunk_item->stripe[j].offset + (ci->length * ci->num_stripes / sub_stripes) > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                    off_start = superblock_addrs[i] - c->chunk_item->stripe[j].offset;
+                    off_start -= off_start % ci->stripe_len;
                     off_start *= ci->num_stripes / sub_stripes;
-                    off_start += (j / sub_stripes) * ci->stripe_length;
+                    off_start += (j / sub_stripes) * ci->stripe_len;
 
-                    off_end = off_start + ci->stripe_length;
+                    off_end = off_start + ci->stripe_len;
 
-                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, 1);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_len, 1);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_superblock_stripe returned %08lx\n", Status);
                         goto end;
@@ -393,16 +392,16 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             }
         } else if (ci->type & BLOCK_FLAG_RAID5) {
             for (j = 0; j < ci->num_stripes; j++) {
-                uint64_t stripe_size = ci->size / (ci->num_stripes - 1);
+                uint64_t stripe_size = ci->length / (ci->num_stripes - 1);
 
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
-                    off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 1));
+                if (c->chunk_item->stripe[j].offset + stripe_size > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                    off_start = superblock_addrs[i] - c->chunk_item->stripe[j].offset;
+                    off_start -= off_start % (ci->stripe_len * (ci->num_stripes - 1));
                     off_start *= ci->num_stripes - 1;
 
-                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 1));
+                    off_end = off_start + (ci->stripe_len * (ci->num_stripes - 1));
 
-                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_len, (off_end - off_start) / ci->stripe_len);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_superblock_stripe returned %08lx\n", Status);
                         goto end;
@@ -411,16 +410,16 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             }
         } else if (ci->type & BLOCK_FLAG_RAID6) {
             for (j = 0; j < ci->num_stripes; j++) {
-                uint64_t stripe_size = ci->size / (ci->num_stripes - 2);
+                uint64_t stripe_size = ci->length / (ci->num_stripes - 2);
 
-                if (cis[j].offset + stripe_size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
-                    off_start = superblock_addrs[i] - cis[j].offset;
-                    off_start -= off_start % (ci->stripe_length * (ci->num_stripes - 2));
+                if (c->chunk_item->stripe[j].offset + stripe_size > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                    off_start = superblock_addrs[i] - c->chunk_item->stripe[j].offset;
+                    off_start -= off_start % (ci->stripe_len * (ci->num_stripes - 2));
                     off_start *= ci->num_stripes - 2;
 
-                    off_end = off_start + (ci->stripe_length * (ci->num_stripes - 2));
+                    off_end = off_start + (ci->stripe_len * (ci->num_stripes - 2));
 
-                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_len, (off_end - off_start) / ci->stripe_len);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_superblock_stripe returned %08lx\n", Status);
                         goto end;
@@ -429,11 +428,11 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
             }
         } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             for (j = 0; j < ci->num_stripes; j++) {
-                if (cis[j].offset + ci->size > superblock_addrs[i] && cis[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
-                    off_start = ((superblock_addrs[i] - cis[j].offset) / c->chunk_item->stripe_length) * c->chunk_item->stripe_length;
-                    off_end = sector_align(superblock_addrs[i] - cis[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_length);
+                if (c->chunk_item->stripe[j].offset + ci->length > superblock_addrs[i] && c->chunk_item->stripe[j].offset <= superblock_addrs[i] + sizeof(struct btrfs_super_block)) {
+                    off_start = ((superblock_addrs[i] - c->chunk_item->stripe[j].offset) / c->chunk_item->stripe_len) * c->chunk_item->stripe_len;
+                    off_end = sector_align(superblock_addrs[i] - c->chunk_item->stripe[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_len);
 
-                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_length, (off_end - off_start) / ci->stripe_length);
+                    Status = add_superblock_stripe(&stripes, off_start / ci->stripe_len, (off_end - off_start) / ci->stripe_len);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_superblock_stripe returned %08lx\n", Status);
                         goto end;
@@ -458,7 +457,7 @@ end:
     }
 
     if (NT_SUCCESS(Status))
-        *size = space * ci->stripe_length;
+        *size = space * ci->stripe_len;
 
     return Status;
 }
@@ -542,7 +541,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (c->chunk_item->size < 0x6400000) { // 100 MB
+    if (c->chunk_item->length < 0x6400000) { // 100 MB
         WARN("deleting free space cache for chunk smaller than 100MB\n");
         goto clearcache;
     }
@@ -651,8 +650,8 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         return Status;
     }
 
-    if (c->chunk_item->size - c->used != total_space + superblock_size) {
-        WARN("invalidating cache for chunk %I64x: space was %I64x, expected %I64x\n", c->offset, total_space + superblock_size, c->chunk_item->size - c->used);
+    if (c->chunk_item->length - c->used != total_space + superblock_size) {
+        WARN("invalidating cache for chunk %I64x: space was %I64x, expected %I64x\n", c->offset, total_space + superblock_size, c->chunk_item->length - c->used);
         goto clearcache;
     }
 
@@ -741,7 +740,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
 
     searchkey.objectid = c->offset;
     searchkey.type = TYPE_FREE_SPACE_INFO;
-    searchkey.offset = c->chunk_item->size;
+    searchkey.offset = c->chunk_item->length;
 
     Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -762,7 +761,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
         tp = next_tp;
 
-        if (tp.item->key.objectid >= c->offset + c->chunk_item->size)
+        if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
             break;
 
         if (tp.item->key.type == TYPE_FREE_SPACE_EXTENT) {
@@ -924,7 +923,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
         lastaddr = c->offset;
 
         do {
-            if (tp.item->key.objectid >= c->offset + c->chunk_item->size)
+            if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
                 break;
 
             if (tp.item->key.objectid >= c->offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
@@ -956,7 +955,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
                 tp = next_tp;
         } while (b);
 
-        if (lastaddr < c->offset + c->chunk_item->size) {
+        if (lastaddr < c->offset + c->chunk_item->length) {
             s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
             if (!s) {
@@ -965,7 +964,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
             }
 
             s->address = lastaddr;
-            s->size = c->offset + c->chunk_item->size - lastaddr;
+            s->size = c->offset + c->chunk_item->length - lastaddr;
             InsertTailList(&c->space, &s->list_entry);
 
             order_space_entry(s, &c->space_size);
@@ -1010,7 +1009,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
         if (!c->readonly && !c->reloc) {
             acquire_chunk_lock(c, fcb->Vcb);
 
-            if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+            if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= length) {
                 if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length, false, 0))
                     return STATUS_SUCCESS;
             }
@@ -1030,7 +1029,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
 
     acquire_chunk_lock(c, fcb->Vcb);
 
-    if (c->chunk_item->type == flags && (c->chunk_item->size - c->used) >= length) {
+    if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= length) {
         if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, length, false, 0))
             return STATUS_SUCCESS;
     }
@@ -1393,7 +1392,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp, LIST_ENT
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->space_changed && c->chunk_item->size >= 0x6400000) { // 100MB
+        if (c->space_changed && c->chunk_item->length >= 0x6400000) { // 100MB
             bool b;
 
             acquire_chunk_lock(c, Vcb);
@@ -1869,7 +1868,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
         return Status;
     }
 
-    while (!IsListEmpty(&space_list) && tp.item->key.objectid < c->offset + c->chunk_item->size) {
+    while (!IsListEmpty(&space_list) && tp.item->key.objectid < c->offset + c->chunk_item->length) {
         traverse_ptr next_tp;
 
         if (tp.item->key.type == TYPE_FREE_SPACE_EXTENT) {
@@ -1937,7 +1936,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
 
     // after loop, delete remaining tree items for this chunk
 
-    while (tp.item->key.objectid < c->offset + c->chunk_item->size) {
+    while (tp.item->key.objectid < c->offset + c->chunk_item->length) {
         traverse_ptr next_tp;
 
         if (tp.item->key.type == TYPE_FREE_SPACE_EXTENT || tp.item->key.type == TYPE_FREE_SPACE_BITMAP) {
@@ -1981,7 +1980,7 @@ after_tree_walk:
 
     searchkey.objectid = c->offset;
     searchkey.type = TYPE_FREE_SPACE_INFO;
-    searchkey.offset = c->chunk_item->size;
+    searchkey.offset = c->chunk_item->length;
 
     Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
@@ -2030,7 +2029,7 @@ after_tree_walk:
     fsi->count = fsi_count;
     fsi->flags = 0;
 
-    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size, fsi, sizeof(*fsi),
+    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length, fsi, sizeof(*fsi),
                               NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
@@ -2056,7 +2055,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->space_changed && c->chunk_item->size >= 0x6400000) { // 100MB
+        if (c->space_changed && c->chunk_item->length >= 0x6400000) { // 100MB
             acquire_chunk_lock(c, Vcb);
             Status = update_chunk_cache(Vcb, c, &now, &batchlist, Irp, rollback);
             release_chunk_lock(c, Vcb);

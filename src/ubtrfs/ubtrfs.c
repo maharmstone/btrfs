@@ -124,7 +124,7 @@ typedef struct {
 
 typedef struct {
     uint64_t offset;
-    CHUNK_ITEM* chunk_item;
+    struct btrfs_chunk* chunk_item;
     uint64_t lastoff;
     uint64_t used;
     LIST_ENTRY used_space;
@@ -365,7 +365,6 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     uint16_t stripes, i;
     btrfs_chunk* c;
     LIST_ENTRY* le;
-    struct btrfs_stripe* cis;
     uint64_t stripe_length = max(sector_size, 0x10000);
 
     off = 0xc00000;
@@ -373,8 +372,8 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     while (le != chunks) {
         c = CONTAINING_RECORD(le, btrfs_chunk, list_entry);
 
-        if (c->offset + c->chunk_item->size > off)
-            off = c->offset + c->chunk_item->size;
+        if (c->offset + c->chunk_item->length > off)
+            off = c->offset + c->chunk_item->length;
 
         le = le->Flink;
     }
@@ -401,27 +400,25 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     c->used = 0;
     InitializeListHead(&c->used_space);
 
-    c->chunk_item = malloc(sizeof(CHUNK_ITEM) + (stripes * sizeof(struct btrfs_stripe)));
+    c->chunk_item = malloc(offsetof(struct btrfs_chunk, stripe) + (stripes * sizeof(struct btrfs_stripe)));
 
-    c->chunk_item->size = size;
-    c->chunk_item->root_id = BTRFS_ROOT_EXTENT;
-    c->chunk_item->stripe_length = stripe_length;
+    c->chunk_item->length = size;
+    c->chunk_item->owner = BTRFS_ROOT_EXTENT;
+    c->chunk_item->stripe_len = stripe_length;
     c->chunk_item->type = flags;
-    c->chunk_item->opt_io_alignment = stripe_length;
-    c->chunk_item->opt_io_width = stripe_length;
+    c->chunk_item->io_align = stripe_length;
+    c->chunk_item->io_width = stripe_length;
     c->chunk_item->sector_size = sector_size;
     c->chunk_item->num_stripes = stripes;
     c->chunk_item->sub_stripes = 0;
 
-    cis = (struct btrfs_stripe*)&c->chunk_item[1];
-
     for (i = 0; i < stripes; i++) {
-        cis[i].devid = dev->dev_item.devid;
-        cis[i].offset = find_chunk_offset(size, c->offset, dev, dev_root, chunkuuid);
-        cis[i].dev_uuid = dev->dev_item.uuid;
+        c->chunk_item->stripe[i].devid = dev->dev_item.devid;
+        c->chunk_item->stripe[i].offset = find_chunk_offset(size, c->offset, dev, dev_root, chunkuuid);
+        c->chunk_item->stripe[i].dev_uuid = dev->dev_item.uuid;
     }
 
-    add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, sizeof(CHUNK_ITEM) + (stripes * sizeof(struct btrfs_stripe)));
+    add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, offsetof(struct btrfs_chunk, stripe) + (stripes * sizeof(struct btrfs_stripe)));
 
     InsertTailList(chunks, &c->list_entry);
 
@@ -429,15 +426,14 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
 }
 
 static bool superblock_collision(btrfs_chunk* c, uint64_t address) {
-    struct btrfs_stripe* cis = (struct btrfs_stripe*)&c->chunk_item[1];
-    uint64_t stripe = (address - c->offset) / c->chunk_item->stripe_length;
+    uint64_t stripe = (address - c->offset) / c->chunk_item->stripe_len;
     uint16_t i, j;
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         j = 0;
         while (superblock_addrs[j] != 0) {
-            if (superblock_addrs[j] >= cis[i].offset) {
-                uint64_t stripe2 = (superblock_addrs[j] - cis[i].offset) / c->chunk_item->stripe_length;
+            if (superblock_addrs[j] >= c->chunk_item->stripe[i].offset) {
+                uint64_t stripe2 = (superblock_addrs[j] - c->chunk_item->stripe[i].offset) / c->chunk_item->stripe_len;
 
                 if (stripe2 == stripe)
                     return true;
@@ -455,9 +451,9 @@ static uint64_t get_next_address(btrfs_chunk* c) {
     addr = c->lastoff;
 
     while (superblock_collision(c, addr)) {
-        addr = addr - ((addr - c->offset) % c->chunk_item->stripe_length) + c->chunk_item->stripe_length;
+        addr = addr - ((addr - c->offset) % c->chunk_item->stripe_len) + c->chunk_item->stripe_len;
 
-        if (addr >= c->offset + c->chunk_item->size) // chunk has been exhausted
+        if (addr >= c->offset + c->chunk_item->length) // chunk has been exhausted
             return 0;
     }
 
@@ -573,12 +569,9 @@ static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* dat
     uint16_t i;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
-    struct btrfs_stripe* cis;
-
-    cis = (struct btrfs_stripe*)&c->chunk_item[1];
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        off.QuadPart = cis[i].offset + address - c->offset;
+        off.QuadPart = c->chunk_item->stripe[i].offset + address - c->offset;
 
         Status = NtWriteFile(h, NULL, NULL, NULL, &iosb, data, size, &off, NULL);
         if (!NT_SUCCESS(Status))
@@ -770,7 +763,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->nodesize = node_size;
     sb->__unused_leafsize = node_size;
     sb->stripesize = sector_size;
-    sb->sys_chunk_array_size = sizeof(struct btrfs_key) + sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe));
+    sb->sys_chunk_array_size = sizeof(struct btrfs_key) + offsetof(struct btrfs_chunk, stripe) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe));
     sb->chunk_root_generation = 1;
     sb->compat_ro_flags = compat_ro_flags;
     sb->incompat_flags = incompat_flags;
@@ -805,7 +798,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     key->objectid = 0x100;
     key->type = TYPE_CHUNK_ITEM;
     key->offset = sys_chunk->offset;
-    memcpy(&key[1], sys_chunk->chunk_item, sizeof(CHUNK_ITEM) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe)));
+    memcpy(&key[1], sys_chunk->chunk_item, offsetof(struct btrfs_chunk, stripe) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe)));
 
     i = 0;
     while (superblock_addrs[i] != 0) {
@@ -889,7 +882,7 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* root) {
         bgi.used = c->used;
         bgi.chunk_tree = 0x100;
         bgi.flags = c->chunk_item->type;
-        add_item(root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->size, &bgi, sizeof(BLOCK_GROUP_ITEM));
+        add_item(root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, &bgi, sizeof(BLOCK_GROUP_ITEM));
 
         le = le->Flink;
     }
@@ -1027,13 +1020,13 @@ static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_
             le2 = le2->Flink;
         }
 
-        if (c->offset + c->chunk_item->size > last_end) {
-            add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, c->offset + c->chunk_item->size - last_end,
+        if (c->offset + c->chunk_item->length > last_end) {
+            add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, c->offset + c->chunk_item->length - last_end,
                      NULL, 0);
             fsi.count++;
         }
 
-        add_item(free_space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->size, &fsi, sizeof(fsi));
+        add_item(free_space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length, &fsi, sizeof(fsi));
 
         le = le->Flink;
     }
