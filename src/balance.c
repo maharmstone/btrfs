@@ -2824,15 +2824,15 @@ static void trim_unalloc_space(_Requires_lock_held_(_Curr_->tree_lock) device_ex
         traverse_ptr next_tp;
 
         if (tp.item->key.objectid == dev->devitem.devid && tp.item->key.type == TYPE_DEV_EXTENT) {
-            if (tp.item->size >= sizeof(DEV_EXTENT)) {
-                DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
+            if (tp.item->size >= sizeof(struct btrfs_dev_extent)) {
+                struct btrfs_dev_extent* de = (struct btrfs_dev_extent*)tp.item->data;
 
                 if (tp.item->key.offset > lastoff)
                     add_trim_entry_avoid_sb(Vcb, dev, lastoff, tp.item->key.offset - lastoff);
 
                 lastoff = tp.item->key.offset + de->length;
             } else {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(DEV_EXTENT));
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dev_extent));
                 return;
             }
         }

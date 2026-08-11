@@ -472,13 +472,13 @@ struct btrfs_root_ref {
     uint16_t name_len;
 };
 
-typedef struct {
-    uint64_t chunktree;
-    uint64_t objid;
-    uint64_t address;
+struct btrfs_dev_extent {
+    uint64_t chunk_tree;
+    uint64_t chunk_objectid;
+    uint64_t chunk_offset;
     uint64_t length;
-    BTRFS_UUID chunktree_uuid;
-} DEV_EXTENT;
+    BTRFS_UUID chunk_tree_uuid;
+};
 
 #define BALANCE_FLAGS_DATA          0x1
 #define BALANCE_FLAGS_SYSTEM        0x2

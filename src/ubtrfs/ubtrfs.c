@@ -342,20 +342,20 @@ static void add_item(btrfs_root* r, uint64_t objectid, uint8_t type, uint64_t of
 
 static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
     uint64_t off;
-    DEV_EXTENT de;
+    struct btrfs_dev_extent de;
 
     off = dev->last_alloc;
     dev->last_alloc += size;
 
     dev->dev_item.bytes_used += size;
 
-    de.chunktree = BTRFS_ROOT_CHUNK;
-    de.objid = 0x100;
-    de.address = offset;
+    de.chunk_tree = BTRFS_ROOT_CHUNK;
+    de.chunk_objectid = 0x100;
+    de.chunk_offset = offset;
     de.length = size;
-    de.chunktree_uuid = *chunkuuid;
+    de.chunk_tree_uuid = *chunkuuid;
 
-    add_item(dev_root, dev->dev_item.devid, TYPE_DEV_EXTENT, off, &de, sizeof(DEV_EXTENT));
+    add_item(dev_root, dev->dev_item.devid, TYPE_DEV_EXTENT, off, &de, sizeof(struct btrfs_dev_extent));
 
     return off;
 }

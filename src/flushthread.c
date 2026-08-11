@@ -4266,21 +4266,21 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     // add DEV_EXTENTs to tree 4
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-        DEV_EXTENT* de;
+        struct btrfs_dev_extent* de;
 
-        de = ExAllocatePoolWithTag(PagedPool, sizeof(DEV_EXTENT), ALLOC_TAG);
+        de = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dev_extent), ALLOC_TAG);
         if (!de) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        de->chunktree = Vcb->chunk_root->id;
-        de->objid = 0x100;
-        de->address = c->offset;
+        de->chunk_tree = Vcb->chunk_root->id;
+        de->chunk_objectid = 0x100;
+        de->chunk_offset = c->offset;
         de->length = c->chunk_item->length / factor;
-        de->chunktree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
+        de->chunk_tree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
 
-        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.devid, TYPE_DEV_EXTENT, c->chunk_item->stripe[i].offset, de, sizeof(DEV_EXTENT), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.devid, TYPE_DEV_EXTENT, c->chunk_item->stripe[i].offset, de, sizeof(struct btrfs_dev_extent), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(de);
@@ -5632,8 +5632,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                     return Status;
                 }
 
-                if (tp.item->size >= sizeof(DEV_EXTENT)) {
-                    DEV_EXTENT* de = (DEV_EXTENT*)tp.item->data;
+                if (tp.item->size >= sizeof(struct btrfs_dev_extent)) {
+                    struct btrfs_dev_extent* de = (struct btrfs_dev_extent*)tp.item->data;
 
                     c->devices[i]->devitem.bytes_used -= de->length;
 
