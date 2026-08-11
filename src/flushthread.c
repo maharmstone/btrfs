@@ -37,7 +37,8 @@ typedef struct {
 } write_context;
 
 typedef struct {
-    EXTENT_ITEM_TREE eit;
+    struct btrfs_extent_item extent_item;
+    struct btrfs_tree_block_info tbi;
     uint8_t type;
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_TREE2;
@@ -846,10 +847,10 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
         return false;
     }
 
-    eit2->eit.extent_item.refs = 1;
-    eit2->eit.extent_item.generation = Vcb->superblock.generation;
-    eit2->eit.extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
-    eit2->eit.level = level;
+    eit2->extent_item.refs = 1;
+    eit2->extent_item.generation = Vcb->superblock.generation;
+    eit2->extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
+    eit2->tbi.level = level;
     eit2->type = TYPE_TREE_BLOCK_REF;
     eit2->tbr.offset = root_id;
 
@@ -1865,7 +1866,8 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                 }
 
                 if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
-                    EXTENT_ITEM_TREE* eit;
+                    struct btrfs_extent_item* ei;
+                    struct btrfs_tree_block_info* tbi;
 
                     searchkey.objectid = t->new_address;
                     searchkey.type = TYPE_EXTENT_ITEM;
@@ -1882,13 +1884,15 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                         return STATUS_INTERNAL_ERROR;
                     }
 
-                    if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
-                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+                    if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
+                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
                         return STATUS_INTERNAL_ERROR;
                     }
 
-                    eit = (EXTENT_ITEM_TREE*)tp.item->data;
-                    eit->firstitem = firstitem;
+                    ei = (struct btrfs_extent_item*)tp.item->data;
+                    tbi = (struct btrfs_tree_block_info*)&ei[1];
+
+                    tbi->key = firstitem;
                 }
 
                 nothing_found = false;
@@ -3589,35 +3593,38 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
     }
 
     if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-        EXTENT_ITEM_TREE* eit;
+        struct btrfs_extent_item* ei;
+        struct btrfs_tree_block_info* tbi;
 
-        if (tp.item->size < sizeof(EXTENT_ITEM_TREE)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM_TREE));
+        if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
             return STATUS_INTERNAL_ERROR;
         }
 
-        eit = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+        ei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
 
-        if (!eit) {
+        if (!ei) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        RtlCopyMemory(eit, tp.item->data, tp.item->size);
+        RtlCopyMemory(ei, tp.item->data, tp.item->size);
 
         Status = delete_tree_item(Vcb, &tp);
         if (!NT_SUCCESS(Status)) {
             ERR("delete_tree_item returned %08lx\n", Status);
-            ExFreePool(eit);
+            ExFreePool(ei);
             return Status;
         }
 
-        eit->level = level;
+        tbi = (struct btrfs_tree_block_info*)&ei[1];
 
-        Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, eit, tp.item->size, NULL, Irp);
+        tbi->level = level;
+
+        Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, ei, tp.item->size, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
-            ExFreePool(eit);
+            ExFreePool(ei);
             return Status;
         }
 

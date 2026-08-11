@@ -407,12 +407,6 @@ struct btrfs_extent_item_v0 {
 };
 
 typedef struct {
-    struct btrfs_extent_item extent_item;
-    struct btrfs_key firstitem;
-    uint8_t level;
-} EXTENT_ITEM_TREE;
-
-typedef struct {
     uint64_t offset;
 } TREE_BLOCK_REF;
 
