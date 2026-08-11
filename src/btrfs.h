@@ -452,11 +452,11 @@ typedef struct {
 #define FREE_SPACE_EXTENT 1
 #define FREE_SPACE_BITMAP 2
 
-typedef struct {
+struct btrfs_free_space_entry {
     uint64_t offset;
-    uint64_t size;
+    uint64_t bytes;
     uint8_t type;
-} FREE_SPACE_ENTRY;
+};
 
 typedef struct {
     struct btrfs_key key;

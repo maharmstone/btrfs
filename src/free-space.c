@@ -470,7 +470,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     uint8_t* data;
     NTSTATUS Status;
     uint32_t *checksums, crc32, num_sectors, num_valid_sectors, size;
-    FREE_SPACE_ENTRY* fse;
+    struct btrfs_free_space_entry* fse;
     uint64_t num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
     LIST_ENTRY *le, rollback;
 
@@ -571,7 +571,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         goto clearcache;
     }
 
-    extent_length = (num_sectors * sizeof(uint32_t)) + sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
+    extent_length = (num_sectors * sizeof(uint32_t)) + sizeof(uint64_t) + (num_entries * sizeof(struct btrfs_free_space_entry));
 
     num_valid_sectors = (ULONG)((sector_align(extent_length, Vcb->superblock.sectorsize) >> Vcb->sector_shift) + num_bitmaps);
 
@@ -600,25 +600,25 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     bmpnum = 0;
     for (uint32_t i = 0; i < num_entries; i++) {
-        if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
+        if ((off + sizeof(struct btrfs_free_space_entry)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
             off = sector_align(off, Vcb->superblock.sectorsize);
 
-        fse = (FREE_SPACE_ENTRY*)&data[off];
+        fse = (struct btrfs_free_space_entry*)&data[off];
 
         if (fse->type == FREE_SPACE_EXTENT) {
-            Status = add_space_entry(&c->space, &c->space_size, fse->offset, fse->size);
+            Status = add_space_entry(&c->space, &c->space_size, fse->offset, fse->bytes);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08lx\n", Status);
                 ExFreePool(data);
                 return Status;
             }
 
-            total_space += fse->size;
+            total_space += fse->bytes;
         } else if (fse->type != FREE_SPACE_BITMAP) {
             ERR("unknown free-space type %x\n", fse->type);
         }
 
-        off += sizeof(FREE_SPACE_ENTRY);
+        off += sizeof(struct btrfs_free_space_entry);
     }
 
     if (num_bitmaps > 0) {
@@ -626,10 +626,10 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
         for (uint32_t i = 0; i < num_entries; i++) {
-            if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
+            if ((off + sizeof(struct btrfs_free_space_entry)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
                 off = sector_align(off, Vcb->superblock.sectorsize);
 
-            fse = (FREE_SPACE_ENTRY*)&data[off];
+            fse = (struct btrfs_free_space_entry*)&data[off];
 
             if (fse->type == FREE_SPACE_BITMAP) {
                 // FIXME - make sure we don't overflow the buffer here
@@ -637,7 +637,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
                 bmpnum++;
             }
 
-            off += sizeof(FREE_SPACE_ENTRY);
+            off += sizeof(struct btrfs_free_space_entry);
         }
     }
 
@@ -1074,7 +1074,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         }
     }
 
-    new_cache_size = sizeof(uint64_t) + (num_entries * sizeof(FREE_SPACE_ENTRY));
+    new_cache_size = sizeof(uint64_t) + (num_entries * sizeof(struct btrfs_free_space_entry));
 
     num_sectors = (uint32_t)sector_align(new_cache_size, Vcb->superblock.sectorsize) >> Vcb->sector_shift;
     num_sectors = (uint32_t)sector_align(num_sectors, CACHE_INCREMENTS);
@@ -1083,10 +1083,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
     // FIXME - there must be a more efficient way of doing this
     new_cache_size = sizeof(uint64_t) + (sizeof(uint32_t) * num_sectors);
     for (i = 0; i < num_entries; i++) {
-        if ((new_cache_size >> Vcb->sector_shift) != ((new_cache_size + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift))
+        if ((new_cache_size >> Vcb->sector_shift) != ((new_cache_size + sizeof(struct btrfs_free_space_entry)) >> Vcb->sector_shift))
             new_cache_size = sector_align(new_cache_size, Vcb->superblock.sectorsize);
 
-        new_cache_size += sizeof(FREE_SPACE_ENTRY);
+        new_cache_size += sizeof(struct btrfs_free_space_entry);
     }
 
     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS << Vcb->sector_shift);
@@ -1735,21 +1735,21 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
     off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
     while (!IsListEmpty(&space_list)) {
-        FREE_SPACE_ENTRY* fse;
+        struct btrfs_free_space_entry* fse;
 
         space* s = CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry);
 
-        if ((off + sizeof(FREE_SPACE_ENTRY)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
+        if ((off + sizeof(struct btrfs_free_space_entry)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
             off = sector_align(off, Vcb->superblock.sectorsize);
 
-        fse = (FREE_SPACE_ENTRY*)((uint8_t*)data + off);
+        fse = (struct btrfs_free_space_entry*)((uint8_t*)data + off);
 
         fse->offset = s->address;
-        fse->size = s->size;
+        fse->bytes = s->size;
         fse->type = FREE_SPACE_EXTENT;
         num_entries++;
 
-        off += sizeof(FREE_SPACE_ENTRY);
+        off += sizeof(struct btrfs_free_space_entry);
     }
 
     // update INODE_ITEM
