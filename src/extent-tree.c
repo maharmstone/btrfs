@@ -912,6 +912,18 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                                     level, Irp);
 }
 
+NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
+                                               uint64_t offset, struct btrfs_key* firstitem,
+                                               uint8_t level, PIRP Irp) {
+    SHARED_BLOCK_REF sbr;
+
+    sbr.offset = offset;
+
+    return increase_extent_refcount(Vcb, address, Vcb->superblock.nodesize,
+                                    TYPE_SHARED_BLOCK_REF, &sbr, firstitem,
+                                    level, Irp);
+}
+
 NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
                                   uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
     struct btrfs_key searchkey;

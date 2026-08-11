@@ -1341,20 +1341,21 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
                 if (!td->inserted) {
                     if (t->header.owner == t->root->id) {
-                        SHARED_BLOCK_REF sbr;
-
-                        sbr.offset = t->header.bytenr;
-
-                        Status = increase_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, &td->key, t->header.level - 1, Irp);
+                        Status = increase_extent_refcount_shared_block(Vcb, td->treeholder.address,
+                                                                       t->header.bytenr, &td->key,
+                                                                       t->header.level - 1, Irp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("increase_extent_refcount_shared_block returned %08lx\n", Status);
+                            return Status;
+                        }
                     } else {
                         Status = increase_extent_refcount_tree(Vcb, td->treeholder.address,
                                                                t->root->id, &td->key,
                                                                t->header.level - 1, Irp);
-                    }
-
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("increase_extent_refcount returned %08lx\n", Status);
-                        return Status;
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("increase_extent_refcount_tree returned %08lx\n", Status);
+                            return Status;
+                        }
                     }
                 }
 

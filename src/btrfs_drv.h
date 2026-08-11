@@ -1501,6 +1501,9 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 // in extent-tree.c
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset, uint32_t refcount, PIRP Irp);
 NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t offset, struct btrfs_key* firstitem, uint8_t level, PIRP Irp);
+NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
+                                               uint64_t offset, struct btrfs_key* firstitem,
+                                               uint8_t level, PIRP Irp);
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset,
                                        uint32_t refcount, bool superseded, PIRP Irp);
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint8_t level, PIRP Irp);
