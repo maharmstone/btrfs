@@ -429,12 +429,12 @@ struct btrfs_block_group_item {
     uint64_t flags;
 };
 
-typedef struct {
+struct btrfs_extent_ref_v0 {
     uint64_t root;
-    uint64_t gen;
-    uint64_t objid;
+    uint64_t generation;
+    uint64_t objectid;
     uint32_t count;
-} EXTENT_REF_V0;
+};
 
 typedef struct {
     uint64_t offset;

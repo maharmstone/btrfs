@@ -1024,7 +1024,7 @@ __inline static uint16_t get_extent_data_len(uint8_t type) {
             return sizeof(struct btrfs_extent_data_ref);
 
         case TYPE_EXTENT_REF_V0:
-            return sizeof(EXTENT_REF_V0);
+            return sizeof(struct btrfs_extent_ref_v0);
 
         case TYPE_SHARED_BLOCK_REF:
             return sizeof(SHARED_BLOCK_REF);
@@ -1050,7 +1050,7 @@ __inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
 
         case TYPE_EXTENT_REF_V0:
         {
-            EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)data;
+            struct btrfs_extent_ref_v0* erv0 = (struct btrfs_extent_ref_v0*)data;
             return erv0->count;
         }
 

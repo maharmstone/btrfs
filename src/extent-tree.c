@@ -404,8 +404,8 @@ static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, bool
     while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
         tp = next_tp;
 
-        if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_REF_V0 && tp.item->size >= sizeof(EXTENT_REF_V0)) {
-            EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp.item->data;
+        if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_REF_V0 && tp.item->size >= sizeof(struct btrfs_extent_ref_v0)) {
+            struct btrfs_extent_ref_v0* erv0 = (struct btrfs_extent_ref_v0*)tp.item->data;
 
             if (tree) {
                 if (tp.item->key.offset == tp.item->key.objectid) { // top of the tree
@@ -1488,7 +1488,7 @@ NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint6
 
         return STATUS_SUCCESS;
     } else if (type == TYPE_EXTENT_REF_V0) {
-        EXTENT_REF_V0* erv0 = (EXTENT_REF_V0*)tp2.item->data;
+        struct btrfs_extent_ref_v0* erv0 = (struct btrfs_extent_ref_v0*)tp2.item->data;
         struct btrfs_extent_item* newei;
 
         if (ei->refs == erv0->count) {
