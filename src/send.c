@@ -870,17 +870,17 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
 }
 
 static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool tree2) {
-    INODE_EXTREF* ier;
+    struct btrfs_inode_extref* ier;
     uint16_t len;
 
-    if (tp->item->size < sizeof(INODE_EXTREF)) {
+    if (tp->item->size < offsetof(struct btrfs_inode_extref, name)) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-            tp->item->size, sizeof(INODE_EXTREF));
+            tp->item->size, offsetof(struct btrfs_inode_extref, name));
         return STATUS_INTERNAL_ERROR;
     }
 
     len = tp->item->size;
-    ier = (INODE_EXTREF*)tp->item->data;
+    ier = (struct btrfs_inode_extref*)tp->item->data;
 
     while (len > 0) {
         NTSTATUS Status;
@@ -888,16 +888,16 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
         orphan* o2 = NULL;
         ref* r;
 
-        if (len < sizeof(INODE_EXTREF) || len < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+        if (len < offsetof(struct btrfs_inode_extref, name) || len < offsetof(struct btrfs_inode_extref, name) + ier->name_len) {
             ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ier->dir != SUBVOL_ROOT_INODE) {
+        if (ier->parent_objectid != SUBVOL_ROOT_INODE) {
             LIST_ENTRY* le;
             bool added_dummy;
 
-            Status = find_send_dir(context, ier->dir, context->root->root_item.ctransid, &sd, &added_dummy);
+            Status = find_send_dir(context, ier->parent_objectid, context->root->root_item.ctransid, &sd, &added_dummy);
             if (!NT_SUCCESS(Status)) {
                 ERR("find_send_dir returned %08lx\n", Status);
                 return Status;
@@ -911,10 +911,10 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
                 while (le != &context->orphans) {
                     o2 = CONTAINING_RECORD(le, orphan, list_entry);
 
-                    if (o2->inode == ier->dir) {
+                    if (o2->inode == ier->parent_objectid) {
                         found = true;
                         break;
-                    } else if (o2->inode > ier->dir)
+                    } else if (o2->inode > ier->parent_objectid)
                         break;
 
                     le = le->Flink;
@@ -926,7 +926,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
                     send_command(context, BTRFS_SEND_CMD_MKDIR);
 
                     send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
-                    send_add_tlv(context, BTRFS_SEND_TLV_INODE, &ier->dir, sizeof(uint64_t));
+                    send_add_tlv(context, BTRFS_SEND_TLV_INODE, &ier->parent_objectid, sizeof(uint64_t));
 
                     send_command_finish(context, pos);
 
@@ -936,7 +936,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    o2->inode = ier->dir;
+                    o2->inode = ier->parent_objectid;
                     o2->dir = true;
                     memcpy(o2->tmpname, sd->name, sd->namelen);
                     o2->tmpname[sd->namelen] = 0;
@@ -947,20 +947,20 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
         } else
             sd = context->root_dir;
 
-        r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ier->n, ALLOC_TAG);
+        r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ier->name_len, ALLOC_TAG);
         if (!r) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         r->sd = sd;
-        r->namelen = ier->n;
-        RtlCopyMemory(r->name, ier->name, ier->n);
+        r->namelen = ier->name_len;
+        RtlCopyMemory(r->name, ier->name, ier->name_len);
 
         InsertTailList(tree2 ? &context->lastinode.oldrefs : &context->lastinode.refs, &r->list_entry);
 
-        len -= (uint16_t)offsetof(INODE_EXTREF, name[0]) + ier->n;
-        ier = (INODE_EXTREF*)&ier->name[ier->n];
+        len -= (uint16_t)offsetof(struct btrfs_inode_extref, name) + ier->name_len;
+        ier = (struct btrfs_inode_extref*)&ier->name[ier->name_len];
     }
 
     return STATUS_SUCCESS;
@@ -1878,15 +1878,15 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             len += ir->name_len;
             num = tp.item->key.offset;
         } else {
-            INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+            struct btrfs_inode_extref* ier = (struct btrfs_inode_extref*)tp.item->data;
 
-            if (tp.item->size < sizeof(INODE_EXTREF) || tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+            if (tp.item->size < offsetof(struct btrfs_inode_extref, name) || tp.item->size < offsetof(struct btrfs_inode_extref, name) + ier->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return false;
             }
 
-            len += ier->n;
-            num = ier->dir;
+            len += ier->name_len;
+            num = ier->parent_objectid;
         }
     }
 
@@ -1923,11 +1923,11 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             ptr -= ir->name_len;
             num = tp.item->key.offset;
         } else {
-            INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+            struct btrfs_inode_extref* ier = (struct btrfs_inode_extref*)tp.item->data;
 
-            RtlCopyMemory(ptr - ier->n, ier->name, ier->n);
-            ptr -= ier->n;
-            num = ier->dir;
+            RtlCopyMemory(ptr - ier->name_len, ier->name, ier->name_len);
+            ptr -= ier->name_len;
+            num = ier->parent_objectid;
         }
     }
 

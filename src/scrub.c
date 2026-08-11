@@ -187,18 +187,18 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
 
                 dir = tp.item->key.offset;
             } else if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == TYPE_INODE_EXTREF) {
-                INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
+                struct btrfs_inode_extref* ier = (struct btrfs_inode_extref*)tp.item->data;
                 path_part* pp;
 
-                if (tp.item->size < sizeof(INODE_EXTREF)) {
+                if (tp.item->size < offsetof(struct btrfs_inode_extref, name)) {
                     ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                                                                                  tp.item->size, sizeof(INODE_EXTREF));
+                                                                                  tp.item->size, offsetof(struct btrfs_inode_extref, name));
                     goto end;
                 }
 
-                if (tp.item->size < offsetof(INODE_EXTREF, name[0]) + ier->n) {
+                if (tp.item->size < offsetof(struct btrfs_inode_extref, name) + ier->name_len) {
                     ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                        tp.item->size, offsetof(INODE_EXTREF, name[0]) + ier->n);
+                        tp.item->size, offsetof(struct btrfs_inode_extref, name) + ier->name_len);
                     goto end;
                 }
 
@@ -208,16 +208,16 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                     goto end;
                 }
 
-                pp->name.Buffer = ier->name;
-                pp->name.Length = pp->name.MaximumLength = ier->n;
+                pp->name.Buffer = (char*)ier->name;
+                pp->name.Length = pp->name.MaximumLength = ier->name_len;
                 pp->orig_subvol = orig_subvol;
 
                 InsertTailList(&parts, &pp->list_entry);
 
-                if (dir == ier->dir)
+                if (dir == ier->parent_objectid)
                     break;
 
-                dir = ier->dir;
+                dir = ier->parent_objectid;
             } else {
                 ERR("could not find INODE_REF for inode %I64x in subvol %I64x\n", dir, r->id);
                 goto end;

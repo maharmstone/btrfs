@@ -384,12 +384,12 @@ struct btrfs_inode_ref {
     uint16_t name_len;
 };
 
-typedef struct {
-    uint64_t dir;
+struct btrfs_inode_extref {
+    uint64_t parent_objectid;
     uint64_t index;
-    uint16_t n;
-    char name[1];
-} INODE_EXTREF;
+    uint16_t name_len;
+    uint8_t name[];
+};
 
 #define EXTENT_ITEM_DATA            0x001
 #define EXTENT_ITEM_TREE_BLOCK      0x002
