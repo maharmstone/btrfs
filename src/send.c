@@ -62,7 +62,7 @@ typedef struct {
     uint64_t offset;
     LIST_ENTRY list_entry;
     ULONG datalen;
-    EXTENT_DATA data;
+    struct btrfs_file_extent_item data;
 } send_ext;
 
 typedef struct {
@@ -236,7 +236,7 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    EXTENT_DATA* ed;
+    struct btrfs_file_extent_item* ed;
 
     searchkey.objectid = inode;
     searchkey.type = TYPE_EXTENT_DATA;
@@ -253,13 +253,13 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (tp.item->size < sizeof(EXTENT_DATA)) {
+    if (tp.item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-            tp.item->size, sizeof(EXTENT_DATA));
+            tp.item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr));
         return STATUS_INTERNAL_ERROR;
     }
 
-    ed = (EXTENT_DATA*)tp.item->data;
+    ed = (struct btrfs_file_extent_item*)tp.item->data;
 
     if (ed->type != EXTENT_TYPE_INLINE) {
         WARN("symlink data was not inline, returning blank string\n");
@@ -268,14 +268,14 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
         return STATUS_SUCCESS;
     }
 
-    if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
+    if (tp.item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-            tp.item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
+            tp.item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
         return STATUS_INTERNAL_ERROR;
     }
 
-    *link = (char*)ed->data;
-    *linklen = (uint16_t)ed->decoded_size;
+    *link = (char*)&ed->disk_bytenr;
+    *linklen = (uint16_t)ed->ram_bytes;
 
     return STATUS_SUCCESS;
 }
@@ -1658,51 +1658,43 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
         send_ext* ext = CONTAINING_RECORD(le, send_ext, list_entry);
 
         if (ext->offset > lastoff) {
-            send_ext* ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + sizeof(EXTENT_DATA2), ALLOC_TAG);
-            EXTENT_DATA2* ed2;
+            send_ext* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(send_ext), ALLOC_TAG);
 
             if (!ext2) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            ed2 = (EXTENT_DATA2*)ext2->data.data;
-
             ext2->offset = lastoff;
-            ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
-            ext2->data.decoded_size = ed2->num_bytes = ext->offset - lastoff;
+            ext2->datalen = sizeof(struct btrfs_file_extent_item);
+            ext2->data.ram_bytes = ext2->data.num_bytes = ext->offset - lastoff;
             ext2->data.type = EXTENT_TYPE_REGULAR;
-            ed2->address = ed2->size = ed2->offset = 0;
+            ext2->data.disk_bytenr = ext2->data.disk_num_bytes = ext2->data.offset = 0;
 
             InsertHeadList(le->Blink, &ext2->list_entry);
         }
 
         if (ext->data.type == EXTENT_TYPE_INLINE)
-            lastoff = ext->offset + ext->data.decoded_size;
-        else {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->data.data;
-            lastoff = ext->offset + ed2->num_bytes;
-        }
+            lastoff = ext->offset + ext->data.ram_bytes;
+        else
+            lastoff = ext->offset + ext->data.num_bytes;
 
         le = le->Flink;
     }
 
     if (size > lastoff) {
-        send_ext* ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + sizeof(EXTENT_DATA2), ALLOC_TAG);
-        EXTENT_DATA2* ed2;
+        send_ext* ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(send_ext), ALLOC_TAG);
 
         if (!ext2) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        ed2 = (EXTENT_DATA2*)ext2->data.data;
-
         ext2->offset = lastoff;
-        ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
-        ext2->data.decoded_size = ed2->num_bytes = sector_align(size - lastoff, Vcb->superblock.sectorsize);
+        ext2->datalen = sizeof(struct btrfs_file_extent_item);
+        ext2->data.ram_bytes = ext2->data.num_bytes = sector_align(size - lastoff, Vcb->superblock.sectorsize);
         ext2->data.type = EXTENT_TYPE_REGULAR;
-        ed2->address = ed2->size = ed2->offset = 0;
+        ext2->data.disk_bytenr = ext2->data.disk_num_bytes = ext2->data.offset = 0;
 
         InsertTailList(exts, &ext2->list_entry);
     }
@@ -1712,11 +1704,10 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
 
 static NTSTATUS divide_ext(send_ext* ext, uint64_t len, bool trunc) {
     send_ext* ext2;
-    EXTENT_DATA2 *ed2a, *ed2b;
 
     if (ext->data.type == EXTENT_TYPE_INLINE) {
         if (!trunc) {
-            ext2 = ExAllocatePoolWithTag(PagedPool, (ULONG)(offsetof(send_ext, data.data) + ext->data.decoded_size - len), ALLOC_TAG);
+            ext2 = ExAllocatePoolWithTag(PagedPool, (ULONG)(offsetof(send_ext, data.disk_bytenr) + ext->data.ram_bytes - len), ALLOC_TAG);
 
             if (!ext2) {
                 ERR("out of memory\n");
@@ -1724,60 +1715,56 @@ static NTSTATUS divide_ext(send_ext* ext, uint64_t len, bool trunc) {
             }
 
             ext2->offset = ext->offset + len;
-            ext2->datalen = (ULONG)(ext->data.decoded_size - len);
-            ext2->data.decoded_size = ext->data.decoded_size - len;
+            ext2->datalen = (ULONG)(ext->data.ram_bytes - len);
+            ext2->data.ram_bytes = ext->data.ram_bytes - len;
             ext2->data.compression = ext->data.compression;
             ext2->data.encryption = ext->data.encryption;
-            ext2->data.encoding = ext->data.encoding;
+            ext2->data.other_encoding = ext->data.other_encoding;
             ext2->data.type = ext->data.type;
-            RtlCopyMemory(ext2->data.data, ext->data.data + len, (ULONG)(ext->data.decoded_size - len));
+            RtlCopyMemory(&ext2->data.disk_bytenr, (uint8_t*)&ext->data.disk_bytenr + len, (ULONG)(ext->data.ram_bytes - len));
 
             InsertHeadList(&ext->list_entry, &ext2->list_entry);
         }
 
-        ext->data.decoded_size = len;
+        ext->data.ram_bytes = len;
 
         return STATUS_SUCCESS;
     }
 
-    ed2a = (EXTENT_DATA2*)ext->data.data;
-
     if (!trunc) {
-        ext2 = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data.data) + sizeof(EXTENT_DATA2), ALLOC_TAG);
+        ext2 = ExAllocatePoolWithTag(PagedPool, sizeof(send_ext), ALLOC_TAG);
 
         if (!ext2) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        ed2b = (EXTENT_DATA2*)ext2->data.data;
-
         ext2->offset = ext->offset + len;
-        ext2->datalen = offsetof(EXTENT_DATA, data) + sizeof(EXTENT_DATA2);
+        ext2->datalen = sizeof(struct btrfs_file_extent_item);
 
         ext2->data.compression = ext->data.compression;
         ext2->data.encryption = ext->data.encryption;
-        ext2->data.encoding = ext->data.encoding;
+        ext2->data.other_encoding = ext->data.other_encoding;
         ext2->data.type = ext->data.type;
-        ed2b->num_bytes = ed2a->num_bytes - len;
+        ext2->data.num_bytes = ext->data.num_bytes - len;
 
-        if (ed2a->size == 0) {
-            ext2->data.decoded_size = ed2b->num_bytes;
-            ext->data.decoded_size = len;
+        if (ext->data.disk_num_bytes == 0) {
+            ext2->data.ram_bytes = ext2->data.num_bytes;
+            ext->data.ram_bytes = len;
 
-            ed2b->address = ed2b->size = ed2b->offset = 0;
+            ext2->data.disk_bytenr = ext2->data.disk_num_bytes = ext2->data.offset = 0;
         } else {
-            ext2->data.decoded_size = ext->data.decoded_size;
+            ext2->data.ram_bytes = ext->data.ram_bytes;
 
-            ed2b->address = ed2a->address;
-            ed2b->size = ed2a->size;
-            ed2b->offset = ed2a->offset + len;
+            ext2->data.disk_bytenr = ext->data.disk_bytenr;
+            ext2->data.disk_num_bytes = ext->data.disk_num_bytes;
+            ext2->data.offset = ext->data.offset + len;
         }
 
         InsertHeadList(&ext->list_entry, &ext2->list_entry);
     }
 
-    ed2a->num_bytes = len;
+    ext->data.num_bytes = len;
 
     return STATUS_SUCCESS;
 }
@@ -1791,13 +1778,9 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
 
     do {
         uint64_t len1, len2;
-        EXTENT_DATA2 *ed2a, *ed2b;
 
-        ed2a = ext1->data.type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ext1->data.data;
-        ed2b = ext2->data.type == EXTENT_TYPE_INLINE ? NULL : (EXTENT_DATA2*)ext2->data.data;
-
-        len1 = ed2a ? ed2a->num_bytes : ext1->data.decoded_size;
-        len2 = ed2b ? ed2b->num_bytes : ext2->data.decoded_size;
+        len1 = ext1->data.type == EXTENT_TYPE_INLINE ? ext1->data.ram_bytes : ext1->data.num_bytes;
+        len2 = ext2->data.type == EXTENT_TYPE_INLINE ? ext2->data.ram_bytes : ext2->data.num_bytes;
 
         if (len1 < len2) {
             Status = divide_ext(ext2, len1, false);
@@ -1939,7 +1922,6 @@ static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_exte
     root* r = NULL;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    EXTENT_DATA2* seed2 = (EXTENT_DATA2*)se->data.data;
 
     if (context->parent && edr->root == context->parent->id)
         r = context->parent;
@@ -1972,21 +1954,19 @@ static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_exte
         traverse_ptr next_tp;
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-            if (tp.item->size < sizeof(EXTENT_DATA))
-                ERR("(%I64x,%x,%I64x) has size %u, not at least %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_DATA));
+            if (tp.item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr))
+                ERR("(%I64x,%x,%I64x) has size %u, not at least %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr));
             else {
-                EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+                struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)tp.item->data;
 
                 if (ed->type == EXTENT_TYPE_REGULAR) {
-                    if (tp.item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2))
+                    if (tp.item->size < sizeof(struct btrfs_file_extent_item))
                         ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                            tp.item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+                            tp.item->size, sizeof(struct btrfs_file_extent_item));
                     else {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                        if (ed2->address == seed2->address && ed2->size == seed2->size && seed2->offset <= ed2->offset && seed2->offset + seed2->num_bytes >= ed2->offset + ed2->num_bytes) {
-                            uint64_t clone_offset = tp.item->key.offset + ed2->offset - seed2->offset;
-                            uint64_t clone_len = min(context->lastinode.size - se->offset, ed2->num_bytes);
+                        if (ed->disk_bytenr == se->data.disk_bytenr && ed->disk_num_bytes == se->data.disk_num_bytes && se->data.offset <= ed->offset && se->data.offset + se->data.num_bytes >= ed->offset + ed->num_bytes) {
+                            uint64_t clone_offset = tp.item->key.offset + ed->offset - se->data.offset;
+                            uint64_t clone_len = min(context->lastinode.size - se->offset, ed->num_bytes);
 
                             if ((clone_offset & (context->Vcb->superblock.sectorsize - 1)) == 0 && (clone_len & (context->Vcb->superblock.sectorsize - 1)) == 0) {
                                 ULONG pos = context->datalen;
@@ -2029,13 +2009,12 @@ static bool try_clone(send_context* context, send_ext* se) {
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)se->data.data;
     struct btrfs_extent_item* ei;
     uint64_t rc = 0;
 
-    searchkey.objectid = ed2->address;
+    searchkey.objectid = se->data.disk_bytenr;
     searchkey.type = TYPE_EXTENT_ITEM;
-    searchkey.offset = ed2->size;
+    searchkey.offset = se->data.disk_num_bytes;
 
     Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, false, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -2154,23 +2133,17 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         send_ext* se = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.exts), send_ext, list_entry);
         send_ext* se2 = context->parent ? CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldexts), send_ext, list_entry) : NULL;
         ULONG pos;
-        EXTENT_DATA2* ed2;
 
         if (se2) {
             if (se->data.type == EXTENT_TYPE_INLINE && se2->data.type == EXTENT_TYPE_INLINE &&
-                RtlCompareMemory(se->data.data, se2->data.data, (ULONG)se->data.decoded_size) == (ULONG)se->data.decoded_size) {
+                RtlCompareMemory(&se->data.disk_bytenr, &se2->data.disk_bytenr, (ULONG)se->data.ram_bytes) == (ULONG)se->data.ram_bytes) {
                 ExFreePool(se);
                 ExFreePool(se2);
                 continue;
             }
 
             if (se->data.type == EXTENT_TYPE_REGULAR && se2->data.type == EXTENT_TYPE_REGULAR) {
-                EXTENT_DATA2 *ed2a, *ed2b;
-
-                ed2a = (EXTENT_DATA2*)se->data.data;
-                ed2b = (EXTENT_DATA2*)se2->data.data;
-
-                if (RtlCompareMemory(ed2a, ed2b, sizeof(EXTENT_DATA2)) == sizeof(EXTENT_DATA2)) {
+                if (RtlCompareMemory(&se->data.disk_bytenr, &se2->data.disk_bytenr, sizeof(struct btrfs_file_extent_item) - offsetof(struct btrfs_file_extent_item, disk_bytenr)) == sizeof(struct btrfs_file_extent_item) - offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
                     ExFreePool(se);
                     ExFreePool(se2);
                     continue;
@@ -2187,15 +2160,15 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &se->offset, sizeof(uint64_t));
 
             if (se->data.compression == BTRFS_COMPRESSION_NONE)
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, se->data.data, (uint16_t)se->data.decoded_size);
+                send_add_tlv(context, BTRFS_SEND_TLV_DATA, (uint8_t*)&se->data.disk_bytenr, (uint16_t)se->data.ram_bytes);
             else if (se->data.compression == BTRFS_COMPRESSION_ZLIB || se->data.compression == BTRFS_COMPRESSION_LZO || se->data.compression == BTRFS_COMPRESSION_ZSTD) {
-                ULONG inlen = se->datalen - (ULONG)offsetof(EXTENT_DATA, data[0]);
+                ULONG inlen = se->datalen - (ULONG)offsetof(struct btrfs_file_extent_item, disk_bytenr);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, (uint16_t)se->data.decoded_size);
-                RtlZeroMemory(&context->data[context->datalen - se->data.decoded_size], (ULONG)se->data.decoded_size);
+                send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, (uint16_t)se->data.ram_bytes);
+                RtlZeroMemory(&context->data[context->datalen - se->data.ram_bytes], (ULONG)se->data.ram_bytes);
 
                 if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
-                    Status = zlib_decompress(se->data.data, inlen, &context->data[context->datalen - se->data.decoded_size], (uint32_t)se->data.decoded_size);
+                    Status = zlib_decompress((uint8_t*)&se->data.disk_bytenr, inlen, &context->data[context->datalen - se->data.ram_bytes], (uint32_t)se->data.ram_bytes);
                     if (!NT_SUCCESS(Status)) {
                         ERR("zlib_decompress returned %08lx\n", Status);
                         ExFreePool(se);
@@ -2211,7 +2184,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     } else
                         inlen -= sizeof(uint32_t);
 
-                    Status = lzo_decompress(se->data.data + sizeof(uint32_t), inlen, &context->data[context->datalen - se->data.decoded_size], (uint32_t)se->data.decoded_size, sizeof(uint32_t));
+                    Status = lzo_decompress((uint8_t*)&se->data.disk_bytenr + sizeof(uint32_t), inlen, &context->data[context->datalen - se->data.ram_bytes], (uint32_t)se->data.ram_bytes, sizeof(uint32_t));
                     if (!NT_SUCCESS(Status)) {
                         ERR("lzo_decompress returned %08lx\n", Status);
                         ExFreePool(se);
@@ -2219,7 +2192,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                         return Status;
                     }
                 } else if (se->data.compression == BTRFS_COMPRESSION_ZSTD) {
-                    Status = zstd_decompress(se->data.data, inlen, &context->data[context->datalen - se->data.decoded_size], (uint32_t)se->data.decoded_size);
+                    Status = zstd_decompress((uint8_t*)&se->data.disk_bytenr, inlen, &context->data[context->datalen - se->data.ram_bytes], (uint32_t)se->data.ram_bytes);
                     if (!NT_SUCCESS(Status)) {
                         ERR("zlib_decompress returned %08lx\n", Status);
                         ExFreePool(se);
@@ -2241,9 +2214,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             continue;
         }
 
-        ed2 = (EXTENT_DATA2*)se->data.data;
-
-        if (ed2->size != 0 && (context->parent || context->num_clones > 0)) {
+        if (se->data.disk_num_bytes != 0 && (context->parent || context->num_clones > 0)) {
             if (try_clone(context, se)) {
                 ExFreePool(se);
                 if (se2) ExFreePool(se2);
@@ -2251,11 +2222,11 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             }
         }
 
-        if (ed2->size == 0) { // write sparse
+        if (se->data.disk_num_bytes == 0) { // write sparse
             uint64_t off, offset;
 
-            for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                uint16_t length = (uint16_t)min(min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE), context->lastinode.size - se->offset - off);
+            for (off = se->data.offset; off < se->data.offset + se->data.num_bytes; off += MAX_SEND_WRITE) {
+                uint16_t length = (uint16_t)min(min(se->data.offset + se->data.num_bytes - off, MAX_SEND_WRITE), context->lastinode.size - se->offset - off);
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
                     Status = wait_for_flush(context, tp1, tp2);
@@ -2299,10 +2270,10 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                uint16_t length = (uint16_t)min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
+            for (off = se->data.offset; off < se->data.offset + se->data.num_bytes; off += MAX_SEND_WRITE) {
+                uint16_t length = (uint16_t)min(se->data.offset + se->data.num_bytes - off, MAX_SEND_WRITE);
                 ULONG skip_start;
-                uint64_t addr = ed2->address + off;
+                uint64_t addr = se->data.disk_bytenr + off;
                 void* csum;
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
@@ -2388,7 +2359,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             uint64_t off;
             void* csum;
 
-            buf = ExAllocatePoolWithTag(PagedPool, (ULONG)se->data.decoded_size, ALLOC_TAG);
+            buf = ExAllocatePoolWithTag(PagedPool, (ULONG)se->data.ram_bytes, ALLOC_TAG);
             if (!buf) {
                 ERR("out of memory\n");
                 ExFreePool(se);
@@ -2396,7 +2367,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            compbuf = ExAllocatePoolWithTag(PagedPool, (ULONG)ed2->size, ALLOC_TAG);
+            compbuf = ExAllocatePoolWithTag(PagedPool, (ULONG)se->data.disk_num_bytes, ALLOC_TAG);
             if (!compbuf) {
                 ERR("out of memory\n");
                 ExFreePool(buf);
@@ -2410,7 +2381,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             else {
                 uint32_t len;
 
-                len = (uint32_t)(ed2->size >> context->Vcb->sector_shift);
+                len = (uint32_t)(se->data.disk_num_bytes >> context->Vcb->sector_shift);
 
                 csum = ExAllocatePoolWithTag(PagedPool, len * context->Vcb->csum_size, ALLOC_TAG);
                 if (!csum) {
@@ -2422,7 +2393,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
-                Status = load_csum(context->Vcb, csum, ed2->address, len, NULL);
+                Status = load_csum(context->Vcb, csum, se->data.disk_bytenr, len, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("load_csum returned %08lx\n", Status);
                     ExFreePool(csum);
@@ -2434,7 +2405,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 }
             }
 
-            Status = read_data(context->Vcb, ed2->address, (uint32_t)ed2->size, csum, false, compbuf, NULL, NULL, NULL, 0, false, NormalPagePriority);
+            Status = read_data(context->Vcb, se->data.disk_bytenr, (uint32_t)se->data.disk_num_bytes, csum, false, compbuf, NULL, NULL, NULL, 0, false, NormalPagePriority);
             if (!NT_SUCCESS(Status)) {
                 ERR("read_data returned %08lx\n", Status);
                 ExFreePool(compbuf);
@@ -2449,7 +2420,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                 ExFreePool(csum);
 
             if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
-                Status = zlib_decompress(compbuf, (uint32_t)ed2->size, buf, (uint32_t)se->data.decoded_size);
+                Status = zlib_decompress(compbuf, (uint32_t)se->data.disk_num_bytes, buf, (uint32_t)se->data.ram_bytes);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zlib_decompress returned %08lx\n", Status);
                     ExFreePool(compbuf);
@@ -2459,7 +2430,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     return Status;
                 }
             } else if (se->data.compression == BTRFS_COMPRESSION_LZO) {
-                Status = lzo_decompress(&compbuf[sizeof(uint32_t)], (uint32_t)ed2->size, buf, (uint32_t)se->data.decoded_size, sizeof(uint32_t));
+                Status = lzo_decompress(&compbuf[sizeof(uint32_t)], (uint32_t)se->data.disk_num_bytes, buf, (uint32_t)se->data.ram_bytes, sizeof(uint32_t));
                 if (!NT_SUCCESS(Status)) {
                     ERR("lzo_decompress returned %08lx\n", Status);
                     ExFreePool(compbuf);
@@ -2469,7 +2440,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
                     return Status;
                 }
             } else if (se->data.compression == BTRFS_COMPRESSION_ZSTD) {
-                Status = zstd_decompress(compbuf, (uint32_t)ed2->size, buf, (uint32_t)se->data.decoded_size);
+                Status = zstd_decompress(compbuf, (uint32_t)se->data.disk_num_bytes, buf, (uint32_t)se->data.ram_bytes);
                 if (!NT_SUCCESS(Status)) {
                     ERR("zstd_decompress returned %08lx\n", Status);
                     ExFreePool(compbuf);
@@ -2482,8 +2453,8 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
             ExFreePool(compbuf);
 
-            for (off = ed2->offset; off < ed2->offset + ed2->num_bytes; off += MAX_SEND_WRITE) {
-                uint16_t length = (uint16_t)min(ed2->offset + ed2->num_bytes - off, MAX_SEND_WRITE);
+            for (off = se->data.offset; off < se->data.offset + se->data.num_bytes; off += MAX_SEND_WRITE) {
+                uint16_t length = (uint16_t)min(se->data.offset + se->data.num_bytes - off, MAX_SEND_WRITE);
                 uint64_t offset;
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
@@ -2637,24 +2608,23 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         return STATUS_SUCCESS;
 
     if (tp) {
-        EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2 = NULL;
+        struct btrfs_file_extent_item* ed;
 
-        if (tp->item->size < sizeof(EXTENT_DATA)) {
+        if (tp->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-                tp->item->size, sizeof(EXTENT_DATA));
+                tp->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr));
             return STATUS_INTERNAL_ERROR;
         }
 
-        ed = (EXTENT_DATA*)tp->item->data;
+        ed = (struct btrfs_file_extent_item*)tp->item->data;
 
         if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
             ERR("unknown encryption type %u\n", ed->encryption);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->encoding != BTRFS_ENCODING_NONE) {
-            ERR("unknown encoding type %u\n", ed->encoding);
+        if (ed->other_encoding != BTRFS_ENCODING_NONE) {
+            ERR("unknown encoding type %u\n", ed->other_encoding);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -2665,22 +2635,20 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         }
 
         if (ed->type == EXTENT_TYPE_REGULAR) {
-            if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
+            if (tp->item->size < sizeof(struct btrfs_file_extent_item)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-                    tp->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+                    tp->item->size, sizeof(struct btrfs_file_extent_item));
                 return STATUS_INTERNAL_ERROR;
             }
-
-            ed2 = (EXTENT_DATA2*)ed->data;
         } else if (ed->type == EXTENT_TYPE_INLINE) {
-            if (tp->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size && ed->compression == BTRFS_COMPRESSION_NONE) {
+            if (tp->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes && ed->compression == BTRFS_COMPRESSION_NONE) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-                    tp->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
+                    tp->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
                 return STATUS_INTERNAL_ERROR;
             }
         }
 
-        if ((ed->type == EXTENT_TYPE_INLINE || (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0)) && ed->decoded_size != 0) {
+        if ((ed->type == EXTENT_TYPE_INLINE || (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0)) && ed->ram_bytes != 0) {
             send_ext* se = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data) + tp->item->size, ALLOC_TAG);
 
             if (!se) {
@@ -2696,24 +2664,23 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
     }
 
     if (tp2) {
-        EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2 = NULL;
+        struct btrfs_file_extent_item* ed;
 
-        if (tp2->item->size < sizeof(EXTENT_DATA)) {
+        if (tp2->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
-                tp2->item->size, sizeof(EXTENT_DATA));
+                tp2->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr));
             return STATUS_INTERNAL_ERROR;
         }
 
-        ed = (EXTENT_DATA*)tp2->item->data;
+        ed = (struct btrfs_file_extent_item*)tp2->item->data;
 
         if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
             ERR("unknown encryption type %u\n", ed->encryption);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->encoding != BTRFS_ENCODING_NONE) {
-            ERR("unknown encoding type %u\n", ed->encoding);
+        if (ed->other_encoding != BTRFS_ENCODING_NONE) {
+            ERR("unknown encoding type %u\n", ed->other_encoding);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -2724,22 +2691,20 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
         }
 
         if (ed->type == EXTENT_TYPE_REGULAR) {
-            if (tp2->item->size < offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
+            if (tp2->item->size < sizeof(struct btrfs_file_extent_item)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
-                    tp2->item->size, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+                    tp2->item->size, sizeof(struct btrfs_file_extent_item));
                 return STATUS_INTERNAL_ERROR;
             }
-
-            ed2 = (EXTENT_DATA2*)ed->data;
         } else if (ed->type == EXTENT_TYPE_INLINE) {
-            if (tp2->item->size < offsetof(EXTENT_DATA, data[0]) + ed->decoded_size) {
+            if (tp2->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
-                    tp2->item->size, offsetof(EXTENT_DATA, data[0]) + ed->decoded_size);
+                    tp2->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
                 return STATUS_INTERNAL_ERROR;
             }
         }
 
-        if ((ed->type == EXTENT_TYPE_INLINE || (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0)) && ed->decoded_size != 0) {
+        if ((ed->type == EXTENT_TYPE_INLINE || (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0)) && ed->ram_bytes != 0) {
             send_ext* se = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data) + tp2->item->size, ALLOC_TAG);
 
             if (!se) {

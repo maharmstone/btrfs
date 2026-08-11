@@ -353,11 +353,10 @@ static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treea
     ln = (struct btrfs_item*)&tree[1];
 
     for (i = 0; i < tree->nritems; i++) {
-        if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-            EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)tree + sizeof(struct btrfs_header) + ln[i].offset);
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+        if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
+            struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)tree + sizeof(struct btrfs_header) + ln[i].offset);
 
-            if (ed->type == EXTENT_TYPE_REGULAR && ed2->size != 0 && ed2->address == addr)
+            if (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0 && ed->disk_bytenr == addr)
                 log_file_checksum_error(Vcb, addr, devid, tree->owner, ln[i].key.objectid, ln[i].key.offset + addr - extent);
         }
     }

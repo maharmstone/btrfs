@@ -2405,13 +2405,13 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if (!ext->ignore) {
-            EXTENT_DATA* ed = &ext->extent_data;
+            struct btrfs_file_extent_item* ed = &ext->extent_data;
             uint64_t len;
 
             if (ed->type == EXTENT_TYPE_INLINE)
-                len = ed->decoded_size;
+                len = ed->ram_bytes;
             else
-                len = ((EXTENT_DATA2*)ed->data)->num_bytes;
+                len = ed->num_bytes;
 
             if (ext->offset < end_data && ext->offset + len > start_data) {
                 if (ed->type == EXTENT_TYPE_INLINE) {
@@ -2428,21 +2428,19 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         return STATUS_INTERNAL_ERROR;
                     }
                 } else {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
-                        if (ed2->size != 0) {
+                        if (ed->disk_num_bytes != 0) {
                             chunk* c;
 
                             fcb->inode_item.nbytes -= len;
                             fcb->inode_item_changed = true;
 
-                            c = get_chunk_from_address(Vcb, ed2->address);
+                            c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
                             if (!c) {
-                                ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+                                ERR("get_chunk_from_address(%I64x) failed\n", ed->disk_bytenr);
                             } else {
-                                Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
+                                Status = update_changed_extent_ref(Vcb, c, ed->disk_bytenr, ed->disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ed->offset, -1,
                                                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
@@ -2453,43 +2451,40 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 
                         remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
-                        EXTENT_DATA2* ned2;
                         extent* newext;
 
-                        if (ed2->size != 0) {
+                        if (ed->disk_num_bytes != 0) {
                             fcb->inode_item.nbytes -= end_data - ext->offset;
                             fcb->inode_item_changed = true;
                         }
 
-                        newext = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                        newext = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(struct btrfs_file_extent_item), ALLOC_TAG);
                         if (!newext) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto end;
                         }
 
-                        ned2 = (EXTENT_DATA2*)newext->extent_data.data;
-
                         newext->extent_data.generation = Vcb->superblock.generation;
-                        newext->extent_data.decoded_size = ed->decoded_size;
+                        newext->extent_data.ram_bytes = ed->ram_bytes;
                         newext->extent_data.compression = ed->compression;
                         newext->extent_data.encryption = ed->encryption;
-                        newext->extent_data.encoding = ed->encoding;
+                        newext->extent_data.other_encoding = ed->other_encoding;
                         newext->extent_data.type = ed->type;
-                        ned2->address = ed2->address;
-                        ned2->size = ed2->size;
-                        ned2->offset = ed2->offset + (end_data - ext->offset);
-                        ned2->num_bytes = ed2->num_bytes - (end_data - ext->offset);
+                        newext->extent_data.disk_bytenr = ed->disk_bytenr;
+                        newext->extent_data.disk_num_bytes = ed->disk_num_bytes;
+                        newext->extent_data.offset = ed->offset + (end_data - ext->offset);
+                        newext->extent_data.num_bytes = ed->num_bytes - (end_data - ext->offset);
 
                         newext->offset = end_data;
-                        newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                        newext->datalen = sizeof(struct btrfs_file_extent_item);
                         newext->unique = ext->unique;
                         newext->ignore = false;
                         newext->inserted = true;
 
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2498,9 +2493,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                 }
 
                                 RtlCopyMemory(newext->csum, (uint8_t*)ext->csum + (((end_data - ext->offset) * Vcb->csum_size) >> Vcb->sector_shift),
-                                              (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
+                                              (ULONG)((newext->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             } else {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2508,7 +2503,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             }
                         } else
                             newext->csum = NULL;
@@ -2517,43 +2512,40 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 
                         remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
-                        EXTENT_DATA2* ned2;
                         extent* newext;
 
-                        if (ed2->size != 0) {
+                        if (ed->disk_num_bytes != 0) {
                             fcb->inode_item.nbytes -= ext->offset + len - start_data;
                             fcb->inode_item_changed = true;
                         }
 
-                        newext = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                        newext = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(struct btrfs_file_extent_item), ALLOC_TAG);
                         if (!newext) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto end;
                         }
 
-                        ned2 = (EXTENT_DATA2*)newext->extent_data.data;
-
                         newext->extent_data.generation = Vcb->superblock.generation;
-                        newext->extent_data.decoded_size = ed->decoded_size;
+                        newext->extent_data.ram_bytes = ed->ram_bytes;
                         newext->extent_data.compression = ed->compression;
                         newext->extent_data.encryption = ed->encryption;
-                        newext->extent_data.encoding = ed->encoding;
+                        newext->extent_data.other_encoding = ed->other_encoding;
                         newext->extent_data.type = ed->type;
-                        ned2->address = ed2->address;
-                        ned2->size = ed2->size;
-                        ned2->offset = ed2->offset;
-                        ned2->num_bytes = start_data - ext->offset;
+                        newext->extent_data.disk_bytenr = ed->disk_bytenr;
+                        newext->extent_data.disk_num_bytes = ed->disk_num_bytes;
+                        newext->extent_data.offset = ed->offset;
+                        newext->extent_data.num_bytes = start_data - ext->offset;
 
                         newext->offset = ext->offset;
-                        newext->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                        newext->datalen = sizeof(struct btrfs_file_extent_item);
                         newext->unique = ext->unique;
                         newext->ignore = false;
                         newext->inserted = true;
 
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2561,9 +2553,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ned2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((newext->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             } else {
-                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2571,7 +2563,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext->csum, ext->csum, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             }
                         } else
                             newext->csum = NULL;
@@ -2580,21 +2572,20 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
 
                         remove_fcb_extent(fcb, ext, rollback);
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
-                        EXTENT_DATA2 *neda2, *nedb2;
                         extent *newext1, *newext2;
 
-                        if (ed2->size != 0) {
+                        if (ed->disk_num_bytes != 0) {
                             chunk* c;
 
                             fcb->inode_item.nbytes -= end_data - start_data;
                             fcb->inode_item_changed = true;
 
-                            c = get_chunk_from_address(Vcb, ed2->address);
+                            c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
                             if (!c) {
-                                ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+                                ERR("get_chunk_from_address(%I64x) failed\n", ed->disk_bytenr);
                             } else {
-                                Status = update_changed_extent_ref(Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
+                                Status = update_changed_extent_ref(Vcb, c, ed->disk_bytenr, ed->disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ed->offset, 1,
                                                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
@@ -2603,14 +2594,14 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                             }
                         }
 
-                        newext1 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                        newext1 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(struct btrfs_file_extent_item), ALLOC_TAG);
                         if (!newext1) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto end;
                         }
 
-                        newext2 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+                        newext2 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + sizeof(struct btrfs_file_extent_item), ALLOC_TAG);
                         if (!newext2) {
                             ERR("out of memory\n");
                             Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2618,47 +2609,43 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                             goto end;
                         }
 
-                        neda2 = (EXTENT_DATA2*)newext1->extent_data.data;
-
                         newext1->extent_data.generation = Vcb->superblock.generation;
-                        newext1->extent_data.decoded_size = ed->decoded_size;
+                        newext1->extent_data.ram_bytes = ed->ram_bytes;
                         newext1->extent_data.compression = ed->compression;
                         newext1->extent_data.encryption = ed->encryption;
-                        newext1->extent_data.encoding = ed->encoding;
+                        newext1->extent_data.other_encoding = ed->other_encoding;
                         newext1->extent_data.type = ed->type;
-                        neda2->address = ed2->address;
-                        neda2->size = ed2->size;
-                        neda2->offset = ed2->offset;
-                        neda2->num_bytes = start_data - ext->offset;
-
-                        nedb2 = (EXTENT_DATA2*)newext2->extent_data.data;
+                        newext1->extent_data.disk_bytenr = ed->disk_bytenr;
+                        newext1->extent_data.disk_num_bytes = ed->disk_num_bytes;
+                        newext1->extent_data.offset = ed->offset;
+                        newext1->extent_data.num_bytes = start_data - ext->offset;
 
                         newext2->extent_data.generation = Vcb->superblock.generation;
-                        newext2->extent_data.decoded_size = ed->decoded_size;
+                        newext2->extent_data.ram_bytes = ed->ram_bytes;
                         newext2->extent_data.compression = ed->compression;
                         newext2->extent_data.encryption = ed->encryption;
-                        newext2->extent_data.encoding = ed->encoding;
+                        newext2->extent_data.other_encoding = ed->other_encoding;
                         newext2->extent_data.type = ed->type;
-                        nedb2->address = ed2->address;
-                        nedb2->size = ed2->size;
-                        nedb2->offset = ed2->offset + (end_data - ext->offset);
-                        nedb2->num_bytes = ext->offset + len - end_data;
+                        newext2->extent_data.disk_bytenr = ed->disk_bytenr;
+                        newext2->extent_data.disk_num_bytes = ed->disk_num_bytes;
+                        newext2->extent_data.offset = ed->offset + (end_data - ext->offset);
+                        newext2->extent_data.num_bytes = ext->offset + len - end_data;
 
                         newext1->offset = ext->offset;
-                        newext1->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                        newext1->datalen = sizeof(struct btrfs_file_extent_item);
                         newext1->unique = ext->unique;
                         newext1->ignore = false;
                         newext1->inserted = true;
 
                         newext2->offset = end_data;
-                        newext2->datalen = sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2);
+                        newext2->datalen = sizeof(struct btrfs_file_extent_item);
                         newext2->unique = ext->unique;
                         newext2->ignore = false;
                         newext2->inserted = true;
 
                         if (ext->csum) {
                             if (ed->compression == BTRFS_COMPRESSION_NONE) {
-                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((neda2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext1->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext1->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2667,7 +2654,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((nedb2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext2->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext2->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2677,11 +2664,11 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)((neda2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)((newext1->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                                 RtlCopyMemory(newext2->csum, (uint8_t*)ext->csum + (((end_data - ext->offset) * Vcb->csum_size) >> Vcb->sector_shift),
-                                              (ULONG)((nedb2->num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
+                                              (ULONG)((newext2->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             } else {
-                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext1->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2690,7 +2677,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
+                                newext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext2->csum) {
                                     ERR("out of memory\n");
                                     Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2700,8 +2687,8 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                                     goto end;
                                 }
 
-                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
-                                RtlCopyMemory(newext2->csum, ext->csum, (ULONG)((ed2->size * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext1->csum, ext->csum, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
+                                RtlCopyMemory(newext2->csum, ext->csum, (ULONG)((ed->disk_num_bytes * Vcb->csum_size) >> Vcb->sector_shift));
                             }
                         } else {
                             newext1->csum = NULL;
@@ -2750,7 +2737,7 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
 #pragma warning(suppress: 28194)
 #endif
 __attribute__((nonnull(1,3,7)))
-NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) EXTENT_DATA* ed, _In_ uint16_t edsize,
+NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) struct btrfs_file_extent_item* ed, _In_ uint16_t edsize,
                            _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) {
     extent* ext;
     LIST_ENTRY* le;
@@ -2817,12 +2804,11 @@ _Requires_lock_held_(c->lock)
 _When_(return != 0, _Releases_lock_(c->lock))
 __attribute__((nonnull(1,2,3,9)))
 bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c, _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc, _In_opt_ void* data,
-                         _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ uint8_t compression, _In_ uint64_t decoded_size, _In_ bool file_write, _In_ uint64_t irp_offset) {
+                         _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ uint8_t compression, _In_ uint64_t ram_bytes, _In_ bool file_write, _In_ uint64_t irp_offset) {
     uint64_t address;
     NTSTATUS Status;
-    EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
-    uint16_t edsize = (uint16_t)(offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2));
+    struct btrfs_file_extent_item* ed;
+    uint16_t edsize = (uint16_t)sizeof(struct btrfs_file_extent_item);
     void* csum = NULL;
 
     TRACE("(%p, (%I64x, %I64x), %I64x, %I64x, %I64x, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
@@ -2838,17 +2824,15 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     }
 
     ed->generation = Vcb->superblock.generation;
-    ed->decoded_size = decoded_size;
+    ed->ram_bytes = ram_bytes;
     ed->compression = compression;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
-    ed->encoding = BTRFS_ENCODING_NONE;
+    ed->other_encoding = BTRFS_ENCODING_NONE;
     ed->type = prealloc ? EXTENT_TYPE_PREALLOC : EXTENT_TYPE_REGULAR;
-
-    ed2 = (EXTENT_DATA2*)ed->data;
-    ed2->address = address;
-    ed2->size = length;
-    ed2->offset = 0;
-    ed2->num_bytes = decoded_size;
+    ed->disk_bytenr = address;
+    ed->disk_num_bytes = length;
+    ed->offset = 0;
+    ed->num_bytes = ram_bytes;
 
     if (!prealloc && data && !(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
         ULONG sl = (ULONG)(length >> Vcb->sector_shift);
@@ -2876,7 +2860,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     c->used += length;
     space_list_subtract(c, address, length, rollback);
 
-    fcb->inode_item.nbytes += decoded_size;
+    fcb->inode_item.nbytes += ram_bytes;
 
     fcb->extents_changed = true;
     fcb->inode_item_changed = true;
@@ -2904,8 +2888,7 @@ __attribute__((nonnull(1,2,5,7,10)))
 static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t length, void* data,
                             PIRP Irp, uint64_t* written, bool file_write, uint64_t irp_offset, LIST_ENTRY* rollback) {
     bool success = false;
-    EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
+    struct btrfs_file_extent_item* ed;
     chunk* c;
     LIST_ENTRY* le;
     extent* ext = NULL;
@@ -2938,14 +2921,12 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
         return false;
     }
 
-    ed2 = (EXTENT_DATA2*)ed->data;
-
-    if (ext->offset + ed2->num_bytes != start_data) {
-        TRACE("last EXTENT_DATA does not run up to start_data (%I64x + %I64x != %I64x)\n", ext->offset, ed2->num_bytes, start_data);
+    if (ext->offset + ed->num_bytes != start_data) {
+        TRACE("last EXTENT_DATA does not run up to start_data (%I64x + %I64x != %I64x)\n", ext->offset, ed->num_bytes, start_data);
         return false;
     }
 
-    c = get_chunk_from_address(Vcb, ed2->address);
+    c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
     if (c->reloc || c->readonly || c->chunk_item->type != Vcb->data_flags)
         return false;
@@ -2971,7 +2952,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
     while (le != &c->space) {
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
-        if (s->address == ed2->address + ed2->size) {
+        if (s->address == ed->disk_bytenr + ed->disk_num_bytes) {
             uint64_t newlen = min(min(s->size, length), MAX_EXTENT_SIZE);
 
             success = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen, file_write, irp_offset);
@@ -2982,7 +2963,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
                 release_chunk_lock(c, Vcb);
 
             return success;
-        } else if (s->address > ed2->address + ed2->size)
+        } else if (s->address > ed->disk_bytenr + ed->disk_num_bytes)
             break;
 
         le = le->Flink;
@@ -3246,13 +3227,13 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
         uint8_t* buf;
         bool make_inline = end <= fcb->Vcb->options.max_inline;
 
-        buf = ExAllocatePoolWithTag(PagedPool, (ULONG)(make_inline ? (offsetof(EXTENT_DATA, data[0]) + end) : sector_align(end, fcb->Vcb->superblock.sectorsize)), ALLOC_TAG);
+        buf = ExAllocatePoolWithTag(PagedPool, (ULONG)(make_inline ? (offsetof(struct btrfs_file_extent_item, disk_bytenr) + end) : sector_align(end, fcb->Vcb->superblock.sectorsize)), ALLOC_TAG);
         if (!buf) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        Status = read_file(fcb, make_inline ? (buf + offsetof(EXTENT_DATA, data[0])) : buf, 0, end, NULL, Irp);
+        Status = read_file(fcb, make_inline ? (buf + offsetof(struct btrfs_file_extent_item, disk_bytenr)) : buf, 0, end, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("read_file returned %08lx\n", Status);
             ExFreePool(buf);
@@ -3276,16 +3257,16 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
                 return Status;
             }
         } else {
-            EXTENT_DATA* ed = (EXTENT_DATA*)buf;
+            struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)buf;
 
             ed->generation = fcb->Vcb->superblock.generation;
-            ed->decoded_size = end;
+            ed->ram_bytes = end;
             ed->compression = BTRFS_COMPRESSION_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
-            ed->encoding = BTRFS_ENCODING_NONE;
+            ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = EXTENT_TYPE_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + end), false, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(buf);
@@ -3359,10 +3340,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
         oldalloc = 0;
         if (ext) {
-            EXTENT_DATA* ed = &ext->extent_data;
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+            struct btrfs_file_extent_item* ed = &ext->extent_data;
 
-            oldalloc = ext->offset + (ed->type == EXTENT_TYPE_INLINE ? ed->decoded_size : ed2->num_bytes);
+            oldalloc = ext->offset + (ed->type == EXTENT_TYPE_INLINE ? ed->ram_bytes : ed->num_bytes);
             cur_inline = ed->type == EXTENT_TYPE_INLINE;
 
             if (cur_inline && end > fcb->Vcb->options.max_inline) {
@@ -3371,7 +3351,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 TRACE("giving inline file proper extents\n");
 
-                origlength = ed->decoded_size;
+                origlength = ed->ram_bytes;
 
                 cur_inline = false;
 
@@ -3415,7 +3395,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 uint16_t edsize;
 
                 if (end > oldalloc) {
-                    edsize = (uint16_t)(offsetof(EXTENT_DATA, data[0]) + end - ext->offset);
+                    edsize = (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end - ext->offset);
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
                     if (!ed) {
@@ -3424,20 +3404,20 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     }
 
                     ed->generation = fcb->Vcb->superblock.generation;
-                    ed->decoded_size = end - ext->offset;
+                    ed->ram_bytes = end - ext->offset;
                     ed->compression = BTRFS_COMPRESSION_NONE;
                     ed->encryption = BTRFS_ENCRYPTION_NONE;
-                    ed->encoding = BTRFS_ENCODING_NONE;
+                    ed->other_encoding = BTRFS_ENCODING_NONE;
                     ed->type = EXTENT_TYPE_INLINE;
 
-                    Status = read_file(fcb, ed->data, ext->offset, oldalloc, NULL, Irp);
+                    Status = read_file(fcb, (uint8_t*)&ed->disk_bytenr, ext->offset, oldalloc, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("read_file returned %08lx\n", Status);
                         ExFreePool(ed);
                         return Status;
                     }
 
-                    RtlZeroMemory(ed->data + oldalloc - ext->offset, (ULONG)(end - oldalloc));
+                    RtlZeroMemory((uint8_t*)&ed->disk_bytenr + oldalloc - ext->offset, (ULONG)(end - oldalloc));
 
                     remove_fcb_extent(fcb, ext, rollback);
 
@@ -3516,10 +3496,10 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 fcb->Header.AllocationSize.QuadPart = newalloc;
                 fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             } else {
-                EXTENT_DATA* ed;
+                struct btrfs_file_extent_item* ed;
                 uint16_t edsize;
 
-                edsize = (uint16_t)(offsetof(EXTENT_DATA, data[0]) + end);
+                edsize = (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end);
                 ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
                 if (!ed) {
@@ -3528,13 +3508,13 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 }
 
                 ed->generation = fcb->Vcb->superblock.generation;
-                ed->decoded_size = end;
+                ed->ram_bytes = end;
                 ed->compression = BTRFS_COMPRESSION_NONE;
                 ed->encryption = BTRFS_ENCRYPTION_NONE;
-                ed->encoding = BTRFS_ENCODING_NONE;
+                ed->other_encoding = BTRFS_ENCODING_NONE;
                 ed->type = EXTENT_TYPE_INLINE;
 
-                RtlZeroMemory(ed->data, (ULONG)end);
+                RtlZeroMemory(&ed->disk_bytenr, (ULONG)end);
 
                 Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, rollback);
                 if (!NT_SUCCESS(Status)) {
@@ -3565,12 +3545,11 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 __attribute__((nonnull(1,2,5,6,11)))
 static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_data, uint64_t end_data, void* data, uint64_t* written,
                                        PIRP Irp, bool file_write, uint64_t irp_offset, ULONG priority, LIST_ENTRY* rollback) {
-    EXTENT_DATA* ed = &ext->extent_data;
-    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
+    struct btrfs_file_extent_item* ed = &ext->extent_data;
     NTSTATUS Status;
     chunk* c = NULL;
 
-    if (start_data <= ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace all
+    if (start_data <= ext->offset && end_data >= ext->offset + ed->num_bytes) { // replace all
         extent* newext;
 
         newext = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + ext->datalen, ALLOC_TAG);
@@ -3583,7 +3562,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         newext->extent_data.type = EXTENT_TYPE_REGULAR;
 
-        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)ed2->num_bytes, Irp,
+        Status = write_data_complete(fcb->Vcb, ed->disk_bytenr + ed->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)ed->num_bytes, Irp,
                                      NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08lx\n", Status);
@@ -3591,7 +3570,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (ULONG)(ed2->num_bytes >> fcb->Vcb->sector_shift);
+            ULONG sl = (ULONG)(ed->num_bytes >> fcb->Vcb->sector_shift);
             void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
@@ -3606,7 +3585,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         } else
             newext->csum = NULL;
 
-        *written = ed2->num_bytes;
+        *written = ed->num_bytes;
 
         newext->offset = ext->offset;
         newext->datalen = ext->datalen;
@@ -3619,9 +3598,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         remove_fcb_extent(fcb, ext, rollback);
 
-        c = get_chunk_from_address(fcb->Vcb, ed2->address);
-    } else if (start_data <= ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace beginning
-        EXTENT_DATA2* ned2;
+        c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
+    } else if (start_data <= ext->offset && end_data < ext->offset + ed->num_bytes) { // replace beginning
         extent *newext1, *newext2;
 
         newext1 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + ext->datalen, ALLOC_TAG);
@@ -3639,15 +3617,13 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         RtlCopyMemory(&newext1->extent_data, &ext->extent_data, ext->datalen);
         newext1->extent_data.type = EXTENT_TYPE_REGULAR;
-        ned2 = (EXTENT_DATA2*)newext1->extent_data.data;
-        ned2->num_bytes = end_data - ext->offset;
+        newext1->extent_data.num_bytes = end_data - ext->offset;
 
         RtlCopyMemory(&newext2->extent_data, &ext->extent_data, ext->datalen);
-        ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
-        ned2->offset += end_data - ext->offset;
-        ned2->num_bytes -= end_data - ext->offset;
+        newext2->extent_data.offset += end_data - ext->offset;
+        newext2->extent_data.num_bytes -= end_data - ext->offset;
 
-        Status = write_data_complete(fcb->Vcb, ed2->address + ed2->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)(end_data - ext->offset),
+        Status = write_data_complete(fcb->Vcb, ed->disk_bytenr + ed->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)(end_data - ext->offset),
                                      Irp, NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08lx\n", Status);
@@ -3694,12 +3670,12 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         add_insert_extent_rollback(rollback, fcb, newext2);
 
-        c = get_chunk_from_address(fcb->Vcb, ed2->address);
+        c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
         if (!c)
-            ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+            ERR("get_chunk_from_address(%I64x) failed\n", ed->disk_bytenr);
         else {
-            Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
+            Status = update_changed_extent_ref(fcb->Vcb, c, ed->disk_bytenr, ed->disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ed->offset, 1,
                                                 fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
             if (!NT_SUCCESS(Status)) {
@@ -3709,8 +3685,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         remove_fcb_extent(fcb, ext, rollback);
-    } else if (start_data > ext->offset && end_data >= ext->offset + ed2->num_bytes) { // replace end
-        EXTENT_DATA2* ned2;
+    } else if (start_data > ext->offset && end_data >= ext->offset + ed->num_bytes) { // replace end
         extent *newext1, *newext2;
 
         newext1 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + ext->datalen, ALLOC_TAG);
@@ -3728,17 +3703,15 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         RtlCopyMemory(&newext1->extent_data, &ext->extent_data, ext->datalen);
 
-        ned2 = (EXTENT_DATA2*)newext1->extent_data.data;
-        ned2->num_bytes = start_data - ext->offset;
+        newext1->extent_data.num_bytes = start_data - ext->offset;
 
         RtlCopyMemory(&newext2->extent_data, &ext->extent_data, ext->datalen);
 
         newext2->extent_data.type = EXTENT_TYPE_REGULAR;
-        ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
-        ned2->offset += start_data - ext->offset;
-        ned2->num_bytes = ext->offset + ed2->num_bytes - start_data;
+        newext2->extent_data.offset += start_data - ext->offset;
+        newext2->extent_data.num_bytes = ext->offset + ed->num_bytes - start_data;
 
-        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (uint32_t)ned2->num_bytes, Irp, NULL, file_write, irp_offset, priority);
+        Status = write_data_complete(fcb->Vcb, ed->disk_bytenr + newext2->extent_data.offset, data, (uint32_t)newext2->extent_data.num_bytes, Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08lx\n", Status);
             ExFreePool(newext1);
@@ -3747,7 +3720,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
-            ULONG sl = (ULONG)(ned2->num_bytes >> fcb->Vcb->sector_shift);
+            ULONG sl = (ULONG)(newext2->extent_data.num_bytes >> fcb->Vcb->sector_shift);
             void* csum = ExAllocatePoolWithTag(PagedPool, sl * fcb->Vcb->csum_size, ALLOC_TAG);
 
             if (!csum) {
@@ -3763,7 +3736,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         } else
             newext2->csum = NULL;
 
-        *written = ned2->num_bytes;
+        *written = newext2->extent_data.num_bytes;
 
         newext1->offset = ext->offset;
         newext1->datalen = ext->datalen;
@@ -3784,12 +3757,12 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         add_insert_extent_rollback(rollback, fcb, newext2);
 
-        c = get_chunk_from_address(fcb->Vcb, ed2->address);
+        c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
         if (!c)
-            ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+            ERR("get_chunk_from_address(%I64x) failed\n", ed->disk_bytenr);
         else {
-            Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 1,
+            Status = update_changed_extent_ref(fcb->Vcb, c, ed->disk_bytenr, ed->disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ed->offset, 1,
                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
             if (!NT_SUCCESS(Status)) {
@@ -3799,8 +3772,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         remove_fcb_extent(fcb, ext, rollback);
-    } else if (start_data > ext->offset && end_data < ext->offset + ed2->num_bytes) { // replace middle
-        EXTENT_DATA2* ned2;
+    } else if (start_data > ext->offset && end_data < ext->offset + ed->num_bytes) { // replace middle
         extent *newext1, *newext2, *newext3;
 
         newext1 = ExAllocatePoolWithTag(PagedPool, offsetof(extent, extent_data) + ext->datalen, ALLOC_TAG);
@@ -3828,20 +3800,16 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         RtlCopyMemory(&newext2->extent_data, &ext->extent_data, ext->datalen);
         RtlCopyMemory(&newext3->extent_data, &ext->extent_data, ext->datalen);
 
-        ned2 = (EXTENT_DATA2*)newext1->extent_data.data;
-        ned2->num_bytes = start_data - ext->offset;
+        newext1->extent_data.num_bytes = start_data - ext->offset;
 
         newext2->extent_data.type = EXTENT_TYPE_REGULAR;
-        ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
-        ned2->offset += start_data - ext->offset;
-        ned2->num_bytes = end_data - start_data;
+        newext2->extent_data.offset += start_data - ext->offset;
+        newext2->extent_data.num_bytes = end_data - start_data;
 
-        ned2 = (EXTENT_DATA2*)newext3->extent_data.data;
-        ned2->offset += end_data - ext->offset;
-        ned2->num_bytes -= end_data - ext->offset;
+        newext3->extent_data.offset += end_data - ext->offset;
+        newext3->extent_data.num_bytes -= end_data - ext->offset;
 
-        ned2 = (EXTENT_DATA2*)newext2->extent_data.data;
-        Status = write_data_complete(fcb->Vcb, ed2->address + ned2->offset, data, (uint32_t)(end_data - start_data), Irp, NULL, file_write, irp_offset, priority);
+        Status = write_data_complete(fcb->Vcb, ed->disk_bytenr + newext2->extent_data.offset, data, (uint32_t)(end_data - start_data), Irp, NULL, file_write, irp_offset, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08lx\n", Status);
             ExFreePool(newext1);
@@ -3899,12 +3867,12 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         add_insert_extent_rollback(rollback, fcb, newext3);
 
-        c = get_chunk_from_address(fcb->Vcb, ed2->address);
+        c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
         if (!c)
-            ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+            ERR("get_chunk_from_address(%I64x) failed\n", ed->disk_bytenr);
         else {
-            Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, 2,
+            Status = update_changed_extent_ref(fcb->Vcb, c, ed->disk_bytenr, ed->disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ed->offset, 2,
                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
             if (!NT_SUCCESS(Status)) {
@@ -3943,13 +3911,13 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
         le2 = le->Flink;
 
         if (!ext->ignore) {
-            EXTENT_DATA* ed = &ext->extent_data;
+            struct btrfs_file_extent_item* ed = &ext->extent_data;
             uint64_t len;
 
             if (ed->type == EXTENT_TYPE_INLINE)
-                len = ed->decoded_size;
+                len = ed->ram_bytes;
             else
-                len = ((EXTENT_DATA2*)ed->data)->num_bytes;
+                len = ed->num_bytes;
 
             if (ext->offset + len <= start)
                 goto nextitem;
@@ -3983,8 +3951,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                 }
 
                 if (ed->type == EXTENT_TYPE_REGULAR) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-                    uint64_t writeaddr = ed2->address + ed2->offset + start + written - ext->offset;
+                    uint64_t writeaddr = ed->disk_bytenr + ed->offset + start + written - ext->offset;
                     uint64_t write_len = min(len, length);
                     chunk* c;
 
@@ -4095,7 +4062,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                      bool wait, bool deferred_write, bool write_irp, LIST_ENTRY* rollback) {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
     PFILE_OBJECT FileObject = IrpSp->FileObject;
-    EXTENT_DATA* ed2;
+    struct btrfs_file_extent_item* ed2;
     uint64_t off64, newlength, start_data, end_data;
     uint32_t bufhead;
     bool make_inline;
@@ -4361,7 +4328,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         if (make_inline) {
             start_data = 0;
             end_data = sector_align(newlength, fcb->Vcb->superblock.sectorsize);
-            bufhead = sizeof(EXTENT_DATA) - 1;
+            bufhead = offsetof(struct btrfs_file_extent_item, disk_bytenr);
         } else if (compress) {
             start_data = off64 & ~(uint64_t)(COMPRESSED_EXTENT_SIZE - 1);
             end_data = min(sector_align(off64 + *length, COMPRESSED_EXTENT_SIZE),
@@ -4422,15 +4389,15 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
 
-            ed2 = (EXTENT_DATA*)data;
+            ed2 = (struct btrfs_file_extent_item*)data;
             ed2->generation = fcb->Vcb->superblock.generation;
-            ed2->decoded_size = newlength;
+            ed2->ram_bytes = newlength;
             ed2->compression = BTRFS_COMPRESSION_NONE;
             ed2->encryption = BTRFS_ENCRYPTION_NONE;
-            ed2->encoding = BTRFS_ENCODING_NONE;
+            ed2->other_encoding = BTRFS_ENCODING_NONE;
             ed2->type = EXTENT_TYPE_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + newlength), false, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + newlength), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(data);

@@ -1103,10 +1103,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
                 if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
-
-                    if (ed2->size != 0) {
-                        chunk* c2 = get_chunk_from_address(Vcb, ed2->address);
+                    if (ext->extent_data.disk_num_bytes != 0) {
+                        chunk* c2 = get_chunk_from_address(Vcb, ext->extent_data.disk_bytenr);
 
                         if (c2 && (c2->readonly || c2->reloc)) {
                             realloc_extents = true;
@@ -1264,10 +1262,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
                 if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
-
-                    if (ed2->size != 0) {
-                        chunk* c2 = get_chunk_from_address(Vcb, ed2->address);
+                    if (ext->extent_data.disk_num_bytes != 0) {
+                        chunk* c2 = get_chunk_from_address(Vcb, ext->extent_data.disk_bytenr);
 
                         if (c2) {
                             c2->changed = true;

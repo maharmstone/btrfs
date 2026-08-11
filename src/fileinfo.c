@@ -514,12 +514,11 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
 
             if (ext->csum) {
                 ULONG len;
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
 
                 if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
-                    len = (ULONG)ed2->num_bytes;
+                    len = (ULONG)ext->extent_data.num_bytes;
                 else
-                    len = (ULONG)ed2->size;
+                    len = (ULONG)ext->extent_data.disk_num_bytes;
 
                 len = (len * sizeof(uint32_t)) >> Vcb->sector_shift;
 
@@ -1038,16 +1037,15 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                         extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
                         if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
-                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-                            if (ed2->size != 0) {
-                                chunk* c = get_chunk_from_address(me->fileref->fcb->Vcb, ed2->address);
+                            if (ext->extent_data.disk_num_bytes != 0) {
+                                chunk* c = get_chunk_from_address(me->fileref->fcb->Vcb, ext->extent_data.disk_bytenr);
 
                                 if (!c) {
-                                    ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+                                    ERR("get_chunk_from_address(%I64x) failed\n", ext->extent_data.disk_bytenr);
                                 } else {
-                                    Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ed2->address, ed2->size, me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
-                                                                       ext->offset - ed2->offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
+                                    Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes,
+                                                                       me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
+                                                                       ext->offset - ext->extent_data.offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
 
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("update_changed_extent_ref returned %08lx\n", Status);
@@ -1705,7 +1703,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
         bool make_inline = adsdata.Length <= Vcb->options.max_inline;
 
         if (make_inline) {
-            EXTENT_DATA* ed = ExAllocatePoolWithTag(PagedPool, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + adsdata.Length), ALLOC_TAG);
+            struct btrfs_file_extent_item* ed = ExAllocatePoolWithTag(PagedPool, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + adsdata.Length), ALLOC_TAG);
             if (!ed) {
                 ERR("out of memory\n");
                 ExFreePool(adsdata.Buffer);
@@ -1714,17 +1712,17 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             }
 
             ed->generation = Vcb->superblock.generation;
-            ed->decoded_size = adsdata.Length;
+            ed->ram_bytes = adsdata.Length;
             ed->compression = BTRFS_COMPRESSION_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
-            ed->encoding = BTRFS_ENCODING_NONE;
+            ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = EXTENT_TYPE_INLINE;
 
-            RtlCopyMemory(ed->data, adsdata.Buffer, adsdata.Length);
+            RtlCopyMemory(&ed->disk_bytenr, adsdata.Buffer, adsdata.Length);
 
             ExFreePool(adsdata.Buffer);
 
-            Status = add_extent_to_fcb(fileref->fcb, 0, ed, (uint16_t)(offsetof(EXTENT_DATA, data[0]) + adsdata.Length), false, NULL, rollback);
+            Status = add_extent_to_fcb(fileref->fcb, 0, ed, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + adsdata.Length), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(ed);

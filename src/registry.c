@@ -52,7 +52,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     options->zlib_level = mount_zlib_level;
     options->zstd_level = mount_zstd_level;
     options->flush_interval = mount_flush_interval;
-    options->max_inline = min(mount_max_inline, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - sizeof(EXTENT_DATA) + 1);
+    options->max_inline = min(mount_max_inline, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - offsetof(struct btrfs_file_extent_item, disk_bytenr));
     options->skip_balance = mount_skip_balance;
     options->no_barrier = mount_no_barrier;
     options->no_trim = mount_no_trim;
@@ -169,7 +169,7 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
             } else if (FsRtlAreNamesEqual(&maxinlineus, &us, true, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_DWORD) {
                 DWORD* val = (DWORD*)((uint8_t*)kvfi + kvfi->DataOffset);
 
-                options->max_inline = min(*val, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - sizeof(EXTENT_DATA) + 1);
+                options->max_inline = min(*val, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item) - offsetof(struct btrfs_file_extent_item, disk_bytenr));
             } else if (FsRtlAreNamesEqual(&subvolidus, &us, true, NULL) && kvfi->DataOffset > 0 && kvfi->DataLength > 0 && kvfi->Type == REG_QWORD) {
                 uint64_t* val = (uint64_t*)((uint8_t*)kvfi + kvfi->DataOffset);
 

@@ -474,14 +474,12 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             struct btrfs_item* ln = (struct btrfs_item*)&mr->data[1];
 
             for (i = 0; i < mr->data->nritems; i++) {
-                if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
+                if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
+                    struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
 
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                        if (ed2->size > 0) { // not sparse
-                            uint32_t sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, mr->address, NULL);
+                        if (ed->disk_num_bytes > 0) { // not sparse
+                            uint32_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, mr->address, NULL);
 
                             if (sdrrc > 0) {
                                 SHARED_DATA_REF sdr;
@@ -490,7 +488,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                                 sdr.offset = mr->new_address;
                                 sdr.count = sdrrc;
 
-                                Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, NULL);
+                                Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, NULL);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("increase_extent_refcount returned %08lx\n", Status);
                                     return Status;
@@ -498,14 +496,14 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
 
                                 sdr.offset = mr->address;
 
-                                Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
+                                Status = decrease_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
                                                                   sdr.offset, false, NULL);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("decrease_extent_refcount returned %08lx\n", Status);
                                     return Status;
                                 }
 
-                                c = get_chunk_from_address(Vcb, ed2->address);
+                                c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
                                 if (c) {
                                     // check changed_extents
@@ -517,7 +515,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                                     while (le != &c->changed_extents) {
                                         changed_extent* ce = CONTAINING_RECORD(le, changed_extent, list_entry);
 
-                                        if (ce->address == ed2->address) {
+                                        if (ce->address == ed->disk_bytenr) {
                                             LIST_ENTRY* le2;
 
                                             le2 = ce->refs.Flink;
@@ -603,14 +601,12 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                 uint16_t i;
 
                 for (i = 0; i < mr->data->nritems; i++) {
-                    if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                        EXTENT_DATA* ed = (EXTENT_DATA*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
+                    if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
+                        struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
 
                         if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                            if (ed2->address == dr->address)
-                                ed2->address = dr->new_address;
+                            if (ed->disk_bytenr == dr->address)
+                                ed->disk_bytenr = dr->new_address;
                         }
                     }
                 }
@@ -1001,14 +997,12 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             while (le3 != &t3->itemlist) {
                                 tree_data* td = CONTAINING_RECORD(le3, tree_data, list_entry);
 
-                                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+                                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(struct btrfs_file_extent_item)) {
+                                    struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)td->data;
 
                                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                                        if (ed2->address == dr->address)
-                                            ed2->address = dr->new_address;
+                                        if (ed->disk_bytenr == dr->address)
+                                            ed->disk_bytenr = dr->new_address;
                                     }
                                 }
 
@@ -1268,13 +1262,11 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
     while (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
         traverse_ptr tp2;
 
-        if (tp.item->size >= sizeof(EXTENT_DATA)) {
-            EXTENT_DATA* ed = (EXTENT_DATA*)tp.item->data;
+        if (tp.item->size >= offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
+            struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)tp.item->data;
 
-            if ((ed->type == EXTENT_TYPE_PREALLOC || ed->type == EXTENT_TYPE_REGULAR) && tp.item->size >= offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2)) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                if (ed2->address == dr->address && ed2->size == dr->size && tp.item->key.offset - ed2->offset == edr->offset) {
+            if ((ed->type == EXTENT_TYPE_PREALLOC || ed->type == EXTENT_TYPE_REGULAR) && tp.item->size >= sizeof(struct btrfs_file_extent_item)) {
+                if (ed->disk_bytenr == dr->address && ed->disk_num_bytes == dr->size && tp.item->key.offset - ed->offset == edr->offset) {
                     if (ref && last_tree == tp.tree->header.bytenr)
                         ref->edr.count++;
                     else {
@@ -2085,15 +2077,13 @@ end:
 
                     if (!ext->ignore) {
                         if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
-                            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-                            if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->length) {
+                            if (ext->extent_data.disk_num_bytes > 0 && ext->extent_data.disk_bytenr >= c->offset && ext->extent_data.disk_bytenr < c->offset + c->chunk_item->length) {
                                 LIST_ENTRY* le3 = items.Flink;
                                 while (le3 != &items) {
                                     data_reloc* dr = CONTAINING_RECORD(le3, data_reloc, list_entry);
 
-                                    if (ed2->address == dr->address) {
-                                        ed2->address = dr->new_address;
+                                    if (ext->extent_data.disk_bytenr == dr->address) {
+                                        ext->extent_data.disk_bytenr = dr->new_address;
                                         break;
                                     }
 
@@ -2136,15 +2126,13 @@ end:
 
                 if (!ext->ignore) {
                     if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-                        if (ed2->size > 0 && ed2->address >= c->offset && ed2->address < c->offset + c->chunk_item->length) {
+                        if (ext->extent_data.disk_num_bytes > 0 && ext->extent_data.disk_bytenr >= c->offset && ext->extent_data.disk_bytenr < c->offset + c->chunk_item->length) {
                             LIST_ENTRY* le3 = items.Flink;
                             while (le3 != &items) {
                                 data_reloc* dr = CONTAINING_RECORD(le3, data_reloc, list_entry);
 
-                                if (ed2->address == dr->address) {
-                                    ed2->address = dr->new_address;
+                                if (ext->extent_data.disk_bytenr == dr->address) {
+                                    ext->extent_data.disk_bytenr = dr->new_address;
                                     break;
                                 }
 

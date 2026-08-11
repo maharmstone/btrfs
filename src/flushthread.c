@@ -1126,16 +1126,14 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
             while (le != &t->itemlist) {
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
 
-                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(struct btrfs_file_extent_item)) {
+                    struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)td->data;
 
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                        if (ed2->size > 0) {
+                        if (ed->disk_num_bytes > 0) {
                             struct btrfs_extent_data_ref edr;
                             changed_extent* ce = NULL;
-                            chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                            chunk* c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
                             if (c) {
                                 LIST_ENTRY* le2;
@@ -1144,7 +1142,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 while (le2 != &c->changed_extents) {
                                     changed_extent* ce2 = CONTAINING_RECORD(le2, changed_extent, list_entry);
 
-                                    if (ce2->address == ed2->address) {
+                                    if (ce2->address == ed->disk_bytenr) {
                                         ce = ce2;
                                         break;
                                     }
@@ -1155,7 +1153,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
                             edr.root = t->root->id;
                             edr.objectid = td->key.objectid;
-                            edr.offset = td->key.offset - ed2->offset;
+                            edr.offset = td->key.offset - ed->offset;
                             edr.count = 1;
 
                             if (ce) {
@@ -1172,14 +1170,14 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 }
                             }
 
-                            Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
+                            Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("increase_extent_refcount returned %08lx\n", Status);
                                 return Status;
                             }
 
                             if ((flags & EXTENT_ITEM_SHARED_BACKREFS && unique) || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
-                                uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed2->address, t->header.bytenr, Irp);
+                                uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, t->header.bytenr, Irp);
 
                                 if (sdrrc > 0) {
                                     SHARED_DATA_REF sdr;
@@ -1187,7 +1185,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     sdr.offset = t->header.bytenr;
                                     sdr.count = 1;
 
-                                    Status = decrease_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
+                                    Status = decrease_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
                                                                       t->header.bytenr, ce ? ce->superseded : false, Irp);
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("decrease_extent_refcount returned %08lx\n", Status);
@@ -1369,15 +1367,13 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
             while (le != &t->itemlist) {
                 tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
 
-                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
-                    EXTENT_DATA* ed = (EXTENT_DATA*)td->data;
+                if (!td->inserted && td->key.type == TYPE_EXTENT_DATA && td->size >= sizeof(struct btrfs_file_extent_item)) {
+                    struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)td->data;
 
                     if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                        if (ed2->size > 0) {
+                        if (ed->disk_num_bytes > 0) {
                             changed_extent* ce = NULL;
-                            chunk* c = get_chunk_from_address(Vcb, ed2->address);
+                            chunk* c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
                             if (c) {
                                 LIST_ENTRY* le2;
@@ -1386,7 +1382,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 while (le2 != &c->changed_extents) {
                                     changed_extent* ce2 = CONTAINING_RECORD(le2, changed_extent, list_entry);
 
-                                    if (ce2->address == ed2->address) {
+                                    if (ce2->address == ed->disk_bytenr) {
                                         ce = ce2;
                                         break;
                                     }
@@ -1415,13 +1411,13 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     }
                                 }
 
-                                Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp);
+                                Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0, Irp);
                             } else {
                                 struct btrfs_extent_data_ref edr;
 
                                 edr.root = t->root->id;
                                 edr.objectid = td->key.objectid;
-                                edr.offset = td->key.offset - ed2->offset;
+                                edr.offset = td->key.offset - ed->offset;
                                 edr.count = 1;
 
                                 if (ce) {
@@ -1438,7 +1434,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     }
                                 }
 
-                                Status = increase_extent_refcount(Vcb, ed2->address, ed2->size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
+                                Status = increase_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, Irp);
                             }
 
                             if (!NT_SUCCESS(Status)) {
@@ -4399,31 +4395,28 @@ static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root*
 
 static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t start, uint64_t length) {
     NTSTATUS Status;
-    EXTENT_DATA* ed;
-    EXTENT_DATA2* ed2;
+    struct btrfs_file_extent_item* ed;
 
     TRACE("((%I64x, %I64x), %I64x, %I64x)\n", fcb->subvol->id, fcb->inode, start, length);
 
-    ed = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), ALLOC_TAG);
+    ed = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_file_extent_item), ALLOC_TAG);
     if (!ed) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ed->generation = fcb->Vcb->superblock.generation;
-    ed->decoded_size = length;
+    ed->ram_bytes = length;
     ed->compression = BTRFS_COMPRESSION_NONE;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
-    ed->encoding = BTRFS_ENCODING_NONE;
+    ed->other_encoding = BTRFS_ENCODING_NONE;
     ed->type = EXTENT_TYPE_REGULAR;
+    ed->disk_bytenr = 0;
+    ed->disk_num_bytes = 0;
+    ed->offset = 0;
+    ed->num_bytes = length;
 
-    ed2 = (EXTENT_DATA2*)ed->data;
-    ed2->address = 0;
-    ed2->size = 0;
-    ed2->offset = 0;
-    ed2->num_bytes = length;
-
-    Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2), Batch_Insert);
+    Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_EXTENT_DATA, start, ed, sizeof(struct btrfs_file_extent_item), Batch_Insert);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item_batch returned %08lx\n", Status);
         ExFreePool(ed);
@@ -4638,20 +4631,18 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-            if (ed2->size != 0) {
+            if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
 
                 le2 = extent_ranges.Flink;
                 while (le2 != &extent_ranges) {
                     extent_range* er2 = CONTAINING_RECORD(le2, extent_range, list_entry);
 
-                    if (er2->address == ed2->address) {
-                        er2->skip_start = min(er2->skip_start, ed2->offset);
-                        er2->skip_end = min(er2->skip_end, ed2->size - ed2->offset - ed2->num_bytes);
+                    if (er2->address == ext->extent_data.disk_bytenr) {
+                        er2->skip_start = min(er2->skip_start, ext->extent_data.offset);
+                        er2->skip_end = min(er2->skip_end, ext->extent_data.disk_num_bytes - ext->extent_data.offset - ext->extent_data.num_bytes);
                         goto cont;
-                    } else if (er2->address > ed2->address)
+                    } else if (er2->address > ext->extent_data.disk_bytenr)
                         break;
 
                     le2 = le2->Flink;
@@ -4663,13 +4654,13 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                     goto end;
                 }
 
-                er->address = ed2->address;
-                er->length = ed2->size;
-                er->offset = ext->offset - ed2->offset;
+                er->address = ext->extent_data.disk_bytenr;
+                er->length = ext->extent_data.disk_num_bytes;
+                er->offset = ext->offset - ext->extent_data.offset;
                 er->changed = false;
                 er->chunk = NULL;
-                er->skip_start = ed2->offset;
-                er->skip_end = ed2->size - ed2->offset - ed2->num_bytes;
+                er->skip_start = ext->extent_data.offset;
+                er->skip_end = ext->extent_data.disk_num_bytes - ext->extent_data.offset - ext->extent_data.num_bytes;
 
                 if (er->skip_start != 0 || er->skip_end != 0)
                     truncating = true;
@@ -4727,24 +4718,23 @@ cont:
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
                     if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-                        if (ed2->size != 0 && ed2->address == er->address) {
+                        if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
                             NTSTATUS Status;
 
-                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
-                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
+                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id,
+                                                               fcb->inode, ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                               true, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_changed_extent_ref returned %08lx\n", Status);
                                 goto end;
                             }
 
-                            ext->extent_data.decoded_size -= er->skip_start;
-                            ed2->size -= er->skip_start;
-                            ed2->address += er->skip_start;
-                            ed2->offset -= er->skip_start;
+                            ext->extent_data.ram_bytes -= er->skip_start;
+                            ext->extent_data.disk_num_bytes -= er->skip_start;
+                            ext->extent_data.disk_bytenr += er->skip_start;
+                            ext->extent_data.offset -= er->skip_start;
 
-                            add_changed_extent_ref(er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                            add_changed_extent_ref(er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ext->extent_data.offset,
                                                    1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
                         }
                     }
@@ -4783,23 +4773,21 @@ cont:
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
                     if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-                        if (ed2->size != 0 && ed2->address == er->address) {
+                        if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
                             NTSTATUS Status;
 
-                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
-                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
+                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
+                                                               ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_changed_extent_ref returned %08lx\n", Status);
                                 goto end;
                             }
 
-                            ext->extent_data.decoded_size -= er->skip_end;
-                            ed2->size -= er->skip_end;
+                            ext->extent_data.ram_bytes -= er->skip_end;
+                            ext->extent_data.disk_num_bytes -= er->skip_end;
 
-                            add_changed_extent_ref(er->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
-                                                   1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                            add_changed_extent_ref(er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
+                                                   ext->offset - ext->extent_data.offset, 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
                         }
                     }
 
@@ -4872,31 +4860,29 @@ cont:
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-            if (ed2->size != 0) {
+            if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
 
                 le2 = extent_ranges.Flink;
                 while (le2 != &extent_ranges) {
                     extent_range* er2 = CONTAINING_RECORD(le2, extent_range, list_entry);
 
-                    if (ed2->address >= er2->address && ed2->address + ed2->size <= er2->address + er2->length && er2->changed) {
+                    if (ext->extent_data.disk_bytenr >= er2->address && ext->extent_data.disk_bytenr + ext->extent_data.disk_num_bytes <= er2->address + er2->length && er2->changed) {
                         NTSTATUS Status;
 
-                        Status = update_changed_extent_ref(fcb->Vcb, er2->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
-                                                           -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
+                        Status = update_changed_extent_ref(fcb->Vcb, er2->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
+                                                           ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08lx\n", Status);
                             goto end;
                         }
 
-                        ed2->offset += ed2->address - er2->address;
-                        ed2->address = er2->address;
-                        ed2->size = er2->length;
-                        ext->extent_data.decoded_size = ed2->size;
+                        ext->extent_data.offset += ext->extent_data.disk_bytenr - er2->address;
+                        ext->extent_data.disk_bytenr = er2->address;
+                        ext->extent_data.disk_num_bytes = er2->length;
+                        ext->extent_data.ram_bytes = ext->extent_data.disk_num_bytes;
 
-                        add_changed_extent_ref(er2->chunk, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset,
+                        add_changed_extent_ref(er2->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ext->extent_data.offset,
                                                1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
 
                         break;
@@ -5002,13 +4988,11 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
             if (ext->inserted && ext->csum && ext->extent_data.type == EXTENT_TYPE_REGULAR) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-
-                if (ed2->size > 0) { // not sparse
+                if (ext->extent_data.disk_num_bytes > 0) { // not sparse
                     if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
-                        add_checksum_entry(fcb->Vcb, ed2->address + ed2->offset, (ULONG)(ed2->num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
+                        add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr + ext->extent_data.offset, (ULONG)(ext->extent_data.num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
                     else
-                        add_checksum_entry(fcb->Vcb, ed2->address, (ULONG)(ed2->size >> fcb->Vcb->sector_shift), ext->csum, Irp);
+                        add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr, (ULONG)(ext->extent_data.disk_num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
                 }
             }
 
@@ -5029,15 +5013,12 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                     extent* nextext = CONTAINING_RECORD(le->Flink, extent, list_entry);
 
                     if (ext->extent_data.type == nextext->extent_data.type) {
-                        EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ext->extent_data.data;
-                        EXTENT_DATA2* ned2 = (EXTENT_DATA2*)nextext->extent_data.data;
-
-                        if (ed2->size != 0 && ed2->address == ned2->address && ed2->size == ned2->size &&
-                            nextext->offset == ext->offset + ed2->num_bytes && ned2->offset == ed2->offset + ed2->num_bytes) {
+                        if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == nextext->extent_data.disk_bytenr && ext->extent_data.disk_num_bytes == nextext->extent_data.disk_num_bytes &&
+                            nextext->offset == ext->offset + ext->extent_data.num_bytes && nextext->extent_data.offset == ext->extent_data.offset + ext->extent_data.num_bytes) {
                             chunk* c;
 
                             if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->csum) {
-                                ULONG len = (ULONG)((ed2->num_bytes + ned2->num_bytes) >> fcb->Vcb->sector_shift);
+                                ULONG len = (ULONG)((ext->extent_data.num_bytes + nextext->extent_data.num_bytes) >> fcb->Vcb->sector_shift);
                                 void* csum;
 
                                 csum = ExAllocatePoolWithTag(NonPagedPool, len * fcb->Vcb->csum_size, ALLOC_TAG);
@@ -5047,16 +5028,16 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                                     goto end;
                                 }
 
-                                RtlCopyMemory(csum, ext->csum, (ULONG)((ed2->num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
-                                RtlCopyMemory((uint8_t*)csum + ((ed2->num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift), nextext->csum,
-                                              (ULONG)((ned2->num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
+                                RtlCopyMemory(csum, ext->csum, (ULONG)((ext->extent_data.num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
+                                RtlCopyMemory((uint8_t*)csum + ((ext->extent_data.num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift), nextext->csum,
+                                              (ULONG)((nextext->extent_data.num_bytes * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift));
 
                                 ExFreePool(ext->csum);
                                 ext->csum = csum;
                             }
 
                             ext->extent_data.generation = fcb->Vcb->superblock.generation;
-                            ed2->num_bytes += ned2->num_bytes;
+                            ext->extent_data.num_bytes += nextext->extent_data.num_bytes;
 
                             RemoveEntryList(&nextext->list_entry);
 
@@ -5065,12 +5046,12 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
                             ExFreePool(nextext);
 
-                            c = get_chunk_from_address(fcb->Vcb, ed2->address);
+                            c = get_chunk_from_address(fcb->Vcb, ext->extent_data.disk_bytenr);
 
                             if (!c) {
-                                ERR("get_chunk_from_address(%I64x) failed\n", ed2->address);
+                                ERR("get_chunk_from_address(%I64x) failed\n", ext->extent_data.disk_bytenr);
                             } else {
-                                Status = update_changed_extent_ref(fcb->Vcb, c, ed2->address, ed2->size, fcb->subvol->id, fcb->inode, ext->offset - ed2->offset, -1,
+                                Status = update_changed_extent_ref(fcb->Vcb, c, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ext->extent_data.offset, -1,
                                                                 fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
@@ -5104,7 +5085,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         le = fcb->extents.Flink;
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
-            EXTENT_DATA* ed;
+            struct btrfs_file_extent_item* ed;
 
             ext->inserted = false;
 
@@ -5140,12 +5121,9 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
                 if (ed->type == EXTENT_TYPE_INLINE)
-                    last_end = ext->offset + ed->decoded_size;
-                else {
-                    EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                    last_end = ext->offset + ed2->num_bytes;
-                }
+                    last_end = ext->offset + ed->ram_bytes;
+                else
+                    last_end = ext->offset + ed->num_bytes;
             }
 
             le = le->Flink;
@@ -6188,14 +6166,12 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                     le3 = c->cache->extents.Flink;
                     while (le3 != &c->cache->extents) {
                         extent* ext = CONTAINING_RECORD(le3, extent, list_entry);
-                        EXTENT_DATA* ed = &ext->extent_data;
+                        struct btrfs_file_extent_item* ed = &ext->extent_data;
 
                         if (!ext->ignore) {
                             if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)ed->data;
-
-                                if (ed2->size != 0 && ed2->address >= c->offset && ed2->address + ed2->size <= c->offset + c->chunk_item->length)
-                                    used_minus_cache -= ed2->size;
+                                if (ed->disk_num_bytes != 0 && ed->disk_bytenr >= c->offset && ed->disk_bytenr + ed->disk_num_bytes <= c->offset + c->chunk_item->length)
+                                    used_minus_cache -= ed->disk_num_bytes;
                             }
                         }
 

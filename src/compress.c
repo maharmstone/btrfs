@@ -1100,11 +1100,10 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     extaddr = address;
 
     for (i = 0; i < num_parts; i++) {
-        EXTENT_DATA* ed;
-        EXTENT_DATA2* ed2;
+        struct btrfs_file_extent_item* ed;
         void* csum2;
 
-        ed = ExAllocatePoolWithTag(PagedPool, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2), ALLOC_TAG);
+        ed = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_file_extent_item), ALLOC_TAG);
         if (!ed) {
             ERR("out of memory\n");
             ExFreePool(parts);
@@ -1116,17 +1115,15 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         }
 
         ed->generation = fcb->Vcb->superblock.generation;
-        ed->decoded_size = parts[i].inlen;
+        ed->ram_bytes = parts[i].inlen;
         ed->compression = parts[i].compression_type;
         ed->encryption = BTRFS_ENCRYPTION_NONE;
-        ed->encoding = BTRFS_ENCODING_NONE;
+        ed->other_encoding = BTRFS_ENCODING_NONE;
         ed->type = EXTENT_TYPE_REGULAR;
-
-        ed2 = (EXTENT_DATA2*)ed->data;
-        ed2->address = extaddr;
-        ed2->size = parts[i].outlen;
-        ed2->offset = 0;
-        ed2->num_bytes = parts[i].inlen;
+        ed->disk_bytenr = extaddr;
+        ed->disk_num_bytes = parts[i].outlen;
+        ed->offset = 0;
+        ed->num_bytes = parts[i].inlen;
 
         if (csum) {
             csum2 = ExAllocatePoolWithTag(PagedPool, (parts[i].outlen * fcb->Vcb->csum_size) >> fcb->Vcb->sector_shift, ALLOC_TAG);
@@ -1143,7 +1140,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         } else
             csum2 = NULL;
 
-        Status = add_extent_to_fcb(fcb, start_data + (i * COMPRESSED_EXTENT_SIZE), ed, offsetof(EXTENT_DATA, data[0]) + sizeof(EXTENT_DATA2),
+        Status = add_extent_to_fcb(fcb, start_data + (i * COMPRESSED_EXTENT_SIZE), ed, sizeof(struct btrfs_file_extent_item),
                                    true, csum2, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_extent_to_fcb returned %08lx\n", Status);

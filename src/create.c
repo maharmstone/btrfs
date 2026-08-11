@@ -709,7 +709,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     fcb *fcb, *deleted_fcb = NULL;
     bool atts_set = false, sd_set = false, no_data;
     LIST_ENTRY* lastle = NULL;
-    EXTENT_DATA* ed = NULL;
+    struct btrfs_file_extent_item* ed = NULL;
     uint64_t fcbs_version = 0;
     uint32_t hash;
 
@@ -1178,32 +1178,30 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             extent* ext;
             bool unique = false;
 
-            ed = (EXTENT_DATA*)tp.item->data;
+            ed = (struct btrfs_file_extent_item*)tp.item->data;
 
-            if (tp.item->size < sizeof(EXTENT_DATA)) {
+            if (tp.item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                    tp.item->size, sizeof(EXTENT_DATA));
+                    tp.item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr));
 
                 reap_fcb(fcb);
                 return STATUS_INTERNAL_ERROR;
             }
 
             if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
-                EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ed->data[0];
-
-                if (tp.item->size < sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2)) {
+                if (tp.item->size < sizeof(struct btrfs_file_extent_item)) {
                     ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                        tp.item->size, sizeof(EXTENT_DATA) - 1 + sizeof(EXTENT_DATA2));
+                        tp.item->size, sizeof(struct btrfs_file_extent_item));
 
                     reap_fcb(fcb);
                     return STATUS_INTERNAL_ERROR;
                 }
 
-                if (ed2->address == 0 || ed2->size == 0) // sparse
+                if (ed->disk_bytenr == 0 || ed->disk_num_bytes == 0) // sparse
                     continue;
 
-                if (ed2->size != 0 && is_tree_unique(Vcb, tp.tree, Irp))
-                    unique = is_extent_unique(Vcb, ed2->address, ed2->size, Irp);
+                if (ed->disk_num_bytes != 0 && is_tree_unique(Vcb, tp.tree, Irp))
+                    unique = is_extent_unique(Vcb, ed->disk_bytenr, ed->disk_num_bytes, Irp);
             }
 
             ext = ExAllocatePoolWithTag(pooltype, offsetof(extent, extent_data) + tp.item->size, ALLOC_TAG);
@@ -3557,10 +3555,9 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if (!ext->ignore && ext->extent_data.type == EXTENT_TYPE_REGULAR) {
-            EXTENT_DATA2* ed2 = (EXTENT_DATA2*)&ext->extent_data.data[0];
             uint64_t len;
 
-            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->num_bytes : ed2->size) >> Vcb->sector_shift;
+            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ext->extent_data.num_bytes : ext->extent_data.disk_num_bytes) >> Vcb->sector_shift;
 
             ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * Vcb->csum_size), ALLOC_TAG);
             if (!ext->csum) {
@@ -3568,7 +3565,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
                 goto end;
             }
 
-            Status = load_csum(Vcb, ext->csum, ed2->address + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ed2->offset : 0), len, Irp);
+            Status = load_csum(Vcb, ext->csum, ext->extent_data.disk_bytenr + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ext->extent_data.offset : 0), len, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("load_csum returned %08lx\n", Status);

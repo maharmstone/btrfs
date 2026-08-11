@@ -362,22 +362,18 @@ struct btrfs_chunk {
     struct btrfs_stripe stripe[1];
 };
 
-typedef struct {
+struct btrfs_file_extent_item {
     uint64_t generation;
-    uint64_t decoded_size;
+    uint64_t ram_bytes;
     uint8_t compression;
     uint8_t encryption;
-    uint16_t encoding;
+    uint16_t other_encoding;
     uint8_t type;
-    uint8_t data[1];
-} EXTENT_DATA;
-
-typedef struct {
-    uint64_t address;
-    uint64_t size;
+    uint64_t disk_bytenr;
+    uint64_t disk_num_bytes;
     uint64_t offset;
     uint64_t num_bytes;
-} EXTENT_DATA2;
+};
 
 struct btrfs_inode_ref {
     uint64_t index;
