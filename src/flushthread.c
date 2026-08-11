@@ -6584,20 +6584,20 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
 
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            INODE_REF* ir;
+            struct btrfs_inode_ref* ir;
 
-            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->dc->utf8.Length, ALLOC_TAG);
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_ref) + fileref->dc->utf8.Length, ALLOC_TAG);
             if (!ir) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             ir->index = fileref->dc->index;
-            ir->n = fileref->dc->utf8.Length;
-            RtlCopyMemory(ir->name, fileref->dc->utf8.Buffer, ir->n);
+            ir->name_len = fileref->dc->utf8.Length;
+            RtlCopyMemory(&ir[1], fileref->dc->utf8.Buffer, ir->name_len);
 
             Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                            ir, sizeof(INODE_REF) - 1 + ir->n, Batch_InodeRef);
+                                            ir, sizeof(struct btrfs_inode_ref) + ir->name_len, Batch_InodeRef);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08lx\n", Status);
                 return Status;
@@ -6662,22 +6662,22 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
 
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            INODE_REF* ir;
+            struct btrfs_inode_ref* ir;
 
             // delete INODE_REF (0xc)
 
-            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + name->Length, ALLOC_TAG);
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_ref) + name->Length, ALLOC_TAG);
             if (!ir) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             ir->index = fileref->oldindex;
-            ir->n = name->Length;
-            RtlCopyMemory(ir->name, name->Buffer, name->Length);
+            ir->name_len = name->Length;
+            RtlCopyMemory(&ir[1], name->Buffer, name->Length);
 
             Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->parent->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF,
-                                            fileref->parent->fcb->inode, ir, sizeof(INODE_REF) - 1 + name->Length, Batch_DeleteInodeRef);
+                                            fileref->parent->fcb->inode, ir, sizeof(struct btrfs_inode_ref) + name->Length, Batch_DeleteInodeRef);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08lx\n", Status);
                 return Status;
@@ -6788,11 +6788,11 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         }
 
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
-            INODE_REF *ir, *ir2;
+            struct btrfs_inode_ref *ir, *ir2;
 
             // delete INODE_REF (0xc)
 
-            ir = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + oldutf8->Length, ALLOC_TAG);
+            ir = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_ref) + oldutf8->Length, ALLOC_TAG);
             if (!ir) {
                 ERR("out of memory\n");
                 ExFreePool(di2);
@@ -6800,11 +6800,11 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             }
 
             ir->index = fileref->dc->index;
-            ir->n = oldutf8->Length;
-            RtlCopyMemory(ir->name, oldutf8->Buffer, ir->n);
+            ir->name_len = oldutf8->Length;
+            RtlCopyMemory(&ir[1], oldutf8->Buffer, ir->name_len);
 
             Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                            ir, sizeof(INODE_REF) - 1 + ir->n, Batch_DeleteInodeRef);
+                                            ir, sizeof(struct btrfs_inode_ref) + ir->name_len, Batch_DeleteInodeRef);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08lx\n", Status);
                 ExFreePool(ir);
@@ -6814,7 +6814,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
 
             // add INODE_REF (0xc)
 
-            ir2 = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_REF) - 1 + fileref->dc->utf8.Length, ALLOC_TAG);
+            ir2 = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_ref) + fileref->dc->utf8.Length, ALLOC_TAG);
             if (!ir2) {
                 ERR("out of memory\n");
                 ExFreePool(di2);
@@ -6822,11 +6822,11 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
             }
 
             ir2->index = fileref->dc->index;
-            ir2->n = fileref->dc->utf8.Length;
-            RtlCopyMemory(ir2->name, fileref->dc->utf8.Buffer, ir2->n);
+            ir2->name_len = fileref->dc->utf8.Length;
+            RtlCopyMemory(&ir2[1], fileref->dc->utf8.Buffer, ir2->name_len);
 
             Status = insert_tree_item_batch(batchlist, fileref->fcb->Vcb, fileref->fcb->subvol, fileref->fcb->inode, TYPE_INODE_REF, fileref->parent->fcb->inode,
-                                            ir2, sizeof(INODE_REF) - 1 + ir2->n, Batch_InodeRef);
+                                            ir2, sizeof(struct btrfs_inode_ref) + ir2->name_len, Batch_InodeRef);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08lx\n", Status);
                 ExFreePool(ir2);

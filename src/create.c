@@ -830,12 +830,12 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
         if ((always_add_hl || fcb->inode_item.nlink > 1) && tp.item->key.type == TYPE_INODE_REF) {
             ULONG len;
-            INODE_REF* ir;
+            struct btrfs_inode_ref* ir;
 
             len = tp.item->size;
-            ir = (INODE_REF*)tp.item->data;
+            ir = (struct btrfs_inode_ref*)tp.item->data;
 
-            while (len >= sizeof(INODE_REF) - 1) {
+            while (len >= sizeof(struct btrfs_inode_ref)) {
                 hardlink* hl;
                 ULONG stringlen;
 
@@ -849,14 +849,14 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 hl->parent = tp.item->key.offset;
                 hl->index = ir->index;
 
-                hl->utf8.Length = hl->utf8.MaximumLength = ir->n;
+                hl->utf8.Length = hl->utf8.MaximumLength = ir->name_len;
 
                 if (hl->utf8.Length > 0) {
                     hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
-                    RtlCopyMemory(hl->utf8.Buffer, ir->name, ir->n);
+                    RtlCopyMemory(hl->utf8.Buffer, &ir[1], ir->name_len);
                 }
 
-                Status = utf8_to_utf16(NULL, 0, &stringlen, ir->name, ir->n);
+                Status = utf8_to_utf16(NULL, 0, &stringlen, (char*)&ir[1], ir->name_len);
                 if (!NT_SUCCESS(Status)) {
                     ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                     ExFreePool(hl);
@@ -878,7 +878,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
-                    Status = utf8_to_utf16(hl->name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                    Status = utf8_to_utf16(hl->name.Buffer, stringlen, &stringlen, (char*)&ir[1], ir->name_len);
                     if (!NT_SUCCESS(Status)) {
                         ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                         ExFreePool(hl->name.Buffer);
@@ -890,8 +890,8 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 InsertTailList(&fcb->hardlinks, &hl->list_entry);
 
-                len -= sizeof(INODE_REF) - 1 + ir->n;
-                ir = (INODE_REF*)&ir->name[ir->n];
+                len -= sizeof(struct btrfs_inode_ref) + ir->name_len;
+                ir = (struct btrfs_inode_ref*)((uint8_t*)&ir[1] + ir->name_len);
             }
         } else if ((always_add_hl || fcb->inode_item.nlink > 1) && tp.item->key.type == TYPE_INODE_EXTREF) {
             ULONG len;
@@ -4206,9 +4206,9 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                 if (tp.item->key.objectid == fcb->inode) {
                     if (tp.item->key.type == TYPE_INODE_REF) {
-                        INODE_REF* ir = (INODE_REF*)tp.item->data;
+                        struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
 
-                        if (tp.item->size < offsetof(INODE_REF, name[0]) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+                        if (tp.item->size < sizeof(struct btrfs_inode_ref) || tp.item->size < sizeof(struct btrfs_inode_ref) + ir->name_len) {
                             ERR("INODE_REF was too short\n");
                             free_fcb(fcb);
                             return STATUS_INTERNAL_ERROR;
@@ -4216,7 +4216,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
 
                         ULONG stringlen;
 
-                        Status = utf8_to_utf16(NULL, 0, &stringlen, ir->name, ir->n);
+                        Status = utf8_to_utf16(NULL, 0, &stringlen, (char*)&ir[1], ir->name_len);
                         if (!NT_SUCCESS(Status)) {
                             ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                             free_fcb(fcb);
@@ -4236,7 +4236,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                                 return STATUS_INSUFFICIENT_RESOURCES;
                             }
 
-                            Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, ir->name, ir->n);
+                            Status = utf8_to_utf16(name.Buffer, stringlen, &stringlen, (char*)&ir[1], ir->name_len);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("utf8_to_utf16 2 returned %08lx\n", Status);
                                 ExFreePool(name.Buffer);

@@ -718,10 +718,10 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
         }
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-            INODE_REF* ir = (INODE_REF*)tp.item->data;
+            struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
             send_dir* parent;
 
-            if (tp.item->size < sizeof(INODE_REF) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+            if (tp.item->size < sizeof(struct btrfs_inode_ref) || tp.item->size < sizeof(struct btrfs_inode_ref) + ir->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return STATUS_INTERNAL_ERROR;
             }
@@ -736,7 +736,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
                 }
             }
 
-            Status = send_add_dir(context, dir, parent, ir->name, ir->n, true, NULL, psd);
+            Status = send_add_dir(context, dir, parent, (char*)&ir[1], ir->name_len, true, NULL, psd);
             if (!NT_SUCCESS(Status)) {
                 ERR("send_add_dir returned %08lx\n", Status);
                 return Status;
@@ -771,7 +771,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
     NTSTATUS Status;
     uint64_t inode = tp ? tp->item->key.objectid : 0, dir = tp ? tp->item->key.offset : 0;
     LIST_ENTRY* le;
-    INODE_REF* ir;
+    struct btrfs_inode_ref* ir;
     uint16_t len;
     send_dir* sd = NULL;
     orphan* o2 = NULL;
@@ -779,9 +779,9 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
     if (inode == dir) // root
         return STATUS_SUCCESS;
 
-    if (tp->item->size < sizeof(INODE_REF)) {
+    if (tp->item->size < sizeof(struct btrfs_inode_ref)) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-            tp->item->size, sizeof(INODE_REF));
+            tp->item->size, sizeof(struct btrfs_inode_ref));
         return STATUS_INTERNAL_ERROR;
     }
 
@@ -840,30 +840,30 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
         sd = context->root_dir;
 
     len = tp->item->size;
-    ir = (INODE_REF*)tp->item->data;
+    ir = (struct btrfs_inode_ref*)tp->item->data;
 
     while (len > 0) {
         ref* r;
 
-        if (len < sizeof(INODE_REF) || len < offsetof(INODE_REF, name[0]) + ir->n) {
+        if (len < sizeof(struct btrfs_inode_ref) || len < sizeof(struct btrfs_inode_ref) + ir->name_len) {
             ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset);
             return STATUS_INTERNAL_ERROR;
         }
 
-        r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ir->n, ALLOC_TAG);
+        r = ExAllocatePoolWithTag(PagedPool, offsetof(ref, name[0]) + ir->name_len, ALLOC_TAG);
         if (!r) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         r->sd = sd;
-        r->namelen = ir->n;
-        RtlCopyMemory(r->name, ir->name, ir->n);
+        r->namelen = ir->name_len;
+        RtlCopyMemory(r->name, &ir[1], ir->name_len);
 
         InsertTailList(tree2 ? &context->lastinode.oldrefs : &context->lastinode.refs, &r->list_entry);
 
-        len -= (uint16_t)offsetof(INODE_REF, name[0]) + ir->n;
-        ir = (INODE_REF*)&ir->name[ir->n];
+        len -= (uint16_t)sizeof(struct btrfs_inode_ref) + ir->name_len;
+        ir = (struct btrfs_inode_ref*)((uint8_t*)&ir[1] + ir->name_len);
     }
 
     return STATUS_SUCCESS;
@@ -1868,14 +1868,14 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             len++;
 
         if (tp.item->key.type == TYPE_INODE_REF) {
-            INODE_REF* ir = (INODE_REF*)tp.item->data;
+            struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
 
-            if (tp.item->size < sizeof(INODE_REF) || tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+            if (tp.item->size < sizeof(struct btrfs_inode_ref) || tp.item->size < sizeof(struct btrfs_inode_ref) + ir->name_len) {
                 ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                 return false;
             }
 
-            len += ir->n;
+            len += ir->name_len;
             num = tp.item->key.offset;
         } else {
             INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;
@@ -1917,10 +1917,10 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
         }
 
         if (tp.item->key.type == TYPE_INODE_REF) {
-            INODE_REF* ir = (INODE_REF*)tp.item->data;
+            struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
 
-            RtlCopyMemory(ptr - ir->n, ir->name, ir->n);
-            ptr -= ir->n;
+            RtlCopyMemory(ptr - ir->name_len, &ir[1], ir->name_len);
+            ptr -= ir->name_len;
             num = tp.item->key.offset;
         } else {
             INODE_EXTREF* ier = (INODE_EXTREF*)tp.item->data;

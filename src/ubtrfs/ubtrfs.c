@@ -836,13 +836,13 @@ static __inline void win_time_to_unix(LARGE_INTEGER t, struct btrfs_timespec* ou
 
 static void add_inode_ref(btrfs_root* r, uint64_t inode, uint64_t parent, uint64_t index, const char* name) {
     uint16_t name_len = (uint16_t)strlen(name);
-    INODE_REF* ir = malloc(offsetof(INODE_REF, name[0]) + name_len);
+    struct btrfs_inode_ref* ir = malloc(sizeof(struct btrfs_inode_ref) + name_len);
 
     ir->index = 0;
-    ir->n = name_len;
-    memcpy(ir->name, name, name_len);
+    ir->name_len = name_len;
+    memcpy(&ir[1], name, name_len);
 
-    add_item(r, inode, TYPE_INODE_REF, parent, ir, (uint16_t)offsetof(INODE_REF, name[0]) + ir->n);
+    add_item(r, inode, TYPE_INODE_REF, parent, ir, (uint16_t)sizeof(struct btrfs_inode_ref) + ir->name_len);
 
     free(ir);
 }

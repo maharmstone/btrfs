@@ -754,7 +754,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     uint16_t irsize;
     UNICODE_STRING nameus;
     ANSI_STRING utf8;
-    INODE_REF* ir;
+    struct btrfs_inode_ref* ir;
     struct btrfs_key searchkey;
     traverse_ptr tp;
     SECURITY_SUBJECT_CONTEXT subjcont;
@@ -1025,7 +1025,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     // add INODE_REF
 
-    irsize = (uint16_t)(offsetof(INODE_REF, name[0]) + sizeof(DOTDOT) - 1);
+    irsize = (uint16_t)(sizeof(struct btrfs_inode_ref) + sizeof(DOTDOT) - 1);
     ir = ExAllocatePoolWithTag(PagedPool, irsize, ALLOC_TAG);
     if (!ir) {
         ERR("out of memory\n");
@@ -1034,8 +1034,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
 
     ir->index = 0;
-    ir->n = sizeof(DOTDOT) - 1;
-    RtlCopyMemory(ir->name, DOTDOT, ir->n);
+    ir->name_len = sizeof(DOTDOT) - 1;
+    RtlCopyMemory(&ir[1], DOTDOT, ir->name_len);
 
     Status = insert_tree_item(Vcb, r, r->root_item.root_dirid, TYPE_INODE_REF, r->root_item.root_dirid, ir, irsize, NULL, Irp);
     if (!NT_SUCCESS(Status)) {

@@ -1274,7 +1274,7 @@ __attribute__((nonnull(1,2,3)))
 static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_ENTRY* listhead) {
     batch_item* bi2;
     LIST_ENTRY* le;
-    INODE_REF* delir = (INODE_REF*)bi->data;
+    struct btrfs_inode_ref* delir = (struct btrfs_inode_ref*)bi->data;
     INODE_EXTREF* ier;
 
     TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
@@ -1285,7 +1285,7 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
         return;
     }
 
-    ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + delir->n, ALLOC_TAG);
+    ier = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_EXTREF) - 1 + delir->name_len, ALLOC_TAG);
     if (!ier) {
         ERR("out of memory\n");
         ExFreePool(bi2);
@@ -1294,8 +1294,8 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
 
     ier->dir = bi->key.offset;
     ier->index = delir->index;
-    ier->n = delir->n;
-    RtlCopyMemory(ier->name, delir->name, delir->n);
+    ier->n = delir->name_len;
+    RtlCopyMemory(ier->name, &delir[1], delir->name_len);
 
     bi2->key.objectid = bi->key.objectid;
     bi2->key.type = TYPE_INODE_EXTREF;
@@ -1443,7 +1443,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                 if (td->size + bi->datalen > maxlen) {
                     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
-                        INODE_REF* ir = (INODE_REF*)bi->data;
+                        struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)bi->data;
                         INODE_EXTREF* ier;
                         uint16_t ierlen;
                         batch_item* bi2;
@@ -1452,7 +1452,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                         TRACE("INODE_REF would be too long, adding INODE_EXTREF instead\n");
 
-                        ierlen = (uint16_t)(offsetof(INODE_EXTREF, name[0]) + ir->n);
+                        ierlen = (uint16_t)(offsetof(INODE_EXTREF, name[0]) + ir->name_len);
 
                         ier = ExAllocatePoolWithTag(PagedPool, ierlen, ALLOC_TAG);
                         if (!ier) {
@@ -1462,8 +1462,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                         ier->dir = bi->key.offset;
                         ier->index = ir->index;
-                        ier->n = ir->n;
-                        RtlCopyMemory(ier->name, ir->name, ier->n);
+                        ier->n = ir->name_len;
+                        RtlCopyMemory(ier->name, &ir[1], ier->n);
 
                         bi2 = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
                         if (!bi2) {
@@ -1622,29 +1622,29 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
             }
 
             case Batch_DeleteInodeRef: {
-                if (td->size < sizeof(INODE_REF)) {
-                    ERR("INODE_REF was %u bytes, expected at least %Iu\n", td->size, sizeof(INODE_REF));
+                if (td->size < sizeof(struct btrfs_inode_ref)) {
+                    ERR("INODE_REF was %u bytes, expected at least %Iu\n", td->size, sizeof(struct btrfs_inode_ref));
                     return STATUS_INTERNAL_ERROR;
                 } else {
-                    INODE_REF *ir, *delir;
+                    struct btrfs_inode_ref *ir, *delir;
                     ULONG len;
                     bool changed = false;
 
-                    delir = (INODE_REF*)bi->data;
-                    ir = (INODE_REF*)td->data;
+                    delir = (struct btrfs_inode_ref*)bi->data;
+                    ir = (struct btrfs_inode_ref*)td->data;
                     len = td->size;
 
                     do {
                         uint16_t itemlen;
 
-                        if (len < sizeof(INODE_REF) || len < offsetof(INODE_REF, name[0]) + ir->n) {
+                        if (len < sizeof(struct btrfs_inode_ref) || len < sizeof(struct btrfs_inode_ref) + ir->name_len) {
                             ERR("INODE_REF was truncated\n");
                             break;
                         }
 
-                        itemlen = (uint16_t)offsetof(INODE_REF, name[0]) + ir->n;
+                        itemlen = (uint16_t)sizeof(struct btrfs_inode_ref) + ir->name_len;
 
-                        if (ir->n == delir->n && RtlCompareMemory(ir->name, delir->name, ir->n) == ir->n) {
+                        if (ir->name_len == delir->name_len && RtlCompareMemory(&ir[1], &delir[1], ir->name_len) == ir->name_len) {
                             uint16_t newlen = td->size - itemlen;
 
                             changed = true;
@@ -1669,8 +1669,8 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                                     iroff = newir;
                                 }
 
-                                if ((uint8_t*)&ir->name[ir->n] < td->data + td->size)
-                                    RtlCopyMemory(iroff, &ir->name[ir->n], td->size - ((uint8_t*)&ir->name[ir->n] - td->data));
+                                if ((uint8_t*)&ir[1] + ir->name_len < td->data + td->size)
+                                    RtlCopyMemory(iroff, (uint8_t*)&ir[1] + ir->name_len, td->size - (((uint8_t*)&ir[1] + ir->name_len) - td->data));
 
                                 td2 = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
                                 if (!td2) {
@@ -1697,7 +1697,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
 
                         if (len > itemlen) {
                             len -= itemlen;
-                            ir = (INODE_REF*)&ir->name[ir->n];
+                            ir = (struct btrfs_inode_ref*)((uint8_t*)&ir[1] + ir->name_len);
                         } else
                             break;
                     } while (len > 0);

@@ -156,17 +156,17 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
             }
 
             if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == TYPE_INODE_REF) {
-                INODE_REF* ir = (INODE_REF*)tp.item->data;
+                struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
                 path_part* pp;
 
-                if (tp.item->size < sizeof(INODE_REF)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(INODE_REF));
+                if (tp.item->size < sizeof(struct btrfs_inode_ref)) {
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_inode_ref));
                     goto end;
                 }
 
-                if (tp.item->size < offsetof(INODE_REF, name[0]) + ir->n) {
+                if (tp.item->size < sizeof(struct btrfs_inode_ref) + ir->name_len) {
                     ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                        tp.item->size, offsetof(INODE_REF, name[0]) + ir->n);
+                        tp.item->size, sizeof(struct btrfs_inode_ref) + ir->name_len);
                     goto end;
                 }
 
@@ -176,8 +176,8 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                     goto end;
                 }
 
-                pp->name.Buffer = ir->name;
-                pp->name.Length = pp->name.MaximumLength = ir->n;
+                pp->name.Buffer = (char*)&ir[1];
+                pp->name.Length = pp->name.MaximumLength = ir->name_len;
                 pp->orig_subvol = orig_subvol;
 
                 InsertTailList(&parts, &pp->list_entry);

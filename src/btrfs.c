@@ -3123,7 +3123,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         root* reloc_root;
         struct btrfs_inode_item* ii;
         uint16_t irlen;
-        INODE_REF* ir;
+        struct btrfs_inode_ref* ir;
         LARGE_INTEGER time;
         struct btrfs_timespec now;
 
@@ -3170,7 +3170,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
             return Status;
         }
 
-        irlen = (uint16_t)offsetof(INODE_REF, name[0]) + 2;
+        irlen = (uint16_t)sizeof(struct btrfs_inode_ref) + 2;
         ir = ExAllocatePoolWithTag(PagedPool, irlen, ALLOC_TAG);
         if (!ir) {
             ERR("out of memory\n");
@@ -3178,9 +3178,9 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         }
 
         ir->index = 0;
-        ir->n = 2;
-        ir->name[0] = '.';
-        ir->name[1] = '.';
+        ir->name_len = 2;
+        *(char*)&ir[1] = '.';
+        *((char*)&ir[1] + 1) = '.';
 
         Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {

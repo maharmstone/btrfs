@@ -379,11 +379,10 @@ typedef struct {
     uint64_t num_bytes;
 } EXTENT_DATA2;
 
-typedef struct {
+struct btrfs_inode_ref {
     uint64_t index;
-    uint16_t n;
-    char name[1];
-} INODE_REF;
+    uint16_t name_len;
+};
 
 typedef struct {
     uint64_t dir;
