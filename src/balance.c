@@ -24,7 +24,7 @@ typedef struct {
     uint64_t address;
     uint64_t new_address;
     struct btrfs_header* data;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     tree* t;
     bool system;
     LIST_ENTRY refs;
@@ -50,7 +50,7 @@ typedef struct {
     uint64_t size;
     uint64_t new_address;
     chunk* newchunk;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     LIST_ENTRY refs;
     LIST_ENTRY list_entry;
 } data_reloc;
@@ -74,7 +74,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
                                    bool skinny, metadata_reloc** mr2, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     metadata_reloc* mr;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     uint16_t len;
     uint64_t inline_rc;
     uint8_t* ptr;
@@ -87,7 +87,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
 
     mr->address = tp->item->key.objectid;
     mr->data = NULL;
-    mr->ei = (EXTENT_ITEM*)tp->item->data;
+    mr->ei = (struct btrfs_extent_item*)tp->item->data;
     mr->system = false;
     InitializeListHead(&mr->refs);
 
@@ -111,11 +111,11 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         release_chunk_lock(c, Vcb);
     }
 
-    ei = (EXTENT_ITEM*)tp->item->data;
+    ei = (struct btrfs_extent_item*)tp->item->data;
     inline_rc = 0;
 
-    len = tp->item->size - sizeof(EXTENT_ITEM);
-    ptr = (uint8_t*)tp->item->data + sizeof(EXTENT_ITEM);
+    len = tp->item->size - sizeof(struct btrfs_extent_item);
+    ptr = (uint8_t*)tp->item->data + sizeof(struct btrfs_extent_item);
     if (!skinny) {
         len -= sizeof(EXTENT_ITEM2);
         ptr += sizeof(EXTENT_ITEM2);
@@ -166,7 +166,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         ptr += sizeof(uint8_t) + sectlen;
     }
 
-    if (inline_rc < ei->refcount) { // look for non-inline entries
+    if (inline_rc < ei->refs) { // look for non-inline entries
         traverse_ptr tp2 = *tp, next_tp;
 
         while (find_next_item(Vcb, &tp2, &next_tp, false, NULL)) {
@@ -253,11 +253,11 @@ static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_-
         return Status;
     }
 
-    if (tp.item->key.objectid == address && tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM))
+    if (tp.item->key.objectid == address && tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(struct btrfs_extent_item))
         skinny = true;
     else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.nodesize &&
-             tp.item->size >= sizeof(EXTENT_ITEM)) {
-        EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+             tp.item->size >= sizeof(struct btrfs_extent_item)) {
+        struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
         if (!(ei->flags & EXTENT_ITEM_TREE_BLOCK)) {
             ERR("EXTENT_ITEM for %I64x found, but tree flag not set\n", address);
@@ -326,10 +326,10 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     uint16_t inline_len;
     bool all_inline = true;
     metadata_reloc_ref* first_noninline = NULL;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     uint8_t* ptr;
 
-    inline_len = sizeof(EXTENT_ITEM);
+    inline_len = sizeof(struct btrfs_extent_item);
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
         inline_len += sizeof(EXTENT_ITEM2);
 
@@ -364,7 +364,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ei->refcount = rc;
+    ei->refs = rc;
     ei->generation = mr->ei->generation;
     ei->flags = mr->ei->flags;
     ptr = (uint8_t*)&ei[1];
@@ -1131,12 +1131,12 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* ch
         if (tp.item->key.objectid >= c->offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
             bool tree = false, skinny = false;
 
-            if (tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
+            if (tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(struct btrfs_extent_item)) {
                 tree = true;
                 skinny = true;
             } else if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset == Vcb->superblock.nodesize &&
-                       tp.item->size >= sizeof(EXTENT_ITEM)) {
-                EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+                       tp.item->size >= sizeof(struct btrfs_extent_item)) {
+                struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
                 if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
                     tree = true;
@@ -1317,7 +1317,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                                traverse_ptr* tp, chunk* c, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     data_reloc* dr;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     uint16_t len;
     uint64_t inline_rc;
     uint8_t* ptr;
@@ -1330,7 +1330,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
     dr->address = tp->item->key.objectid;
     dr->size = tp->item->key.offset;
-    dr->ei = (EXTENT_ITEM*)tp->item->data;
+    dr->ei = (struct btrfs_extent_item*)tp->item->data;
     InitializeListHead(&dr->refs);
 
     Status = delete_tree_item(Vcb, tp);
@@ -1352,11 +1352,11 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         release_chunk_lock(c, Vcb);
     }
 
-    ei = (EXTENT_ITEM*)tp->item->data;
+    ei = (struct btrfs_extent_item*)tp->item->data;
     inline_rc = 0;
 
-    len = tp->item->size - sizeof(EXTENT_ITEM);
-    ptr = (uint8_t*)tp->item->data + sizeof(EXTENT_ITEM);
+    len = tp->item->size - sizeof(struct btrfs_extent_item);
+    ptr = (uint8_t*)tp->item->data + sizeof(struct btrfs_extent_item);
 
     while (len > 0) {
         uint8_t secttype = *ptr;
@@ -1418,7 +1418,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         ptr += sizeof(uint8_t) + sectlen;
     }
 
-    if (inline_rc < ei->refcount) { // look for non-inline entries
+    if (inline_rc < ei->refs) { // look for non-inline entries
         traverse_ptr tp2 = *tp, next_tp;
 
         while (find_next_item(Vcb, &tp2, &next_tp, false, NULL)) {
@@ -1545,10 +1545,10 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
     uint16_t inline_len;
     bool all_inline = true;
     data_reloc_ref* first_noninline = NULL;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     uint8_t* ptr;
 
-    inline_len = sizeof(EXTENT_ITEM);
+    inline_len = sizeof(struct btrfs_extent_item);
 
     sort_data_reloc_refs(dr);
 
@@ -1582,7 +1582,7 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ei->refcount = rc;
+    ei->refs = rc;
     ei->generation = dr->ei->generation;
     ei->flags = dr->ei->flags;
     ptr = (uint8_t*)&ei[1];
@@ -1705,8 +1705,8 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
         if (tp.item->key.objectid >= c->offset && tp.item->key.type == TYPE_EXTENT_ITEM) {
             bool tree = false;
 
-            if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size >= sizeof(EXTENT_ITEM)) {
-                EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+            if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size >= sizeof(struct btrfs_extent_item)) {
+                struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
                 if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
                     tree = true;

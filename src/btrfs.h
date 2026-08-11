@@ -396,11 +396,11 @@ typedef struct {
 #define EXTENT_ITEM_TREE_BLOCK      0x002
 #define EXTENT_ITEM_SHARED_BACKREFS 0x100
 
-typedef struct {
-    uint64_t refcount;
+struct btrfs_extent_item {
+    uint64_t refs;
     uint64_t generation;
     uint64_t flags;
-} EXTENT_ITEM;
+};
 
 typedef struct {
     struct btrfs_key firstitem;
@@ -412,7 +412,7 @@ typedef struct {
 } EXTENT_ITEM_V0;
 
 typedef struct {
-    EXTENT_ITEM extent_item;
+    struct btrfs_extent_item extent_item;
     struct btrfs_key firstitem;
     uint8_t level;
 } EXTENT_ITEM_TREE;

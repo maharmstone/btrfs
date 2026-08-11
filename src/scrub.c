@@ -443,7 +443,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     EXTENT_ITEM2* ei2 = NULL;
     uint8_t* ptr;
     ULONG len;
@@ -468,19 +468,19 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     )
         return;
 
-    if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+    if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
         return;
     }
 
-    ei = (EXTENT_ITEM*)tp.item->data;
+    ei = (struct btrfs_extent_item*)tp.item->data;
     ptr = (uint8_t*)&ei[1];
-    len = tp.item->size - sizeof(EXTENT_ITEM);
+    len = tp.item->size - sizeof(struct btrfs_extent_item);
 
     if (tp.item->key.objectid == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
-        if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2)) {
+        if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                                                                          tp.item->size, sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2));
+                                                                          tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2));
             return;
         }
 
@@ -568,7 +568,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
         }
     }
 
-    if (rc < ei->refcount) {
+    if (rc < ei->refs) {
         do {
             traverse_ptr next_tp;
 
@@ -2531,10 +2531,10 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                 if (tp.item->key.type == TYPE_METADATA_ITEM)
                     extent_is_tree = true;
                 else {
-                    EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+                    struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
-                    if (tp.item->size < sizeof(EXTENT_ITEM)) {
-                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+                    if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+                        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
                         Status = STATUS_INTERNAL_ERROR;
                         goto end;
                     }
@@ -2974,10 +2974,10 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
             if (tp.item->key.type == TYPE_METADATA_ITEM)
                 is_tree = true;
             else {
-                EXTENT_ITEM* ei = (EXTENT_ITEM*)tp.item->data;
+                struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
-                if (tp.item->size < sizeof(EXTENT_ITEM)) {
-                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+                if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+                    ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
                     Status = STATUS_INTERNAL_ERROR;
                     goto end;
                 }

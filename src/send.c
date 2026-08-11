@@ -2030,7 +2030,7 @@ static bool try_clone(send_context* context, send_ext* se) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
     EXTENT_DATA2* ed2 = (EXTENT_DATA2*)se->data.data;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     uint64_t rc = 0;
 
     searchkey.objectid = ed2->address;
@@ -2048,15 +2048,15 @@ static bool try_clone(send_context* context, send_ext* se) {
         return false;
     }
 
-    if (tp.item->size < sizeof(EXTENT_ITEM)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(EXTENT_ITEM));
+    if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
         return false;
     }
 
-    ei = (EXTENT_ITEM*)tp.item->data;
+    ei = (struct btrfs_extent_item*)tp.item->data;
 
-    if (tp.item->size > sizeof(EXTENT_ITEM)) {
-        uint32_t len = tp.item->size - sizeof(EXTENT_ITEM);
+    if (tp.item->size > sizeof(struct btrfs_extent_item)) {
+        uint32_t len = tp.item->size - sizeof(struct btrfs_extent_item);
         uint8_t* ptr = (uint8_t*)&ei[1];
 
         while (len > 0) {
@@ -2090,7 +2090,7 @@ static bool try_clone(send_context* context, send_ext* se) {
         }
     }
 
-    if (rc >= ei->refcount)
+    if (rc >= ei->refs)
         return false;
 
     searchkey.type = TYPE_EXTENT_DATA_REF;

@@ -43,7 +43,7 @@ typedef struct {
 } EXTENT_ITEM_TREE2;
 
 typedef struct {
-    EXTENT_ITEM ei;
+    struct btrfs_extent_item ei;
     uint8_t type;
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_SKINNY_METADATA;
@@ -715,7 +715,7 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
         return false;
     }
 
-    eism->ei.refcount = 1;
+    eism->ei.refs = 1;
     eism->ei.generation = Vcb->superblock.generation;
     eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
     eism->type = TYPE_TREE_BLOCK_REF;
@@ -846,7 +846,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
         return false;
     }
 
-    eit2->eit.extent_item.refcount = 1;
+    eit2->eit.extent_item.refs = 1;
     eit2->eit.extent_item.generation = Vcb->superblock.generation;
     eit2->eit.extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
     eit2->eit.level = level;
@@ -3245,7 +3245,7 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
     traverse_ptr tp;
     NTSTATUS Status;
     bool ret = false;
-    EXTENT_ITEM* ei;
+    struct btrfs_extent_item* ei;
     uint8_t* type;
 
     if (t->uniqueness_determined)
@@ -3271,18 +3271,18 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
         if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->size == sizeof(EXTENT_ITEM_V0))
             goto end;
 
-        if (tp.item->size < sizeof(EXTENT_ITEM))
+        if (tp.item->size < sizeof(struct btrfs_extent_item))
             goto end;
 
-        ei = (EXTENT_ITEM*)tp.item->data;
+        ei = (struct btrfs_extent_item*)tp.item->data;
 
-        if (ei->refcount > 1)
+        if (ei->refs > 1)
             goto end;
 
         if (tp.item->key.type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
             EXTENT_ITEM2* ei2;
 
-            if (tp.item->size < sizeof(EXTENT_ITEM) + sizeof(EXTENT_ITEM2))
+            if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2))
                 goto end;
 
             ei2 = (EXTENT_ITEM2*)&ei[1];

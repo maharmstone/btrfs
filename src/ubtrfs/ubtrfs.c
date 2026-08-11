@@ -461,13 +461,13 @@ static uint64_t get_next_address(btrfs_chunk* c) {
 }
 
 typedef struct {
-    EXTENT_ITEM ei;
+    struct btrfs_extent_item ei;
     uint8_t type;
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_METADATA;
 
 typedef struct {
-    EXTENT_ITEM ei;
+    struct btrfs_extent_item ei;
     EXTENT_ITEM2 ei2;
     uint8_t type;
     TREE_BLOCK_REF tbr;
@@ -508,7 +508,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
         if (skinny) {
             EXTENT_ITEM_METADATA eim;
 
-            eim.ei.refcount = 1;
+            eim.ei.refs = 1;
             eim.ei.generation = 1;
             eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
             eim.type = TYPE_TREE_BLOCK_REF;
@@ -529,7 +529,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
                 firstitem = bi->key;
             }
 
-            eim2.ei.refcount = 1;
+            eim2.ei.refs = 1;
             eim2.ei.generation = 1;
             eim2.ei.flags = EXTENT_ITEM_TREE_BLOCK;
             eim2.ei2.firstitem = firstitem;
