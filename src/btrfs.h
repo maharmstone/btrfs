@@ -397,10 +397,10 @@ struct btrfs_extent_item {
     uint64_t flags;
 };
 
-typedef struct {
-    struct btrfs_key firstitem;
+struct btrfs_tree_block_info {
+    struct btrfs_key key;
     uint8_t level;
-} EXTENT_ITEM2;
+};
 
 struct btrfs_extent_item_v0 {
     uint32_t refs;

@@ -443,7 +443,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     traverse_ptr tp;
     NTSTATUS Status;
     struct btrfs_extent_item* ei;
-    EXTENT_ITEM2* ei2 = NULL;
+    struct btrfs_tree_block_info* ei2 = NULL;
     uint8_t* ptr;
     ULONG len;
     uint64_t rc;
@@ -477,16 +477,16 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     len = tp.item->size - sizeof(struct btrfs_extent_item);
 
     if (tp.item->key.objectid == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
-        if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2)) {
+        if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                                                                          tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2));
+                                                                          tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
             return;
         }
 
-        ei2 = (EXTENT_ITEM2*)ptr;
+        ei2 = (struct btrfs_tree_block_info*)ptr;
 
-        ptr += sizeof(EXTENT_ITEM2);
-        len -= sizeof(EXTENT_ITEM2);
+        ptr += sizeof(struct btrfs_tree_block_info);
+        len -= sizeof(struct btrfs_tree_block_info);
     }
 
     rc = 0;
@@ -507,7 +507,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
 
             tbr = (TREE_BLOCK_REF*)ptr;
 
-            log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+            log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
 
             rc++;
 
@@ -578,7 +578,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
 
             if (tp.item->key.objectid == address) {
                 if (tp.item->key.type == TYPE_TREE_BLOCK_REF)
-                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->firstitem : NULL);
+                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
                 else if (tp.item->key.type == TYPE_EXTENT_DATA_REF) {
                     struct btrfs_extent_data_ref* edr;
 

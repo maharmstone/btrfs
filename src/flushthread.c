@@ -3276,12 +3276,12 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
             goto end;
 
         if (tp.item->key.type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
-            EXTENT_ITEM2* ei2;
+            struct btrfs_tree_block_info* ei2;
 
-            if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2))
+            if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info))
                 goto end;
 
-            ei2 = (EXTENT_ITEM2*)&ei[1];
+            ei2 = (struct btrfs_tree_block_info*)&ei[1];
             type = (uint8_t*)&ei2[1];
         } else
             type = (uint8_t*)&ei[1];

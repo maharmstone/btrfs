@@ -468,7 +468,7 @@ typedef struct {
 
 typedef struct {
     struct btrfs_extent_item ei;
-    EXTENT_ITEM2 ei2;
+    struct btrfs_tree_block_info ei2;
     uint8_t type;
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_METADATA2;
@@ -532,7 +532,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim2.ei.refs = 1;
             eim2.ei.generation = 1;
             eim2.ei.flags = EXTENT_ITEM_TREE_BLOCK;
-            eim2.ei2.firstitem = firstitem;
+            eim2.ei2.key = firstitem;
             eim2.ei2.level = 0;
             eim2.type = TYPE_TREE_BLOCK_REF;
             eim2.tbr.offset = r->id;

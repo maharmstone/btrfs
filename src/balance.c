@@ -117,8 +117,8 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
     len = tp->item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)tp->item->data + sizeof(struct btrfs_extent_item);
     if (!skinny) {
-        len -= sizeof(EXTENT_ITEM2);
-        ptr += sizeof(EXTENT_ITEM2);
+        len -= sizeof(struct btrfs_tree_block_info);
+        ptr += sizeof(struct btrfs_tree_block_info);
     }
 
     while (len > 0) {
@@ -331,7 +331,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
 
     inline_len = sizeof(struct btrfs_extent_item);
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
-        inline_len += sizeof(EXTENT_ITEM2);
+        inline_len += sizeof(struct btrfs_tree_block_info);
 
     sort_metadata_reloc_refs(mr);
 
@@ -370,12 +370,12 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     ptr = (uint8_t*)&ei[1];
 
     if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
-        EXTENT_ITEM2* ei2 = (EXTENT_ITEM2*)ptr;
+        struct btrfs_tree_block_info* ei2 = (struct btrfs_tree_block_info*)ptr;
 
-        ei2->firstitem = *(struct btrfs_key*)&mr->data[1];
+        ei2->key = *(struct btrfs_key*)&mr->data[1];
         ei2->level = mr->data->level;
 
-        ptr += sizeof(EXTENT_ITEM2);
+        ptr += sizeof(struct btrfs_tree_block_info);
     }
 
     le = mr->refs.Flink;
