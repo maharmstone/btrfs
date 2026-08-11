@@ -39,17 +39,17 @@ typedef struct {
 typedef struct {
     struct btrfs_extent_item extent_item;
     struct btrfs_tree_block_info tbi;
-    uint8_t type;
-    TREE_BLOCK_REF tbr;
+    struct btrfs_extent_inline_ref eir;
 } EXTENT_ITEM_TREE2;
 
 static_assert(sizeof(EXTENT_ITEM_TREE2) == 51, "EXTENT_ITEM_TREE2 has wrong size");
 
 typedef struct {
     struct btrfs_extent_item ei;
-    uint8_t type;
-    TREE_BLOCK_REF tbr;
+    struct btrfs_extent_inline_ref eir;
 } EXTENT_ITEM_SKINNY_METADATA;
+
+static_assert(sizeof(EXTENT_ITEM_SKINNY_METADATA) == 33, "EXTENT_ITEM_SKINNY_METADATA has wrong size");
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
@@ -721,8 +721,8 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
     eism->ei.refs = 1;
     eism->ei.generation = Vcb->superblock.generation;
     eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
-    eism->type = TYPE_TREE_BLOCK_REF;
-    eism->tbr.offset = root_id;
+    eism->eir.type = TYPE_TREE_BLOCK_REF;
+    eism->eir.offset = root_id;
 
     Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, eism, sizeof(EXTENT_ITEM_SKINNY_METADATA), &insert_tp, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -853,8 +853,8 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     eit2->extent_item.generation = Vcb->superblock.generation;
     eit2->extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
     eit2->tbi.level = level;
-    eit2->type = TYPE_TREE_BLOCK_REF;
-    eit2->tbr.offset = root_id;
+    eit2->eir.type = TYPE_TREE_BLOCK_REF;
+    eit2->eir.offset = root_id;
 
     Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, Vcb->superblock.nodesize, eit2, sizeof(EXTENT_ITEM_TREE2), &insert_tp, Irp);
     if (!NT_SUCCESS(Status)) {
