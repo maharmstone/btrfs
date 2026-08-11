@@ -1158,7 +1158,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
 
         ExFreePool(ed);
 
-        fcb->inode_item.st_blocks += parts[i].inlen;
+        fcb->inode_item.nbytes += parts[i].inlen;
 
         extaddr += parts[i].outlen;
     }

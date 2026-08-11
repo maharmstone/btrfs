@@ -614,7 +614,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
 
         bmn->inode = 0;
         bmn->type = bii.type;
-        bmn->st_rdev = bii.st_rdev;
+        bmn->rdev = bii.rdev;
         bmn->namelen = (uint16_t)(wcslen(name) * sizeof(WCHAR));
         memcpy(bmn->name, name, bmn->namelen);
 
@@ -1329,7 +1329,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
         bmn->inode = 0;
         bmn->type = bii.type;
-        bmn->st_rdev = bii.st_rdev;
+        bmn->rdev = bii.rdev;
         bmn->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bmn->name, destname.c_str(), bmn->namelen);
 

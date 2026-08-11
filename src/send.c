@@ -282,21 +282,21 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
 
 static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr* tp2) {
     NTSTATUS Status;
-    INODE_ITEM* ii;
+    struct btrfs_inode_item* ii;
 
     if (tp2 && !tp) {
-        INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
+        struct btrfs_inode_item* ii2 = (struct btrfs_inode_item*)tp2->item->data;
 
-        if (tp2->item->size < sizeof(INODE_ITEM)) {
+        if (tp2->item->size < sizeof(struct btrfs_inode_item)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
-                tp2->item->size, sizeof(INODE_ITEM));
+                tp2->item->size, sizeof(struct btrfs_inode_item));
             return STATUS_INTERNAL_ERROR;
         }
 
         context->lastinode.inode = tp2->item->key.objectid;
         context->lastinode.deleting = true;
         context->lastinode.gen = ii2->generation;
-        context->lastinode.mode = ii2->st_mode;
+        context->lastinode.mode = ii2->mode;
         context->lastinode.flags = ii2->flags;
         context->lastinode.o = NULL;
         context->lastinode.sd = NULL;
@@ -304,24 +304,24 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         return STATUS_SUCCESS;
     }
 
-    ii = (INODE_ITEM*)tp->item->data;
+    ii = (struct btrfs_inode_item*)tp->item->data;
 
-    if (tp->item->size < sizeof(INODE_ITEM)) {
+    if (tp->item->size < sizeof(struct btrfs_inode_item)) {
         ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
-            tp->item->size, sizeof(INODE_ITEM));
+            tp->item->size, sizeof(struct btrfs_inode_item));
         return STATUS_INTERNAL_ERROR;
     }
 
     context->lastinode.inode = tp->item->key.objectid;
     context->lastinode.deleting = false;
     context->lastinode.gen = ii->generation;
-    context->lastinode.uid = ii->st_uid;
-    context->lastinode.gid = ii->st_gid;
-    context->lastinode.mode = ii->st_mode;
-    context->lastinode.size = ii->st_size;
-    context->lastinode.atime = ii->st_atime;
-    context->lastinode.mtime = ii->st_mtime;
-    context->lastinode.ctime = ii->st_ctime;
+    context->lastinode.uid = ii->uid;
+    context->lastinode.gid = ii->gid;
+    context->lastinode.mode = ii->mode;
+    context->lastinode.size = ii->size;
+    context->lastinode.atime = ii->atime;
+    context->lastinode.mtime = ii->mtime;
+    context->lastinode.ctime = ii->ctime;
     context->lastinode.flags = ii->flags;
     context->lastinode.file = false;
     context->lastinode.o = NULL;
@@ -333,20 +333,20 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     }
 
     if (tp2) {
-        INODE_ITEM* ii2 = (INODE_ITEM*)tp2->item->data;
+        struct btrfs_inode_item* ii2 = (struct btrfs_inode_item*)tp2->item->data;
         LIST_ENTRY* le;
 
-        if (tp2->item->size < sizeof(INODE_ITEM)) {
+        if (tp2->item->size < sizeof(struct btrfs_inode_item)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
-                tp2->item->size, sizeof(INODE_ITEM));
+                tp2->item->size, sizeof(struct btrfs_inode_item));
             return STATUS_INTERNAL_ERROR;
         }
 
-        context->lastinode.oldmode = ii2->st_mode;
-        context->lastinode.olduid = ii2->st_uid;
-        context->lastinode.oldgid = ii2->st_gid;
+        context->lastinode.oldmode = ii2->mode;
+        context->lastinode.olduid = ii2->uid;
+        context->lastinode.oldgid = ii2->gid;
 
-        if ((ii2->st_mode & __S_IFREG) == __S_IFREG && (ii2->st_mode & __S_IFLNK) != __S_IFLNK && (ii2->st_mode & __S_IFSOCK) != __S_IFSOCK)
+        if ((ii2->mode & __S_IFREG) == __S_IFREG && (ii2->mode & __S_IFLNK) != __S_IFLNK && (ii2->mode & __S_IFSOCK) != __S_IFSOCK)
             context->lastinode.file = true;
 
         context->lastinode.new = false;
@@ -375,9 +375,9 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             return Status;
         }
 
-        sd->atime = ii->st_atime;
-        sd->mtime = ii->st_mtime;
-        sd->ctime = ii->st_ctime;
+        sd->atime = ii->atime;
+        sd->mtime = ii->mtime;
+        sd->ctime = ii->ctime;
         context->root_dir = sd;
     } else if (!tp2) {
         ULONG pos = context->datalen;
@@ -388,7 +388,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         orphan* o;
 
         // skip creating orphan directory if we've already done so
-        if (ii->st_mode & __S_IFDIR) {
+        if (ii->mode & __S_IFDIR) {
             LIST_ENTRY* le;
 
             le = context->orphans.Flink;
@@ -397,9 +397,9 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
 
                 if (o2->inode == tp->item->key.objectid) {
                     context->lastinode.o = o2;
-                    o2->sd->atime = ii->st_atime;
-                    o2->sd->mtime = ii->st_mtime;
-                    o2->sd->ctime = ii->st_ctime;
+                    o2->sd->atime = ii->atime;
+                    o2->sd->mtime = ii->mtime;
+                    o2->sd->ctime = ii->ctime;
                     o2->sd->dummy = false;
                     return STATUS_SUCCESS;
                 } else if (o2->inode > tp->item->key.objectid)
@@ -409,15 +409,15 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             }
         }
 
-        if ((ii->st_mode & __S_IFSOCK) == __S_IFSOCK)
+        if ((ii->mode & __S_IFSOCK) == __S_IFSOCK)
             cmd = BTRFS_SEND_CMD_MKSOCK;
-        else if ((ii->st_mode & __S_IFLNK) == __S_IFLNK)
+        else if ((ii->mode & __S_IFLNK) == __S_IFLNK)
             cmd = BTRFS_SEND_CMD_SYMLINK;
-        else if ((ii->st_mode & __S_IFCHR) == __S_IFCHR || (ii->st_mode & __S_IFBLK) == __S_IFBLK)
+        else if ((ii->mode & __S_IFCHR) == __S_IFCHR || (ii->mode & __S_IFBLK) == __S_IFBLK)
             cmd = BTRFS_SEND_CMD_MKNOD;
-        else if ((ii->st_mode & __S_IFDIR) == __S_IFDIR)
+        else if ((ii->mode & __S_IFDIR) == __S_IFDIR)
             cmd = BTRFS_SEND_CMD_MKDIR;
-        else if ((ii->st_mode & __S_IFIFO) == __S_IFIFO)
+        else if ((ii->mode & __S_IFIFO) == __S_IFIFO)
             cmd = BTRFS_SEND_CMD_MKFIFO;
         else {
             cmd = BTRFS_SEND_CMD_MKFILE;
@@ -436,11 +436,11 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.objectid, sizeof(uint64_t));
 
         if (cmd == BTRFS_SEND_CMD_MKNOD || cmd == BTRFS_SEND_CMD_MKFIFO || cmd == BTRFS_SEND_CMD_MKSOCK) {
-            uint64_t rdev = makedev((ii->st_rdev & 0xFFFFFFFFFFF) >> 20, ii->st_rdev & 0xFFFFF), mode = ii->st_mode;
+            uint64_t rdev = makedev((ii->rdev & 0xFFFFFFFFFFF) >> 20, ii->rdev & 0xFFFFF), mode = ii->mode;
 
             send_add_tlv(context, BTRFS_SEND_TLV_RDEV, &rdev, sizeof(uint64_t));
             send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(uint64_t));
-        } else if (cmd == BTRFS_SEND_CMD_SYMLINK && ii->st_size > 0) {
+        } else if (cmd == BTRFS_SEND_CMD_SYMLINK && ii->size > 0) {
             char* link;
             uint16_t linklen;
 
@@ -455,7 +455,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
 
         send_command_finish(context, pos);
 
-        if (ii->st_mode & __S_IFDIR) {
+        if (ii->mode & __S_IFDIR) {
             Status = find_send_dir(context, tp->item->key.objectid, ii->generation, &sd, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("find_send_dir returned %08lx\n", Status);
@@ -475,7 +475,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
         }
 
         o->inode = tp->item->key.objectid;
-        o->dir = (ii->st_mode & __S_IFDIR && ii->st_size > 0) ? true : false;
+        o->dir = (ii->mode & __S_IFDIR && ii->size > 0) ? true : false;
         strcpy(o->tmpname, name);
         o->sd = sd;
         add_orphan(context, o);

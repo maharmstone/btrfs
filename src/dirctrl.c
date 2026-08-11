@@ -181,7 +181,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
     PIO_STACK_LOCATION IrpSp;
     LONG needed;
     uint64_t inode;
-    INODE_ITEM ii;
+    struct btrfs_inode_item ii;
     NTSTATUS Status;
     ULONG atts = 0, ealen = 0;
     file_ref* fileref = ccb->fileref;
@@ -226,7 +226,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
 
                     KeQuerySystemTime(&time);
                     win_time_to_unix(time, &ii.otime);
-                    ii.st_atime = ii.st_mtime = ii.st_ctime = ii.otime;
+                    ii.atime = ii.mtime = ii.ctime = ii.otime;
                 } else {
                     bool found = false;
 
@@ -256,10 +256,10 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                             return STATUS_INTERNAL_ERROR;
                         }
 
-                        RtlZeroMemory(&ii, sizeof(INODE_ITEM));
+                        RtlZeroMemory(&ii, sizeof(struct btrfs_inode_item));
 
                         if (tp.item->size > 0)
-                            RtlCopyMemory(&ii, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+                            RtlCopyMemory(&ii, tp.item->data, min(sizeof(struct btrfs_inode_item), tp.item->size));
 
                         if (IrpSp->Parameters.QueryDirectory.FileInformationClass == FileBothDirectoryInformation ||
                             IrpSp->Parameters.QueryDirectory.FileInformationClass == FileDirectoryInformation ||
@@ -331,17 +331,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fbdi->NextEntryOffset = 0;
             fbdi->FileIndex = 0;
             fbdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            fbdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            fbdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fbdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            fbdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fbdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            fbdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            fbdi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            fbdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 fbdi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                fbdi->AllocationSize.QuadPart = ii.st_blocks;
+                fbdi->AllocationSize.QuadPart = ii.nbytes;
             else
-                fbdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                fbdi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             fbdi->FileAttributes = atts;
             fbdi->FileNameLength = de->name.Length;
@@ -371,17 +371,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fdi->NextEntryOffset = 0;
             fdi->FileIndex = 0;
             fdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            fdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            fdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            fdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            fdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            fdi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            fdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 fdi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                fdi->AllocationSize.QuadPart = ii.st_blocks;
+                fdi->AllocationSize.QuadPart = ii.nbytes;
             else
-                fdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                fdi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             fdi->FileAttributes = atts;
             fdi->FileNameLength = de->name.Length;
@@ -409,17 +409,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             ffdi->NextEntryOffset = 0;
             ffdi->FileIndex = 0;
             ffdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            ffdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            ffdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            ffdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            ffdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            ffdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            ffdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            ffdi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            ffdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 ffdi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                ffdi->AllocationSize.QuadPart = ii.st_blocks;
+                ffdi->AllocationSize.QuadPart = ii.nbytes;
             else
-                ffdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                ffdi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             ffdi->FileAttributes = atts;
             ffdi->FileNameLength = de->name.Length;
@@ -448,17 +448,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fibdi->NextEntryOffset = 0;
             fibdi->FileIndex = 0;
             fibdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            fibdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            fibdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fibdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            fibdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fibdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            fibdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            fibdi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            fibdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 fibdi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                fibdi->AllocationSize.QuadPart = ii.st_blocks;
+                fibdi->AllocationSize.QuadPart = ii.nbytes;
             else
-                fibdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                fibdi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             fibdi->FileAttributes = atts;
             fibdi->FileNameLength = de->name.Length;
@@ -489,17 +489,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fifdi->NextEntryOffset = 0;
             fifdi->FileIndex = 0;
             fifdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            fifdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            fifdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fifdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            fifdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fifdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            fifdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            fifdi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            fifdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 fifdi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                fifdi->AllocationSize.QuadPart = ii.st_blocks;
+                fifdi->AllocationSize.QuadPart = ii.nbytes;
             else
-                fifdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                fifdi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             fifdi->FileAttributes = atts;
             fifdi->FileNameLength = de->name.Length;
@@ -533,17 +533,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fiedi->NextEntryOffset = 0;
             fiedi->FileIndex = 0;
             fiedi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            fiedi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            fiedi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fiedi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            fiedi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fiedi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            fiedi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            fiedi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            fiedi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 fiedi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                fiedi->AllocationSize.QuadPart = ii.st_blocks;
+                fiedi->AllocationSize.QuadPart = ii.nbytes;
             else
-                fiedi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                fiedi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             fiedi->FileAttributes = atts;
             fiedi->FileNameLength = de->name.Length;
@@ -576,17 +576,17 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fiebdi->NextEntryOffset = 0;
             fiebdi->FileIndex = 0;
             fiebdi->CreationTime.QuadPart = unix_time_to_win(&ii.otime);
-            fiebdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.st_atime);
-            fiebdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.st_mtime);
-            fiebdi->ChangeTime.QuadPart = unix_time_to_win(&ii.st_ctime);
-            fiebdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.st_size;
+            fiebdi->LastAccessTime.QuadPart = unix_time_to_win(&ii.atime);
+            fiebdi->LastWriteTime.QuadPart = unix_time_to_win(&ii.mtime);
+            fiebdi->ChangeTime.QuadPart = unix_time_to_win(&ii.ctime);
+            fiebdi->EndOfFile.QuadPart = de->type == BTRFS_TYPE_SYMLINK ? 0 : ii.size;
 
             if (de->type == BTRFS_TYPE_SYMLINK)
                 fiebdi->AllocationSize.QuadPart = 0;
             else if (atts & FILE_ATTRIBUTE_SPARSE_FILE)
-                fiebdi->AllocationSize.QuadPart = ii.st_blocks;
+                fiebdi->AllocationSize.QuadPart = ii.nbytes;
             else
-                fiebdi->AllocationSize.QuadPart = sector_align(ii.st_size, fcb->Vcb->superblock.sectorsize);
+                fiebdi->AllocationSize.QuadPart = sector_align(ii.size, fcb->Vcb->superblock.sectorsize);
 
             fiebdi->FileAttributes = atts;
             fiebdi->FileNameLength = de->name.Length;

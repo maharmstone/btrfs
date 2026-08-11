@@ -1549,8 +1549,8 @@ static void send_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_matc
     LIST_ENTRY* le;
     NTSTATUS Status;
 
-    // no point looking for hardlinks if st_nlink == 1
-    if (fileref->fcb->inode_item.st_nlink == 1) {
+    // no point looking for hardlinks if nlink == 1
+    if (fileref->fcb->inode_item.nlink == 1) {
         ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
         send_notification_fileref(fileref, filter_match, action, stream);
         ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
@@ -2207,8 +2207,8 @@ static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT
 
     // excise extents
 
-    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.st_size, fileref->fcb->Vcb->superblock.sectorsize), Irp, rollback);
+    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.size > 0) {
+        Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.size, fileref->fcb->Vcb->superblock.sectorsize), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             return Status;
@@ -2283,7 +2283,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
     // delete INODE_ITEM (0x1)
 
-    TRACE("nlink = %u\n", fileref->fcb->inode_item.st_nlink);
+    TRACE("nlink = %u\n", fileref->fcb->inode_item.nlink);
 
     if (!fileref->fcb->ads) {
         if (fileref->parent->fcb->subvol == fileref->fcb->subvol) {
@@ -2293,11 +2293,11 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
             fileref->fcb->inode_item_changed = true;
 
-            if (fileref->fcb->inode_item.st_nlink > 1 || make_orphan) {
-                fileref->fcb->inode_item.st_nlink--;
+            if (fileref->fcb->inode_item.nlink > 1 || make_orphan) {
+                fileref->fcb->inode_item.nlink--;
                 fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
                 fileref->fcb->inode_item.sequence++;
-                fileref->fcb->inode_item.st_ctime = now;
+                fileref->fcb->inode_item.ctime = now;
             } else {
                 Status = delete_fileref_fcb(fileref, FileObject, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
@@ -2395,13 +2395,13 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
 
     fileref->parent->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
     fileref->parent->fcb->inode_item.sequence++;
-    fileref->parent->fcb->inode_item.st_ctime = now;
+    fileref->parent->fcb->inode_item.ctime = now;
 
     if (!fileref->fcb->ads) {
-        TRACE("fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
-        fileref->parent->fcb->inode_item.st_size -= utf8len * 2;
-        TRACE("fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.st_size);
-        fileref->parent->fcb->inode_item.st_mtime = now;
+        TRACE("fileref->parent->fcb->inode_item.size (inode %I64x) was %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.size);
+        fileref->parent->fcb->inode_item.size -= utf8len * 2;
+        TRACE("fileref->parent->fcb->inode_item.size (inode %I64x) now %I64x\n", fileref->parent->fcb->inode, fileref->parent->fcb->inode_item.size);
+        fileref->parent->fcb->inode_item.mtime = now;
     }
 
     fileref->parent->fcb->inode_item_changed = true;
@@ -2493,7 +2493,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = true;
 
-        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && fcb != fcb->Vcb->dummy_fcb)
+        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0 && fcb != fcb->Vcb->dummy_fcb)
             fileref->delete_on_close = false;
 
         if (fcb->Vcb->locked && fcb->Vcb->locked_fileobj == FileObject) {
@@ -2516,7 +2516,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
 
             if (oc == 0 || (fileref->delete_on_close && fileref->posix_delete)) {
                 if (!fcb->Vcb->removing) {
-                    if (oc == 0 && fileref->fcb->inode_item.st_nlink == 0 && fileref != fcb->Vcb->root_fileref &&
+                    if (oc == 0 && fileref->fcb->inode_item.nlink == 0 && fileref != fcb->Vcb->root_fileref &&
                         fcb != fcb->Vcb->volume_fcb && !fcb->ads) { // last handle closed on POSIX-deleted file
                         LIST_ENTRY rollback;
 
@@ -2710,7 +2710,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             att &= ~FILE_ATTRIBUTE_READONLY;
     }
 
-    // FIXME - get READONLY from ii->st_mode
+    // FIXME - get READONLY from ii->mode
     // FIXME - return SYSTEM for block/char devices?
 
     if (att == 0)
@@ -3121,7 +3121,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
     if (!Vcb->readonly && !Vcb->data_reloc_root) {
         root* reloc_root;
-        INODE_ITEM* ii;
+        struct btrfs_inode_item* ii;
         uint16_t irlen;
         INODE_REF* ir;
         LARGE_INTEGER time;
@@ -3137,16 +3137,15 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         }
 
         reloc_root->root_item.inode.generation = 1;
-        reloc_root->root_item.inode.st_size = 3;
-        reloc_root->root_item.inode.st_blocks = Vcb->superblock.nodesize;
-        reloc_root->root_item.inode.st_nlink = 1;
-        reloc_root->root_item.inode.st_mode = 040755;
-        reloc_root->root_item.inode.flags = 0x80000000;
-        reloc_root->root_item.inode.flags_ro = 0xffffffff;
+        reloc_root->root_item.inode.size = 3;
+        reloc_root->root_item.inode.nbytes = Vcb->superblock.nodesize;
+        reloc_root->root_item.inode.nlink = 1;
+        reloc_root->root_item.inode.mode = 040755;
+        reloc_root->root_item.inode.flags = BTRFS_INODE_ROOT_ITEM_INIT;
         reloc_root->root_item.objid = SUBVOL_ROOT_INODE;
         reloc_root->root_item.bytes_used = Vcb->superblock.nodesize;
 
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        ii = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_item), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -3155,16 +3154,16 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
 
-        RtlZeroMemory(ii, sizeof(INODE_ITEM));
+        RtlZeroMemory(ii, sizeof(struct btrfs_inode_item));
         ii->generation = Vcb->superblock.generation;
-        ii->st_blocks = Vcb->superblock.nodesize;
-        ii->st_nlink = 1;
-        ii->st_mode = 040755;
-        ii->st_atime = now;
-        ii->st_ctime = now;
-        ii->st_mtime = now;
+        ii->nbytes = Vcb->superblock.nodesize;
+        ii->nlink = 1;
+        ii->mode = 040755;
+        ii->atime = now;
+        ii->ctime = now;
+        ii->mtime = now;
 
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(ii);
@@ -4865,8 +4864,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     Vcb->dummy_fcb->inode = 2;
     Vcb->dummy_fcb->subvol = Vcb->root_root;
     Vcb->dummy_fcb->atts = FILE_ATTRIBUTE_DIRECTORY;
-    Vcb->dummy_fcb->inode_item.st_nlink = 1;
-    Vcb->dummy_fcb->inode_item.st_mode = __S_IFDIR;
+    Vcb->dummy_fcb->inode_item.nlink = 1;
+    Vcb->dummy_fcb->inode_item.mode = __S_IFDIR;
 
     Vcb->dummy_fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
     if (!Vcb->dummy_fcb->hash_ptrs) {
@@ -4934,7 +4933,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     if (tp.item->size > 0)
-        RtlCopyMemory(&root_fcb->inode_item, tp.item->data, min(sizeof(INODE_ITEM), tp.item->size));
+        RtlCopyMemory(&root_fcb->inode_item, tp.item->data, min(sizeof(struct btrfs_inode_item), tp.item->size));
 
     fcb_get_sd(root_fcb, NULL, true, Irp);
 

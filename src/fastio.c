@@ -76,9 +76,9 @@ static BOOLEAN __stdcall fast_query_basic_info(PFILE_OBJECT FileObject, BOOLEAN 
         fbi->CreationTime = fbi->LastAccessTime = fbi->LastWriteTime = fbi->ChangeTime = time;
     } else {
         fbi->CreationTime.QuadPart = unix_time_to_win(&fcb->inode_item.otime);
-        fbi->LastAccessTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_atime);
-        fbi->LastWriteTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_mtime);
-        fbi->ChangeTime.QuadPart = unix_time_to_win(&fcb->inode_item.st_ctime);
+        fbi->LastAccessTime.QuadPart = unix_time_to_win(&fcb->inode_item.atime);
+        fbi->LastWriteTime.QuadPart = unix_time_to_win(&fcb->inode_item.mtime);
+        fbi->ChangeTime.QuadPart = unix_time_to_win(&fcb->inode_item.ctime);
     }
 
     fbi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
@@ -150,13 +150,13 @@ static BOOLEAN __stdcall fast_query_standard_info(PFILE_OBJECT FileObject, BOOLE
         }
 
         fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = adssize;
-        fsi->NumberOfLinks = fcb->inode_item.st_nlink;
+        fsi->NumberOfLinks = fcb->inode_item.nlink;
         fsi->Directory = false;
     } else {
         fsi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
-        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
-        fsi->NumberOfLinks = fcb->inode_item.st_nlink;
-        fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
+        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.mode) ? 0 : fcb->inode_item.size;
+        fsi->NumberOfLinks = fcb->inode_item.nlink;
+        fsi->Directory = S_ISDIR(fcb->inode_item.mode);
     }
 
     fsi->DeletePending = ccb->fileref ? ccb->fileref->delete_on_close : false;
@@ -234,7 +234,7 @@ static BOOLEAN __stdcall fast_io_query_network_open_info(PFILE_OBJECT FileObject
         KeQuerySystemTime(&time);
         fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
     } else {
-        INODE_ITEM* ii;
+        struct btrfs_inode_item* ii;
 
         if (fcb->ads) {
             if (!fileref || !fileref->parent) {
@@ -248,9 +248,9 @@ static BOOLEAN __stdcall fast_io_query_network_open_info(PFILE_OBJECT FileObject
             ii = &fcb->inode_item;
 
         fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-        fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-        fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-        fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+        fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->atime);
+        fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->mtime);
+        fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->ctime);
     }
 
     if (fcb->ads) {
@@ -258,7 +258,7 @@ static BOOLEAN __stdcall fast_io_query_network_open_info(PFILE_OBJECT FileObject
         fnoi->FileAttributes = fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fileref->parent->fcb->atts;
     } else {
         fnoi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
-        fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.mode) ? 0 : fcb->inode_item.size;
         fnoi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
@@ -357,7 +357,7 @@ static BOOLEAN __stdcall fast_io_write(PFILE_OBJECT FileObject, PLARGE_INTEGER F
     ret = FsRtlCopyWrite(FileObject, FileOffset, Length, Wait, LockKey, Buffer, IoStatus, DeviceObject);
 
     if (ret)
-        fcb->inode_item.st_size = fcb->Header.FileSize.QuadPart;
+        fcb->inode_item.size = fcb->Header.FileSize.QuadPart;
 
     ExReleaseResourceLite(&fcb->Vcb->tree_lock);
 

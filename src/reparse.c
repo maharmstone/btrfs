@@ -60,20 +60,20 @@ NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, 
         } else {
             char* data;
 
-            if (fcb->inode_item.st_size == 0 || fcb->inode_item.st_size > 0xffff) {
+            if (fcb->inode_item.size == 0 || fcb->inode_item.size > 0xffff) {
                 Status = STATUS_INVALID_PARAMETER;
                 goto end;
             }
 
-            data = ExAllocatePoolWithTag(PagedPool, (ULONG)fcb->inode_item.st_size, ALLOC_TAG);
+            data = ExAllocatePoolWithTag(PagedPool, (ULONG)fcb->inode_item.size, ALLOC_TAG);
             if (!data) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
 
-            TRACE("data = %p, size = %I64x\n", data, fcb->inode_item.st_size);
-            Status = read_file(fcb, (uint8_t*)data, 0, fcb->inode_item.st_size, NULL, NULL);
+            TRACE("data = %p, size = %I64x\n", data, fcb->inode_item.size);
+            Status = read_file(fcb, (uint8_t*)data, 0, fcb->inode_item.size, NULL, NULL);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("read_file returned %08lx\n", Status);
@@ -81,7 +81,7 @@ NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, 
                 goto end;
             }
 
-            Status = utf8_to_utf16(NULL, 0, &stringlen, data, (ULONG)fcb->inode_item.st_size);
+            Status = utf8_to_utf16(NULL, 0, &stringlen, data, (ULONG)fcb->inode_item.size);
             if (!NT_SUCCESS(Status)) {
                 ERR("utf8_to_utf16 1 returned %08lx\n", Status);
                 ExFreePool(data);
@@ -116,7 +116,7 @@ NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, 
             rdb->SymbolicLinkReparseBuffer.Flags = SYMLINK_FLAG_RELATIVE;
 
             Status = utf8_to_utf16(&rdb->SymbolicLinkReparseBuffer.PathBuffer[rdb->SymbolicLinkReparseBuffer.SubstituteNameOffset / sizeof(WCHAR)],
-                                       stringlen, &stringlen, data, (ULONG)fcb->inode_item.st_size);
+                                       stringlen, &stringlen, data, (ULONG)fcb->inode_item.size);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("utf8_to_utf16 2 returned %08lx\n", Status);
@@ -255,8 +255,8 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     }
 
     fcb->type = BTRFS_TYPE_SYMLINK;
-    fcb->inode_item.st_mode &= ~__S_IFMT;
-    fcb->inode_item.st_mode |= __S_IFLNK;
+    fcb->inode_item.mode &= ~__S_IFMT;
+    fcb->inode_item.mode |= __S_IFLNK;
     fcb->inode_item.generation = fcb->Vcb->superblock.generation; // so we don't confuse btrfs send on Linux
 
     if (fileref && fileref->dc)
@@ -287,10 +287,10 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
     fcb->inode_item.sequence++;
 
     if (!ccb || !ccb->user_set_change_time)
-        fcb->inode_item.st_ctime = now;
+        fcb->inode_item.ctime = now;
 
     if (!ccb || !ccb->user_set_write_time)
-        fcb->inode_item.st_mtime = now;
+        fcb->inode_item.mtime = now;
 
     fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
@@ -317,7 +317,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
 
     // FIXME - die if not file or directory
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0) {
         TRACE("directory not empty\n");
         return STATUS_DIRECTORY_NOT_EMPTY;
     }
@@ -388,10 +388,10 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
         fcb->inode_item.sequence++;
 
         if (!ccb || !ccb->user_set_change_time)
-            fcb->inode_item.st_ctime = now;
+            fcb->inode_item.ctime = now;
 
         if (!ccb || !ccb->user_set_write_time)
-            fcb->inode_item.st_mtime = now;
+            fcb->inode_item.mtime = now;
 
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
         fcb->atts_changed = true;
@@ -560,17 +560,17 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         win_time_to_unix(time, &now);
 
         fileref->fcb->type = BTRFS_TYPE_FILE;
-        fileref->fcb->inode_item.st_mode &= ~__S_IFLNK;
-        fileref->fcb->inode_item.st_mode |= __S_IFREG;
+        fileref->fcb->inode_item.mode &= ~__S_IFLNK;
+        fileref->fcb->inode_item.mode |= __S_IFREG;
         fileref->fcb->inode_item.generation = fileref->fcb->Vcb->superblock.generation; // so we don't confuse btrfs send on Linux
         fileref->fcb->inode_item.transid = fileref->fcb->Vcb->superblock.generation;
         fileref->fcb->inode_item.sequence++;
 
         if (!ccb->user_set_change_time)
-            fileref->fcb->inode_item.st_ctime = now;
+            fileref->fcb->inode_item.ctime = now;
 
         if (!ccb->user_set_write_time)
-            fileref->fcb->inode_item.st_mtime = now;
+            fileref->fcb->inode_item.mtime = now;
 
         fileref->fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
 
@@ -606,10 +606,10 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         fcb->inode_item.sequence++;
 
         if (!ccb->user_set_change_time)
-            fcb->inode_item.st_ctime = now;
+            fcb->inode_item.ctime = now;
 
         if (!ccb->user_set_write_time)
-            fcb->inode_item.st_mtime = now;
+            fcb->inode_item.mtime = now;
 
         fcb->inode_item_changed = true;
         mark_fcb_dirty(fcb);
@@ -639,10 +639,10 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         fcb->inode_item.sequence++;
 
         if (!ccb->user_set_change_time)
-            fcb->inode_item.st_ctime = now;
+            fcb->inode_item.ctime = now;
 
         if (!ccb->user_set_write_time)
-            fcb->inode_item.st_mtime = now;
+            fcb->inode_item.mtime = now;
 
         fcb->inode_item_changed = true;
         mark_fcb_dirty(fcb);

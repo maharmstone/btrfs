@@ -106,6 +106,8 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 
 #define BTRFS_INODE_RO_VERITY   0x1
 
+#define BTRFS_INODE_ROOT_ITEM_INIT (1U << 31)
+
 #define BTRFS_SUBVOL_READONLY   0x1
 
 #define BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE          0x1
@@ -292,31 +294,30 @@ struct btrfs_timespec {
     uint32_t nsec;
 };
 
-typedef struct {
+struct btrfs_inode_item {
     uint64_t generation;
     uint64_t transid;
-    uint64_t st_size;
-    uint64_t st_blocks;
+    uint64_t size;
+    uint64_t nbytes;
     uint64_t block_group;
-    uint32_t st_nlink;
-    uint32_t st_uid;
-    uint32_t st_gid;
-    uint32_t st_mode;
-    uint64_t st_rdev;
-    uint32_t flags;
-    uint32_t flags_ro;
+    uint32_t nlink;
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t mode;
+    uint64_t rdev;
+    uint64_t flags;
     uint64_t sequence;
-    uint8_t reserved[32];
-    struct btrfs_timespec st_atime;
-    struct btrfs_timespec st_ctime;
-    struct btrfs_timespec st_mtime;
+    uint64_t reserved[4];
+    struct btrfs_timespec atime;
+    struct btrfs_timespec ctime;
+    struct btrfs_timespec mtime;
     struct btrfs_timespec otime;
-} INODE_ITEM;
+};
 
-static_assert(sizeof(INODE_ITEM) == 0xa0, "INODE_ITEM has wrong size");
+static_assert(sizeof(struct btrfs_inode_item) == 0xa0, "btrfs_inode_item has wrong size");
 
 typedef struct {
-    INODE_ITEM inode;
+    struct btrfs_inode_item inode;
     uint64_t generation;
     uint64_t objid;
     uint64_t block_number;

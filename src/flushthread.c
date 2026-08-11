@@ -4928,7 +4928,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
     traverse_ptr tp;
     struct btrfs_key searchkey;
     NTSTATUS Status;
-    INODE_ITEM* ii;
+    struct btrfs_inode_item* ii;
     uint64_t ii_offset;
 #ifdef DEBUG_PARANOID
     uint64_t old_size = 0;
@@ -5157,8 +5157,8 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         }
 
         if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
-            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize) > last_end) {
-            Status = insert_sparse_extent(fcb, batchlist, last_end, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize) - last_end);
+            sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize) > last_end) {
+            Status = insert_sparse_extent(fcb, batchlist, last_end, sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize) - last_end);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_sparse_extent returned %08lx\n", Status);
                 goto end;
@@ -5190,16 +5190,16 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
         if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
             if (cache) {
-                ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+                ii = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_item), ALLOC_TAG);
                 if (!ii) {
                     ERR("out of memory\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
 
-                RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
+                RtlCopyMemory(ii, &fcb->inode_item, sizeof(struct btrfs_inode_item));
 
-                Status = insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
+                Status = insert_tree_item(fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     goto end;
@@ -5213,9 +5213,9 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
             }
         } else {
 #ifdef DEBUG_PARANOID
-            INODE_ITEM* ii2 = (INODE_ITEM*)tp.item->data;
+            struct btrfs_inode_item* ii2 = (struct btrfs_inode_item*)tp.item->data;
 
-            old_size = ii2->st_size;
+            old_size = ii2->size;
 #endif
 
             ii_offset = tp.item->key.offset;
@@ -5243,11 +5243,11 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 Status = STATUS_INTERNAL_ERROR;
                 goto end;
             } else
-                RtlCopyMemory(tp.item->data, &fcb->inode_item, min(tp.item->size, sizeof(INODE_ITEM)));
+                RtlCopyMemory(tp.item->data, &fcb->inode_item, min(tp.item->size, sizeof(struct btrfs_inode_item)));
         }
 
 #ifdef DEBUG_PARANOID
-        if (!extents_changed && fcb->type != BTRFS_TYPE_DIRECTORY && old_size != fcb->inode_item.st_size) {
+        if (!extents_changed && fcb->type != BTRFS_TYPE_DIRECTORY && old_size != fcb->inode_item.size) {
             ERR("error - size has changed but extents not marked as changed\n");
             int3;
         }
@@ -5258,16 +5258,16 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
     fcb->created = false;
 
     if (!cache && fcb->inode_item_changed) {
-        ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+        ii = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_item), ALLOC_TAG);
         if (!ii) {
             ERR("out of memory\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
 
-        RtlCopyMemory(ii, &fcb->inode_item, sizeof(INODE_ITEM));
+        RtlCopyMemory(ii, &fcb->inode_item, sizeof(struct btrfs_inode_item));
 
-        Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(INODE_ITEM),
+        Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, fcb->inode, TYPE_INODE_ITEM, ii_offset, ii, sizeof(struct btrfs_inode_item),
                                         Batch_Insert);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
@@ -5474,7 +5474,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         fcb->case_sensitive_set = true;
     }
 
-    if (fcb->inode_item.st_nlink == 0 && !fcb->marked_as_orphan) { // mark as orphan
+    if (fcb->inode_item.nlink == 0 && !fcb->marked_as_orphan) { // mark as orphan
         Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, TYPE_ORPHAN_INODE,
                                         fcb->inode, NULL, 0, Batch_Insert);
         if (!NT_SUCCESS(Status)) {
@@ -5572,7 +5572,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     if (c->cache) {
         c->cache->deleted = true;
 
-        Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, rollback);
+        Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             return Status;
@@ -6190,7 +6190,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                 used_minus_cache = c->used;
 
                 // subtract self-hosted cache
-                if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache && c->cache->inode_item.st_size == c->used) {
+                if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache && c->cache->inode_item.size == c->used) {
                     LIST_ENTRY* le3;
 
                     le3 = c->cache->extents.Flink;
@@ -7411,9 +7411,9 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
             if (!NT_SUCCESS(Status))
                 ERR("open_fcb returned %08lx\n", Status);
             else {
-                if (fcb->inode_item.st_nlink == 0) {
-                    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0) {
-                        Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, Vcb->superblock.sectorsize), Irp, &rollback);
+                if (fcb->inode_item.nlink == 0) {
+                    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0) {
+                        Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.size, Vcb->superblock.sectorsize), Irp, &rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("excise_extents returned %08lx\n", Status);
                             goto end;

@@ -1102,14 +1102,14 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
                             }
 
-                            re->fcb->inode_item.st_blocks -= ed2->num_bytes;
+                            re->fcb->inode_item.nbytes -= ed2->num_bytes;
                         }
 
                         break;
                     }
 
                     case EXTENT_TYPE_INLINE:
-                        re->fcb->inode_item.st_blocks -= re->ext->extent_data.decoded_size;
+                        re->fcb->inode_item.nbytes -= re->ext->extent_data.decoded_size;
                     break;
                 }
 
@@ -1140,14 +1140,14 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
                             }
 
-                            re->fcb->inode_item.st_blocks += ed2->num_bytes;
+                            re->fcb->inode_item.nbytes += ed2->num_bytes;
                         }
 
                         break;
                     }
 
                     case EXTENT_TYPE_INLINE:
-                        re->fcb->inode_item.st_blocks += re->ext->extent_data.decoded_size;
+                        re->fcb->inode_item.nbytes += re->ext->extent_data.decoded_size;
                     break;
                 }
 

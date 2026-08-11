@@ -190,9 +190,9 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
             subvol = bii2.subvol;
             inode = bii2.inode;
             type = bii2.type;
-            uid = bii2.st_uid;
-            gid = bii2.st_gid;
-            rdev = bii2.st_rdev;
+            uid = bii2.uid;
+            gid = bii2.gid;
+            rdev = bii2.rdev;
         } else {
             if (subvol != bii2.subvol)
                 various_subvols = true;
@@ -203,10 +203,10 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
             if (type != bii2.type)
                 various_types = true;
 
-            if (uid != bii2.st_uid)
+            if (uid != bii2.uid)
                 various_uids = true;
 
-            if (gid != bii2.st_gid)
+            if (gid != bii2.gid)
                 various_gids = true;
         }
 
@@ -250,8 +250,8 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
         else
             allocsize += fsi.AllocationSize.QuadPart;
 
-        min_mode |= ~bii2.st_mode;
-        max_mode |= bii2.st_mode;
+        min_mode |= ~bii2.mode;
+        max_mode |= bii2.mode;
         min_flags |= ~bii2.flags;
         max_flags |= bii2.flags;
         min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
@@ -435,9 +435,9 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
         subvol = bii2.subvol;
         inode = bii2.inode;
         type = bii2.type;
-        uid = bii2.st_uid;
-        gid = bii2.st_gid;
-        rdev = bii2.st_rdev;
+        uid = bii2.uid;
+        gid = bii2.gid;
+        rdev = bii2.rdev;
 
         if (bii2.inline_length > 0) {
             totalsize += bii2.inline_length;
@@ -478,8 +478,8 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
         else
             allocsize += fsi.AllocationSize.QuadPart;
 
-        min_mode |= ~bii2.st_mode;
-        max_mode |= bii2.st_mode;
+        min_mode |= ~bii2.mode;
+        max_mode |= bii2.mode;
         min_flags |= ~bii2.flags;
         max_flags |= bii2.flags;
         min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
@@ -643,17 +643,17 @@ void BtrfsPropSheet::apply_changes_file(HWND, const wstring& fn) {
 
         if (perms_changed) {
             bsii.mode_changed = true;
-            bsii.st_mode = (bii2.st_mode & ~mode_set) | (mode & mode_set);
+            bsii.mode = (bii2.mode & ~mode_set) | (mode & mode_set);
         }
 
         if (uid_changed) {
             bsii.uid_changed = true;
-            bsii.st_uid = uid;
+            bsii.uid = uid;
         }
 
         if (gid_changed) {
             bsii.gid_changed = true;
-            bsii.st_gid = gid;
+            bsii.gid = gid;
         }
 
         if (compress_type_changed) {

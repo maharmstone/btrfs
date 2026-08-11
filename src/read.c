@@ -2806,7 +2806,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
     if (pbr)
         *pbr = 0;
 
-    if (start >= fcb->inode_item.st_size) {
+    if (start >= fcb->inode_item.size) {
         WARN("Tried to read beyond end of file\n");
         return STATUS_END_OF_FILE;
     }
@@ -3266,8 +3266,8 @@ nextitem:
         le = le->Flink;
     }
 
-    if (length > 0 && start + bytes_read < fcb->inode_item.st_size) {
-        uint32_t read = (uint32_t)min(fcb->inode_item.st_size - start - bytes_read, length);
+    if (length > 0 && start + bytes_read < fcb->inode_item.size) {
+        uint32_t read = (uint32_t)min(fcb->inode_item.size - start - bytes_read, length);
 
         RtlZeroMemory(data + bytes_read, read);
 
@@ -3360,7 +3360,7 @@ NTSTATUS do_read(PIRP Irp, bool wait, ULONG* bytes_read) {
         return STATUS_END_OF_FILE;
     }
 
-    TRACE("FileObject %p fcb %p FileSize = %I64x st_size = %I64x (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.st_size, &fcb->inode_item.st_size);
+    TRACE("FileObject %p fcb %p FileSize = %I64x size = %I64x (%p)\n", FileObject, fcb, fcb->Header.FileSize.QuadPart, fcb->inode_item.size, &fcb->inode_item.size);
 
     if (!(Irp->Flags & IRP_NOCACHE) && IrpSp->MinorFunction & IRP_MN_MDL) {
         NTSTATUS Status = STATUS_SUCCESS;

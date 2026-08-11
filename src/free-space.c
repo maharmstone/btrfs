@@ -34,8 +34,8 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, L
 
     mark_fcb_dirty(fcb);
 
-    if (fcb->inode_item.st_size > 0) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
+    if (fcb->inode_item.size > 0) {
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             return Status;
@@ -519,7 +519,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     if (load_only)
         return STATUS_SUCCESS;
 
-    if (c->cache->inode_item.st_size == 0) {
+    if (c->cache->inode_item.size == 0) {
         WARN("cache had zero length\n");
         free_fcb(c->cache);
         c->cache = NULL;
@@ -531,7 +531,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     if (num_entries == 0 && num_bitmaps == 0)
         return STATUS_SUCCESS;
 
-    size = (uint32_t)sector_align(c->cache->inode_item.st_size, Vcb->superblock.sectorsize);
+    size = (uint32_t)sector_align(c->cache->inode_item.size, Vcb->superblock.sectorsize);
 
     data = ExAllocatePoolWithTag(PagedPool, size, ALLOC_TAG);
 
@@ -547,7 +547,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         goto clearcache;
     }
 
-    Status = read_file(c->cache, data, 0, c->cache->inode_item.st_size, NULL, NULL);
+    Status = read_file(c->cache, data, 0, c->cache->inode_item.size, NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("read_file returned %08lx\n", Status);
         ExFreePool(data);
@@ -560,8 +560,8 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
         return STATUS_NOT_FOUND;
     }
 
-    if (size > c->cache->inode_item.st_size)
-        RtlZeroMemory(&data[c->cache->inode_item.st_size], (ULONG)(size - c->cache->inode_item.st_size));
+    if (size > c->cache->inode_item.size)
+        RtlZeroMemory(&data[c->cache->inode_item.size], (ULONG)(size - c->cache->inode_item.size));
 
     num_sectors = size >> Vcb->sector_shift;
 
@@ -696,7 +696,7 @@ clearcache:
         return Status;
     }
 
-    Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, &rollback);
+    Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size, Irp, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08lx\n", Status);
         do_rollback(Vcb, &rollback);
@@ -1092,10 +1092,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
     new_cache_size = sector_align(new_cache_size, CACHE_INCREMENTS << Vcb->sector_shift);
 
-    TRACE("chunk %I64x: cache_size = %I64x, new_cache_size = %I64x\n", c->offset, c->cache ? c->cache->inode_item.st_size : 0, new_cache_size);
+    TRACE("chunk %I64x: cache_size = %I64x, new_cache_size = %I64x\n", c->offset, c->cache ? c->cache->inode_item.size : 0, new_cache_size);
 
     if (c->cache) {
-        if (new_cache_size > c->cache->inode_item.st_size)
+        if (new_cache_size > c->cache->inode_item.size)
             realloc_extents = true;
         else {
             le = c->cache->extents.Flink;
@@ -1136,10 +1136,10 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         c->cache->Vcb = Vcb;
 
-        c->cache->inode_item.st_size = new_cache_size;
-        c->cache->inode_item.st_blocks = new_cache_size;
-        c->cache->inode_item.st_nlink = 1;
-        c->cache->inode_item.st_mode = S_IRUSR | S_IWUSR | __S_IFREG;
+        c->cache->inode_item.size = new_cache_size;
+        c->cache->inode_item.nbytes = new_cache_size;
+        c->cache->inode_item.nlink = 1;
+        c->cache->inode_item.mode = S_IRUSR | S_IWUSR | __S_IFREG;
         c->cache->inode_item.flags = BTRFS_INODE_NODATASUM | BTRFS_INODE_NODATACOW | BTRFS_INODE_NOCOMPRESS | BTRFS_INODE_PREALLOC;
 
         c->cache->Header.IsFastIoPossible = fast_io_possible(c->cache);
@@ -1258,7 +1258,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         // remove existing extents
 
-        if (c->cache->inode_item.st_size > 0) {
+        if (c->cache->inode_item.size > 0) {
             le = c->cache->extents.Flink;
 
             while (le != &c->cache->extents) {
@@ -1280,7 +1280,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
                 le = le->Flink;
             }
 
-            Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.st_size, Irp, rollback);
+            Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size, Irp, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("excise_extents returned %08lx\n", Status);
                 return Status;
@@ -1297,8 +1297,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         // modify INODE_ITEM
 
-        c->cache->inode_item.st_size = new_cache_size;
-        c->cache->inode_item.st_blocks = new_cache_size;
+        c->cache->inode_item.size = new_cache_size;
+        c->cache->inode_item.nbytes = new_cache_size;
 
         Status = flush_fcb(c->cache, true, batchlist, Irp);
         if (!NT_SUCCESS(Status)) {
@@ -1324,17 +1324,17 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         }
 
         if (keycmp(searchkey, tp.item->key)) {
-            INODE_ITEM* ii;
+            struct btrfs_inode_item* ii;
 
-            ii = ExAllocatePoolWithTag(PagedPool, sizeof(INODE_ITEM), ALLOC_TAG);
+            ii = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_item), ALLOC_TAG);
             if (!ii) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            RtlCopyMemory(ii, &c->cache->inode_item, sizeof(INODE_ITEM));
+            RtlCopyMemory(ii, &c->cache->inode_item, sizeof(struct btrfs_inode_item));
 
-            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(INODE_ITEM), NULL, Irp);
+            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08lx\n", Status);
                 ExFreePool(ii);
@@ -1343,8 +1343,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
             *changed = true;
         } else {
-            if (tp.item->size < sizeof(INODE_ITEM)) {
-                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(INODE_ITEM));
+            if (tp.item->size < sizeof(struct btrfs_inode_item)) {
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_inode_item));
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -1701,13 +1701,13 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
     uint32_t *checksums, num_sectors;
     LIST_ENTRY space_list, deleting;
 
-    data = ExAllocatePoolWithTag(NonPagedPool, (ULONG)c->cache->inode_item.st_size, ALLOC_TAG);
+    data = ExAllocatePoolWithTag(NonPagedPool, (ULONG)c->cache->inode_item.size, ALLOC_TAG);
     if (!data) {
         ERR("out of memory\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlZeroMemory(data, (ULONG)c->cache->inode_item.st_size);
+    RtlZeroMemory(data, (ULONG)c->cache->inode_item.size);
 
     InitializeListHead(&space_list);
     InitializeListHead(&deleting);
@@ -1732,7 +1732,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
     space_list_merge(&space_list, NULL, &deleting);
 
     num_entries = 0;
-    num_sectors = (uint32_t)(c->cache->inode_item.st_size >> Vcb->sector_shift);
+    num_sectors = (uint32_t)(c->cache->inode_item.size >> Vcb->sector_shift);
     off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
     while (!IsListEmpty(&space_list)) {
@@ -1758,7 +1758,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
     c->cache->inode_item.generation = Vcb->superblock.generation;
     c->cache->inode_item.transid = Vcb->superblock.generation;
     c->cache->inode_item.sequence++;
-    c->cache->inode_item.st_ctime = *now;
+    c->cache->inode_item.ctime = *now;
 
     Status = flush_fcb(c->cache, true, batchlist, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -1818,7 +1818,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
 
     // write cache
 
-    Status = do_write_file(c->cache, 0, c->cache->inode_item.st_size, data, NULL, false, 0, rollback);
+    Status = do_write_file(c->cache, 0, c->cache->inode_item.size, data, NULL, false, 0, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("do_write_file returned %08lx\n", Status);
 

@@ -215,7 +215,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     if (fbi->LastAccessTime.QuadPart == -1)
         ccb->user_set_access_time = true;
     else if (fbi->LastAccessTime.QuadPart != 0) {
-        win_time_to_unix(fbi->LastAccessTime, &fcb->inode_item.st_atime);
+        win_time_to_unix(fbi->LastAccessTime, &fcb->inode_item.atime);
         inode_item_changed = true;
         filter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
 
@@ -225,7 +225,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     if (fbi->LastWriteTime.QuadPart == -1)
         ccb->user_set_write_time = true;
     else if (fbi->LastWriteTime.QuadPart != 0) {
-        win_time_to_unix(fbi->LastWriteTime, &fcb->inode_item.st_mtime);
+        win_time_to_unix(fbi->LastWriteTime, &fcb->inode_item.mtime);
         inode_item_changed = true;
         filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
 
@@ -235,7 +235,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     if (fbi->ChangeTime.QuadPart == -1)
         ccb->user_set_change_time = true;
     else if (fbi->ChangeTime.QuadPart != 0) {
-        win_time_to_unix(fbi->ChangeTime, &fcb->inode_item.st_ctime);
+        win_time_to_unix(fbi->ChangeTime, &fcb->inode_item.ctime);
         inode_item_changed = true;
         // no filter for this
 
@@ -273,7 +273,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         win_time_to_unix(time, &now);
 
         if (!ccb->user_set_change_time)
-            fcb->inode_item.st_ctime = now;
+            fcb->inode_item.ctime = now;
 
         fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
@@ -359,7 +359,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     }
 
     // FIXME - can we skip this bit for subvols?
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.st_size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
+    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
         TRACE("directory not empty\n");
         Status = STATUS_DIRECTORY_NOT_EMPTY;
         goto end;
@@ -473,7 +473,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
         goto end;
     }
 
-    RtlCopyMemory(&fcb->inode_item, &oldfcb->inode_item, sizeof(INODE_ITEM));
+    RtlCopyMemory(&fcb->inode_item, &oldfcb->inode_item, sizeof(struct btrfs_inode_item));
     fcb->inode_item_changed = true;
 
     if (oldfcb->sd && RtlLengthSecurityDescriptor(oldfcb->sd) > 0) {
@@ -761,10 +761,10 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
 
     fcb->inode_item.generation = Vcb->superblock.generation;
     fcb->inode_item.transid = Vcb->superblock.generation;
-    fcb->inode_item.st_nlink = 1;
-    fcb->inode_item.st_mode = __S_IFDIR | inherit_mode(parfcb, true);
-    fcb->inode_item.st_atime = fcb->inode_item.st_ctime = fcb->inode_item.st_mtime = fcb->inode_item.otime = now;
-    fcb->inode_item.st_gid = GID_NOBODY;
+    fcb->inode_item.nlink = 1;
+    fcb->inode_item.mode = __S_IFDIR | inherit_mode(parfcb, true);
+    fcb->inode_item.atime = fcb->inode_item.ctime = fcb->inode_item.mtime = fcb->inode_item.otime = now;
+    fcb->inode_item.gid = GID_NOBODY;
 
     fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, false, true, NULL);
 
@@ -787,11 +787,11 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     Status = RtlGetOwnerSecurityDescriptor(fcb->sd, &owner, &defaulted);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlGetOwnerSecurityDescriptor returned %08lx\n", Status);
-        fcb->inode_item.st_uid = UID_NOBODY;
+        fcb->inode_item.uid = UID_NOBODY;
         fcb->sd_dirty = true;
     } else {
-        fcb->inode_item.st_uid = sid_to_uid(owner);
-        fcb->sd_dirty = fcb->inode_item.st_uid == UID_NOBODY;
+        fcb->inode_item.uid = sid_to_uid(owner);
+        fcb->sd_dirty = fcb->inode_item.uid == UID_NOBODY;
     }
 
     find_gid(fcb, parfcb, &subjcont);
@@ -1002,7 +1002,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     me->fileref->fcb->subvol = destdir->fcb->subvol;
                     me->fileref->fcb->inode = InterlockedIncrement64(&destdir->fcb->subvol->lastinode);
                     me->fileref->fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&me->fileref->fcb->inode, sizeof(uint64_t));
-                    me->fileref->fcb->inode_item.st_nlink = 1;
+                    me->fileref->fcb->inode_item.nlink = 1;
 
                     defda = get_file_attributes(me->fileref->fcb->Vcb, me->fileref->fcb->subvol, me->fileref->fcb->inode,
                                                 me->fileref->fcb->type, me->fileref->dc && me->fileref->dc->name.Length >= sizeof(WCHAR) && me->fileref->dc->name.Buffer[0] == '.',
@@ -1030,7 +1030,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                         me->fileref->fcb->inode_item.sequence++;
 
                         if (!ccb->user_set_change_time)
-                            me->fileref->fcb->inode_item.st_ctime = now;
+                            me->fileref->fcb->inode_item.ctime = now;
                     }
 
                     le2 = me->fileref->fcb->extents.Flink;
@@ -1093,7 +1093,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 me->fileref->fcb->inode_item_changed = true;
                 mark_fcb_dirty(me->fileref->fcb);
 
-                if ((!me->dummyfcb->ads && me->dummyfcb->inode_item.st_nlink > 1) || (me->dummyfcb->ads && me->parent->dummyfcb->inode_item.st_nlink > 1)) {
+                if ((!me->dummyfcb->ads && me->dummyfcb->inode_item.nlink > 1) || (me->dummyfcb->ads && me->parent->dummyfcb->inode_item.nlink > 1)) {
                     LIST_ENTRY* le2 = le->Flink;
 
                     while (le2 != &move_list) {
@@ -1111,7 +1111,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
             } else {
                 ExAcquireResourceExclusiveLite(me->fileref->fcb->Header.Resource, true);
-                me->fileref->fcb->inode_item.st_nlink++;
+                me->fileref->fcb->inode_item.nlink++;
                 me->fileref->fcb->inode_item_changed = true;
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
             }
@@ -1208,11 +1208,11 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 remove_dir_child_from_hash_lists(me->fileref->parent->fcb, me->fileref->dc);
                 ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
-                me->fileref->parent->fcb->inode_item.st_size -= me->fileref->dc->utf8.Length * 2;
+                me->fileref->parent->fcb->inode_item.size -= me->fileref->dc->utf8.Length * 2;
                 me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
                 me->fileref->parent->fcb->inode_item.sequence++;
-                me->fileref->parent->fcb->inode_item.st_ctime = now;
-                me->fileref->parent->fcb->inode_item.st_mtime = now;
+                me->fileref->parent->fcb->inode_item.ctime = now;
+                me->fileref->parent->fcb->inode_item.mtime = now;
                 me->fileref->parent->fcb->inode_item_changed = true;
                 mark_fcb_dirty(me->fileref->parent->fcb);
 
@@ -1278,13 +1278,13 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             InsertTailList(&me->fileref->parent->children, &me->fileref->list_entry);
             ExReleaseResourceLite(&me->fileref->parent->fcb->nonpaged->dir_children_lock);
 
-            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
-            me->fileref->parent->fcb->inode_item.st_size += me->fileref->dc->utf8.Length * 2;
-            TRACE("me->fileref->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.st_size);
+            TRACE("me->fileref->parent->fcb->inode_item.size (inode %I64x) was %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.size);
+            me->fileref->parent->fcb->inode_item.size += me->fileref->dc->utf8.Length * 2;
+            TRACE("me->fileref->parent->fcb->inode_item.size (inode %I64x) now %I64x\n", me->fileref->parent->fcb->inode, me->fileref->parent->fcb->inode_item.size);
             me->fileref->parent->fcb->inode_item.transid = me->fileref->fcb->Vcb->superblock.generation;
             me->fileref->parent->fcb->inode_item.sequence++;
-            me->fileref->parent->fcb->inode_item.st_ctime = now;
-            me->fileref->parent->fcb->inode_item.st_mtime = now;
+            me->fileref->parent->fcb->inode_item.ctime = now;
+            me->fileref->parent->fcb->inode_item.mtime = now;
             me->fileref->parent->fcb->inode_item_changed = true;
             mark_fcb_dirty(me->fileref->parent->fcb);
         } else {
@@ -1329,7 +1329,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             }
         }
 
-        if (me->fileref->fcb->inode_item.st_nlink > 1) {
+        if (me->fileref->fcb->inode_item.nlink > 1) {
             hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
             if (!hl) {
                 ERR("out of memory\n");
@@ -1543,7 +1543,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
         return STATUS_ACCESS_DENIED;
     }
 
-    if (ofr->fcb->inode_item.st_size > 0) {
+    if (ofr->fcb->inode_item.size > 0) {
         WARN("can only overwrite existing stream if it is zero-length\n");
         return STATUS_INVALID_PARAMETER;
     }
@@ -1699,7 +1699,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
 
     // write file data
 
-    fileref->fcb->inode_item.st_size = adsdata.Length;
+    fileref->fcb->inode_item.size = adsdata.Length;
 
     if (adsdata.Length > 0) {
         bool make_inline = adsdata.Length <= Vcb->options.max_inline;
@@ -1763,7 +1763,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             ExFreePool(adsdata.Buffer);
         }
 
-        fileref->fcb->inode_item.st_blocks = adsdata.Length;
+        fileref->fcb->inode_item.nbytes = adsdata.Length;
         fileref->fcb->inode_item_changed = true;
     }
 
@@ -2224,7 +2224,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     newmaxlen -= adsxattr.Length;
 
-    if (newmaxlen < fileref->fcb->inode_item.st_size) {
+    if (newmaxlen < fileref->fcb->inode_item.size) {
         WARN("cannot rename as data too long\n");
         Status = STATUS_INVALID_PARAMETER;
         ExFreePool(utf8.Buffer);
@@ -2244,10 +2244,10 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
 
     // read existing file data
 
-    if (fileref->fcb->inode_item.st_size > 0) {
+    if (fileref->fcb->inode_item.size > 0) {
         ULONG bytes_read;
 
-        adsdata.Length = adsdata.MaximumLength = (uint16_t)fileref->fcb->inode_item.st_size;
+        adsdata.Length = adsdata.MaximumLength = (uint16_t)fileref->fcb->inode_item.size;
 
         adsdata.Buffer = ExAllocatePoolWithTag(PagedPool, adsdata.MaximumLength, ALLOC_TAG);
         if (!adsdata.Buffer) {
@@ -2272,7 +2272,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
             goto end;
         }
 
-        if (bytes_read < fileref->fcb->inode_item.st_size) {
+        if (bytes_read < fileref->fcb->inode_item.size) {
             ERR("short read\n");
             Status = STATUS_INTERNAL_ERROR;
             ExFreePool(utf8.Buffer);
@@ -2344,8 +2344,8 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
     dummyfcb->inode = fileref->fcb->inode;
     dummyfcb->hash = fileref->fcb->hash;
 
-    if (fileref->fcb->inode_item.st_size > 0) {
-        Status = excise_extents(Vcb, dummyfcb, 0, sector_align(fileref->fcb->inode_item.st_size, Vcb->superblock.sectorsize),
+    if (fileref->fcb->inode_item.size > 0) {
+        Status = excise_extents(Vcb, dummyfcb, 0, sector_align(fileref->fcb->inode_item.size, Vcb->superblock.sectorsize),
                                 Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
@@ -2362,7 +2362,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
             goto end;
         }
 
-        dummyfcb->inode_item.st_size = 0;
+        dummyfcb->inode_item.size = 0;
         dummyfcb->Header.AllocationSize.QuadPart = 0;
         dummyfcb->Header.FileSize.QuadPart = 0;
         dummyfcb->Header.ValidDataLength.QuadPart = 0;
@@ -2840,7 +2840,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
             fcb->inode_item.sequence++;
 
             if (!ccb->user_set_change_time)
-                fcb->inode_item.st_ctime = now;
+                fcb->inode_item.ctime = now;
 
             fcb->inode_item_changed = true;
             mark_fcb_dirty(fcb);
@@ -2849,12 +2849,12 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         // update parent's INODE_ITEM
 
         related->fcb->inode_item.transid = Vcb->superblock.generation;
-        TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
-        related->fcb->inode_item.st_size = related->fcb->inode_item.st_size + (2 * utf8.Length) - (2* oldutf8len);
-        TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+        TRACE("related->fcb->inode_item.size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.size);
+        related->fcb->inode_item.size = related->fcb->inode_item.size + (2 * utf8.Length) - (2* oldutf8len);
+        TRACE("related->fcb->inode_item.size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.size);
         related->fcb->inode_item.sequence++;
-        related->fcb->inode_item.st_ctime = now;
-        related->fcb->inode_item.st_mtime = now;
+        related->fcb->inode_item.ctime = now;
+        related->fcb->inode_item.mtime = now;
 
         related->fcb->inode_item_changed = true;
         mark_fcb_dirty(related->fcb);
@@ -2987,7 +2987,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     InsertTailList(&related->children, &fileref->list_entry);
     ExReleaseResourceLite(&related->fcb->nonpaged->dir_children_lock);
 
-    if (fcb->inode_item.st_nlink > 1) {
+    if (fcb->inode_item.nlink > 1) {
         // add new hardlink entry to fcb
 
         hl = ExAllocatePoolWithTag(PagedPool, sizeof(hardlink), ALLOC_TAG);
@@ -3060,7 +3060,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         fcb->inode_item.sequence++;
 
         if (!ccb->user_set_change_time)
-            fcb->inode_item.st_ctime = now;
+            fcb->inode_item.ctime = now;
 
         fcb->inode_item_changed = true;
         mark_fcb_dirty(fcb);
@@ -3069,12 +3069,12 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // update new parent's INODE_ITEM
 
     related->fcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("related->fcb->inode_item.st_size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
-    related->fcb->inode_item.st_size += 2 * utf8len;
-    TRACE("related->fcb->inode_item.st_size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.st_size);
+    TRACE("related->fcb->inode_item.size (inode %I64x) was %I64x\n", related->fcb->inode, related->fcb->inode_item.size);
+    related->fcb->inode_item.size += 2 * utf8len;
+    TRACE("related->fcb->inode_item.size (inode %I64x) now %I64x\n", related->fcb->inode, related->fcb->inode_item.size);
     related->fcb->inode_item.sequence++;
-    related->fcb->inode_item.st_ctime = now;
-    related->fcb->inode_item.st_mtime = now;
+    related->fcb->inode_item.ctime = now;
+    related->fcb->inode_item.mtime = now;
 
     related->fcb->inode_item_changed = true;
     mark_fcb_dirty(related->fcb);
@@ -3082,12 +3082,12 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // update old parent's INODE_ITEM
 
     fr2->parent->fcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) was %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
-    fr2->parent->fcb->inode_item.st_size -= 2 * origutf8len;
-    TRACE("fr2->parent->fcb->inode_item.st_size (inode %I64x) now %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.st_size);
+    TRACE("fr2->parent->fcb->inode_item.size (inode %I64x) was %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.size);
+    fr2->parent->fcb->inode_item.size -= 2 * origutf8len;
+    TRACE("fr2->parent->fcb->inode_item.size (inode %I64x) now %I64x\n", fr2->parent->fcb->inode, fr2->parent->fcb->inode_item.size);
     fr2->parent->fcb->inode_item.sequence++;
-    fr2->parent->fcb->inode_item.st_ctime = now;
-    fr2->parent->fcb->inode_item.st_mtime = now;
+    fr2->parent->fcb->inode_item.ctime = now;
+    fr2->parent->fcb->inode_item.mtime = now;
 
     free_fileref(fr2);
 
@@ -3181,7 +3181,7 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
 
     fileref->parent->fcb->inode_item.transid = Vcb->superblock.generation;
     fileref->parent->fcb->inode_item.sequence++;
-    fileref->parent->fcb->inode_item.st_ctime = now;
+    fileref->parent->fcb->inode_item.ctime = now;
 
     fileref->parent->fcb->inode_item_changed = true;
     mark_fcb_dirty(fileref->parent->fcb);
@@ -3245,7 +3245,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
         if (!ccb->user_set_write_time) {
             KeQuerySystemTime(&time);
-            win_time_to_unix(time, &fileref->parent->fcb->inode_item.st_mtime);
+            win_time_to_unix(time, &fileref->parent->fcb->inode_item.mtime);
             filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
 
             fileref->parent->fcb->inode_item_changed = true;
@@ -3270,9 +3270,9 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
     if (advance_only && new_end_of_file >= (uint64_t)fcb->Header.FileSize.QuadPart)
         new_end_of_file = fcb->Header.FileSize.QuadPart;
 
-    TRACE("setting new end to %I64x bytes (currently %I64x)\n", new_end_of_file, fcb->inode_item.st_size);
+    TRACE("setting new end to %I64x bytes (currently %I64x)\n", new_end_of_file, fcb->inode_item.size);
 
-    if (new_end_of_file < fcb->inode_item.st_size) {
+    if (new_end_of_file < fcb->inode_item.size) {
         if (advance_only) {
             Status = STATUS_SUCCESS;
             goto end;
@@ -3290,7 +3290,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             ERR("error - truncate_file failed\n");
             goto end;
         }
-    } else if (new_end_of_file > fcb->inode_item.st_size) {
+    } else if (new_end_of_file > fcb->inode_item.size) {
         TRACE("extending file to %I64x bytes\n", new_end_of_file);
 
         Status = extend_file(fcb, fileref, new_end_of_file, false, NULL, &rollback);
@@ -3298,7 +3298,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
             ERR("error - extend_file failed\n");
             goto end;
         }
-    } else if (new_end_of_file == fcb->inode_item.st_size && advance_only) {
+    } else if (new_end_of_file == fcb->inode_item.size && advance_only) {
         Status = STATUS_SUCCESS;
         goto end;
     }
@@ -3312,7 +3312,7 @@ static NTSTATUS set_end_of_file_information(device_extension* Vcb, PIRP Irp, PFI
 
     if (!ccb->user_set_write_time) {
         KeQuerySystemTime(&time);
-        win_time_to_unix(time, &fcb->inode_item.st_mtime);
+        win_time_to_unix(time, &fcb->inode_item.mtime);
         filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
 
@@ -3399,7 +3399,7 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
 
         if (!ccb->user_set_write_time) {
             KeQuerySystemTime(&time);
-            win_time_to_unix(time, &fileref->parent->fcb->inode_item.st_mtime);
+            win_time_to_unix(time, &fileref->parent->fcb->inode_item.mtime);
             filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
 
             fileref->parent->fcb->inode_item_changed = true;
@@ -3417,7 +3417,7 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
         fcb->Header.AllocationSize.QuadPart, fcb->Header.FileSize.QuadPart, fcb->Header.ValidDataLength.QuadPart);
 
     new_allocation_size = sector_align(fai->AllocationSize.QuadPart, fcb->Vcb->superblock.sectorsize);
-    old_allocation_size = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
+    old_allocation_size = sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize);
 
     TRACE("setting new allocation size to %I64x bytes (currently %I64x)\n", new_allocation_size, old_allocation_size);
 
@@ -3456,7 +3456,7 @@ static NTSTATUS set_allocation_information(device_extension* Vcb, PIRP Irp, PFIL
 
     if (!ccb->user_set_write_time) {
         KeQuerySystemTime(&time);
-        win_time_to_unix(time, &fcb->inode_item.st_mtime);
+        win_time_to_unix(time, &fcb->inode_item.mtime);
         filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
 
@@ -3585,7 +3585,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
         goto end;
     }
 
-    if (fcb->inode_item.st_nlink >= 65535) {
+    if (fcb->inode_item.nlink >= 65535) {
         Status = STATUS_TOO_MANY_LINKS;
         goto end;
     }
@@ -3810,10 +3810,10 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     fcb->inode_item.transid = Vcb->superblock.generation;
     fcb->inode_item.sequence++;
-    fcb->inode_item.st_nlink++;
+    fcb->inode_item.nlink++;
 
     if (!ccb->user_set_change_time)
-        fcb->inode_item.st_ctime = now;
+        fcb->inode_item.ctime = now;
 
     fcb->inode_item_changed = true;
     mark_fcb_dirty(fcb);
@@ -3821,11 +3821,11 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     // update parent's INODE_ITEM
 
     parfcb->inode_item.transid = Vcb->superblock.generation;
-    TRACE("parfcb->inode_item.st_size (inode %I64x) was %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
-    parfcb->inode_item.st_size += 2 * utf8len;
-    TRACE("parfcb->inode_item.st_size (inode %I64x) now %I64x\n", parfcb->inode, parfcb->inode_item.st_size);
+    TRACE("parfcb->inode_item.size (inode %I64x) was %I64x\n", parfcb->inode, parfcb->inode_item.size);
+    parfcb->inode_item.size += 2 * utf8len;
+    TRACE("parfcb->inode_item.size (inode %I64x) now %I64x\n", parfcb->inode, parfcb->inode_item.size);
     parfcb->inode_item.sequence++;
-    parfcb->inode_item.st_ctime = now;
+    parfcb->inode_item.ctime = now;
 
     parfcb->inode_item_changed = true;
     mark_fcb_dirty(parfcb);
@@ -3914,7 +3914,7 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
 
     if (!ccb->user_set_write_time) {
         KeQuerySystemTime(&time);
-        win_time_to_unix(time, &fcb->inode_item.st_mtime);
+        win_time_to_unix(time, &fcb->inode_item.mtime);
         filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
     }
 
@@ -4199,7 +4199,7 @@ end:
     return Status;
 }
 
-static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INODE_ITEM* ii, LONG* length, fcb* fcb, file_ref* fileref) {
+static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, struct btrfs_inode_item* ii, LONG* length, fcb* fcb, file_ref* fileref) {
     RtlZeroMemory(fbi, sizeof(FILE_BASIC_INFORMATION));
 
     *length -= sizeof(FILE_BASIC_INFORMATION);
@@ -4211,9 +4211,9 @@ static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INOD
         fbi->CreationTime = fbi->LastAccessTime = fbi->LastWriteTime = fbi->ChangeTime = time;
     } else {
         fbi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-        fbi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-        fbi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-        fbi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+        fbi->LastAccessTime.QuadPart = unix_time_to_win(&ii->atime);
+        fbi->LastWriteTime.QuadPart = unix_time_to_win(&ii->mtime);
+        fbi->ChangeTime.QuadPart = unix_time_to_win(&ii->ctime);
     }
 
     if (fcb->ads) {
@@ -4229,7 +4229,7 @@ static NTSTATUS fill_in_file_basic_information(FILE_BASIC_INFORMATION* fbi, INOD
 }
 
 static NTSTATUS fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMATION* fnoi, fcb* fcb, file_ref* fileref, LONG* length) {
-    INODE_ITEM* ii;
+    struct btrfs_inode_item* ii;
 
     if (*length < (LONG)sizeof(FILE_NETWORK_OPEN_INFORMATION)) {
         WARN("overflow\n");
@@ -4257,9 +4257,9 @@ static NTSTATUS fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMAT
         fnoi->CreationTime = fnoi->LastAccessTime = fnoi->LastWriteTime = fnoi->ChangeTime = time;
     } else {
         fnoi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-        fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-        fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-        fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+        fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ii->atime);
+        fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ii->mtime);
+        fnoi->ChangeTime.QuadPart = unix_time_to_win(&ii->ctime);
     }
 
     if (fcb->ads) {
@@ -4267,7 +4267,7 @@ static NTSTATUS fill_in_file_network_open_information(FILE_NETWORK_OPEN_INFORMAT
         fnoi->FileAttributes = fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fileref->parent->fcb->atts;
     } else {
         fnoi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
-        fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fnoi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.mode) ? 0 : fcb->inode_item.size;
         fnoi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
@@ -4286,13 +4286,13 @@ static NTSTATUS fill_in_file_standard_information(FILE_STANDARD_INFORMATION* fsi
         }
 
         fsi->AllocationSize.QuadPart = fsi->EndOfFile.QuadPart = fcb->adsdata.Length;
-        fsi->NumberOfLinks = fileref->parent->fcb->inode_item.st_nlink;
+        fsi->NumberOfLinks = fileref->parent->fcb->inode_item.nlink;
         fsi->Directory = false;
     } else {
         fsi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
-        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
-        fsi->NumberOfLinks = fcb->inode_item.st_nlink;
-        fsi->Directory = S_ISDIR(fcb->inode_item.st_mode);
+        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.mode) ? 0 : fcb->inode_item.size;
+        fsi->NumberOfLinks = fcb->inode_item.nlink;
+        fsi->Directory = S_ISDIR(fcb->inode_item.mode);
     }
 
     TRACE("length = %I64u\n", fsi->EndOfFile.QuadPart);
@@ -4550,7 +4550,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
 
         entry->NextEntryOffset = 0;
         entry->StreamNameLength = suf.Length + sizeof(WCHAR);
-        entry->StreamSize.QuadPart = fileref->fcb->inode_item.st_size;
+        entry->StreamSize.QuadPart = fileref->fcb->inode_item.size;
         entry->StreamAllocationSize.QuadPart = fcb_alloc_size(fileref->fcb);
 
         entry->StreamName[0] = ':';
@@ -4612,8 +4612,8 @@ static NTSTATUS fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORM
 
     // FIXME - NumberOfAccessibleLinks should subtract open links which have been marked as delete_on_close
 
-    fsli->NumberOfAccessibleLinks = fcb->inode_item.st_nlink;
-    fsli->TotalNumberOfLinks = fcb->inode_item.st_nlink;
+    fsli->NumberOfAccessibleLinks = fcb->inode_item.nlink;
+    fsli->TotalNumberOfLinks = fcb->inode_item.nlink;
     fsli->DeletePending = fileref ? fileref->delete_on_close : false;
     fsli->Directory = (!fcb->ads && fcb->type == BTRFS_TYPE_DIRECTORY) ? true : false;
 
@@ -4973,7 +4973,7 @@ static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, 
 }
 
 static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* fcb, ccb* ccb, LONG* length) {
-    INODE_ITEM* ii;
+    struct btrfs_inode_item* ii;
 
     fsi->FileId.QuadPart = make_file_id(fcb->subvol, fcb->inode);
 
@@ -4989,9 +4989,9 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
         fsi->CreationTime = fsi->LastAccessTime = fsi->LastWriteTime = fsi->ChangeTime = time;
     } else {
         fsi->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-        fsi->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-        fsi->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-        fsi->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+        fsi->LastAccessTime.QuadPart = unix_time_to_win(&ii->atime);
+        fsi->LastWriteTime.QuadPart = unix_time_to_win(&ii->mtime);
+        fsi->ChangeTime.QuadPart = unix_time_to_win(&ii->ctime);
     }
 
     if (fcb->ads) {
@@ -4999,7 +4999,7 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
         fsi->FileAttributes = ccb->fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : ccb->fileref->parent->fcb->atts;
     } else {
         fsi->AllocationSize.QuadPart = fcb_alloc_size(fcb);
-        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fsi->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.mode) ? 0 : fcb->inode_item.size;
         fsi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
@@ -5020,9 +5020,9 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
         fsi->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
 
     if (fcb->ads)
-        fsi->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.st_nlink;
+        fsi->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.nlink;
     else
-        fsi->NumberOfLinks = fcb->inode_item.st_nlink;
+        fsi->NumberOfLinks = fcb->inode_item.nlink;
 
     fsi->EffectiveAccess = ccb->access;
 
@@ -5032,7 +5032,7 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
 }
 
 static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli, fcb* fcb, ccb* ccb, LONG* length) {
-    INODE_ITEM* ii;
+    struct btrfs_inode_item* ii;
 
     fsli->FileId.QuadPart = make_file_id(fcb->subvol, fcb->inode);
 
@@ -5048,9 +5048,9 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
         fsli->CreationTime = fsli->LastAccessTime = fsli->LastWriteTime = fsli->ChangeTime = time;
     } else {
         fsli->CreationTime.QuadPart = unix_time_to_win(&ii->otime);
-        fsli->LastAccessTime.QuadPart = unix_time_to_win(&ii->st_atime);
-        fsli->LastWriteTime.QuadPart = unix_time_to_win(&ii->st_mtime);
-        fsli->ChangeTime.QuadPart = unix_time_to_win(&ii->st_ctime);
+        fsli->LastAccessTime.QuadPart = unix_time_to_win(&ii->atime);
+        fsli->LastWriteTime.QuadPart = unix_time_to_win(&ii->mtime);
+        fsli->ChangeTime.QuadPart = unix_time_to_win(&ii->ctime);
     }
 
     if (fcb->ads) {
@@ -5058,7 +5058,7 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
         fsli->FileAttributes = ccb->fileref->parent->fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : ccb->fileref->parent->fcb->atts;
     } else {
         fsli->AllocationSize.QuadPart = fcb_alloc_size(fcb);
-        fsli->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.st_mode) ? 0 : fcb->inode_item.st_size;
+        fsli->EndOfFile.QuadPart = S_ISDIR(fcb->inode_item.mode) ? 0 : fcb->inode_item.size;
         fsli->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
@@ -5079,9 +5079,9 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
         fsli->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
 
     if (fcb->ads)
-        fsli->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.st_nlink;
+        fsli->NumberOfLinks = ccb->fileref->parent->fcb->inode_item.nlink;
     else
-        fsli->NumberOfLinks = fcb->inode_item.st_nlink;
+        fsli->NumberOfLinks = fcb->inode_item.nlink;
 
     fsli->EffectiveAccess = ccb->access;
     fsli->LxFlags = LX_FILE_METADATA_HAS_UID | LX_FILE_METADATA_HAS_GID | LX_FILE_METADATA_HAS_MODE | LX_FILE_METADATA_HAS_DEVICE_ID;
@@ -5089,13 +5089,13 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
     if (fcb->case_sensitive)
         fsli->LxFlags |= LX_FILE_CASE_SENSITIVE_DIR;
 
-    fsli->LxUid = ii->st_uid;
-    fsli->LxGid = ii->st_gid;
-    fsli->LxMode = ii->st_mode;
+    fsli->LxUid = ii->uid;
+    fsli->LxGid = ii->gid;
+    fsli->LxMode = ii->mode;
 
-    if (ii->st_mode & __S_IFBLK || ii->st_mode & __S_IFCHR) {
-        fsli->LxDeviceIdMajor = (ii->st_rdev & 0xFFFFFFFFFFF00000) >> 20;
-        fsli->LxDeviceIdMinor = (ii->st_rdev & 0xFFFFF);
+    if (ii->mode & __S_IFBLK || ii->mode & __S_IFCHR) {
+        fsli->LxDeviceIdMajor = (ii->rdev & 0xFFFFFFFFFFF00000) >> 20;
+        fsli->LxDeviceIdMinor = (ii->rdev & 0xFFFFF);
     } else {
         fsli->LxDeviceIdMajor = 0;
         fsli->LxDeviceIdMinor = 0;
@@ -5121,8 +5121,8 @@ static NTSTATUS fill_in_file_compression_information(FILE_COMPRESSION_INFORMATIO
 
     if (fcb->ads)
         fci->CompressedFileSize.QuadPart = fcb->adsdata.Length;
-    else if (!S_ISDIR(fcb->inode_item.st_mode))
-        fci->CompressedFileSize.QuadPart = fcb->inode_item.st_size;
+    else if (!S_ISDIR(fcb->inode_item.mode))
+        fci->CompressedFileSize.QuadPart = fcb->inode_item.size;
 
     return STATUS_SUCCESS;
 }
@@ -5150,7 +5150,7 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
         case FileAllInformation:
         {
             FILE_ALL_INFORMATION* fai = Irp->AssociatedIrp.SystemBuffer;
-            INODE_ITEM* ii;
+            struct btrfs_inode_item* ii;
 
             TRACE("FileAllInformation\n");
 
@@ -5224,7 +5224,7 @@ static NTSTATUS query_info(device_extension* Vcb, PFILE_OBJECT FileObject, PIRP 
         case FileBasicInformation:
         {
             FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
-            INODE_ITEM* ii;
+            struct btrfs_inode_item* ii;
 
             TRACE("FileBasicInformation\n");
 
@@ -5997,7 +5997,7 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             }
 
             if (Irp->RequestorMode == KernelMode || ccb->access & FILE_WRITE_ATTRIBUTES) {
-                RtlCopyMemory(&fcb->inode_item.st_uid, item->value.Buffer, sizeof(uint32_t));
+                RtlCopyMemory(&fcb->inode_item.uid, item->value.Buffer, sizeof(uint32_t));
                 fcb->sd_dirty = true;
                 fcb->sd_deleted = false;
             }
@@ -6012,7 +6012,7 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             }
 
             if (Irp->RequestorMode == KernelMode || ccb->access & FILE_WRITE_ATTRIBUTES)
-                RtlCopyMemory(&fcb->inode_item.st_gid, item->value.Buffer, sizeof(uint32_t));
+                RtlCopyMemory(&fcb->inode_item.gid, item->value.Buffer, sizeof(uint32_t));
 
             RemoveEntryList(&item->list_entry);
             ExFreePool(item);
@@ -6029,8 +6029,8 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
                 RtlCopyMemory(&val, item->value.Buffer, sizeof(uint32_t));
 
-                fcb->inode_item.st_mode &= ~allowed;
-                fcb->inode_item.st_mode |= val & allowed;
+                fcb->inode_item.mode &= ~allowed;
+                fcb->inode_item.mode |= val & allowed;
             }
 
             RemoveEntryList(&item->list_entry);
@@ -6120,7 +6120,7 @@ NTSTATUS __stdcall drv_set_ea(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     fcb->inode_item.sequence++;
 
     if (!ccb->user_set_change_time)
-        fcb->inode_item.st_ctime = now;
+        fcb->inode_item.ctime = now;
 
     fcb->inode_item_changed = true;
     mark_fcb_dirty(fcb);

@@ -550,10 +550,10 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             memset(&ri, 0, sizeof(ROOT_ITEM));
 
             ri.inode.generation = 1;
-            ri.inode.st_size = 3;
-            ri.inode.st_blocks = node_size;
-            ri.inode.st_nlink = 1;
-            ri.inode.st_mode = 040755;
+            ri.inode.size = 3;
+            ri.inode.nbytes = node_size;
+            ri.inode.nlink = 1;
+            ri.inode.mode = 040755;
             ri.generation = 1;
             ri.objid = r->id == 5 || r->id >= 0x100 ? SUBVOL_ROOT_INODE : 0;
             ri.block_number = r->header.bytenr;
@@ -855,25 +855,25 @@ static void add_inode_ref(btrfs_root* r, uint64_t inode, uint64_t parent, uint64
 }
 
 static void init_fs_tree(btrfs_root* r, uint32_t node_size) {
-    INODE_ITEM ii;
+    struct btrfs_inode_item ii;
     FILETIME filetime;
     LARGE_INTEGER time;
 
-    memset(&ii, 0, sizeof(INODE_ITEM));
+    memset(&ii, 0, sizeof(struct btrfs_inode_item));
 
     ii.generation = 1;
-    ii.st_blocks = node_size;
-    ii.st_nlink = 1;
-    ii.st_mode = 040755;
+    ii.nbytes = node_size;
+    ii.nlink = 1;
+    ii.mode = 040755;
 
     GetSystemTimeAsFileTime(&filetime);
     time.LowPart = filetime.dwLowDateTime;
     time.HighPart = filetime.dwHighDateTime;
 
-    win_time_to_unix(time, &ii.st_atime);
-    ii.st_ctime = ii.st_mtime = ii.st_atime;
+    win_time_to_unix(time, &ii.atime);
+    ii.ctime = ii.mtime = ii.atime;
 
-    add_item(r, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, &ii, sizeof(INODE_ITEM));
+    add_item(r, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, &ii, sizeof(struct btrfs_inode_item));
 
     add_inode_ref(r, SUBVOL_ROOT_INODE, SUBVOL_ROOT_INODE, 0, "..");
 }
@@ -968,7 +968,7 @@ static void add_dir_item(btrfs_root* root, uint64_t inode, uint32_t hash, uint64
 }
 
 static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
-    INODE_ITEM ii;
+    struct btrfs_inode_item ii;
     FILETIME filetime;
     LARGE_INTEGER time;
 
@@ -977,21 +977,21 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
 
     add_inode_ref(root_root, BTRFS_ROOT_FSTREE, BTRFS_ROOT_TREEDIR, 0, default_subvol);
 
-    memset(&ii, 0, sizeof(INODE_ITEM));
+    memset(&ii, 0, sizeof(struct btrfs_inode_item));
 
     ii.generation = 1;
-    ii.st_blocks = node_size;
-    ii.st_nlink = 1;
-    ii.st_mode = 040755;
+    ii.nbytes = node_size;
+    ii.nlink = 1;
+    ii.mode = 040755;
 
     GetSystemTimeAsFileTime(&filetime);
     time.LowPart = filetime.dwLowDateTime;
     time.HighPart = filetime.dwHighDateTime;
 
-    win_time_to_unix(time, &ii.st_atime);
-    ii.st_ctime = ii.st_mtime = ii.otime = ii.st_atime;
+    win_time_to_unix(time, &ii.atime);
+    ii.ctime = ii.mtime = ii.otime = ii.atime;
 
-    add_item(root_root, BTRFS_ROOT_TREEDIR, TYPE_INODE_ITEM, 0, &ii, sizeof(INODE_ITEM));
+    add_item(root_root, BTRFS_ROOT_TREEDIR, TYPE_INODE_ITEM, 0, &ii, sizeof(struct btrfs_inode_item));
 
     add_inode_ref(root_root, BTRFS_ROOT_TREEDIR, BTRFS_ROOT_TREEDIR, 0, "..");
 

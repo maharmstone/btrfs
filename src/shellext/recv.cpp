@@ -336,7 +336,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_send_command* cmd, uint8_t* data) {
     else
         bmn->type = BTRFS_TYPE_FILE;
 
-    bmn->st_rdev = rdev ? *rdev : 0;
+    bmn->rdev = rdev ? *rdev : 0;
     bmn->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
     memcpy(bmn->name, nameu.c_str(), bmn->namelen);
 
@@ -390,7 +390,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_send_command* cmd, uint8_t* data) {
         memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
         bsii.mode_changed = true;
-        bsii.st_mode = 0777;
+        bsii.mode = 0777;
 
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
         if (!NT_SUCCESS(Status))
@@ -413,7 +413,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_send_command* cmd, uint8_t* data) {
             memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
             bsii.mode_changed = true;
-            bsii.st_mode = (uint32_t)*mode;
+            bsii.mode = (uint32_t)*mode;
 
             Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
             if (!NT_SUCCESS(Status))
@@ -1005,7 +1005,7 @@ void BtrfsRecv::cmd_chmod(btrfs_send_command* cmd, uint8_t* data) {
     memset(&bsii, 0, sizeof(btrfs_set_inode_info));
 
     bsii.mode_changed = true;
-    bsii.st_mode = *mode;
+    bsii.mode = *mode;
 
     Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
     if (!NT_SUCCESS(Status))
@@ -1041,7 +1041,7 @@ void BtrfsRecv::cmd_chown(btrfs_send_command* cmd, uint8_t* data) {
             throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uid", uidlen, sizeof(uint32_t));
 
         bsii.uid_changed = true;
-        bsii.st_uid = *uid;
+        bsii.uid = *uid;
     }
 
     if (find_tlv(data, cmd->length, BTRFS_SEND_TLV_GID, (void**)&gid, &gidlen)) {
@@ -1049,7 +1049,7 @@ void BtrfsRecv::cmd_chown(btrfs_send_command* cmd, uint8_t* data) {
             throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"gid", gidlen, sizeof(uint32_t));
 
         bsii.gid_changed = true;
-        bsii.st_gid = *gid;
+        bsii.gid = *gid;
     }
 
     if (bsii.uid_changed || bsii.gid_changed) {

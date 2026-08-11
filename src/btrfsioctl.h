@@ -71,10 +71,10 @@ typedef struct {
     uint64_t inode;
     BOOL top;
     uint8_t type;
-    uint32_t st_uid;
-    uint32_t st_gid;
-    uint32_t st_mode;
-    uint64_t st_rdev;
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t mode;
+    uint64_t rdev;
     uint64_t flags;
     uint32_t inline_length;
     uint64_t disk_size_uncompressed;
@@ -89,11 +89,11 @@ typedef struct {
 typedef struct {
     uint64_t flags;
     BOOL flags_changed;
-    uint32_t st_uid;
+    uint32_t uid;
     BOOL uid_changed;
-    uint32_t st_gid;
+    uint32_t gid;
     BOOL gid_changed;
-    uint32_t st_mode;
+    uint32_t mode;
     BOOL mode_changed;
     uint8_t compression_type;
     BOOL compression_type_changed;
@@ -236,7 +236,7 @@ typedef struct {
 typedef struct {
     uint64_t inode;
     uint8_t type;
-    uint64_t st_rdev;
+    uint64_t rdev;
     uint16_t namelen;
     WCHAR name[1];
 } btrfs_mknod;

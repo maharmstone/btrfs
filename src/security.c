@@ -426,7 +426,7 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-    Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+    Status = uid_to_sid(fcb->inode_item.uid, &usersid);
     if (!NT_SUCCESS(Status)) {
         ERR("uid_to_sid returned %08lx\n", Status);
         goto end;
@@ -439,7 +439,7 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
-    gid_to_sid(fcb->inode_item.st_gid, &groupsid);
+    gid_to_sid(fcb->inode_item.gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
         goto end;
@@ -569,7 +569,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         return;
     }
 
-    Status = uid_to_sid(fcb->inode_item.st_uid, &usersid);
+    Status = uid_to_sid(fcb->inode_item.uid, &usersid);
     if (!NT_SUCCESS(Status)) {
         ERR("uid_to_sid returned %08lx\n", Status);
         ExFreePool(buf);
@@ -578,7 +578,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
 
     RtlSetOwnerSecurityDescriptor(abssd, usersid, false);
 
-    gid_to_sid(fcb->inode_item.st_gid, &groupsid);
+    gid_to_sid(fcb->inode_item.gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
         ExFreePool(usersid);
@@ -803,7 +803,7 @@ static NTSTATUS set_file_security(device_extension* Vcb, PFILE_OBJECT FileObject
     fcb->inode_item.transid = Vcb->superblock.generation;
 
     if (!ccb->user_set_change_time)
-        fcb->inode_item.st_ctime = now;
+        fcb->inode_item.ctime = now;
 
     fcb->inode_item.sequence++;
 
@@ -911,7 +911,7 @@ static bool search_for_gid(fcb* fcb, PSID sid) {
         gid_map* gm = CONTAINING_RECORD(le, gid_map, listentry);
 
         if (RtlEqualSid(sid, gm->sid)) {
-            fcb->inode_item.st_gid = gm->gid;
+            fcb->inode_item.gid = gm->gid;
             return true;
         }
 
@@ -927,8 +927,8 @@ void find_gid(struct _fcb* fcb, struct _fcb* parfcb, PSECURITY_SUBJECT_CONTEXT s
     TOKEN_PRIMARY_GROUP* tpg;
     TOKEN_GROUPS* tg;
 
-    if (parfcb && parfcb->inode_item.st_mode & S_ISGID) {
-        fcb->inode_item.st_gid = parfcb->inode_item.st_gid;
+    if (parfcb && parfcb->inode_item.mode & S_ISGID) {
+        fcb->inode_item.gid = parfcb->inode_item.gid;
         return;
     }
 
@@ -1001,9 +1001,9 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
     Status = RtlGetOwnerSecurityDescriptor(fcb->sd, &owner, &defaulted);
     if (!NT_SUCCESS(Status)) {
         ERR("RtlGetOwnerSecurityDescriptor returned %08lx\n", Status);
-        fcb->inode_item.st_uid = UID_NOBODY;
+        fcb->inode_item.uid = UID_NOBODY;
     } else {
-        fcb->inode_item.st_uid = sid_to_uid(owner);
+        fcb->inode_item.uid = sid_to_uid(owner);
     }
 
     find_gid(fcb, parfileref ? parfileref->fcb : NULL, &as->SubjectSecurityContext);

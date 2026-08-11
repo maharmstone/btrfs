@@ -263,7 +263,7 @@ typedef struct _fcb {
     uint64_t inode;
     uint32_t hash;
     uint8_t type;
-    INODE_ITEM inode_item;
+    struct btrfs_inode_item inode_item;
     SECURITY_DESCRIPTOR* sd;
     FILE_LOCK lock;
     bool deleted;
@@ -1775,12 +1775,12 @@ static __inline bool write_fcb_compressed(fcb* fcb) {
 #define minor(rdev) (((rdev) & 0xFF) | ((uint32_t)((rdev) >> 12) & ~0xFF))
 
 static __inline uint64_t fcb_alloc_size(fcb* fcb) {
-    if (S_ISDIR(fcb->inode_item.st_mode))
+    if (S_ISDIR(fcb->inode_item.mode))
         return 0;
     else if (fcb->atts & FILE_ATTRIBUTE_SPARSE_FILE)
-        return fcb->inode_item.st_blocks;
+        return fcb->inode_item.nbytes;
     else
-        return sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
+        return sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize);
 }
 
 typedef BOOLEAN (__stdcall *tPsIsDiskCountersEnabled)();

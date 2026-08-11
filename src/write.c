@@ -2423,7 +2423,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
                         remove_fcb_extent(fcb, ext, rollback);
 
-                        fcb->inode_item.st_blocks -= len;
+                        fcb->inode_item.nbytes -= len;
                         fcb->inode_item_changed = true;
                     } else {
                         ERR("trying to split inline extent\n");
@@ -2439,7 +2439,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         if (ed2->size != 0) {
                             chunk* c;
 
-                            fcb->inode_item.st_blocks -= len;
+                            fcb->inode_item.nbytes -= len;
                             fcb->inode_item_changed = true;
 
                             c = get_chunk_from_address(Vcb, ed2->address);
@@ -2462,7 +2462,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         extent* newext;
 
                         if (ed2->size != 0) {
-                            fcb->inode_item.st_blocks -= end_data - ext->offset;
+                            fcb->inode_item.nbytes -= end_data - ext->offset;
                             fcb->inode_item_changed = true;
                         }
 
@@ -2526,7 +2526,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         extent* newext;
 
                         if (ed2->size != 0) {
-                            fcb->inode_item.st_blocks -= ext->offset + len - start_data;
+                            fcb->inode_item.nbytes -= ext->offset + len - start_data;
                             fcb->inode_item_changed = true;
                         }
 
@@ -2591,7 +2591,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         if (ed2->size != 0) {
                             chunk* c;
 
-                            fcb->inode_item.st_blocks -= end_data - start_data;
+                            fcb->inode_item.nbytes -= end_data - start_data;
                             fcb->inode_item_changed = true;
 
                             c = get_chunk_from_address(Vcb, ed2->address);
@@ -2881,7 +2881,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     c->used += length;
     space_list_subtract(c, address, length, rollback);
 
-    fcb->inode_item.st_blocks += decoded_size;
+    fcb->inode_item.nbytes += decoded_size;
 
     fcb->extents_changed = true;
     fcb->inode_item_changed = true;
@@ -3264,7 +3264,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
             return Status;
         }
 
-        Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
+        Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.size, Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             ExFreePool(buf);
@@ -3297,15 +3297,15 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
                 return Status;
             }
 
-            fcb->inode_item.st_blocks += end;
+            fcb->inode_item.nbytes += end;
 
-            fcb->inode_item.st_size = end;
+            fcb->inode_item.size = end;
             fcb->inode_item_changed = true;
-            TRACE("setting st_size to %I64x\n", end);
+            TRACE("setting size to %I64x\n", end);
 
-            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
-            fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
-            fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
+            fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize);
+            fcb->Header.FileSize.QuadPart = fcb->inode_item.size;
+            fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.size;
         }
 
         ExFreePool(buf);
@@ -3313,19 +3313,19 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
     }
 
     Status = excise_extents(fcb->Vcb, fcb, sector_align(end, fcb->Vcb->superblock.sectorsize),
-                            sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
+                            sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("excise_extents returned %08lx\n", Status);
         return Status;
     }
 
-    fcb->inode_item.st_size = end;
+    fcb->inode_item.size = end;
     fcb->inode_item_changed = true;
-    TRACE("setting st_size to %I64x\n", end);
+    TRACE("setting size to %I64x\n", end);
 
-    fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.st_size, fcb->Vcb->superblock.sectorsize);
-    fcb->Header.FileSize.QuadPart = fcb->inode_item.st_size;
-    fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.st_size;
+    fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize);
+    fcb->Header.FileSize.QuadPart = fcb->inode_item.size;
+    fcb->Header.ValidDataLength.QuadPart = fcb->inode_item.size;
     // FIXME - inform cache manager of this
 
     TRACE("fcb %p FileSize = %I64x\n", fcb, fcb->Header.FileSize.QuadPart);
@@ -3397,7 +3397,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 RtlZeroMemory(data + origlength, (ULONG)(length - origlength));
 
-                Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.st_size, Irp, rollback);
+                Status = excise_extents(fcb->Vcb, fcb, 0, fcb->inode_item.size, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("excise_extents returned %08lx\n", Status);
                     ExFreePool(data);
@@ -3461,10 +3461,10 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 TRACE("extending inline file (oldalloc = %I64x, end = %I64x)\n", oldalloc, end);
 
-                fcb->inode_item.st_size = end;
-                TRACE("setting st_size to %I64x\n", end);
+                fcb->inode_item.size = end;
+                TRACE("setting size to %I64x\n", end);
 
-                fcb->inode_item.st_blocks = end;
+                fcb->inode_item.nbytes = end;
 
                 fcb->Header.AllocationSize.QuadPart = fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             } else {
@@ -3485,11 +3485,11 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     fcb->extents_changed = true;
                 }
 
-                fcb->inode_item.st_size = end;
+                fcb->inode_item.size = end;
                 fcb->inode_item_changed = true;
                 mark_fcb_dirty(fcb);
 
-                TRACE("setting st_size to %I64x\n", end);
+                TRACE("setting size to %I64x\n", end);
 
                 TRACE("newalloc = %I64x\n", newalloc);
 
@@ -3513,8 +3513,8 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 fcb->inode_item_changed = true;
                 mark_fcb_dirty(fcb);
 
-                fcb->inode_item.st_size = end;
-                TRACE("setting st_size to %I64x\n", end);
+                fcb->inode_item.size = end;
+                TRACE("setting size to %I64x\n", end);
 
                 TRACE("newalloc = %I64x\n", newalloc);
 
@@ -3554,10 +3554,10 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 fcb->inode_item_changed = true;
                 mark_fcb_dirty(fcb);
 
-                fcb->inode_item.st_size = end;
-                TRACE("setting st_size to %I64x\n", end);
+                fcb->inode_item.size = end;
+                TRACE("setting size to %I64x\n", end);
 
-                fcb->inode_item.st_blocks = end;
+                fcb->inode_item.nbytes = end;
 
                 fcb->Header.AllocationSize.QuadPart = fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             }
@@ -4104,7 +4104,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     uint64_t off64, newlength, start_data, end_data;
     uint32_t bufhead;
     bool make_inline;
-    INODE_ITEM* origii;
+    struct btrfs_inode_item* origii;
     bool changed_length = false;
     NTSTATUS Status;
     LARGE_INTEGER time;
@@ -4199,7 +4199,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             acquired_fcb_lock = true;
     }
 
-    newlength = fcb->ads ? fcb->adsdata.Length : fcb->inode_item.st_size;
+    newlength = fcb->ads ? fcb->adsdata.Length : fcb->inode_item.size;
 
     if (fcb->deleted)
         newlength = 0;
@@ -4250,7 +4250,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
         } else if (!fcb->ads)
-            fcb->inode_item.st_size = newlength;
+            fcb->inode_item.size = newlength;
 
         fcb->Header.FileSize.QuadPart = newlength;
         fcb->Header.ValidDataLength.QuadPart = newlength;
@@ -4379,7 +4379,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
 
         if (fcb_is_inline(fcb))
-            end_data = max(end_data, sector_align(fcb->inode_item.st_size, Vcb->superblock.sectorsize));
+            end_data = max(end_data, sector_align(fcb->inode_item.size, Vcb->superblock.sectorsize));
 
         fcb->Header.ValidDataLength.QuadPart = newlength;
         TRACE("fcb %p FileSize = %I64x\n", fcb, fcb->Header.FileSize.QuadPart);
@@ -4402,8 +4402,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
 
             if (off64 > start_data || off64 + *length < end_data) {
                 if (changed_length) {
-                    if (fcb->inode_item.st_size > start_data)
-                        Status = read_file(fcb, data + bufhead, start_data, fcb->inode_item.st_size - start_data, NULL, Irp);
+                    if (fcb->inode_item.size > start_data)
+                        Status = read_file(fcb, data + bufhead, start_data, fcb->inode_item.size - start_data, NULL, Irp);
                     else
                         Status = STATUS_SUCCESS;
                 } else
@@ -4442,7 +4442,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                 goto end;
             }
 
-            fcb->inode_item.st_blocks += newlength;
+            fcb->inode_item.nbytes += newlength;
         } else if (compress) {
             Status = write_compressed(fcb, start_data, end_data, data, Irp, rollback);
 
@@ -4516,12 +4516,12 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         origii->sequence++;
 
         if (!ccb->user_set_change_time)
-            origii->st_ctime = now;
+            origii->ctime = now;
 
         if (!fcb->ads) {
             if (changed_length) {
-                TRACE("setting st_size to %I64x\n", newlength);
-                origii->st_size = newlength;
+                TRACE("setting size to %I64x\n", newlength);
+                origii->size = newlength;
                 filter |= FILE_NOTIFY_CHANGE_SIZE;
             }
 
@@ -4536,7 +4536,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
         }
 
         if (!ccb->user_set_write_time) {
-            origii->st_mtime = now;
+            origii->mtime = now;
             filter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
         }
 
