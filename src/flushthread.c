@@ -43,6 +43,8 @@ typedef struct {
     TREE_BLOCK_REF tbr;
 } EXTENT_ITEM_TREE2;
 
+static_assert(sizeof(EXTENT_ITEM_TREE2) == 51, "EXTENT_ITEM_TREE2 has wrong size");
+
 typedef struct {
     struct btrfs_extent_item ei;
     uint8_t type;
