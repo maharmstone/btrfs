@@ -1801,7 +1801,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
 
             if (tp.item->size < sizeof(struct btrfs_extent_data_ref)) {
                 WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
-                     tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(EXTENT_ITEM2));
+                     tp.item->size, sizeof(struct btrfs_extent_data_ref));
                 return false;
             }
 
