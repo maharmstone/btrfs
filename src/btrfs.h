@@ -491,43 +491,43 @@ struct btrfs_dev_extent {
 #define BALANCE_ARGS_FLAGS_SOFT             0x200
 #define BALANCE_ARGS_FLAGS_USAGE_RANGE      0x400
 
-typedef struct {
+struct btrfs_disk_balance_args {
     uint64_t profiles;
 
     union {
-            uint64_t usage;
-            struct {
-                    uint32_t usage_start;
-                    uint32_t usage_end;
-            };
+        uint64_t usage;
+        struct {
+            uint32_t usage_min;
+            uint32_t usage_max;
+        };
     };
 
     uint64_t devid;
-    uint64_t drange_start;
-    uint64_t drange_end;
-    uint64_t vrange_start;
-    uint64_t vrange_end;
-    uint64_t convert;
+    uint64_t pstart;
+    uint64_t pend;
+    uint64_t vstart;
+    uint64_t vend;
+    uint64_t target;
     uint64_t flags;
 
     union {
-            uint64_t limit;
-            struct {
-                    uint32_t limit_start;
-                    uint32_t limit_end;
-            };
+        uint64_t limit;
+        struct {
+            uint32_t limit_min;
+            uint32_t limit_max;
+        };
     };
 
-    uint32_t stripes_start;
-    uint32_t stripes_end;
-    uint8_t reserved[48];
-} BALANCE_ARGS;
+    uint32_t stripes_min;
+    uint32_t stripes_max;
+    uint64_t unused[6];
+};
 
 typedef struct {
     uint64_t flags;
-    BALANCE_ARGS data;
-    BALANCE_ARGS metadata;
-    BALANCE_ARGS system;
+    struct btrfs_disk_balance_args data;
+    struct btrfs_disk_balance_args metadata;
+    struct btrfs_disk_balance_args system;
     uint8_t reserved[32];
 } BALANCE_ITEM;
 
