@@ -1602,6 +1602,17 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, 
     return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, false, Irp);
 }
 
+NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
+                                               uint64_t offset, PIRP Irp) {
+    SHARED_BLOCK_REF sbr;
+
+    sbr.offset = offset;
+
+    return decrease_extent_refcount(Vcb, address, Vcb->superblock.nodesize,
+                                    TYPE_SHARED_BLOCK_REF, &sbr, NULL,
+                                    0, offset, false, Irp);
+}
+
 static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, PIRP Irp) {
     NTSTATUS Status;
     struct btrfs_key searchkey;

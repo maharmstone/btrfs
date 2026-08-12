@@ -1263,14 +1263,10 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                         uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, td->treeholder.address, t->header.bytenr, Irp);
 
                         if (sbrrc > 0) {
-                            SHARED_BLOCK_REF sbr;
-
-                            sbr.offset = t->header.bytenr;
-
-                            Status = decrease_extent_refcount(Vcb, td->treeholder.address, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                              t->header.bytenr, false, Irp);
+                            Status = decrease_extent_refcount_shared_block(Vcb, td->treeholder.address,
+                                                                           t->header.bytenr, Irp);
                             if (!NT_SUCCESS(Status)) {
-                                ERR("decrease_extent_refcount returned %08lx\n", Status);
+                                ERR("decrease_extent_refcount_shared_block returned %08lx\n", Status);
                                 return Status;
                             }
                         }
@@ -1287,14 +1283,11 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
             uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, t->header.bytenr, t->parent->header.bytenr, Irp);
 
             if (sbrrc == 1) {
-                SHARED_BLOCK_REF sbr;
-
-                sbr.offset = t->parent->header.bytenr;
-
-                Status = decrease_extent_refcount(Vcb, t->header.bytenr, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                  t->parent->header.bytenr, false, Irp);
+                Status = decrease_extent_refcount_shared_block(Vcb, t->header.bytenr,
+                                                               t->parent->header.bytenr,
+                                                               Irp);
                 if (!NT_SUCCESS(Status)) {
-                    ERR("decrease_extent_refcount returned %08lx\n", Status);
+                    ERR("decrease_extent_refcount_shared_block returned %08lx\n", Status);
                     return Status;
                 }
             }

@@ -1510,6 +1510,8 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset,
                                        uint32_t refcount, bool superseded, PIRP Irp);
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint8_t level, PIRP Irp);
+NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
+                                               uint64_t offset, PIRP Irp);
 uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
 bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
 uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp);

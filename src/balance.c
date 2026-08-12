@@ -449,8 +449,6 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                 uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, in[i].blockptr, mr->address, NULL);
 
                 if (sbrrc > 0) {
-                    SHARED_BLOCK_REF sbr;
-
                     Status = increase_extent_refcount_shared_block(Vcb, in[i].blockptr, mr->new_address,
                                                                    &in[i].key, mr->data->level - 1, NULL);
                     if (!NT_SUCCESS(Status)) {
@@ -458,12 +456,10 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                         return Status;
                     }
 
-                    sbr.offset = mr->address;
-
-                    Status = decrease_extent_refcount(Vcb, in[i].blockptr, Vcb->superblock.nodesize, TYPE_SHARED_BLOCK_REF, &sbr, NULL, 0,
-                                                      sbr.offset, false, NULL);
+                    Status = decrease_extent_refcount_shared_block(Vcb, in[i].blockptr, mr->address,
+                                                                   NULL);
                     if (!NT_SUCCESS(Status)) {
-                        ERR("decrease_extent_refcount returned %08lx\n", Status);
+                        ERR("decrease_extent_refcount_shared_block returned %08lx\n", Status);
                         return Status;
                     }
                 }
