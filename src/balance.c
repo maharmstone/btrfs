@@ -490,8 +490,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                                 Status = decrease_extent_refcount_shared_data(Vcb, ed->disk_bytenr,
                                                                               ed->disk_num_bytes,
                                                                               mr->address, sdrrc,
-                                                                              mr->address, false,
-                                                                              NULL);
+                                                                              false, NULL);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("decrease_extent_refcount_shared_data returned %08lx\n", Status);
                                     return Status;

@@ -1189,7 +1189,6 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                     Status = decrease_extent_refcount_shared_data(Vcb, ed->disk_bytenr,
                                                                                   ed->disk_num_bytes,
                                                                                   t->header.bytenr, 1,
-                                                                                  t->header.bytenr,
                                                                                   ce ? ce->superseded : false,
                                                                                   Irp);
                                     if (!NT_SUCCESS(Status)) {

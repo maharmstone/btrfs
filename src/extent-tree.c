@@ -2764,15 +2764,15 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
 
 NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t address,
                                               uint64_t size, uint64_t offset,
-                                              uint32_t count, uint64_t parent,
-                                              bool superseded, PIRP Irp) {
+                                              uint32_t count, bool superseded,
+                                              PIRP Irp) {
     SHARED_DATA_REF sdr;
 
     sdr.offset = offset;
     sdr.count = count;
 
     return decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF,
-                                    &sdr, NULL, 0, parent, superseded, Irp);
+                                    &sdr, NULL, 0, offset, superseded, Irp);
 }
 
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,

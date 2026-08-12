@@ -1511,8 +1511,8 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, 
                                        uint32_t refcount, bool superseded, PIRP Irp);
 NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t address,
                                               uint64_t size, uint64_t offset,
-                                              uint32_t count, uint64_t parent,
-                                              bool superseded, PIRP Irp);
+                                              uint32_t count, bool superseded,
+                                              PIRP Irp);
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                                        uint64_t root, PIRP Irp);
 NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
