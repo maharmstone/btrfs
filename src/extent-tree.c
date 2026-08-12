@@ -2766,13 +2766,306 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
                                               uint64_t size, uint64_t offset,
                                               uint32_t count, bool superseded,
                                               PIRP Irp) {
-    SHARED_DATA_REF sdr;
+    struct btrfs_key searchkey;
+    NTSTATUS Status;
+    traverse_ptr tp, tp2;
+    struct btrfs_extent_item* ei;
+    ULONG len;
+    uint64_t inline_rc;
+    uint8_t* ptr;
+    struct btrfs_extent_item* newei;
+    struct btrfs_shared_data_ref* sdr;
 
-    sdr.offset = offset;
-    sdr.count = count;
+    searchkey.objectid = address;
+    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.offset = 0xffffffffffffffff;
 
-    return decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF,
-                                    &sdr, NULL, 0, offset, superseded, Irp);
+    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
+        ERR("could not find EXTENT_ITEM for address %I64x\n", address);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (tp.item->key.offset != size) {
+        ERR("extent %I64x had length %I64x, not %I64x as expected\n", address, tp.item->key.offset, size);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (tp.item->size == sizeof(struct btrfs_extent_item_v0)) {
+        ERR("old-style extents no longer supported\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
+            tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+            tp.item->size, sizeof(struct btrfs_extent_item));
+
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ei = (struct btrfs_extent_item*)tp.item->data;
+
+    len = tp.item->size - sizeof(struct btrfs_extent_item);
+    ptr = (uint8_t*)&ei[1];
+
+    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+        ERR("(%I64x,%x,%I64x) had TREE_BLOCK flag set\n", tp.item->key.objectid,
+            tp.item->key.type, tp.item->key.offset);
+
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (ei->refs < count) {
+        ERR("error - extent has refcount %I64x, trying to reduce by %x\n",
+            ei->refs, count);
+
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    inline_rc = 0;
+
+    // Loop through inline extent entries
+
+    while (len > 0) {
+        struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
+
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        switch (eir->type) {
+            case TYPE_SHARED_DATA_REF: {
+                if (len < sizeof(struct btrfs_shared_data_ref)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                // If inline extent already present, decrease refcount and return
+
+                if (eir->offset == offset) {
+                    uint16_t neweilen;
+
+                    if (ei->refs == count) {
+                        Status = delete_tree_item(Vcb, &tp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08lx\n", Status);
+                            return Status;
+                        }
+
+                        if (!superseded)
+                            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
+
+                        return STATUS_SUCCESS;
+                    }
+
+                    sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                    if (sdr->count < count) {
+                        ERR("error - SHARED_DATA_REF has refcount %x, trying to reduce by %x\n",
+                            sdr->count, count);
+
+                        return STATUS_INTERNAL_ERROR;
+                    }
+
+                    if (sdr->count > count)    // reduce section refcount
+                        neweilen = tp.item->size;
+                    else                           // remove section entirely
+                        neweilen = tp.item->size - sizeof(struct btrfs_extent_inline_ref) - sizeof(struct btrfs_shared_data_ref);
+
+                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
+                    if (!newei) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    if (sdr->count > count) {
+                        struct btrfs_shared_data_ref* newsdr = (struct btrfs_shared_data_ref*)((uint8_t*)newei + ((uint8_t*)sdr - tp.item->data));
+
+                        RtlCopyMemory(newei, ei, neweilen);
+
+                        newsdr->count -= count;
+                    } else {
+                        RtlCopyMemory(newei, ei, (uint8_t*)eir - tp.item->data);
+
+                        if (len > sizeof(struct btrfs_shared_data_ref)) {
+                            RtlCopyMemory((uint8_t*)newei + ((uint8_t*)eir - tp.item->data),
+                                          ptr + sizeof(struct btrfs_shared_data_ref),
+                                          len - sizeof(struct btrfs_shared_data_ref));
+                        }
+                    }
+
+                    newei->refs -= count;
+
+                    Status = delete_tree_item(Vcb, &tp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08lx\n", Status);
+                        return Status;
+                    }
+
+                    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid,
+                                              tp.item->key.type, tp.item->key.offset,
+                                              newei, neweilen, NULL, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_tree_item returned %08lx\n", Status);
+                        return Status;
+                    }
+
+                    return STATUS_SUCCESS;
+                }
+
+                sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+                len -= sizeof(struct btrfs_shared_data_ref);
+                inline_rc += sdr->count;
+
+                break;
+            }
+
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* sectedr;
+
+                if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                sectedr = (struct btrfs_extent_data_ref*)&eir->offset;
+
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                inline_rc += sectedr->count;
+
+                break;
+            }
+
+            case TYPE_TREE_BLOCK_REF:
+            case TYPE_SHARED_BLOCK_REF:
+                inline_rc++;
+                break;
+
+            default:
+                ERR("unknown extent item type %x\n", eir->type);
+                return STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    if (inline_rc == ei->refs) {
+        ERR("entry not found in inline extent item for address %I64x\n", address);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    searchkey.objectid = address;
+    searchkey.type = TYPE_SHARED_DATA_REF;
+    searchkey.offset = offset;
+
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (keycmp(tp2.item->key, searchkey)) {
+        ERR("(%I64x,%x,%I64x) not found\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (tp2.item->size < sizeof(struct btrfs_shared_data_ref)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %llu\n",
+            tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset,
+            tp2.item->size, sizeof(struct btrfs_shared_data_ref));
+
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    sdr = (struct btrfs_shared_data_ref*)tp2.item->data;
+
+    if (ei->refs == count) {
+        Status = delete_tree_item(Vcb, &tp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08lx\n", Status);
+            return Status;
+        }
+
+        Status = delete_tree_item(Vcb, &tp2);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08lx\n", Status);
+            return Status;
+        }
+
+        if (!superseded)
+            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
+
+        return STATUS_SUCCESS;
+    }
+
+    if (sdr->count < count) {
+        ERR("error - extent section has refcount %x, trying to reduce by %x\n",
+            sdr->count, count);
+
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    Status = delete_tree_item(Vcb, &tp2);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (sdr->count > count) {
+        struct btrfs_shared_data_ref* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+
+        if (!newsdr) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        newsdr->count = sdr->count - count;
+
+        Status = insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.objectid,
+                                  tp2.item->key.type, tp2.item->key.offset, newsdr,
+                                  tp2.item->size, NULL, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item returned %08lx\n", Status);
+            return Status;
+        }
+    }
+
+    newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+    if (!newei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(newei, tp.item->data, tp.item->size);
+
+    newei->refs -= count;
+
+    Status = delete_tree_item(Vcb, &tp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid,
+                              tp.item->key.type, tp.item->key.offset, newei,
+                              tp.item->size, NULL, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
