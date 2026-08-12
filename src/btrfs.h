@@ -444,6 +444,10 @@ typedef struct {
     uint32_t count;
 } SHARED_DATA_REF;
 
+struct btrfs_shared_data_ref {
+    uint32_t count;
+};
+
 #define FREE_SPACE_EXTENT 1
 #define FREE_SPACE_BITMAP 2
 

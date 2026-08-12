@@ -492,79 +492,83 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     rc = 0;
 
     while (len > 0) {
-        uint8_t type = *ptr;
+        struct btrfs_extent_inline_ref* eir;
+        bool fail = false;
 
-        ptr++;
-        len--;
-
-        if (type == TYPE_TREE_BLOCK_REF) {
-            TREE_BLOCK_REF* tbr;
-
-            if (len < sizeof(TREE_BLOCK_REF)) {
-                ERR("TREE_BLOCK_REF takes up %Iu bytes, but only %lu remaining\n", sizeof(TREE_BLOCK_REF), len);
-                break;
-            }
-
-            tbr = (TREE_BLOCK_REF*)ptr;
-
-            log_tree_checksum_error(Vcb, address, devid, tbr->offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
-
-            rc++;
-
-            ptr += sizeof(TREE_BLOCK_REF);
-            len -= sizeof(TREE_BLOCK_REF);
-        } else if (type == TYPE_EXTENT_DATA_REF) {
-            struct btrfs_extent_data_ref* edr;
-
-            if (len < sizeof(struct btrfs_extent_data_ref)) {
-                ERR("EXTENT_DATA_REF takes up %Iu bytes, but only %lu remaining\n", sizeof(struct btrfs_extent_data_ref), len);
-                break;
-            }
-
-            edr = (struct btrfs_extent_data_ref*)ptr;
-
-            log_file_checksum_error(Vcb, address, devid, edr->root, edr->objectid, edr->offset + address - tp.item->key.objectid);
-
-            rc += edr->count;
-
-            ptr += sizeof(struct btrfs_extent_data_ref);
-            len -= sizeof(struct btrfs_extent_data_ref);
-        } else if (type == TYPE_SHARED_BLOCK_REF) {
-            SHARED_BLOCK_REF* sbr;
-
-            if (len < sizeof(SHARED_BLOCK_REF)) {
-                ERR("SHARED_BLOCK_REF takes up %Iu bytes, but only %lu remaining\n", sizeof(SHARED_BLOCK_REF), len);
-                break;
-            }
-
-            sbr = (SHARED_BLOCK_REF*)ptr;
-
-            log_tree_checksum_error_shared(Vcb, sbr->offset, address, devid);
-
-            rc++;
-
-            ptr += sizeof(SHARED_BLOCK_REF);
-            len -= sizeof(SHARED_BLOCK_REF);
-        } else if (type == TYPE_SHARED_DATA_REF) {
-            SHARED_DATA_REF* sdr;
-
-            if (len < sizeof(SHARED_DATA_REF)) {
-                ERR("SHARED_DATA_REF takes up %Iu bytes, but only %lu remaining\n", sizeof(SHARED_DATA_REF), len);
-                break;
-            }
-
-            sdr = (SHARED_DATA_REF*)ptr;
-
-            log_file_checksum_error_shared(Vcb, sdr->offset, address, devid, tp.item->key.objectid);
-
-            rc += sdr->count;
-
-            ptr += sizeof(SHARED_DATA_REF);
-            len -= sizeof(SHARED_DATA_REF);
-        } else {
-            ERR("unknown extent type %x\n", type);
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
             break;
         }
+
+        eir = (struct btrfs_extent_inline_ref*)ptr;
+
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        switch (eir->type) {
+            case TYPE_TREE_BLOCK_REF: {
+                log_tree_checksum_error(Vcb, address, devid, eir->offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
+                rc++;
+                break;
+            }
+
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* edr;
+
+                if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                    ERR("EXTENT_DATA_REF takes up %Iu bytes, but only %llu remaining\n", sizeof(struct btrfs_extent_data_ref), len + sizeof(uint64_t));
+                    fail = true;
+                    break;
+                }
+
+                edr = (struct btrfs_extent_data_ref*)&eir->offset;
+
+                log_file_checksum_error(Vcb, address, devid, edr->root, edr->objectid,
+                                        edr->offset + address - tp.item->key.objectid);
+
+                rc += edr->count;
+
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+
+                break;
+            }
+
+            case TYPE_SHARED_BLOCK_REF: {
+                log_tree_checksum_error_shared(Vcb, eir->offset, address, devid);
+                rc++;
+                break;
+            }
+
+            case TYPE_SHARED_DATA_REF: {
+                struct btrfs_shared_data_ref* sdr;
+
+                if (len < sizeof(struct btrfs_shared_data_ref)) {
+                    ERR("struct btrfs_shared_data_ref takes up %Iu bytes, but only %lu remaining\n", sizeof(struct btrfs_shared_data_ref), len);
+                    fail = true;
+                    break;
+                }
+
+                sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                log_file_checksum_error_shared(Vcb, eir->offset, address, devid, tp.item->key.objectid);
+
+                rc += sdr->count;
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+                len -= sizeof(struct btrfs_shared_data_ref);
+
+                break;
+            }
+
+            default:
+                ERR("unknown extent type %x\n", eir->type);
+                fail = true;
+                break;
+        }
+
+        if (fail)
+            break;
     }
 
     if (rc < ei->refs) {
