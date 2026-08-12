@@ -971,7 +971,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
     else
         root = t->header.owner;
 
-    Status = decrease_extent_refcount_tree(Vcb, address, Vcb->superblock.nodesize, root, level, Irp);
+    Status = decrease_extent_refcount_tree(Vcb, address, root, level, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("decrease_extent_refcount_tree returned %08lx\n", Status);
         return Status;

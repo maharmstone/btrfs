@@ -2775,13 +2775,13 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
                                     &sdr, NULL, 0, parent, superseded, Irp);
 }
 
-NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root,
-                                       uint8_t level, PIRP Irp) {
+NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
+                                       uint64_t root, uint8_t level, PIRP Irp) {
     TREE_BLOCK_REF tbr;
 
     tbr.offset = root;
 
-    return decrease_extent_refcount(Vcb, address, size, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, false, Irp);
+    return decrease_extent_refcount(Vcb, address, Vcb->superblock.nodesize, TYPE_TREE_BLOCK_REF, &tbr, NULL/*FIXME*/, level, 0, false, Irp);
 }
 
 NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
