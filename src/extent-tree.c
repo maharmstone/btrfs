@@ -18,20 +18,6 @@
 #include "btrfs_drv.h"
 #include "crc32c.h"
 
-typedef struct {
-    uint8_t type;
-
-    union {
-        struct btrfs_extent_data_ref edr;
-        SHARED_DATA_REF sdr;
-        TREE_BLOCK_REF tbr;
-        SHARED_BLOCK_REF sbr;
-    };
-
-    uint64_t hash;
-    LIST_ENTRY list_entry;
-} extent_ref;
-
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset) {
     uint32_t high_crc = 0xffffffff, low_crc = 0xffffffff;
 
@@ -40,415 +26,6 @@ uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offse
     low_crc = calc_crc32c(low_crc, (uint8_t*)&offset, sizeof(uint64_t));
 
     return ((uint64_t)high_crc << 31) ^ (uint64_t)low_crc;
-}
-
-static __inline uint64_t get_extent_data_ref_hash(struct btrfs_extent_data_ref* edr) {
-    return get_extent_data_ref_hash2(edr->root, edr->objectid, edr->offset);
-}
-
-static uint64_t get_extent_hash(uint8_t type, void* data) {
-    if (type == TYPE_EXTENT_DATA_REF) {
-        return get_extent_data_ref_hash((struct btrfs_extent_data_ref*)data);
-    } else if (type == TYPE_SHARED_BLOCK_REF) {
-        SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
-        return sbr->offset;
-    } else if (type == TYPE_SHARED_DATA_REF) {
-        SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-        return sdr->offset;
-    } else if (type == TYPE_TREE_BLOCK_REF) {
-        TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
-        return tbr->offset;
-    } else {
-        ERR("unhandled extent type %x\n", type);
-        return 0;
-    }
-}
-
-static void free_extent_refs(LIST_ENTRY* extent_refs) {
-    while (!IsListEmpty(extent_refs)) {
-        LIST_ENTRY* le = RemoveHeadList(extent_refs);
-        extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-
-        ExFreePool(er);
-    }
-}
-
-static NTSTATUS add_shared_data_extent_ref(LIST_ENTRY* extent_refs, uint64_t parent, uint32_t count) {
-    extent_ref* er2;
-    LIST_ENTRY* le;
-
-    if (!IsListEmpty(extent_refs)) {
-        le = extent_refs->Flink;
-
-        while (le != extent_refs) {
-            extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-
-            if (er->type == TYPE_SHARED_DATA_REF && er->sdr.offset == parent) {
-                er->sdr.count += count;
-                return STATUS_SUCCESS;
-            }
-
-            le = le->Flink;
-        }
-    }
-
-    er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-    if (!er2) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    er2->type = TYPE_SHARED_DATA_REF;
-    er2->sdr.offset = parent;
-    er2->sdr.count = count;
-
-    InsertTailList(extent_refs, &er2->list_entry);
-
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS add_shared_block_extent_ref(LIST_ENTRY* extent_refs, uint64_t parent) {
-    extent_ref* er2;
-    LIST_ENTRY* le;
-
-    if (!IsListEmpty(extent_refs)) {
-        le = extent_refs->Flink;
-
-        while (le != extent_refs) {
-            extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-
-            if (er->type == TYPE_SHARED_BLOCK_REF && er->sbr.offset == parent)
-                return STATUS_SUCCESS;
-
-            le = le->Flink;
-        }
-    }
-
-    er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-    if (!er2) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    er2->type = TYPE_SHARED_BLOCK_REF;
-    er2->sbr.offset = parent;
-
-    InsertTailList(extent_refs, &er2->list_entry);
-
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS add_tree_block_extent_ref(LIST_ENTRY* extent_refs, uint64_t root) {
-    extent_ref* er2;
-    LIST_ENTRY* le;
-
-    if (!IsListEmpty(extent_refs)) {
-        le = extent_refs->Flink;
-
-        while (le != extent_refs) {
-            extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-
-            if (er->type == TYPE_TREE_BLOCK_REF && er->tbr.offset == root)
-                return STATUS_SUCCESS;
-
-            le = le->Flink;
-        }
-    }
-
-    er2 = ExAllocatePoolWithTag(PagedPool, sizeof(extent_ref), ALLOC_TAG);
-    if (!er2) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    er2->type = TYPE_TREE_BLOCK_REF;
-    er2->tbr.offset = root;
-
-    InsertTailList(extent_refs, &er2->list_entry);
-
-    return STATUS_SUCCESS;
-}
-
-static void sort_extent_refs(LIST_ENTRY* extent_refs) {
-    LIST_ENTRY newlist;
-
-    if (IsListEmpty(extent_refs))
-        return;
-
-    // insertion sort
-
-    InitializeListHead(&newlist);
-
-    while (!IsListEmpty(extent_refs)) {
-        extent_ref* er = CONTAINING_RECORD(RemoveHeadList(extent_refs), extent_ref, list_entry);
-        LIST_ENTRY* le;
-        bool inserted = false;
-
-        le = newlist.Flink;
-        while (le != &newlist) {
-            extent_ref* er2 = CONTAINING_RECORD(le, extent_ref, list_entry);
-
-            if (er->type < er2->type || (er->type == er2->type && er->hash > er2->hash)) {
-                InsertHeadList(le->Blink, &er->list_entry);
-                inserted = true;
-                break;
-            }
-
-            le = le->Flink;
-        }
-
-        if (!inserted)
-            InsertTailList(&newlist, &er->list_entry);
-    }
-
-    newlist.Flink->Blink = extent_refs;
-    newlist.Blink->Flink = extent_refs;
-    extent_refs->Flink = newlist.Flink;
-    extent_refs->Blink = newlist.Blink;
-}
-
-static NTSTATUS construct_extent_item(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t flags, LIST_ENTRY* extent_refs,
-                                      struct btrfs_key* firstitem, uint8_t level, PIRP Irp) {
-    NTSTATUS Status;
-    LIST_ENTRY *le, *next_le;
-    uint64_t refcount;
-    uint16_t inline_len;
-    bool all_inline = true;
-    extent_ref* first_noninline = NULL;
-    struct btrfs_extent_item* ei;
-    uint8_t* siptr;
-
-    // FIXME - write skinny extents if is tree and incompat flag set
-
-    if (IsListEmpty(extent_refs)) {
-        WARN("no extent refs found\n");
-        return STATUS_SUCCESS;
-    }
-
-    refcount = 0;
-    inline_len = sizeof(struct btrfs_extent_item);
-
-    if (flags & EXTENT_ITEM_TREE_BLOCK)
-        inline_len += sizeof(struct btrfs_tree_block_info);
-
-    le = extent_refs->Flink;
-    while (le != extent_refs) {
-        extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-        uint64_t rc;
-
-        next_le = le->Flink;
-
-        rc = get_extent_data_refcount(er->type, &er->edr);
-
-        if (rc == 0) {
-            RemoveEntryList(&er->list_entry);
-
-            ExFreePool(er);
-        } else {
-            uint16_t extlen = get_extent_data_len(er->type);
-
-            refcount += rc;
-
-            er->hash = get_extent_hash(er->type, &er->edr);
-
-            if (all_inline) {
-                if ((uint16_t)(inline_len + 1 + extlen) > Vcb->superblock.nodesize >> 2) {
-                    all_inline = false;
-                    first_noninline = er;
-                } else
-                    inline_len += extlen + 1;
-            }
-        }
-
-        le = next_le;
-    }
-
-    ei = ExAllocatePoolWithTag(PagedPool, inline_len, ALLOC_TAG);
-    if (!ei) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    ei->refs = refcount;
-    ei->generation = Vcb->superblock.generation;
-    ei->flags = flags;
-
-    if (flags & EXTENT_ITEM_TREE_BLOCK) {
-        struct btrfs_tree_block_info* ei2 = (struct btrfs_tree_block_info*)&ei[1];
-
-        if (firstitem) {
-            ei2->key.objectid = firstitem->objectid;
-            ei2->key.type = firstitem->type;
-            ei2->key.offset = firstitem->offset;
-        } else {
-            ei2->key.objectid = 0;
-            ei2->key.type = 0;
-            ei2->key.offset = 0;
-        }
-
-        ei2->level = level;
-
-        siptr = (uint8_t*)&ei2[1];
-    } else
-        siptr = (uint8_t*)&ei[1];
-
-    sort_extent_refs(extent_refs);
-
-    le = extent_refs->Flink;
-    while (le != extent_refs) {
-        extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-        ULONG extlen = get_extent_data_len(er->type);
-
-        if (!all_inline && er == first_noninline)
-            break;
-
-        *siptr = er->type;
-        siptr++;
-
-        if (extlen > 0) {
-            RtlCopyMemory(siptr, &er->edr, extlen);
-            siptr += extlen;
-        }
-
-        le = le->Flink;
-    }
-
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, size, ei, inline_len, NULL, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("insert_tree_item returned %08lx\n", Status);
-        ExFreePool(ei);
-        return Status;
-    }
-
-    if (!all_inline) {
-        le = &first_noninline->list_entry;
-
-        while (le != extent_refs) {
-            extent_ref* er = CONTAINING_RECORD(le, extent_ref, list_entry);
-            uint16_t len;
-            uint8_t* data;
-
-            if (er->type == TYPE_EXTENT_DATA_REF) {
-                len = sizeof(struct btrfs_extent_data_ref);
-
-                data = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-
-                if (!data) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                RtlCopyMemory(data, &er->edr, len);
-            } else if (er->type == TYPE_SHARED_DATA_REF) {
-                len = sizeof(uint32_t);
-
-                data = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
-
-                if (!data) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                *((uint32_t*)data) = er->sdr.count;
-            } else {
-                len = 0;
-                data = NULL;
-            }
-
-            Status = insert_tree_item(Vcb, Vcb->extent_root, address, er->type, er->hash, data, len, NULL, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_tree_item returned %08lx\n", Status);
-                if (data) ExFreePool(data);
-                return Status;
-            }
-
-            le = le->Flink;
-        }
-    }
-
-    return STATUS_SUCCESS;
-}
-
-static NTSTATUS convert_old_extent(device_extension* Vcb, uint64_t address, bool tree, struct btrfs_key* firstitem, uint8_t level, PIRP Irp) {
-    NTSTATUS Status;
-    struct btrfs_key searchkey;
-    traverse_ptr tp, next_tp;
-    LIST_ENTRY extent_refs;
-    uint64_t size;
-
-    InitializeListHead(&extent_refs);
-
-    searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
-    searchkey.offset = 0xffffffffffffffff;
-
-    Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("find_item returned %08lx\n", Status);
-        return Status;
-    }
-
-    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
-        ERR("old-style extent %I64x not found\n", address);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    size = tp.item->key.offset;
-
-    Status = delete_tree_item(Vcb, &tp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("delete_tree_item returned %08lx\n", Status);
-        return Status;
-    }
-
-    while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
-        tp = next_tp;
-
-        if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_REF_V0 && tp.item->size >= sizeof(struct btrfs_extent_ref_v0)) {
-            struct btrfs_extent_ref_v0* erv0 = (struct btrfs_extent_ref_v0*)tp.item->data;
-
-            if (tree) {
-                if (tp.item->key.offset == tp.item->key.objectid) { // top of the tree
-                    Status = add_tree_block_extent_ref(&extent_refs, erv0->root);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("add_tree_block_extent_ref returned %08lx\n", Status);
-                        goto end;
-                    }
-                } else {
-                    Status = add_shared_block_extent_ref(&extent_refs, tp.item->key.offset);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("add_shared_block_extent_ref returned %08lx\n", Status);
-                        goto end;
-                    }
-                }
-            } else {
-                Status = add_shared_data_extent_ref(&extent_refs, tp.item->key.offset, erv0->count);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("add_shared_data_extent_ref returned %08lx\n", Status);
-                    goto end;
-                }
-            }
-
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                goto end;
-            }
-        }
-
-        if (tp.item->key.objectid > address || tp.item->key.type > TYPE_EXTENT_REF_V0)
-            break;
-    }
-
-    Status = construct_extent_item(Vcb, address, size, tree ? (EXTENT_ITEM_TREE_BLOCK | EXTENT_ITEM_SHARED_BACKREFS) : EXTENT_ITEM_DATA,
-                                   &extent_refs, firstitem, level, Irp);
-    if (!NT_SUCCESS(Status))
-        ERR("construct_extent_item returned %08lx\n", Status);
-
-end:
-    free_extent_refs(&extent_refs);
-
-    return Status;
 }
 
 NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset, uint32_t refcount, PIRP Irp) {
@@ -1801,651 +1378,6 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
-                                         uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
-    struct btrfs_key searchkey;
-    NTSTATUS Status;
-    traverse_ptr tp, tp2;
-    struct btrfs_extent_item* ei;
-    ULONG len;
-    uint64_t inline_rc;
-    uint8_t* ptr;
-    uint32_t rc = data ? get_extent_data_refcount(type, data) : 1;
-    ULONG datalen = get_extent_data_len(type);
-    bool is_tree = (type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF), skinny = false;
-
-    if (is_tree && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-        searchkey.objectid = address;
-        searchkey.type = TYPE_METADATA_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type)
-            skinny = true;
-    }
-
-    if (!skinny) {
-        searchkey.objectid = address;
-        searchkey.type = TYPE_EXTENT_ITEM;
-        searchkey.offset = 0xffffffffffffffff;
-
-        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("error - find_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
-            ERR("could not find EXTENT_ITEM for address %I64x\n", address);
-            return STATUS_INTERNAL_ERROR;
-        }
-
-        if (tp.item->key.offset != size) {
-            ERR("extent %I64x had length %I64x, not %I64x as expected\n", address, tp.item->key.offset, size);
-            return STATUS_INTERNAL_ERROR;
-        }
-
-        if (tp.item->size == sizeof(struct btrfs_extent_item_v0)) {
-            Status = convert_old_extent(Vcb, address, is_tree, firstitem, level, Irp);
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("convert_old_extent returned %08lx\n", Status);
-                return Status;
-            }
-
-            return decrease_extent_refcount(Vcb, address, size, type, data, firstitem, level, parent, superseded, Irp);
-        }
-    }
-
-    if (tp.item->size < sizeof(struct btrfs_extent_item)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    ei = (struct btrfs_extent_item*)tp.item->data;
-
-    len = tp.item->size - sizeof(struct btrfs_extent_item);
-    ptr = (uint8_t*)&ei[1];
-
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
-        if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
-            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
-            return STATUS_INTERNAL_ERROR;
-        }
-
-        len -= sizeof(struct btrfs_tree_block_info);
-        ptr += sizeof(struct btrfs_tree_block_info);
-    }
-
-    if (ei->refs < rc) {
-        ERR("error - extent has refcount %I64x, trying to reduce by %x\n", ei->refs, rc);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    inline_rc = 0;
-
-    // Loop through inline extent entries
-
-    while (len > 0) {
-        uint8_t secttype = *ptr;
-        uint16_t sectlen = get_extent_data_len(secttype);
-        uint64_t sectcount = get_extent_data_refcount(secttype, ptr + sizeof(uint8_t));
-
-        len--;
-
-        if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %lx bytes left, expecting at least %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, len, sectlen);
-            return STATUS_INTERNAL_ERROR;
-        }
-
-        if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, secttype);
-            return STATUS_INTERNAL_ERROR;
-        }
-
-        if (secttype == type) {
-            if (type == TYPE_EXTENT_DATA_REF) {
-                struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
-                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
-
-                if (sectedr->root == edr->root && sectedr->objectid == edr->objectid && sectedr->offset == edr->offset) {
-                    uint16_t neweilen;
-                    struct btrfs_extent_item* newei;
-
-                    if (ei->refs == edr->count) {
-                        Status = delete_tree_item(Vcb, &tp);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("delete_tree_item returned %08lx\n", Status);
-                            return Status;
-                        }
-
-                        if (!superseded)
-                            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
-
-                        return STATUS_SUCCESS;
-                    }
-
-                    if (sectedr->count < edr->count) {
-                        ERR("error - extent section has refcount %x, trying to reduce by %x\n", sectedr->count, edr->count);
-                        return STATUS_INTERNAL_ERROR;
-                    }
-
-                    if (sectedr->count > edr->count)    // reduce section refcount
-                        neweilen = tp.item->size;
-                    else                                // remove section entirely
-                        neweilen = tp.item->size - sizeof(uint8_t) - sectlen;
-
-                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
-                    if (!newei) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    if (sectedr->count > edr->count) {
-                        struct btrfs_extent_data_ref* newedr = (struct btrfs_extent_data_ref*)((uint8_t*)newei + ((uint8_t*)sectedr - tp.item->data));
-
-                        RtlCopyMemory(newei, ei, neweilen);
-
-                        newedr->count -= rc;
-                    } else {
-                        RtlCopyMemory(newei, ei, ptr - tp.item->data);
-
-                        if (len > sectlen)
-                            RtlCopyMemory((uint8_t*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(uint8_t), len - sectlen);
-                    }
-
-                    newei->refs -= rc;
-
-                    Status = delete_tree_item(Vcb, &tp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, neweilen, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    return STATUS_SUCCESS;
-                }
-            } else if (type == TYPE_SHARED_DATA_REF) {
-                SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(uint8_t));
-                SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-
-                if (sectsdr->offset == sdr->offset) {
-                    struct btrfs_extent_item* newei;
-                    uint16_t neweilen;
-
-                    if (ei->refs == sectsdr->count) {
-                        Status = delete_tree_item(Vcb, &tp);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("delete_tree_item returned %08lx\n", Status);
-                            return Status;
-                        }
-
-                        if (!superseded)
-                            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
-
-                        return STATUS_SUCCESS;
-                    }
-
-                    if (sectsdr->count < sdr->count) {
-                        ERR("error - SHARED_DATA_REF has refcount %x, trying to reduce by %x\n", sectsdr->count, sdr->count);
-                        return STATUS_INTERNAL_ERROR;
-                    }
-
-                    if (sectsdr->count > sdr->count)    // reduce section refcount
-                        neweilen = tp.item->size;
-                    else                                // remove section entirely
-                        neweilen = tp.item->size - sizeof(uint8_t) - sectlen;
-
-                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
-                    if (!newei) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    if (sectsdr->count > sdr->count) {
-                        SHARED_DATA_REF* newsdr = (SHARED_DATA_REF*)((uint8_t*)newei + ((uint8_t*)sectsdr - tp.item->data));
-
-                        RtlCopyMemory(newei, ei, neweilen);
-
-                        newsdr->count -= rc;
-                    } else {
-                        RtlCopyMemory(newei, ei, ptr - tp.item->data);
-
-                        if (len > sectlen)
-                            RtlCopyMemory((uint8_t*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(uint8_t), len - sectlen);
-                    }
-
-                    newei->refs -= rc;
-
-                    Status = delete_tree_item(Vcb, &tp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, neweilen, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    return STATUS_SUCCESS;
-                }
-            } else if (type == TYPE_TREE_BLOCK_REF) {
-                TREE_BLOCK_REF* secttbr = (TREE_BLOCK_REF*)(ptr + sizeof(uint8_t));
-                TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)data;
-
-                if (secttbr->offset == tbr->offset) {
-                    struct btrfs_extent_item* newei;
-                    uint16_t neweilen;
-
-                    if (ei->refs == 1) {
-                        Status = delete_tree_item(Vcb, &tp);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("delete_tree_item returned %08lx\n", Status);
-                            return Status;
-                        }
-
-                        return STATUS_SUCCESS;
-                    }
-
-                    neweilen = tp.item->size - sizeof(uint8_t) - sectlen;
-
-                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
-                    if (!newei) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    RtlCopyMemory(newei, ei, ptr - tp.item->data);
-
-                    if (len > sectlen)
-                        RtlCopyMemory((uint8_t*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(uint8_t), len - sectlen);
-
-                    newei->refs--;
-
-                    Status = delete_tree_item(Vcb, &tp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, neweilen, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    return STATUS_SUCCESS;
-                }
-            } else if (type == TYPE_SHARED_BLOCK_REF) {
-                SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(uint8_t));
-                SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)data;
-
-                if (sectsbr->offset == sbr->offset) {
-                    struct btrfs_extent_item* newei;
-                    uint16_t neweilen;
-
-                    if (ei->refs == 1) {
-                        Status = delete_tree_item(Vcb, &tp);
-                        if (!NT_SUCCESS(Status)) {
-                            ERR("delete_tree_item returned %08lx\n", Status);
-                            return Status;
-                        }
-
-                        return STATUS_SUCCESS;
-                    }
-
-                    neweilen = tp.item->size - sizeof(uint8_t) - sectlen;
-
-                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
-                    if (!newei) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
-
-                    RtlCopyMemory(newei, ei, ptr - tp.item->data);
-
-                    if (len > sectlen)
-                        RtlCopyMemory((uint8_t*)newei + (ptr - tp.item->data), ptr + sectlen + sizeof(uint8_t), len - sectlen);
-
-                    newei->refs--;
-
-                    Status = delete_tree_item(Vcb, &tp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, neweilen, NULL, Irp);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("insert_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-
-                    return STATUS_SUCCESS;
-                }
-            } else {
-                ERR("unhandled extent type %x\n", type);
-                return STATUS_INTERNAL_ERROR;
-            }
-        }
-
-        len -= sectlen;
-        ptr += sizeof(uint8_t) + sectlen;
-        inline_rc += sectcount;
-    }
-
-    if (inline_rc == ei->refs) {
-        ERR("entry not found in inline extent item for address %I64x\n", address);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    if (type == TYPE_SHARED_DATA_REF)
-        datalen = sizeof(uint32_t);
-    else if (type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF)
-        datalen = 0;
-
-    searchkey.objectid = address;
-    searchkey.type = type;
-    searchkey.offset = (type == TYPE_SHARED_DATA_REF || type == TYPE_EXTENT_REF_V0) ? parent : get_extent_hash(type, data);
-
-    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
-    if (!NT_SUCCESS(Status)) {
-        ERR("error - find_item returned %08lx\n", Status);
-        return Status;
-    }
-
-    if (keycmp(tp2.item->key, searchkey)) {
-        ERR("(%I64x,%x,%I64x) not found\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    if (tp2.item->size < datalen) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %lu\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset, tp2.item->size, datalen);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    if (type == TYPE_EXTENT_DATA_REF) {
-        struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)tp2.item->data;
-        struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
-
-        if (sectedr->root == edr->root && sectedr->objectid == edr->objectid && sectedr->offset == edr->offset) {
-            struct btrfs_extent_item* newei;
-
-            if (ei->refs == edr->count) {
-                Status = delete_tree_item(Vcb, &tp);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("delete_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-
-                Status = delete_tree_item(Vcb, &tp2);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("delete_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-
-                if (!superseded)
-                    add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
-
-                return STATUS_SUCCESS;
-            }
-
-            if (sectedr->count < edr->count) {
-                ERR("error - extent section has refcount %x, trying to reduce by %x\n", sectedr->count, edr->count);
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            Status = delete_tree_item(Vcb, &tp2);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            if (sectedr->count > edr->count) {
-                struct btrfs_extent_data_ref* newedr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
-
-                if (!newedr) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                RtlCopyMemory(newedr, sectedr, tp2.item->size);
-
-                newedr->count -= edr->count;
-
-                Status = insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset, newedr, tp2.item->size, NULL, Irp);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-            }
-
-            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-            if (!newei) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(newei, tp.item->data, tp.item->size);
-
-            newei->refs -= rc;
-
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, tp.item->size, NULL, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            return STATUS_SUCCESS;
-        } else {
-            ERR("error - hash collision?\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else if (type == TYPE_SHARED_DATA_REF) {
-        SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-
-        if (tp2.item->key.offset == sdr->offset) {
-            uint32_t* sectsdrcount = (uint32_t*)tp2.item->data;
-            struct btrfs_extent_item* newei;
-
-            if (ei->refs == sdr->count) {
-                Status = delete_tree_item(Vcb, &tp);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("delete_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-
-                Status = delete_tree_item(Vcb, &tp2);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("delete_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-
-                if (!superseded)
-                    add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
-
-                return STATUS_SUCCESS;
-            }
-
-            if (*sectsdrcount < sdr->count) {
-                ERR("error - extent section has refcount %x, trying to reduce by %x\n", *sectsdrcount, sdr->count);
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            Status = delete_tree_item(Vcb, &tp2);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            if (*sectsdrcount > sdr->count) {
-                uint32_t* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
-
-                if (!newsdr) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                *newsdr = *sectsdrcount - sdr->count;
-
-                Status = insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset, newsdr, tp2.item->size, NULL, Irp);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-            }
-
-            newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-            if (!newei) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            RtlCopyMemory(newei, tp.item->data, tp.item->size);
-
-            newei->refs -= rc;
-
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, tp.item->size, NULL, Irp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("insert_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            return STATUS_SUCCESS;
-        } else {
-            ERR("error - collision?\n");
-            return STATUS_INTERNAL_ERROR;
-        }
-    } else if (type == TYPE_TREE_BLOCK_REF || type == TYPE_SHARED_BLOCK_REF) {
-        struct btrfs_extent_item* newei;
-
-        if (ei->refs == 1) {
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            Status = delete_tree_item(Vcb, &tp2);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            return STATUS_SUCCESS;
-        }
-
-        Status = delete_tree_item(Vcb, &tp2);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_tree_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-        if (!newei) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlCopyMemory(newei, tp.item->data, tp.item->size);
-
-        newei->refs -= rc;
-
-        Status = delete_tree_item(Vcb, &tp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_tree_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, tp.item->size, NULL, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("insert_tree_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        return STATUS_SUCCESS;
-    } else if (type == TYPE_EXTENT_REF_V0) {
-        struct btrfs_extent_ref_v0* erv0 = (struct btrfs_extent_ref_v0*)tp2.item->data;
-        struct btrfs_extent_item* newei;
-
-        if (ei->refs == erv0->count) {
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            Status = delete_tree_item(Vcb, &tp2);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
-            if (!superseded)
-                add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
-
-            return STATUS_SUCCESS;
-        }
-
-        Status = delete_tree_item(Vcb, &tp2);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_tree_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
-        if (!newei) {
-            ERR("out of memory\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        RtlCopyMemory(newei, tp.item->data, tp.item->size);
-
-        newei->refs -= rc;
-
-        Status = delete_tree_item(Vcb, &tp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("delete_tree_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, newei, tp.item->size, NULL, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("insert_tree_item returned %08lx\n", Status);
-            return Status;
-        }
-
-        return STATUS_SUCCESS;
-    } else {
-        ERR("unhandled extent type %x\n", type);
-        return STATUS_INTERNAL_ERROR;
-    }
-}
-
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
                                        uint64_t size, uint64_t root, uint64_t inode,
                                        uint64_t offset, uint32_t refcount,
@@ -3341,13 +2273,270 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
 NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
                                                uint64_t offset, PIRP Irp) {
-    SHARED_BLOCK_REF sbr;
+    struct btrfs_key searchkey;
+    NTSTATUS Status;
+    traverse_ptr tp, tp2;
+    struct btrfs_extent_item* ei;
+    ULONG len;
+    uint64_t inline_rc;
+    uint8_t* ptr;
+    bool skinny = false;
+    struct btrfs_extent_item* newei;
 
-    sbr.offset = offset;
+    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        searchkey.objectid = address;
+        searchkey.type = TYPE_METADATA_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
 
-    return decrease_extent_refcount(Vcb, address, Vcb->superblock.nodesize,
-                                    TYPE_SHARED_BLOCK_REF, &sbr, NULL,
-                                    0, offset, false, Irp);
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08lx\n", Status);
+            return Status;
+        }
+
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type)
+            skinny = true;
+    }
+
+    if (!skinny) {
+        searchkey.objectid = address;
+        searchkey.type = TYPE_EXTENT_ITEM;
+        searchkey.offset = 0xffffffffffffffff;
+
+        Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("error - find_item returned %08lx\n", Status);
+            return Status;
+        }
+
+        if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
+            ERR("could not find EXTENT_ITEM for address %I64x\n", address);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (tp.item->key.offset != Vcb->superblock.nodesize) {
+            ERR("extent %I64x had length %I64x, not %x as expected\n",
+                address, tp.item->key.offset, Vcb->superblock.nodesize);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (tp.item->size == sizeof(struct btrfs_extent_item_v0)) {
+            ERR("old-style extents no longer supported\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
+            tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+            tp.item->size, sizeof(struct btrfs_extent_item));
+
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    ei = (struct btrfs_extent_item*)tp.item->data;
+
+    len = tp.item->size - sizeof(struct btrfs_extent_item);
+    ptr = (uint8_t*)&ei[1];
+
+    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+        if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
+            ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
+                tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
+
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        len -= sizeof(struct btrfs_tree_block_info);
+        ptr += sizeof(struct btrfs_tree_block_info);
+    }
+
+    if (ei->refs == 0) {
+        ERR("error - extent has refcount of 0\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    inline_rc = 0;
+
+    // Loop through inline extent entries
+
+    while (len > 0) {
+        struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
+
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        switch (eir->type) {
+            case TYPE_SHARED_DATA_REF: {
+                struct btrfs_shared_data_ref* sdr;
+
+                if (len < sizeof(struct btrfs_shared_data_ref)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+                len -= sizeof(struct btrfs_shared_data_ref);
+                inline_rc += sdr->count;
+
+                break;
+            }
+
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* edr;
+
+                if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                edr = (struct btrfs_extent_data_ref*)&eir->offset;
+
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                inline_rc += edr->count;
+
+                break;
+            }
+
+            case TYPE_TREE_BLOCK_REF:
+                inline_rc++;
+                break;
+
+            case TYPE_SHARED_BLOCK_REF:
+                // If inline extent already present, decrease refcount and return
+
+                if (eir->offset == offset) {
+                    uint16_t neweilen;
+
+                    if (ei->refs == 1) {
+                        Status = delete_tree_item(Vcb, &tp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08lx\n", Status);
+                            return Status;
+                        }
+
+                        return STATUS_SUCCESS;
+                    }
+
+                    neweilen = tp.item->size - sizeof(struct btrfs_extent_inline_ref);
+
+                    newei = ExAllocatePoolWithTag(PagedPool, neweilen, ALLOC_TAG);
+                    if (!newei) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    RtlCopyMemory(newei, ei, (uint8_t*)eir - tp.item->data);
+
+                    if (len > 0) {
+                        RtlCopyMemory((uint8_t*)newei + ((uint8_t*)eir - tp.item->data),
+                                      ptr, len);
+                    }
+
+                    newei->refs--;
+
+                    Status = delete_tree_item(Vcb, &tp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("delete_tree_item returned %08lx\n", Status);
+                        return Status;
+                    }
+
+                    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid,
+                                              tp.item->key.type, tp.item->key.offset,
+                                              newei, neweilen, NULL, Irp);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_tree_item returned %08lx\n", Status);
+                        return Status;
+                    }
+
+                    return STATUS_SUCCESS;
+                }
+
+                inline_rc++;
+                break;
+
+            default:
+                ERR("unknown extent item type %x\n", eir->type);
+                return STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    if (inline_rc == ei->refs) {
+        ERR("entry not found in inline extent item for address %I64x\n", address);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    searchkey.objectid = address;
+    searchkey.type = TYPE_SHARED_BLOCK_REF;
+    searchkey.offset = offset;
+
+    Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("error - find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (keycmp(tp2.item->key, searchkey)) {
+        ERR("(%I64x,%x,%I64x) not found\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (ei->refs == 1) {
+        Status = delete_tree_item(Vcb, &tp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08lx\n", Status);
+            return Status;
+        }
+
+        Status = delete_tree_item(Vcb, &tp2);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_tree_item returned %08lx\n", Status);
+            return Status;
+        }
+
+        return STATUS_SUCCESS;
+    }
+
+    Status = delete_tree_item(Vcb, &tp2);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    newei = ExAllocatePoolWithTag(PagedPool, tp.item->size, ALLOC_TAG);
+    if (!newei) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(newei, tp.item->data, tp.item->size);
+
+    newei->refs--;
+
+    Status = delete_tree_item(Vcb, &tp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    Status = insert_tree_item(Vcb, Vcb->extent_root, tp.item->key.objectid,
+                              tp.item->key.type, tp.item->key.offset, newei,
+                              tp.item->size, NULL, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, PIRP Irp) {
