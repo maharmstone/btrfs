@@ -1185,15 +1185,14 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, t->header.bytenr, Irp);
 
                                 if (sdrrc > 0) {
-                                    SHARED_DATA_REF sdr;
-
-                                    sdr.offset = t->header.bytenr;
-                                    sdr.count = 1;
-
-                                    Status = decrease_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
-                                                                      t->header.bytenr, ce ? ce->superseded : false, Irp);
+                                    Status = decrease_extent_refcount_shared_data(Vcb, ed->disk_bytenr,
+                                                                                  ed->disk_num_bytes,
+                                                                                  t->header.bytenr, 1,
+                                                                                  t->header.bytenr,
+                                                                                  ce ? ce->superseded : false,
+                                                                                  Irp);
                                     if (!NT_SUCCESS(Status)) {
-                                        ERR("decrease_extent_refcount returned %08lx\n", Status);
+                                        ERR("decrease_extent_refcount_shared_data returned %08lx\n", Status);
                                         return Status;
                                     }
 
@@ -1204,7 +1203,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                         while (le2 != &ce->refs) {
                                             changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-                                            if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
+                                            if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == t->header.bytenr) {
                                                 ce->count--;
                                                 cer->sdr.count--;
                                                 break;
@@ -1217,7 +1216,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                         while (le2 != &ce->old_refs) {
                                             changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-                                            if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == sdr.offset) {
+                                            if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == t->header.bytenr) {
                                                 ce->old_count--;
 
                                                 if (cer->sdr.count > 1)

@@ -1509,6 +1509,10 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
                                                uint8_t level, PIRP Irp);
 NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint64_t inode, uint64_t offset,
                                        uint32_t refcount, bool superseded, PIRP Irp);
+NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t address,
+                                              uint64_t size, uint64_t offset,
+                                              uint32_t count, uint64_t parent,
+                                              bool superseded, PIRP Irp);
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root, uint8_t level, PIRP Irp);
 NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t address,
                                                uint64_t offset, PIRP Irp);
@@ -1521,8 +1525,6 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum);
 uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
 uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
-NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
-                                  uint8_t level, uint64_t parent, bool superseded, PIRP Irp);
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset);
 
 // in worker-thread.c

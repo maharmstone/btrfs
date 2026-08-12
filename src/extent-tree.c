@@ -936,8 +936,8 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
                                     level, Irp);
 }
 
-NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
-                                  uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
+static NTSTATUS decrease_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t size, uint8_t type, void* data, struct btrfs_key* firstitem,
+                                         uint8_t level, uint64_t parent, bool superseded, PIRP Irp) {
     struct btrfs_key searchkey;
     NTSTATUS Status;
     traverse_ptr tp, tp2;
@@ -1591,6 +1591,19 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     edr.count = refcount;
 
     return decrease_extent_refcount(Vcb, address, size, TYPE_EXTENT_DATA_REF, &edr, NULL, 0, 0, superseded, Irp);
+}
+
+NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t address,
+                                              uint64_t size, uint64_t offset,
+                                              uint32_t count, uint64_t parent,
+                                              bool superseded, PIRP Irp) {
+    SHARED_DATA_REF sdr;
+
+    sdr.offset = offset;
+    sdr.count = count;
+
+    return decrease_extent_refcount(Vcb, address, size, TYPE_SHARED_DATA_REF,
+                                    &sdr, NULL, 0, parent, superseded, Irp);
 }
 
 NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address, uint64_t size, uint64_t root,

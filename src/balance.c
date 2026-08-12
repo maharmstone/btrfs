@@ -477,11 +477,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                             uint32_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, mr->address, NULL);
 
                             if (sdrrc > 0) {
-                                SHARED_DATA_REF sdr;
                                 chunk* c;
-
-                                sdr.offset = mr->new_address;
-                                sdr.count = sdrrc;
 
                                 Status = increase_extent_refcount_shared_data(Vcb, ed->disk_bytenr,
                                                                               ed->disk_num_bytes, mr->new_address,
@@ -491,12 +487,13 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                                     return Status;
                                 }
 
-                                sdr.offset = mr->address;
-
-                                Status = decrease_extent_refcount(Vcb, ed->disk_bytenr, ed->disk_num_bytes, TYPE_SHARED_DATA_REF, &sdr, NULL, 0,
-                                                                  sdr.offset, false, NULL);
+                                Status = decrease_extent_refcount_shared_data(Vcb, ed->disk_bytenr,
+                                                                              ed->disk_num_bytes,
+                                                                              mr->address, sdrrc,
+                                                                              mr->address, false,
+                                                                              NULL);
                                 if (!NT_SUCCESS(Status)) {
-                                    ERR("decrease_extent_refcount returned %08lx\n", Status);
+                                    ERR("decrease_extent_refcount_shared_data returned %08lx\n", Status);
                                     return Status;
                                 }
 
