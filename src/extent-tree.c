@@ -3141,35 +3141,68 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     }
 
     while (len > 0) {
-        uint8_t secttype = *ptr;
-        ULONG sectlen = get_extent_data_len(secttype);
-        uint64_t sectcount = get_extent_data_refcount(secttype, ptr + sizeof(uint8_t));
+        struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
 
-        len--;
-
-        if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, len, sectlen);
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
             return 0;
         }
 
-        if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, secttype);
-            return 0;
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        switch (eir->type) {
+            case TYPE_SHARED_DATA_REF: {
+                struct btrfs_shared_data_ref* sdr;
+
+                if (len < sizeof(struct btrfs_shared_data_ref)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+                    return 0;
+                }
+
+                sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+                len -= sizeof(struct btrfs_shared_data_ref);
+                inline_rc += sdr->count;
+
+                break;
+            }
+
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* edr;
+
+                if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
+                    return 0;
+                }
+
+                edr = (struct btrfs_extent_data_ref*)&eir->offset;
+
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                inline_rc += edr->count;
+
+                break;
+            }
+
+            case TYPE_TREE_BLOCK_REF:
+                inline_rc++;
+                break;
+
+            case TYPE_SHARED_BLOCK_REF: {
+                if (eir->offset == parent)
+                    return 1;
+
+                inline_rc++;
+                break;
+            }
+
+            default:
+                ERR("unknown extent item type %x\n", eir->type);
+                return 0;
         }
-
-        if (secttype == TYPE_SHARED_BLOCK_REF) {
-            SHARED_BLOCK_REF* sectsbr = (SHARED_BLOCK_REF*)(ptr + sizeof(uint8_t));
-
-            if (sectsbr->offset == parent)
-                return 1;
-        }
-
-        len -= sectlen;
-        ptr += sizeof(uint8_t) + sectlen;
-        inline_rc += sectcount;
     }
-
-    // FIXME - what if old?
 
     if (inline_rc == ei->refs)
         return 0;
