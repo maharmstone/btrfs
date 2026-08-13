@@ -34,12 +34,7 @@ typedef struct {
 typedef struct {
     uint8_t type;
     uint64_t hash;
-
-    union {
-        TREE_BLOCK_REF tbr;
-        SHARED_BLOCK_REF sbr;
-    };
-
+    uint64_t offset;
     metadata_reloc* parent;
     bool top;
     LIST_ENTRY list_entry;
@@ -122,21 +117,18 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
     }
 
     while (len > 0) {
-        uint8_t secttype = *ptr;
-        uint16_t sectlen = secttype == TYPE_TREE_BLOCK_REF ? sizeof(TREE_BLOCK_REF) : (secttype == TYPE_SHARED_BLOCK_REF ? sizeof(SHARED_BLOCK_REF) : 0);
+        struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
         metadata_reloc_ref* ref;
 
-        len--;
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
+                tp->item->key.type, tp->item->key.offset);
 
-        if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, len, sectlen);
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, secttype);
-            return STATUS_INTERNAL_ERROR;
-        }
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
 
         ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
         if (!ref) {
@@ -144,26 +136,23 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        if (secttype == TYPE_TREE_BLOCK_REF) {
-            ref->type = TYPE_TREE_BLOCK_REF;
-            RtlCopyMemory(&ref->tbr, ptr + sizeof(uint8_t), sizeof(TREE_BLOCK_REF));
-            inline_rc++;
-        } else if (secttype == TYPE_SHARED_BLOCK_REF) {
-            ref->type = TYPE_SHARED_BLOCK_REF;
-            RtlCopyMemory(&ref->sbr, ptr + sizeof(uint8_t), sizeof(SHARED_BLOCK_REF));
-            inline_rc++;
-        } else {
-            ERR("unexpected tree type %x\n", secttype);
-            ExFreePool(ref);
-            return STATUS_INTERNAL_ERROR;
+        switch (eir->type) {
+            case TYPE_TREE_BLOCK_REF:
+            case TYPE_SHARED_BLOCK_REF:
+                ref->type = eir->type;
+                ref->offset = eir->offset;
+                inline_rc++;
+                break;
+
+            default:
+                ERR("unexpected tree type %x\n", eir->type);
+                ExFreePool(ref);
+                return STATUS_INTERNAL_ERROR;
         }
 
         ref->parent = NULL;
         ref->top = false;
         InsertTailList(&mr->refs, &ref->list_entry);
-
-        len -= sectlen;
-        ptr += sizeof(uint8_t) + sectlen;
     }
 
     if (inline_rc < ei->refs) { // look for non-inline entries
@@ -173,41 +162,49 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
             tp2 = next_tp;
 
             if (tp2.item->key.objectid == tp->item->key.objectid) {
-                if (tp2.item->key.type == TYPE_TREE_BLOCK_REF) {
-                    metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
-                    if (!ref) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
+                switch (tp2.item->key.type) {
+                    case TYPE_TREE_BLOCK_REF: {
+                        metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
+                        if (!ref) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+
+                        ref->type = TYPE_TREE_BLOCK_REF;
+                        ref->offset = tp2.item->key.offset;
+                        ref->parent = NULL;
+                        ref->top = false;
+                        InsertTailList(&mr->refs, &ref->list_entry);
+
+                        Status = delete_tree_item(Vcb, &tp2);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08lx\n", Status);
+                            return Status;
+                        }
+
+                        break;
                     }
 
-                    ref->type = TYPE_TREE_BLOCK_REF;
-                    ref->tbr.offset = tp2.item->key.offset;
-                    ref->parent = NULL;
-                    ref->top = false;
-                    InsertTailList(&mr->refs, &ref->list_entry);
+                    case TYPE_SHARED_BLOCK_REF: {
+                        metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
+                        if (!ref) {
+                            ERR("out of memory\n");
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
 
-                    Status = delete_tree_item(Vcb, &tp2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
-                    }
-                } else if (tp2.item->key.type == TYPE_SHARED_BLOCK_REF) {
-                    metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
-                    if (!ref) {
-                        ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
-                    }
+                        ref->type = TYPE_SHARED_BLOCK_REF;
+                        ref->offset = tp2.item->key.offset;
+                        ref->parent = NULL;
+                        ref->top = false;
+                        InsertTailList(&mr->refs, &ref->list_entry);
 
-                    ref->type = TYPE_SHARED_BLOCK_REF;
-                    ref->sbr.offset = tp2.item->key.offset;
-                    ref->parent = NULL;
-                    ref->top = false;
-                    InsertTailList(&mr->refs, &ref->list_entry);
+                        Status = delete_tree_item(Vcb, &tp2);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08lx\n", Status);
+                            return Status;
+                        }
 
-                    Status = delete_tree_item(Vcb, &tp2);
-                    if (!NT_SUCCESS(Status)) {
-                        ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
+                        break;
                     }
                 }
             } else
@@ -292,7 +289,7 @@ static void sort_metadata_reloc_refs(metadata_reloc* mr) {
         bool inserted = false;
 
         if (ref->type == TYPE_TREE_BLOCK_REF)
-            ref->hash = ref->tbr.offset;
+            ref->hash = ref->offset;
         else if (ref->type == TYPE_SHARED_BLOCK_REF)
             ref->hash = ref->parent->new_address;
 
@@ -380,27 +377,22 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
 
     le = mr->refs.Flink;
     while (le != &mr->refs) {
+        struct btrfs_extent_inline_ref* eir;
+
         metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
 
         if (ref == first_noninline)
             break;
 
-        *ptr = ref->type;
-        ptr++;
+        eir = (struct btrfs_extent_inline_ref*)ptr;
+        ptr += sizeof(struct btrfs_extent_inline_ref);
 
-        if (ref->type == TYPE_TREE_BLOCK_REF) {
-            TREE_BLOCK_REF* tbr = (TREE_BLOCK_REF*)ptr;
+        eir->type = ref->type;
 
-            tbr->offset = ref->tbr.offset;
-
-            ptr += sizeof(TREE_BLOCK_REF);
-        } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
-            SHARED_BLOCK_REF* sbr = (SHARED_BLOCK_REF*)ptr;
-
-            sbr->offset = ref->parent->new_address;
-
-            ptr += sizeof(SHARED_BLOCK_REF);
-        }
+        if (ref->type == TYPE_TREE_BLOCK_REF)
+            eir->offset = ref->offset;
+        else if (ref->type == TYPE_SHARED_BLOCK_REF)
+            eir->offset = ref->parent->new_address;
 
         le = le->Flink;
     }
@@ -423,13 +415,17 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
             metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
 
             if (ref->type == TYPE_TREE_BLOCK_REF) {
-                Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_TREE_BLOCK_REF, ref->tbr.offset, NULL, 0, NULL, NULL);
+                Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address,
+                                          TYPE_TREE_BLOCK_REF, ref->offset, NULL,
+                                          0, NULL, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     return Status;
                 }
             } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
-                Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, TYPE_SHARED_BLOCK_REF, ref->parent->new_address, NULL, 0, NULL, NULL);
+                Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address,
+                                          TYPE_SHARED_BLOCK_REF, ref->parent->new_address,
+                                          NULL, 0, NULL, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     return Status;
@@ -615,65 +611,73 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
         while (le2 != &mr->refs) {
             metadata_reloc_ref* ref = CONTAINING_RECORD(le2, metadata_reloc_ref, list_entry);
 
-            if (ref->type == TYPE_TREE_BLOCK_REF) {
-                struct btrfs_key* firstitem;
-                root* r = NULL;
-                LIST_ENTRY* le3;
-                tree* t;
+            switch (ref->type) {
+                case TYPE_TREE_BLOCK_REF: {
+                    struct btrfs_key* firstitem;
+                    root* r = NULL;
+                    LIST_ENTRY* le3;
+                    tree* t;
 
-                firstitem = (struct btrfs_key*)&mr->data[1];
+                    firstitem = (struct btrfs_key*)&mr->data[1];
 
-                le3 = Vcb->roots.Flink;
-                while (le3 != &Vcb->roots) {
-                    root* r2 = CONTAINING_RECORD(le3, root, list_entry);
+                    le3 = Vcb->roots.Flink;
+                    while (le3 != &Vcb->roots) {
+                        root* r2 = CONTAINING_RECORD(le3, root, list_entry);
 
-                    if (r2->id == ref->tbr.offset) {
-                        r = r2;
-                        break;
+                        if (r2->id == ref->offset) {
+                            r = r2;
+                            break;
+                        }
+
+                        le3 = le3->Flink;
                     }
 
-                    le3 = le3->Flink;
+                    if (!r) {
+                        ERR("could not find subvol with id %I64x\n", ref->offset);
+                        return STATUS_INTERNAL_ERROR;
+                    }
+
+                    Status = find_item_to_level(Vcb, r, &tp, firstitem, false, mr->data->level + 1, NULL);
+                    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+                        ERR("find_item_to_level returned %08lx\n", Status);
+                        return Status;
+                    }
+
+                    t = tp.tree;
+                    while (t && t->header.level < mr->data->level + 1) {
+                        t = t->parent;
+                    }
+
+                    if (!t)
+                        ref->top = true;
+                    else {
+                        metadata_reloc* mr2;
+
+                        Status = add_metadata_reloc_parent(Vcb, items, t->header.bytenr, &mr2, rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("add_metadata_reloc_parent returned %08lx\n", Status);
+                            return Status;
+                        }
+
+                        ref->parent = mr2;
+                    }
+
+                    break;
                 }
 
-                if (!r) {
-                    ERR("could not find subvol with id %I64x\n", ref->tbr.offset);
-                    return STATUS_INTERNAL_ERROR;
-                }
-
-                Status = find_item_to_level(Vcb, r, &tp, firstitem, false, mr->data->level + 1, NULL);
-                if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-                    ERR("find_item_to_level returned %08lx\n", Status);
-                    return Status;
-                }
-
-                t = tp.tree;
-                while (t && t->header.level < mr->data->level + 1) {
-                    t = t->parent;
-                }
-
-                if (!t)
-                    ref->top = true;
-                else {
+                case TYPE_SHARED_BLOCK_REF: {
                     metadata_reloc* mr2;
 
-                    Status = add_metadata_reloc_parent(Vcb, items, t->header.bytenr, &mr2, rollback);
+                    Status = add_metadata_reloc_parent(Vcb, items, ref->offset, &mr2, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_metadata_reloc_parent returned %08lx\n", Status);
                         return Status;
                     }
 
                     ref->parent = mr2;
-                }
-            } else if (ref->type == TYPE_SHARED_BLOCK_REF) {
-                metadata_reloc* mr2;
 
-                Status = add_metadata_reloc_parent(Vcb, items, ref->sbr.offset, &mr2, rollback);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("add_metadata_reloc_parent returned %08lx\n", Status);
-                    return Status;
+                    break;
                 }
-
-                ref->parent = mr2;
             }
 
             le2 = le2->Flink;
@@ -839,7 +843,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                         while (le3 != &Vcb->roots) {
                             root* r2 = CONTAINING_RECORD(le3, root, list_entry);
 
-                            if (r2->id == ref->tbr.offset) {
+                            if (r2->id == ref->offset) {
                                 r = r2;
                                 break;
                             }
