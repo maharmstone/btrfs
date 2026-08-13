@@ -1347,7 +1347,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
         RtlZeroMemory(&t->header, sizeof(struct btrfs_header));
         memcpy(t->header.fsid, tp.tree->header.fsid, BTRFS_UUID_SIZE);
         t->header.bytenr = 0;
-        t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
+        t->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
         memcpy(t->header.chunk_tree_uuid, tp.tree->header.chunk_tree_uuid,
                BTRFS_UUID_SIZE);
         t->header.generation = Vcb->superblock.generation;
