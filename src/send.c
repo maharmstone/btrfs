@@ -432,14 +432,14 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
             return Status;
         }
 
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH, name, (uint16_t)strlen(name));
-        send_add_tlv(context, BTRFS_SEND_TLV_INODE, &tp->item->key.objectid, sizeof(uint64_t));
+        send_add_tlv(context, BTRFS_SEND_A_PATH, name, (uint16_t)strlen(name));
+        send_add_tlv(context, BTRFS_SEND_A_INO, &tp->item->key.objectid, sizeof(uint64_t));
 
         if (cmd == BTRFS_SEND_C_MKNOD || cmd == BTRFS_SEND_C_MKFIFO || cmd == BTRFS_SEND_C_MKSOCK) {
             uint64_t rdev = makedev((ii->rdev & 0xFFFFFFFFFFF) >> 20, ii->rdev & 0xFFFFF), mode = ii->mode;
 
-            send_add_tlv(context, BTRFS_SEND_TLV_RDEV, &rdev, sizeof(uint64_t));
-            send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(uint64_t));
+            send_add_tlv(context, BTRFS_SEND_A_RDEV, &rdev, sizeof(uint64_t));
+            send_add_tlv(context, BTRFS_SEND_A_MODE, &mode, sizeof(uint64_t));
         } else if (cmd == BTRFS_SEND_C_SYMLINK && ii->size > 0) {
             char* link;
             uint16_t linklen;
@@ -450,7 +450,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
                 return Status;
             }
 
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, link, linklen);
+            send_add_tlv(context, BTRFS_SEND_A_PATH_LINK, link, linklen);
         }
 
         send_command_finish(context, pos);
@@ -598,17 +598,17 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     if (context->lastinode.o) {
         send_command(context, BTRFS_SEND_C_RENAME);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, context->root_dir, context->lastinode.o->tmpname, (uint16_t)strlen(context->lastinode.o->tmpname));
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH, context->root_dir, context->lastinode.o->tmpname, (uint16_t)strlen(context->lastinode.o->tmpname));
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, parent, name, namelen);
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH_TO, parent, name, namelen);
 
         send_command_finish(context, pos);
     } else {
         send_command(context, BTRFS_SEND_C_LINK);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, parent, name, namelen);
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH, parent, name, namelen);
 
-        send_add_tlv(context, BTRFS_SEND_TLV_PATH_LINK, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+        send_add_tlv(context, BTRFS_SEND_A_PATH_LINK, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
         send_command_finish(context, pos);
     }
@@ -658,11 +658,11 @@ static void send_utimes_command_dir(send_context* context, send_dir* sd, struct 
 
     send_command(context, BTRFS_SEND_C_UTIMES);
 
-    send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, sd->parent, sd->name, sd->namelen);
+    send_add_tlv_path(context, BTRFS_SEND_A_PATH, sd->parent, sd->name, sd->namelen);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(struct btrfs_timespec));
-    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(struct btrfs_timespec));
-    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_A_ATIME, atime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_A_MTIME, mtime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_A_CTIME, ctime, sizeof(struct btrfs_timespec));
 
     send_command_finish(context, pos);
 }
@@ -816,9 +816,9 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
 
                 send_command(context, BTRFS_SEND_C_MKDIR);
 
-                send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
+                send_add_tlv_path(context, BTRFS_SEND_A_PATH, NULL, sd->name, sd->namelen);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_INODE, &dir, sizeof(uint64_t));
+                send_add_tlv(context, BTRFS_SEND_A_INO, &dir, sizeof(uint64_t));
 
                 send_command_finish(context, pos);
 
@@ -925,8 +925,8 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
 
                     send_command(context, BTRFS_SEND_C_MKDIR);
 
-                    send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, NULL, sd->name, sd->namelen);
-                    send_add_tlv(context, BTRFS_SEND_TLV_INODE, &ier->parent_objectid, sizeof(uint64_t));
+                    send_add_tlv_path(context, BTRFS_SEND_A_PATH, NULL, sd->name, sd->namelen);
+                    send_add_tlv(context, BTRFS_SEND_A_INO, &ier->parent_objectid, sizeof(uint64_t));
 
                     send_command_finish(context, pos);
 
@@ -971,15 +971,15 @@ static void send_subvol_header(send_context* context, root* r, file_ref* fr) {
 
     send_command(context, context->parent ? BTRFS_SEND_C_SNAPSHOT : BTRFS_SEND_C_SUBVOL);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, fr->dc->utf8.Buffer, fr->dc->utf8.Length);
+    send_add_tlv(context, BTRFS_SEND_A_PATH, fr->dc->utf8.Buffer, fr->dc->utf8.Length);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, BTRFS_UUID_SIZE);
-    send_add_tlv(context, BTRFS_SEND_TLV_TRANSID, &r->root_item.ctransid, sizeof(uint64_t));
+    send_add_tlv(context, BTRFS_SEND_A_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, BTRFS_UUID_SIZE);
+    send_add_tlv(context, BTRFS_SEND_A_CTRANSID, &r->root_item.ctransid, sizeof(uint64_t));
 
     if (context->parent) {
-        send_add_tlv(context, BTRFS_SEND_TLV_CLONE_UUID,
+        send_add_tlv(context, BTRFS_SEND_A_CLONE_UUID,
                      context->parent->root_item.rtransid == 0 ? &context->parent->root_item.uuid : &context->parent->root_item.received_uuid, BTRFS_UUID_SIZE);
-        send_add_tlv(context, BTRFS_SEND_TLV_CLONE_CTRANSID, &context->parent->root_item.ctransid, sizeof(uint64_t));
+        send_add_tlv(context, BTRFS_SEND_A_CLONE_CTRANSID, &context->parent->root_item.ctransid, sizeof(uint64_t));
     }
 
     send_command_finish(context, pos);
@@ -990,9 +990,9 @@ static void send_chown_command(send_context* context, char* path, uint64_t uid, 
 
     send_command(context, BTRFS_SEND_C_CHOWN);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (uint16_t)strlen(path) : 0);
-    send_add_tlv(context, BTRFS_SEND_TLV_UID, &uid, sizeof(uint64_t));
-    send_add_tlv(context, BTRFS_SEND_TLV_GID, &gid, sizeof(uint64_t));
+    send_add_tlv(context, BTRFS_SEND_A_PATH, path, path ? (uint16_t)strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_A_UID, &uid, sizeof(uint64_t));
+    send_add_tlv(context, BTRFS_SEND_A_GID, &gid, sizeof(uint64_t));
 
     send_command_finish(context, pos);
 }
@@ -1004,8 +1004,8 @@ static void send_chmod_command(send_context* context, char* path, uint64_t mode)
 
     mode &= 07777;
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (uint16_t)strlen(path) : 0);
-    send_add_tlv(context, BTRFS_SEND_TLV_MODE, &mode, sizeof(uint64_t));
+    send_add_tlv(context, BTRFS_SEND_A_PATH, path, path ? (uint16_t)strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_A_MODE, &mode, sizeof(uint64_t));
 
     send_command_finish(context, pos);
 }
@@ -1015,10 +1015,10 @@ static void send_utimes_command(send_context* context, char* path, struct btrfs_
 
     send_command(context, BTRFS_SEND_C_UTIMES);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (uint16_t)strlen(path) : 0);
-    send_add_tlv(context, BTRFS_SEND_TLV_ATIME, atime, sizeof(struct btrfs_timespec));
-    send_add_tlv(context, BTRFS_SEND_TLV_MTIME, mtime, sizeof(struct btrfs_timespec));
-    send_add_tlv(context, BTRFS_SEND_TLV_CTIME, ctime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_A_PATH, path, path ? (uint16_t)strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_A_ATIME, atime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_A_MTIME, mtime, sizeof(struct btrfs_timespec));
+    send_add_tlv(context, BTRFS_SEND_A_CTIME, ctime, sizeof(struct btrfs_timespec));
 
     send_command_finish(context, pos);
 }
@@ -1028,8 +1028,8 @@ static void send_truncate_command(send_context* context, char* path, uint64_t si
 
     send_command(context, BTRFS_SEND_C_TRUNCATE);
 
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, path ? (uint16_t)strlen(path) : 0);
-    send_add_tlv(context, BTRFS_SEND_TLV_SIZE, &size, sizeof(uint64_t));
+    send_add_tlv(context, BTRFS_SEND_A_PATH, path, path ? (uint16_t)strlen(path) : 0);
+    send_add_tlv(context, BTRFS_SEND_A_SIZE, &size, sizeof(uint64_t));
 
     send_command_finish(context, pos);
 }
@@ -1041,7 +1041,7 @@ static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, uin
     send_command(context, BTRFS_SEND_C_UNLINK);
 
     pathlen = find_path_len(parent, namelen);
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, NULL, pathlen);
+    send_add_tlv(context, BTRFS_SEND_A_PATH, NULL, pathlen);
 
     find_path((char*)&context->data[context->datalen - pathlen], parent, name, namelen);
 
@@ -1054,7 +1054,7 @@ static void send_rmdir_command(send_context* context, uint16_t pathlen, char* pa
     ULONG pos = context->datalen;
 
     send_command(context, BTRFS_SEND_C_RMDIR);
-    send_add_tlv(context, BTRFS_SEND_TLV_PATH, path, pathlen);
+    send_add_tlv(context, BTRFS_SEND_A_PATH, path, pathlen);
     send_command_finish(context, pos);
 }
 
@@ -1201,7 +1201,7 @@ static NTSTATUS make_file_orphan(send_context* context, uint64_t inode, bool dir
         if (o2->inode == inode) {
             send_command(context, BTRFS_SEND_C_UNLINK);
 
-            send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+            send_add_tlv_path(context, BTRFS_SEND_A_PATH, r->sd, r->name, r->namelen);
 
             send_command_finish(context, pos);
 
@@ -1229,8 +1229,8 @@ static NTSTATUS make_file_orphan(send_context* context, uint64_t inode, bool dir
 
         send_command(context, BTRFS_SEND_C_RENAME);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, (uint16_t)strlen(name));
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH, r->sd, r->name, r->namelen);
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH_TO, context->root_dir, name, (uint16_t)strlen(name));
 
         send_command_finish(context, pos);
 
@@ -1249,9 +1249,9 @@ static NTSTATUS make_file_orphan(send_context* context, uint64_t inode, bool dir
     } else {
         send_command(context, BTRFS_SEND_C_RENAME);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH, r->sd, r->name, r->namelen);
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH, r->sd, r->name, r->namelen);
 
-        send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, context->root_dir, name, (uint16_t)strlen(name));
+        send_add_tlv_path(context, BTRFS_SEND_A_PATH_TO, context->root_dir, name, (uint16_t)strlen(name));
 
         send_command_finish(context, pos);
     }
@@ -1333,9 +1333,9 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
 
                 send_command(context, BTRFS_SEND_C_RENAME);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, (uint16_t)strlen(context->lastinode.path));
+                send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, (uint16_t)strlen(context->lastinode.path));
 
-                send_add_tlv_path(context, BTRFS_SEND_TLV_PATH_TO, r->sd, r->name, r->namelen);
+                send_add_tlv_path(context, BTRFS_SEND_A_PATH_TO, r->sd, r->name, r->namelen);
 
                 send_command_finish(context, pos);
 
@@ -1401,8 +1401,8 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
                 }
 
                 send_command(context, BTRFS_SEND_C_RENAME);
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, (uint16_t)strlen(context->lastinode.path));
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH_TO, name, (uint16_t)strlen(name));
+                send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, (uint16_t)strlen(context->lastinode.path));
+                send_add_tlv(context, BTRFS_SEND_A_PATH_TO, name, (uint16_t)strlen(name));
                 send_command_finish(context, pos);
 
                 if (context->lastinode.sd->name)
@@ -1873,7 +1873,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
         }
     }
 
-    send_add_tlv(context, BTRFS_SEND_TLV_CLONE_PATH, NULL, len);
+    send_add_tlv(context, BTRFS_SEND_A_CLONE_PATH, NULL, len);
     ptr = &context->data[context->datalen];
 
     num = inode;
@@ -1973,16 +1973,16 @@ static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_exte
 
                                 send_command(context, BTRFS_SEND_C_CLONE);
 
-                                send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &se->offset, sizeof(uint64_t));
-                                send_add_tlv(context, BTRFS_SEND_TLV_CLONE_LENGTH, &clone_len, sizeof(uint64_t));
-                                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-                                send_add_tlv(context, BTRFS_SEND_TLV_CLONE_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, BTRFS_UUID_SIZE);
-                                send_add_tlv(context, BTRFS_SEND_TLV_CLONE_CTRANSID, &r->root_item.ctransid, sizeof(uint64_t));
+                                send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &se->offset, sizeof(uint64_t));
+                                send_add_tlv(context, BTRFS_SEND_A_CLONE_LEN, &clone_len, sizeof(uint64_t));
+                                send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+                                send_add_tlv(context, BTRFS_SEND_A_CLONE_UUID, r->root_item.rtransid == 0 ? &r->root_item.uuid : &r->root_item.received_uuid, BTRFS_UUID_SIZE);
+                                send_add_tlv(context, BTRFS_SEND_A_CLONE_CTRANSID, &r->root_item.ctransid, sizeof(uint64_t));
 
                                 if (!send_add_tlv_clone_path(context, r, tp.item->key.objectid))
                                     context->datalen = pos;
                                 else {
-                                    send_add_tlv(context, BTRFS_SEND_TLV_CLONE_OFFSET, &clone_offset, sizeof(uint64_t));
+                                    send_add_tlv(context, BTRFS_SEND_A_CLONE_OFFSET, &clone_offset, sizeof(uint64_t));
 
                                     send_command_finish(context, pos);
 
@@ -2188,15 +2188,15 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
             send_command(context, BTRFS_SEND_C_WRITE);
 
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-            send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &se->offset, sizeof(uint64_t));
+            send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &se->offset, sizeof(uint64_t));
 
             if (se->data.compression == BTRFS_COMPRESSION_NONE)
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, (uint8_t*)&se->data.disk_bytenr, (uint16_t)se->data.ram_bytes);
+                send_add_tlv(context, BTRFS_SEND_A_DATA, (uint8_t*)&se->data.disk_bytenr, (uint16_t)se->data.ram_bytes);
             else if (se->data.compression == BTRFS_COMPRESSION_ZLIB || se->data.compression == BTRFS_COMPRESSION_LZO || se->data.compression == BTRFS_COMPRESSION_ZSTD) {
                 ULONG inlen = se->datalen - (ULONG)offsetof(struct btrfs_file_extent_item, disk_bytenr);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, (uint16_t)se->data.ram_bytes);
+                send_add_tlv(context, BTRFS_SEND_A_DATA, NULL, (uint16_t)se->data.ram_bytes);
                 RtlZeroMemory(&context->data[context->datalen - se->data.ram_bytes], (ULONG)se->data.ram_bytes);
 
                 if (se->data.compression == BTRFS_COMPRESSION_ZLIB) {
@@ -2280,12 +2280,12 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_command(context, BTRFS_SEND_C_WRITE);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+                send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
                 offset = se->offset + off;
-                send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(uint64_t));
+                send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &offset, sizeof(uint64_t));
 
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, NULL, length);
+                send_add_tlv(context, BTRFS_SEND_A_DATA, NULL, length);
                 RtlZeroMemory(&context->data[context->datalen - length], length);
 
                 send_command_finish(context, pos);
@@ -2374,13 +2374,13 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_command(context, BTRFS_SEND_C_WRITE);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+                send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
                 offset = se->offset + off;
-                send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(uint64_t));
+                send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &offset, sizeof(uint64_t));
 
                 length = (uint16_t)min(context->lastinode.size - se->offset - off, length);
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, buf + skip_start, length);
+                send_add_tlv(context, BTRFS_SEND_A_DATA, buf + skip_start, length);
 
                 send_command_finish(context, pos);
             }
@@ -2511,13 +2511,13 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_command(context, BTRFS_SEND_C_WRITE);
 
-                send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+                send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
                 offset = se->offset + off;
-                send_add_tlv(context, BTRFS_SEND_TLV_OFFSET, &offset, sizeof(uint64_t));
+                send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &offset, sizeof(uint64_t));
 
                 length = (uint16_t)min(context->lastinode.size - se->offset - off, length);
-                send_add_tlv(context, BTRFS_SEND_TLV_DATA, &buf[off], length);
+                send_add_tlv(context, BTRFS_SEND_A_DATA, &buf[off], length);
 
                 send_command_finish(context, pos);
             }
@@ -2808,9 +2808,9 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
             pos = context->datalen;
             send_command(context, BTRFS_SEND_C_SET_XATTR);
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, &di[1], di->name_len);
-            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, (uint8_t*)&di[1] + di->name_len, di->data_len);
+            send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_A_XATTR_NAME, &di[1], di->name_len);
+            send_add_tlv(context, BTRFS_SEND_A_XATTR_DATA, (uint8_t*)&di[1] + di->name_len, di->data_len);
             send_command_finish(context, pos);
 
             len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
@@ -2833,8 +2833,8 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
 
             pos = context->datalen;
             send_command(context, BTRFS_SEND_C_REMOVE_XATTR);
-            send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-            send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, &di[1], di->name_len);
+            send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+            send_add_tlv(context, BTRFS_SEND_A_XATTR_NAME, &di[1], di->name_len);
             send_command_finish(context, pos);
 
             len -= (ULONG)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
@@ -2944,15 +2944,15 @@ static NTSTATUS send_xattr(send_context* context, traverse_ptr* tp, traverse_ptr
                 if (!xa->value1) {
                     pos = context->datalen;
                     send_command(context, BTRFS_SEND_C_REMOVE_XATTR);
-                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-                    send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, xa->name, xa->namelen);
+                    send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+                    send_add_tlv(context, BTRFS_SEND_A_XATTR_NAME, xa->name, xa->namelen);
                     send_command_finish(context, pos);
                 } else {
                     pos = context->datalen;
                     send_command(context, BTRFS_SEND_C_SET_XATTR);
-                    send_add_tlv(context, BTRFS_SEND_TLV_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
-                    send_add_tlv(context, BTRFS_SEND_TLV_XATTR_NAME, xa->name, xa->namelen);
-                    send_add_tlv(context, BTRFS_SEND_TLV_XATTR_DATA, xa->value1, xa->value1len);
+                    send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
+                    send_add_tlv(context, BTRFS_SEND_A_XATTR_NAME, xa->name, xa->namelen);
+                    send_add_tlv(context, BTRFS_SEND_A_XATTR_DATA, xa->value1, xa->value1len);
                     send_command_finish(context, pos);
                 }
             }
