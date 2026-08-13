@@ -2552,7 +2552,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     traverse_ptr tp2;
                     bool b2;
 
-                    searchkey.objectid = EXTENT_CSUM_ID;
+                    searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
                     searchkey.type = BTRFS_EXTENT_CSUM_KEY;
                     searchkey.offset = extent_start;
 
@@ -3019,7 +3019,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
                 RtlInitializeBitMap(&bmp, bmparr, bmplen);
                 RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
-                searchkey.objectid = EXTENT_CSUM_ID;
+                searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
                 searchkey.type = BTRFS_EXTENT_CSUM_KEY;
                 searchkey.offset = tp.item->key.objectid;
 

@@ -1898,7 +1898,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
         RtlInitializeBitMap(&bmp, bmparr, bmplen);
         RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
-        searchkey.objectid = EXTENT_CSUM_ID;
+        searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
         searchkey.type = BTRFS_EXTENT_CSUM_KEY;
         searchkey.offset = dr->address;
 
@@ -2423,7 +2423,7 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
     NTSTATUS Status;
     struct btrfs_balance_item* bi;
 
-    searchkey.objectid = BALANCE_ITEM_ID;
+    searchkey.objectid = BTRFS_BALANCE_OBJECTID;
     searchkey.type = BTRFS_TEMPORARY_ITEM_KEY;
     searchkey.offset = 0;
 
@@ -2467,7 +2467,7 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
         copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->sys);
     }
 
-    Status = insert_tree_item(Vcb, Vcb->root_root, BALANCE_ITEM_ID, BTRFS_TEMPORARY_ITEM_KEY, 0, bi, sizeof(struct btrfs_balance_item), NULL, NULL);
+    Status = insert_tree_item(Vcb, Vcb->root_root, BTRFS_BALANCE_OBJECTID, BTRFS_TEMPORARY_ITEM_KEY, 0, bi, sizeof(struct btrfs_balance_item), NULL, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(bi);
@@ -2495,7 +2495,7 @@ static NTSTATUS remove_balance_item(device_extension* Vcb) {
     traverse_ptr tp;
     NTSTATUS Status;
 
-    searchkey.objectid = BALANCE_ITEM_ID;
+    searchkey.objectid = BTRFS_BALANCE_OBJECTID;
     searchkey.type = BTRFS_TEMPORARY_ITEM_KEY;
     searchkey.offset = 0;
 
@@ -3674,7 +3674,7 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
     OBJECT_ATTRIBUTES oa;
     int i;
 
-    searchkey.objectid = BALANCE_ITEM_ID;
+    searchkey.objectid = BTRFS_BALANCE_OBJECTID;
     searchkey.type = BTRFS_TEMPORARY_ITEM_KEY;
     searchkey.offset = 0;
 

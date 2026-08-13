@@ -456,7 +456,7 @@ NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb
     bool b;
     void* ptr = csum;
 
-    searchkey.objectid = EXTENT_CSUM_ID;
+    searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
     searchkey.type = BTRFS_EXTENT_CSUM_KEY;
     searchkey.offset = start;
 

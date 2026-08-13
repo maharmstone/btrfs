@@ -2609,7 +2609,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
     TRACE("(%p, %I64x, %lx, %p, %p)\n", Vcb, address, length, csum, Irp);
 
-    searchkey.objectid = EXTENT_CSUM_ID;
+    searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
     searchkey.type = BTRFS_EXTENT_CSUM_KEY;
     searchkey.offset = address;
 
@@ -2633,7 +2633,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
                 RtlCopyMemory(checksums, data, il * Vcb->csum_size);
 
-                Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, BTRFS_EXTENT_CSUM_KEY, off, checksums,
+                Status = insert_tree_item(Vcb, Vcb->checksum_root, BTRFS_EXTENT_CSUM_OBJECTID, BTRFS_EXTENT_CSUM_KEY, off, checksums,
                                           il * Vcb->csum_size, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
@@ -2663,7 +2663,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         else
             startaddr = address;
 
-        searchkey.objectid = EXTENT_CSUM_ID;
+        searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
         searchkey.type = BTRFS_EXTENT_CSUM_KEY;
         searchkey.offset = address + (length << Vcb->sector_shift);
 
@@ -2702,7 +2702,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         RtlInitializeBitMap(&bmp, bmparr, len);
         RtlSetAllBits(&bmp);
 
-        searchkey.objectid = EXTENT_CSUM_ID;
+        searchkey.objectid = BTRFS_EXTENT_CSUM_OBJECTID;
         searchkey.type = BTRFS_EXTENT_CSUM_KEY;
         searchkey.offset = address;
 
@@ -2784,7 +2784,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
 
                 off = startaddr + ((uint64_t)index << Vcb->sector_shift);
 
-                Status = insert_tree_item(Vcb, Vcb->checksum_root, EXTENT_CSUM_ID, BTRFS_EXTENT_CSUM_KEY, off, data, Vcb->csum_size * rl, NULL, Irp);
+                Status = insert_tree_item(Vcb, Vcb->checksum_root, BTRFS_EXTENT_CSUM_OBJECTID, BTRFS_EXTENT_CSUM_KEY, off, data, Vcb->csum_size * rl, NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     ExFreePool(data);
@@ -5573,7 +5573,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             return Status;
         }
 
-        searchkey.objectid = FREE_SPACE_CACHE_ID;
+        searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
         searchkey.type = 0;
         searchkey.offset = c->offset;
 

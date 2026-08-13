@@ -65,7 +65,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
 
     InitializeListHead(&rollback);
 
-    searchkey.objectid = FREE_SPACE_CACHE_ID;
+    searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
     searchkey.type = 0;
     searchkey.offset = 0;
 
@@ -478,7 +478,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     TRACE("(%p, %I64x)\n", Vcb, c->offset);
 
-    searchkey.objectid = FREE_SPACE_CACHE_ID;
+    searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
     searchkey.type = 0;
     searchkey.offset = c->offset;
 
@@ -1162,7 +1162,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        searchkey.objectid = FREE_SPACE_CACHE_ID;
+        searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
         searchkey.type = 0;
         searchkey.offset = c->offset;
 
@@ -1190,7 +1190,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         fsi->location.type = BTRFS_INODE_ITEM_KEY;
         fsi->location.offset = 0;
 
-        Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(struct btrfs_free_space_header), NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->root_root, BTRFS_FREE_SPACE_OBJECTID, 0, c->offset, fsi, sizeof(struct btrfs_free_space_header), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(fsi);
@@ -1231,7 +1231,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         // add free_space entry to tree cache
 
-        searchkey.objectid = FREE_SPACE_CACHE_ID;
+        searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
         searchkey.type = 0;
         searchkey.offset = c->offset;
 
@@ -1346,7 +1346,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             tp.tree->write = true;
         }
 
-        searchkey.objectid = FREE_SPACE_CACHE_ID;
+        searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
         searchkey.type = 0;
         searchkey.offset = c->offset;
 
@@ -1763,7 +1763,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
 
     // update free_space item
 
-    searchkey.objectid = FREE_SPACE_CACHE_ID;
+    searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
     searchkey.type = 0;
     searchkey.offset = c->offset;
 
