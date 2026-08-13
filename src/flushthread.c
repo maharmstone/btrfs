@@ -1122,7 +1122,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+    if (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || t->header.flags & BTRFS_HEADER_FLAG_RELOC || !(t->header.flags & BTRFS_BACKREF_REV_MASK)) {
         bool unique = rc > 1 ? false : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp, rollback) : false);
         uint64_t offset;
 
@@ -1185,7 +1185,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 return Status;
                             }
 
-                            if ((flags & BTRFS_BLOCK_FLAG_FULL_BACKREF && unique) || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+                            if ((flags & BTRFS_BLOCK_FLAG_FULL_BACKREF && unique) || !(t->header.flags & BTRFS_BACKREF_REV_MASK)) {
                                 uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, t->header.bytenr, Irp);
 
                                 if (sdrrc > 0) {
@@ -1261,7 +1261,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                         return Status;
                     }
 
-                    if (unique || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+                    if (unique || !(t->header.flags & BTRFS_BACKREF_REV_MASK)) {
                         uint64_t sbrrc = find_extent_shared_tree_refcount(Vcb, td->treeholder.address, t->header.bytenr, Irp);
 
                         if (sbrrc > 0) {
@@ -1309,7 +1309,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
         // FIXME - clear shared flag if unique?
 
-        t->header.flags &= ~HEADER_FLAG_SHARED_BACKREF;
+        t->header.flags &= ~BTRFS_HEADER_FLAG_RELOC;
     }
 
     if (rc > 1 || t->header.owner == t->root->id) {
@@ -1987,7 +1987,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             t->header.bytenr = t->new_address;
             t->header.generation = Vcb->superblock.generation;
             t->header.owner = t->root->id;
-            t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
+            t->header.flags |= BTRFS_MIXED_BACKREF_REV << BTRFS_BACKREF_REV_SHIFT;
             memcpy(t->header.fsid, Vcb->superblock.metadata_uuid, BTRFS_UUID_SIZE);
             t->has_address = true;
 
@@ -3010,7 +3010,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     nt->header.bytenr = 0;
     nt->header.generation = Vcb->superblock.generation;
     nt->header.nritems = t->header.nritems - numitems;
-    nt->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
+    nt->header.flags = (BTRFS_MIXED_BACKREF_REV << BTRFS_BACKREF_REV_SHIFT) | BTRFS_HEADER_FLAG_WRITTEN;
 
     nt->has_address = false;
     nt->Vcb = Vcb;
@@ -3133,7 +3133,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     pt->header.bytenr = 0;
     pt->header.nritems = 2;
     pt->header.level = nt->header.level + 1;
-    pt->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
+    pt->header.flags = (BTRFS_MIXED_BACKREF_REV << BTRFS_BACKREF_REV_SHIFT) | BTRFS_HEADER_FLAG_WRITTEN;
 
     pt->has_address = false;
     pt->Vcb = Vcb;

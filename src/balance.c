@@ -434,7 +434,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
         }
     }
 
-    if (ei->flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || mr->data->flags & HEADER_FLAG_SHARED_BACKREF || !(mr->data->flags & HEADER_FLAG_MIXED_BACKREF)) {
+    if (ei->flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || mr->data->flags & BTRFS_HEADER_FLAG_RELOC || !(mr->data->flags & BTRFS_BACKREF_REV_MASK)) {
         if (mr->data->level > 0) {
             uint16_t i;
             struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)&mr->data[1];

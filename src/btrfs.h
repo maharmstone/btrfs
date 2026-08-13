@@ -148,9 +148,12 @@ struct btrfs_key {
     uint64_t offset;
 };
 
-#define HEADER_FLAG_WRITTEN         0x000000000000001
-#define HEADER_FLAG_SHARED_BACKREF  0x000000000000002
-#define HEADER_FLAG_MIXED_BACKREF   0x100000000000000
+#define BTRFS_HEADER_FLAG_WRITTEN         0x000000000000001
+#define BTRFS_HEADER_FLAG_RELOC           0x000000000000002
+
+#define BTRFS_MIXED_BACKREF_REV           ((uint64_t)1)
+#define BTRFS_BACKREF_REV_SHIFT           56
+#define BTRFS_BACKREF_REV_MASK            0xff00000000000000
 
 struct btrfs_header {
     uint8_t csum[32];

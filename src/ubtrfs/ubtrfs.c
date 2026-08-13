@@ -626,7 +626,7 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size,
 
         r->header.nritems = 0;
         memcpy(r->header.fsid, fsuuid, BTRFS_UUID_SIZE);
-        r->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
+        r->header.flags = (BTRFS_MIXED_BACKREF_REV << BTRFS_BACKREF_REV_SHIFT) | BTRFS_HEADER_FLAG_WRITTEN;
         memcpy(r->header.chunk_tree_uuid, chunkuuid, BTRFS_UUID_SIZE);
         r->header.generation = 1;
         r->header.owner = r->id;
