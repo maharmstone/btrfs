@@ -431,11 +431,6 @@ struct btrfs_extent_ref_v0 {
     uint32_t count;
 };
 
-typedef struct {
-    uint64_t offset;
-    uint32_t count;
-} SHARED_DATA_REF;
-
 struct btrfs_shared_data_ref {
     uint32_t count;
 };
