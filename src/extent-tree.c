@@ -2543,6 +2543,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
+    uint64_t inline_rc;
 
     searchkey.objectid = address;
     searchkey.type = TYPE_EXTENT_ITEM;
@@ -2563,6 +2564,8 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
         ERR("extent %I64x had size %I64x, not %I64x as expected\n", address, tp.item->key.offset, size);
         return 0;
     }
+
+    inline_rc = 0;
 
     if (tp.item->size >= sizeof(struct btrfs_extent_item)) {
         struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
@@ -2594,6 +2597,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
 
                     ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
                     len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                    inline_rc += sectedr->count;
 
                     if (sectedr->root == root && sectedr->objectid == objid && sectedr->offset == offset)
                         return sectedr->count;
@@ -2602,6 +2606,8 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
                 }
 
                 case TYPE_SHARED_DATA_REF: {
+                    struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
+
                     if (len < sizeof(struct btrfs_shared_data_ref)) {
                         ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid,
                             tp.item->key.type, tp.item->key.offset);
@@ -2610,6 +2616,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
 
                     ptr += sizeof(struct btrfs_shared_data_ref);
                     len -= sizeof(struct btrfs_shared_data_ref);
+                    inline_rc += sdr->count;
 
                     break;
                 }
@@ -2621,6 +2628,9 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
                     return 0;
             }
         }
+
+        if (inline_rc == ei->refs)
+            return 0;
     }
 
     searchkey.objectid = address;
