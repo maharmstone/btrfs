@@ -152,7 +152,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
     }
 
     // regenerate free space tree
-    if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE) {
+    if (Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE) {
         LIST_ENTRY* le;
 
         ExAcquireResourceSharedLite(&Vcb->chunk_lock, true);
@@ -890,7 +890,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
     space* s;
     NTSTATUS Status;
 
-    if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID) {
+    if (Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE && Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID) {
         Status = load_stored_free_space_tree(Vcb, c, Irp);
 
         if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
@@ -2110,7 +2110,7 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     chunk* c;
 
-    Vcb->superblock.compat_ro_flags |= BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID;
+    Vcb->superblock.compat_ro_flags |= BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID;
 
     ExAcquireResourceSharedLite(&Vcb->chunk_lock, true);
 

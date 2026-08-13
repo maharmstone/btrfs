@@ -660,7 +660,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     Status = STATUS_SUCCESS;
 
     if (flags & BTRFS_BLOCK_GROUP_RAID5 || flags & BTRFS_BLOCK_GROUP_RAID6)
-        Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_RAID56;
+        Vcb->superblock.incompat_flags |= BTRFS_FEATURE_INCOMPAT_RAID56;
 
 end:
     if (stripes)

@@ -1438,7 +1438,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                 uint8_t* newdata;
 
                 if (td->size + bi->datalen > maxlen) {
-                    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                         struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)bi->data;
                         struct btrfs_inode_extref* ier;
                         uint16_t ierlen;
@@ -1699,7 +1699,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                     } while (len > 0);
 
                     if (!changed) {
-                        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                        if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                             TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
 
                             add_delete_inode_extref(Vcb, bi, listhead);
@@ -2208,7 +2208,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                 InsertHeadList(&tp.item->list_entry, &td->list_entry);
             }
 
-            if (bi->operation == Batch_DeleteInodeRef && cmp != 0 && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+            if (bi->operation == Batch_DeleteInodeRef && cmp != 0 && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                 add_delete_inode_extref(Vcb, bi, &items);
             }
 
@@ -2271,7 +2271,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                                 if (td) {
                                     InsertHeadList(le3->Blink, &td->list_entry);
                                     inserted = true;
-                                } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                                } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                                     add_delete_inode_extref(Vcb, bi2, &items);
                                 }
                             } else {
@@ -2291,7 +2291,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                             if (td) {
                                 InsertHeadList(le3->Blink, &td->list_entry);
                                 inserted = true;
-                            } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                            } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                                 add_delete_inode_extref(Vcb, bi2, &items);
                             }
                             break;
@@ -2310,7 +2310,7 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
 
                             listhead = td;
                         }
-                    } else if (!inserted && bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF) {
+                    } else if (!inserted && bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                         add_delete_inode_extref(Vcb, bi2, &items);
                     }
 

@@ -834,7 +834,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     if (!find_metadata_address_in_chunk(Vcb, c, &address))
         return false;
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) {
         bool b = insert_tree_extent_skinny(Vcb, level, root_id, c, address, Irp, rollback);
 
         if (b)
@@ -1097,7 +1097,7 @@ static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST
     }
 
     searchkey.objectid = t->header.bytenr;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -1598,7 +1598,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, bool no_cache, PIRP Irp,
         le = le->Flink;
     }
 
-    if (!no_cache && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
+    if (!no_cache && !(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)) {
         ExAcquireResourceSharedLite(&Vcb->chunk_lock, true);
         Status = update_chunk_caches(Vcb, Irp, rollback);
         ExReleaseResourceLite(&Vcb->chunk_lock);
@@ -1865,7 +1865,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
                     t->paritem->treeholder.generation = Vcb->superblock.generation;
                 }
 
-                if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
+                if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)) {
                     struct btrfs_extent_item* ei;
                     struct btrfs_tree_block_info* tbi;
 
@@ -3256,7 +3256,7 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
 
     if (t->has_address) {
         searchkey.objectid = t->header.bytenr;
-        searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+        searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -3538,7 +3538,7 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
     traverse_ptr tp;
     NTSTATUS Status;
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) {
         searchkey.objectid = address;
         searchkey.type = BTRFS_METADATA_ITEM_KEY;
         searchkey.offset = t->header.level;
@@ -5100,7 +5100,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
             ext->inserted = false;
 
-            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && ext->offset > last_end) {
+            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_NO_HOLES) && ext->offset > last_end) {
                 Status = insert_sparse_extent(fcb, batchlist, last_end, ext->offset - last_end);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_sparse_extent returned %08lx\n", Status);
@@ -5130,7 +5130,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
             if (ed->type == BTRFS_FILE_EXTENT_INLINE)
                 extents_inline = true;
 
-            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
+            if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_NO_HOLES)) {
                 if (ed->type == BTRFS_FILE_EXTENT_INLINE)
                     last_end = ext->offset + ed->ram_bytes;
                 else
@@ -5140,7 +5140,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
             le = le->Flink;
         }
 
-        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES) && !extents_inline &&
+        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_NO_HOLES) && !extents_inline &&
             sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize) > last_end) {
             Status = insert_sparse_extent(fcb, batchlist, last_end, sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize) - last_end);
             if (!NT_SUCCESS(Status)) {
@@ -5761,7 +5761,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
 
         if (clear_flag)
-            Vcb->superblock.incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_RAID56;
+            Vcb->superblock.incompat_flags &= ~BTRFS_FEATURE_INCOMPAT_RAID56;
     }
 
     // clear raid1c34 incompat flag if dropping last RAID5/6 chunk
@@ -5783,7 +5783,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         }
 
         if (clear_flag)
-            Vcb->superblock.incompat_flags &= ~BTRFS_INCOMPAT_FLAGS_RAID1C34;
+            Vcb->superblock.incompat_flags &= ~BTRFS_FEATURE_INCOMPAT_RAID1C34;
     }
 
     Vcb->superblock.bytes_used -= c->oldused;
@@ -7696,7 +7696,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             goto end;
         }
 
-        if (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)) {
+        if (!(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)) {
             if (!no_cache) {
                 Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
                 if (!NT_SUCCESS(Status)) {

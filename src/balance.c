@@ -331,7 +331,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     uint8_t* ptr;
 
     inline_len = sizeof(struct btrfs_extent_item);
-    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
+    if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA))
         inline_len += sizeof(struct btrfs_tree_block_info);
 
     sort_metadata_reloc_refs(mr);
@@ -364,7 +364,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     ei->flags = mr->ei->flags;
     ptr = (uint8_t*)&ei[1];
 
-    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
+    if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)) {
         struct btrfs_tree_block_info* ei2 = (struct btrfs_tree_block_info*)ptr;
 
         ei2->key = *(struct btrfs_key*)&mr->data[1];
@@ -395,7 +395,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
         le = le->Flink;
     }
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)
         Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, BTRFS_METADATA_ITEM_KEY, mr->data->level, ei, inline_len, NULL, NULL);
     else
         Status = insert_tree_item(Vcb, Vcb->extent_root, mr->new_address, BTRFS_EXTENT_ITEM_KEY, Vcb->superblock.nodesize, ei, inline_len, NULL, NULL);
@@ -727,7 +727,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
 
                 if (mr->system)
                     flags = Vcb->system_flags;
-                else if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
+                else if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS)
                     flags = Vcb->data_flags;
                 else
                     flags = Vcb->metadata_flags;
@@ -3116,7 +3116,7 @@ void __stdcall balance_thread(void* context) {
         Vcb->system_flags = BTRFS_BLOCK_GROUP_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
     }
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS) {
         if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED)
             RtlCopyMemory(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &Vcb->balance.opts[BALANCE_OPTS_DATA], sizeof(btrfs_balance_opts));
         else if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED)

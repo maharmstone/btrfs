@@ -52,12 +52,12 @@
 
 #include <ntstrsafe.h>
 
-#define INCOMPAT_SUPPORTED (BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL | BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS | \
-                            BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO | BTRFS_INCOMPAT_FLAGS_BIG_METADATA | BTRFS_INCOMPAT_FLAGS_RAID56 | \
-                            BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA | BTRFS_INCOMPAT_FLAGS_NO_HOLES | \
-                            BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD | BTRFS_INCOMPAT_FLAGS_METADATA_UUID | BTRFS_INCOMPAT_FLAGS_RAID1C34)
-#define COMPAT_RO_SUPPORTED (BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE | BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID | \
-                             BTRFS_COMPAT_RO_FLAGS_VERITY | BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
+#define INCOMPAT_SUPPORTED (BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF | BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL | BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS | \
+                            BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO | BTRFS_FEATURE_INCOMPAT_BIG_METADATA | BTRFS_FEATURE_INCOMPAT_RAID56 | \
+                            BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF | BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA | BTRFS_FEATURE_INCOMPAT_NO_HOLES | \
+                            BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD | BTRFS_FEATURE_INCOMPAT_METADATA_UUID | BTRFS_FEATURE_INCOMPAT_RAID1C34)
+#define COMPAT_RO_SUPPORTED (BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE | BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID | \
+                             BTRFS_FEATURE_COMPAT_RO_VERITY | BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
 
 static const WCHAR device_name[] = {'\\','B','t','r','f','s',0};
 static const WCHAR dosdevice_name[] = {'\\','D','o','s','D','e','v','i','c','e','s','\\','B','t','r','f','s',0};
@@ -3066,7 +3066,7 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
             break;
 
         case BTRFS_BLOCK_GROUP_TREE_OBJECTID:
-            if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
+            if (Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
                 Vcb->block_group_root = r;
             break;
     }
@@ -3758,7 +3758,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     if (Vcb->system_flags == 0)
         Vcb->system_flags = BTRFS_BLOCK_GROUP_SYSTEM | (Vcb->superblock.num_devices > 1 ? BTRFS_BLOCK_GROUP_RAID1 : BTRFS_BLOCK_GROUP_DUP);
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS) {
         Vcb->metadata_flags |= BTRFS_BLOCK_GROUP_DATA;
         Vcb->data_flags = Vcb->metadata_flags;
     }
@@ -3873,7 +3873,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     NTSTATUS Status;
     root* r;
 
-    if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE) {
+    if (Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE) {
         r = Vcb->block_group_root;
 
         if (!r) {
@@ -3998,7 +3998,7 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         }
     }
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_DEFAULT_SUBVOL) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_DEFAULT_SUBVOL) {
         NTSTATUS Status;
         struct btrfs_key searchkey;
         traverse_ptr tp;
@@ -4620,7 +4620,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_METADATA_UUID)) {
+    if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_METADATA_UUID)) {
         memcpy(Vcb->superblock.metadata_uuid, Vcb->superblock.fsid,
                BTRFS_UUID_SIZE);
     }
@@ -4637,7 +4637,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     calculate_sector_shift(Vcb);
 
     Vcb->superblock.generation++;
-    Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF;
+    Vcb->superblock.incompat_flags |= BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF;
 
     if (Vcb->superblock.log_root != 0) {
         FIXME("FIXME - replay transaction log (clearing for now)\n");
@@ -4820,11 +4820,11 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     // We've already increased the generation by one
     if (!Vcb->readonly && (
         Vcb->options.clear_cache ||
-        (!(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE) && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) ||
-        (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID)))) {
+        (!(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE) && Vcb->superblock.generation - 1 != Vcb->superblock.cache_generation) ||
+        (Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE && !(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID)))) {
         if (Vcb->options.clear_cache)
             WARN("ClearCache option was set, clearing cache...\n");
-        else if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE && !(Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE_VALID))
+        else if (Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE && !(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE_VALID))
             WARN("clearing free-space tree created by buggy Linux driver\n");
         else
             WARN("generation was %I64x, free-space cache generation was %I64x; clearing cache...\n", Vcb->superblock.generation - 1, Vcb->superblock.cache_generation);

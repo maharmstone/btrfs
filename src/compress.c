@@ -874,13 +874,13 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
         type = fcb->Vcb->options.compress_type;
     else {
-        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
+        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
             type = BTRFS_COMPRESSION_ZSTD;
-        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
+        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
             type = BTRFS_COMPRESSION_ZSTD;
-        else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
+        else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
             type = BTRFS_COMPRESSION_LZO;
-        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
+        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
             type = BTRFS_COMPRESSION_LZO;
         else
             type = BTRFS_COMPRESSION_ZLIB;
@@ -947,9 +947,9 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
             parts[i].outlen = parts[i].inlen - parts[i].cj->space_left;
 
             if (type == BTRFS_COMPRESSION_LZO)
-                fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_LZO;
+                fcb->Vcb->superblock.incompat_flags |= BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO;
             else if (type == BTRFS_COMPRESSION_ZSTD)
-                fcb->Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_COMPRESS_ZSTD;
+                fcb->Vcb->superblock.incompat_flags |= BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD;
 
             if ((parts[i].outlen & (fcb->Vcb->superblock.sectorsize - 1)) != 0) {
                 unsigned int newlen = (unsigned int)sector_align(parts[i].outlen, fcb->Vcb->superblock.sectorsize);

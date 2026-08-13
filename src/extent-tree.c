@@ -793,7 +793,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
     bool skinny;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -810,7 +810,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
         eisize = sizeof(struct btrfs_extent_item);
 
-        if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
+        if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA))
             eisize += sizeof(struct btrfs_tree_block_info);
 
         eisize += sizeof(struct btrfs_extent_inline_ref);
@@ -826,7 +826,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         ei->flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
         ptr = (uint8_t*)&ei[1];
 
-        if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
+        if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)) {
             struct btrfs_tree_block_info* ei2 = (struct btrfs_tree_block_info*)ptr;
             ei2->key = *firstitem;
             ei2->level = level;
@@ -837,7 +837,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         eir->type = BTRFS_TREE_BLOCK_REF_KEY;
         eir->offset = offset;
 
-        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
+        if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_METADATA_ITEM_KEY, level, ei, eisize, NULL, Irp);
         else
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_EXTENT_ITEM_KEY, size, ei, eisize, NULL, Irp);
@@ -1085,7 +1085,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     bool skinny;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -1102,7 +1102,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
         eisize = sizeof(struct btrfs_extent_item);
 
-        if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA))
+        if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA))
             eisize += sizeof(struct btrfs_tree_block_info);
 
         eisize += sizeof(struct btrfs_extent_inline_ref);
@@ -1118,7 +1118,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         ei->flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
         ptr = (uint8_t*)&ei[1];
 
-        if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
+        if (!(Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA)) {
             struct btrfs_tree_block_info* ei2 = (struct btrfs_tree_block_info*)ptr;
             ei2->key = *firstitem;
             ei2->level = level;
@@ -1129,7 +1129,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         eir->type = BTRFS_SHARED_BLOCK_REF_KEY;
         eir->offset = offset;
 
-        if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+        if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) {
             Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_METADATA_ITEM_KEY,
                                       level, ei, eisize, NULL, Irp);
         } else {
@@ -2012,7 +2012,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
     struct btrfs_extent_item* newei;
     bool skinny = false;
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) {
         searchkey.objectid = address;
         searchkey.type = BTRFS_METADATA_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
@@ -2283,7 +2283,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     bool skinny = false;
     struct btrfs_extent_item* newei;
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) {
         searchkey.objectid = address;
         searchkey.type = BTRFS_METADATA_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
@@ -2663,7 +2663,7 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
     struct btrfs_extent_item* ei;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2672,7 +2672,7 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
         return 0;
     }
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.objectid == address &&
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA && tp.item->key.objectid == address &&
         tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
         ei = (struct btrfs_extent_item*)tp.item->data;
 
@@ -2851,7 +2851,7 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
     struct btrfs_extent_item* ei;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2860,7 +2860,7 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
         return 0;
     }
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.objectid == address &&
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA && tp.item->key.objectid == address &&
         tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
         ei = (struct btrfs_extent_item*)tp.item->data;
 
@@ -2892,7 +2892,7 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     struct btrfs_extent_item* ei;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2901,7 +2901,7 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
         return;
     }
 
-    if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.objectid == address &&
+    if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA && tp.item->key.objectid == address &&
         tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
         ei = (struct btrfs_extent_item*)tp.item->data;
         ei->flags = flags;
@@ -3138,7 +3138,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     uint8_t* ptr;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -3272,7 +3272,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     uint8_t* ptr;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);

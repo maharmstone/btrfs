@@ -155,7 +155,7 @@ typedef struct {
 
 HMODULE module;
 ULONG def_sector_size = 0, def_node_size = 0;
-uint64_t def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
+uint64_t def_incompat_flags = BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF | BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA;
 uint64_t def_compat_ro_flags = 0;
 uint16_t def_csum_type = BTRFS_CSUM_TYPE_CRC32;
 
@@ -1068,12 +1068,12 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     fs_root = add_root(&roots, BTRFS_FS_TREE_OBJECTID);
     reloc_root = add_root(&roots, BTRFS_DATA_RELOC_TREE_OBJECTID);
 
-    if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)
+    if (compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)
         free_space_root = add_root(&roots, BTRFS_FREE_SPACE_TREE_OBJECTID);
     else
         free_space_root = NULL;
 
-    if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
+    if (compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_BLOCK_GROUP_TREE)
         block_group_root = add_root(&roots, BTRFS_BLOCK_GROUP_TREE_OBJECTID);
     else
         block_group_root = NULL;
@@ -1089,10 +1089,10 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
 
     metadata_flags = BTRFS_BLOCK_GROUP_METADATA;
 
-    if (!ssd && !(incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS))
+    if (!ssd && !(incompat_flags & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS))
         metadata_flags |= BTRFS_BLOCK_GROUP_DUP;
 
-    if (incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
+    if (incompat_flags & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS)
         metadata_flags |= BTRFS_BLOCK_GROUP_DATA;
 
     metadata_chunk = add_chunk(&chunks, metadata_flags, chunk_root, &dev, dev_root,
@@ -1107,7 +1107,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     init_fs_tree(fs_root, node_size);
     init_fs_tree(reloc_root, node_size);
 
-    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root, incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA);
+    assign_addresses(&roots, sys_chunk, metadata_chunk, node_size, root_root, extent_root, incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA);
 
     add_block_group_items(&chunks, block_group_root ? block_group_root : extent_root);
 
@@ -1431,7 +1431,7 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     do_full_trim(h);
 
     incompat_flags = def_incompat_flags;
-    incompat_flags |= BTRFS_INCOMPAT_FLAGS_MIXED_BACKREF | BTRFS_INCOMPAT_FLAGS_BIG_METADATA;
+    incompat_flags |= BTRFS_FEATURE_INCOMPAT_MIXED_BACKREF | BTRFS_FEATURE_INCOMPAT_BIG_METADATA;
 
     compat_ro_flags = def_compat_ro_flags;
 
