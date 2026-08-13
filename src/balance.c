@@ -2453,17 +2453,17 @@ static NTSTATUS add_balance_item(device_extension* Vcb) {
     RtlZeroMemory(bi, sizeof(struct btrfs_balance_item));
 
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED) {
-        bi->flags |= BALANCE_FLAGS_DATA;
+        bi->flags |= BTRFS_BALANCE_DATA;
         copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bi->data);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) {
-        bi->flags |= BALANCE_FLAGS_METADATA;
+        bi->flags |= BTRFS_BALANCE_METADATA;
         copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->meta);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED) {
-        bi->flags |= BALANCE_FLAGS_SYSTEM;
+        bi->flags |= BTRFS_BALANCE_SYSTEM;
         copy_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->sys);
     }
 
@@ -3697,13 +3697,13 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
     bi = (struct btrfs_balance_item*)tp.item->data;
 
-    if (bi->flags & BALANCE_FLAGS_DATA)
+    if (bi->flags & BTRFS_BALANCE_DATA)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_DATA], &bi->data);
 
-    if (bi->flags & BALANCE_FLAGS_METADATA)
+    if (bi->flags & BTRFS_BALANCE_METADATA)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_METADATA], &bi->meta);
 
-    if (bi->flags & BALANCE_FLAGS_SYSTEM)
+    if (bi->flags & BTRFS_BALANCE_SYSTEM)
         load_balance_args(&Vcb->balance.opts[BALANCE_OPTS_SYSTEM], &bi->sys);
 
     // do the heuristics that Linux driver does

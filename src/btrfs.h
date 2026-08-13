@@ -453,9 +453,9 @@ struct btrfs_dev_extent {
     uint8_t chunk_tree_uuid[BTRFS_UUID_SIZE];
 };
 
-#define BALANCE_FLAGS_DATA          0x1
-#define BALANCE_FLAGS_SYSTEM        0x2
-#define BALANCE_FLAGS_METADATA      0x4
+#define BTRFS_BALANCE_DATA          0x1
+#define BTRFS_BALANCE_SYSTEM        0x2
+#define BTRFS_BALANCE_METADATA      0x4
 
 #define BTRFS_BALANCE_ARGS_PROFILES         0x001
 #define BTRFS_BALANCE_ARGS_USAGE            0x002
