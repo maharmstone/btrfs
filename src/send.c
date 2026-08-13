@@ -3610,7 +3610,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     if (fcb->inode != SUBVOL_ROOT_INODE || fcb == Vcb->root_fileref->fcb)
         return STATUS_INVALID_PARAMETER;
 
-    if (!Vcb->readonly && !(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY))
+    if (!Vcb->readonly && !(fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY))
         return STATUS_INVALID_PARAMETER;
 
     if (data) {
@@ -3672,7 +3672,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
             parsubvol = parfcb->subvol;
             ObDereferenceObject(fileobj);
 
-            if (!Vcb->readonly && !(parsubvol->root_item.flags & BTRFS_SUBVOL_READONLY))
+            if (!Vcb->readonly && !(parsubvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY))
                 return STATUS_INVALID_PARAMETER;
 
             if (parsubvol == fcb->subvol)
@@ -3726,7 +3726,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
                 clones[i] = clonefcb->subvol;
                 ObDereferenceObject(fileobj);
 
-                if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_SUBVOL_READONLY)) {
+                if (!Vcb->readonly && !(clones[i]->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)) {
                     ExFreePool(clones);
                     return STATUS_INVALID_PARAMETER;
                 }

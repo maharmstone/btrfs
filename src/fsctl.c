@@ -396,7 +396,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     r->root_item.otime = now;
 
     if (readonly)
-        r->root_item.flags |= BTRFS_SUBVOL_READONLY;
+        r->root_item.flags |= BTRFS_ROOT_SUBVOL_RDONLY;
 
     r->treeholder.address = address;
 
@@ -933,7 +933,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     r->root_item.inode.flags = BTRFS_INODE_ROOT_ITEM_INIT;
 
     if (bcs->readonly)
-        r->root_item.flags |= BTRFS_SUBVOL_READONLY;
+        r->root_item.flags |= BTRFS_ROOT_SUBVOL_RDONLY;
 
     r->root_item.root_dirid = SUBVOL_ROOT_INODE;
     r->root_item.bytes_used = Vcb->superblock.nodesize;
@@ -967,7 +967,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     rootfcb->atts = get_file_attributes(Vcb, rootfcb->subvol, rootfcb->inode, rootfcb->type, false, true, Irp);
 
-    if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
+    if (r->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
         rootfcb->atts |= FILE_ATTRIBUTE_READONLY;
 
     SeCaptureSubjectContext(&subjcont);
@@ -4305,7 +4305,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
                 fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
 
             if (fcb->inode == SUBVOL_ROOT_INODE) {
-                if (fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+                if (fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
                     fcb->atts |= FILE_ATTRIBUTE_READONLY;
                 else
                     fcb->atts &= ~FILE_ATTRIBUTE_READONLY;
@@ -4499,7 +4499,7 @@ static NTSTATUS reserve_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, P
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
 
-    if (!(fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY))
+    if (!(fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY))
         return STATUS_INVALID_PARAMETER;
 
     if (fcb->subvol->reserved)

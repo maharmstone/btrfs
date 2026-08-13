@@ -1040,7 +1040,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                                 fcb->atts &= ~FILE_ATTRIBUTE_DIRECTORY;
 
                             if (inode == SUBVOL_ROOT_INODE) {
-                                if (subvol->root_item.flags & BTRFS_SUBVOL_READONLY)
+                                if (subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
                                     fcb->atts |= FILE_ATTRIBUTE_READONLY;
                                 else
                                     fcb->atts &= ~FILE_ATTRIBUTE_READONLY;

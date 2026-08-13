@@ -2673,7 +2673,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
                 dosnum &= ~FILE_ATTRIBUTE_DIRECTORY;
 
             if (inode == SUBVOL_ROOT_INODE) {
-                if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
+                if (r->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
                     dosnum |= FILE_ATTRIBUTE_READONLY;
                 else
                     dosnum &= ~FILE_ATTRIBUTE_READONLY;
@@ -2705,7 +2705,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     att |= FILE_ATTRIBUTE_ARCHIVE;
 
     if (inode == SUBVOL_ROOT_INODE) {
-        if (r->root_item.flags & BTRFS_SUBVOL_READONLY)
+        if (r->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
             att |= FILE_ATTRIBUTE_READONLY;
         else
             att &= ~FILE_ATTRIBUTE_READONLY;

@@ -182,7 +182,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
     }
 
     // don't allow readonly subvol to be made r/w if send operation running on it
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->root_item.flags & BTRFS_SUBVOL_READONLY &&
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY &&
         fcb->subvol->send_ops > 0) {
         Status = STATUS_DEVICE_NOT_READY;
         goto end;
@@ -280,9 +280,9 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
 
         if (fcb->inode == SUBVOL_ROOT_INODE) {
             if (fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)
-                fcb->subvol->root_item.flags |= BTRFS_SUBVOL_READONLY;
+                fcb->subvol->root_item.flags |= BTRFS_ROOT_SUBVOL_RDONLY;
             else
-                fcb->subvol->root_item.flags &= ~BTRFS_SUBVOL_READONLY;
+                fcb->subvol->root_item.flags &= ~BTRFS_ROOT_SUBVOL_RDONLY;
         }
 
         inode_item_changed = true;

@@ -1010,7 +1010,7 @@ __inline static uint64_t sector_align(_In_ uint64_t n, _In_ uint64_t a) {
 }
 
 __inline static bool is_subvol_readonly(root* r, PIRP Irp) {
-    if (!(r->root_item.flags & BTRFS_SUBVOL_READONLY))
+    if (!(r->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY))
         return false;
 
     if (!r->reserved)
