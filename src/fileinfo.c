@@ -175,14 +175,14 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         goto end;
     }
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fcb->subvol, Irp) &&
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && is_subvol_readonly(fcb->subvol, Irp) &&
         (fbi->FileAttributes == 0 || fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
 
     // don't allow readonly subvol to be made r/w if send operation running on it
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY &&
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY &&
         fcb->subvol->send_ops > 0) {
         Status = STATUS_DEVICE_NOT_READY;
         goto end;
@@ -264,7 +264,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
 
         if (defda == fbi->FileAttributes)
             fcb->atts_deleted = true;
-        else if (fcb->inode == SUBVOL_ROOT_INODE && (defda | FILE_ATTRIBUTE_READONLY) == (fbi->FileAttributes | FILE_ATTRIBUTE_READONLY))
+        else if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && (defda | FILE_ATTRIBUTE_READONLY) == (fbi->FileAttributes | FILE_ATTRIBUTE_READONLY))
             fcb->atts_deleted = true;
 
         fcb->atts = fbi->FileAttributes;
@@ -278,7 +278,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
 
-        if (fcb->inode == SUBVOL_ROOT_INODE) {
+        if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
             if (fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)
                 fcb->subvol->root_item.flags |= BTRFS_ROOT_SUBVOL_RDONLY;
             else
@@ -352,7 +352,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
         goto end;
     }
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID) {
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID) {
         WARN("not allowing \\$Root to be deleted\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -965,7 +965,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     while (le != &move_list) {
         me = CONTAINING_RECORD(le, move_entry, list_entry);
 
-        if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE && me->fileref->fcb != fileref->fcb->Vcb->dummy_fcb) {
+        if (me->fileref->fcb->inode != BTRFS_FIRST_FREE_OBJECTID && me->fileref->fcb != fileref->fcb->Vcb->dummy_fcb) {
             if (!me->dummyfcb) {
                 ULONG defda;
 
@@ -1150,7 +1150,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             me->fileref->dc->key.type = BTRFS_INODE_ITEM_KEY;
 
             me->dummyfileref->fcb = me->fileref->fcb->Vcb->dummy_fcb;
-        } else if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
+        } else if (me->fileref->fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
             me->dummyfileref->fcb = me->fileref->fcb;
 
             me->fileref->fcb->subvol->parent = le == move_list.Flink ? destdir->fcb->subvol->id : me->parent->fileref->fcb->subvol->id;
@@ -1300,7 +1300,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 if (me->fileref->fcb->ads)
                     InsertHeadList(&me->parent->fileref->fcb->dir_children_index, &me->fileref->dc->list_entry_index);
                 else {
-                    if (me->fileref->fcb->inode != SUBVOL_ROOT_INODE)
+                    if (me->fileref->fcb->inode != BTRFS_FIRST_FREE_OBJECTID)
                         me->fileref->dc->key.objectid = me->fileref->fcb->inode;
 
                     if (IsListEmpty(&me->parent->fileref->fcb->dir_children_index))
@@ -2538,7 +2538,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID) {
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID) {
         WARN("not allowing \\$Root to be renamed\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -2904,7 +2904,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     if (fr2->fcb->type == BTRFS_FT_DIR)
         fr2->fcb->fileref = fr2;
 
-    if (fileref->fcb->inode == SUBVOL_ROOT_INODE)
+    if (fileref->fcb->inode == BTRFS_FIRST_FREE_OBJECTID)
         fileref->fcb->subvol->parent = related->fcb->subvol->id;
 
     fileref->oldutf8.Length = fileref->oldutf8.MaximumLength = 0;
@@ -4028,7 +4028,7 @@ NTSTATUS __stdcall drv_set_information(IN PDEVICE_OBJECT DeviceObject, IN PIRP I
     }
 
     if (fcb != Vcb->dummy_fcb && is_subvol_readonly(fcb->subvol, Irp) && IrpSp->Parameters.SetFile.FileInformationClass != FilePositionInformation &&
-        (fcb->inode != SUBVOL_ROOT_INODE || (IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformationEx))) {
+        (fcb->inode != BTRFS_FIRST_FREE_OBJECTID || (IrpSp->Parameters.SetFile.FileInformationClass != FileBasicInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformation && IrpSp->Parameters.SetFile.FileInformationClass != FileRenameInformationEx))) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
     }
@@ -4643,7 +4643,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
 
     ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
-    if (fcb->inode == SUBVOL_ROOT_INODE) {
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
         ULONG namelen;
 
         if (fcb == fcb->Vcb->root_fileref->fcb)
@@ -4812,7 +4812,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
 
     ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
-    if (fcb->inode == SUBVOL_ROOT_INODE) {
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
         ULONG namelen;
 
         if (fcb == fcb->Vcb->root_fileref->fcb)

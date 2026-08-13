@@ -208,7 +208,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
         if (r && r->parent != fcb->subvol->id && (!de->dc || !de->dc->root_dir))
             r = NULL;
 
-        inode = SUBVOL_ROOT_INODE;
+        inode = BTRFS_FIRST_FREE_OBJECTID;
     } else {
         inode = de->key.objectid;
     }

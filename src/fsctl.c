@@ -935,7 +935,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     if (bcs->readonly)
         r->root_item.flags |= BTRFS_ROOT_SUBVOL_RDONLY;
 
-    r->root_item.root_dirid = SUBVOL_ROOT_INODE;
+    r->root_item.root_dirid = BTRFS_FIRST_FREE_OBJECTID;
     r->root_item.bytes_used = Vcb->superblock.nodesize;
     r->root_item.ctransid = Vcb->superblock.generation;
     r->root_item.otransid = Vcb->superblock.generation;
@@ -955,7 +955,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     rootfcb->subvol = r;
     rootfcb->type = BTRFS_FT_DIR;
-    rootfcb->inode = SUBVOL_ROOT_INODE;
+    rootfcb->inode = BTRFS_FIRST_FREE_OBJECTID;
     rootfcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&rootfcb->inode, sizeof(uint64_t)); // FIXME - we can hardcode this
 
     rootfcb->inode_item.generation = Vcb->superblock.generation;
@@ -4304,7 +4304,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
             else if (fcb->type == BTRFS_FT_SYMLINK)
                 fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
 
-            if (fcb->inode == SUBVOL_ROOT_INODE) {
+            if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
                 if (fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
                     fcb->atts |= FILE_ATTRIBUTE_READONLY;
                 else

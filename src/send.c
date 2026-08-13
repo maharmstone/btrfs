@@ -174,7 +174,7 @@ static NTSTATUS get_orphan_name(send_context* context, uint64_t inode, uint64_t 
     *ptr = '-'; ptr++;
     ptr2 = ptr;
 
-    searchkey.objectid = SUBVOL_ROOT_INODE;
+    searchkey.objectid = BTRFS_FIRST_FREE_OBJECTID;
     searchkey.type = BTRFS_DIR_ITEM_KEY;
 
     do {
@@ -366,7 +366,7 @@ static NTSTATUS send_inode(send_context* context, traverse_ptr* tp, traverse_ptr
     } else
         context->lastinode.new = true;
 
-    if (tp->item->key.objectid == SUBVOL_ROOT_INODE) {
+    if (tp->item->key.objectid == BTRFS_FIRST_FREE_OBJECTID) {
         send_dir* sd;
 
         Status = find_send_dir(context, tp->item->key.objectid, ii->generation, &sd, NULL);
@@ -690,7 +690,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
         le = le->Flink;
     }
 
-    if (dir == SUBVOL_ROOT_INODE) {
+    if (dir == BTRFS_FIRST_FREE_OBJECTID) {
         Status = send_add_dir(context, dir, NULL, NULL, 0, false, le, psd);
         if (!NT_SUCCESS(Status)) {
             ERR("send_add_dir returned %08lx\n", Status);
@@ -726,7 +726,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
                 return STATUS_INTERNAL_ERROR;
             }
 
-            if (tp.item->key.offset == SUBVOL_ROOT_INODE)
+            if (tp.item->key.offset == BTRFS_FIRST_FREE_OBJECTID)
                 parent = context->root_dir;
             else {
                 Status = find_send_dir(context, tp.item->key.offset, generation, &parent, NULL);
@@ -785,7 +785,7 @@ static NTSTATUS send_inode_ref(send_context* context, traverse_ptr* tp, bool tre
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (dir != SUBVOL_ROOT_INODE) {
+    if (dir != BTRFS_FIRST_FREE_OBJECTID) {
         bool added_dummy;
 
         Status = find_send_dir(context, dir, context->root->root_item.ctransid, &sd, &added_dummy);
@@ -893,7 +893,7 @@ static NTSTATUS send_inode_extref(send_context* context, traverse_ptr* tp, bool 
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ier->parent_objectid != SUBVOL_ROOT_INODE) {
+        if (ier->parent_objectid != BTRFS_FIRST_FREE_OBJECTID) {
             LIST_ENTRY* le;
             bool added_dummy;
 
@@ -1831,7 +1831,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
 
     num = inode;
 
-    while (num != SUBVOL_ROOT_INODE) {
+    while (num != BTRFS_FIRST_FREE_OBJECTID) {
         searchkey.objectid = num;
         searchkey.type = BTRFS_INODE_EXTREF_KEY;
         searchkey.offset = 0xffffffffffffffff;
@@ -1878,7 +1878,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
 
     num = inode;
 
-    while (num != SUBVOL_ROOT_INODE) {
+    while (num != BTRFS_FIRST_FREE_OBJECTID) {
         searchkey.objectid = num;
         searchkey.type = BTRFS_INODE_EXTREF_KEY;
         searchkey.offset = 0xffffffffffffffff;
@@ -3607,7 +3607,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
 
-    if (fcb->inode != SUBVOL_ROOT_INODE || fcb == Vcb->root_fileref->fcb)
+    if (fcb->inode != BTRFS_FIRST_FREE_OBJECTID || fcb == Vcb->root_fileref->fcb)
         return STATUS_INVALID_PARAMETER;
 
     if (!Vcb->readonly && !(fcb->subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY))
@@ -3664,7 +3664,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
             parfcb = fileobj->FsContext;
 
-            if (!parfcb || parfcb == Vcb->root_fileref->fcb || parfcb == Vcb->volume_fcb || parfcb->inode != SUBVOL_ROOT_INODE) {
+            if (!parfcb || parfcb == Vcb->root_fileref->fcb || parfcb == Vcb->volume_fcb || parfcb->inode != BTRFS_FIRST_FREE_OBJECTID) {
                 ObDereferenceObject(fileobj);
                 return STATUS_INVALID_PARAMETER;
             }
@@ -3717,7 +3717,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
 
                 clonefcb = fileobj->FsContext;
 
-                if (!clonefcb || clonefcb == Vcb->root_fileref->fcb || clonefcb == Vcb->volume_fcb || clonefcb->inode != SUBVOL_ROOT_INODE) {
+                if (!clonefcb || clonefcb == Vcb->root_fileref->fcb || clonefcb == Vcb->volume_fcb || clonefcb->inode != BTRFS_FIRST_FREE_OBJECTID) {
                     ObDereferenceObject(fileobj);
                     ExFreePool(clones);
                     return STATUS_INVALID_PARAMETER;

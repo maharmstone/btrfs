@@ -5288,7 +5288,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
             TRACE("inserting new DOSATTRIB xattr\n");
 
-            if (fcb->inode == SUBVOL_ROOT_INODE)
+            if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID)
                 atts &= ~FILE_ATTRIBUTE_READONLY;
 
             val2 = &val[sizeof(val) - 1];

@@ -418,7 +418,7 @@ static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
         }
     }
 
-    r->lastinode = SUBVOL_ROOT_INODE;
+    r->lastinode = BTRFS_FIRST_FREE_OBJECTID;
 
     WARN("no INODE_ITEMs in tree %I64x\n", r->id);
 
@@ -2672,7 +2672,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             if (type != BTRFS_FT_DIR)
                 dosnum &= ~FILE_ATTRIBUTE_DIRECTORY;
 
-            if (inode == SUBVOL_ROOT_INODE) {
+            if (inode == BTRFS_FIRST_FREE_OBJECTID) {
                 if (r->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
                     dosnum |= FILE_ATTRIBUTE_READONLY;
                 else
@@ -2699,12 +2699,12 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             break;
     }
 
-    if (dotfile || (r->id == BTRFS_FS_TREE_OBJECTID && inode == SUBVOL_ROOT_INODE))
+    if (dotfile || (r->id == BTRFS_FS_TREE_OBJECTID && inode == BTRFS_FIRST_FREE_OBJECTID))
         att |= FILE_ATTRIBUTE_HIDDEN;
 
     att |= FILE_ATTRIBUTE_ARCHIVE;
 
-    if (inode == SUBVOL_ROOT_INODE) {
+    if (inode == BTRFS_FIRST_FREE_OBJECTID) {
         if (r->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
             att |= FILE_ATTRIBUTE_READONLY;
         else
@@ -3143,7 +3143,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         reloc_root->root_item.inode.nlink = 1;
         reloc_root->root_item.inode.mode = 040755;
         reloc_root->root_item.inode.flags = BTRFS_INODE_ROOT_ITEM_INIT;
-        reloc_root->root_item.root_dirid = SUBVOL_ROOT_INODE;
+        reloc_root->root_item.root_dirid = BTRFS_FIRST_FREE_OBJECTID;
         reloc_root->root_item.bytes_used = Vcb->superblock.nodesize;
 
         ii = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_inode_item), ALLOC_TAG);
@@ -3164,7 +3164,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         ii->ctime = now;
         ii->mtime = now;
 
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, BTRFS_INODE_ITEM_KEY, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
+        Status = insert_tree_item(Vcb, reloc_root, BTRFS_FIRST_FREE_OBJECTID, BTRFS_INODE_ITEM_KEY, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(ii);
@@ -3183,7 +3183,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         *(char*)&ir[1] = '.';
         *((char*)&ir[1] + 1) = '.';
 
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, BTRFS_INODE_REF_KEY, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
+        Status = insert_tree_item(Vcb, reloc_root, BTRFS_FIRST_FREE_OBJECTID, BTRFS_INODE_REF_KEY, BTRFS_FIRST_FREE_OBJECTID, ir, irlen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(ir);
@@ -4894,7 +4894,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     root_fcb->Vcb = Vcb;
-    root_fcb->inode = SUBVOL_ROOT_INODE;
+    root_fcb->inode = BTRFS_FIRST_FREE_OBJECTID;
     root_fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&root_fcb->inode, sizeof(uint64_t));
     root_fcb->type = BTRFS_FT_DIR;
 

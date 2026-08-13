@@ -558,7 +558,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             ri.inode.nlink = 1;
             ri.inode.mode = 040755;
             ri.generation = 1;
-            ri.root_dirid = r->id == 5 || r->id >= 0x100 ? SUBVOL_ROOT_INODE : 0;
+            ri.root_dirid = r->id == 5 || r->id >= 0x100 ? BTRFS_FIRST_FREE_OBJECTID : 0;
             ri.bytenr = r->header.bytenr;
             ri.bytes_used = node_size;
             ri.refs = 1;
@@ -875,9 +875,9 @@ static void init_fs_tree(btrfs_root* r, uint32_t node_size) {
     win_time_to_unix(time, &ii.atime);
     ii.ctime = ii.mtime = ii.atime;
 
-    add_item(r, SUBVOL_ROOT_INODE, BTRFS_INODE_ITEM_KEY, 0, &ii, sizeof(struct btrfs_inode_item));
+    add_item(r, BTRFS_FIRST_FREE_OBJECTID, BTRFS_INODE_ITEM_KEY, 0, &ii, sizeof(struct btrfs_inode_item));
 
-    add_inode_ref(r, SUBVOL_ROOT_INODE, SUBVOL_ROOT_INODE, 0, "..");
+    add_inode_ref(r, BTRFS_FIRST_FREE_OBJECTID, BTRFS_FIRST_FREE_OBJECTID, 0, "..");
 }
 
 static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* root) {

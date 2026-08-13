@@ -30,7 +30,7 @@
 #include "propsheet.h"
 #include "resource.h"
 
-#define SUBVOL_ROOT_INODE 0x100
+#define BTRFS_FIRST_FREE_OBJECTID 0x100
 
 #ifndef __MINGW32__ // in winternl.h in mingw
 
@@ -257,7 +257,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
         min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
         max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
 
-        if (bii2.inode == SUBVOL_ROOT_INODE) {
+        if (bii2.inode == BTRFS_FIRST_FREE_OBJECTID) {
             bool ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
 
             has_subvols = true;
@@ -485,7 +485,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
         min_compression_type = bii2.compression_type < min_compression_type ? bii2.compression_type : min_compression_type;
         max_compression_type = bii2.compression_type > max_compression_type ? bii2.compression_type : max_compression_type;
 
-        if (bii2.inode == SUBVOL_ROOT_INODE) {
+        if (bii2.inode == BTRFS_FIRST_FREE_OBJECTID) {
             bool ro = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
 
             has_subvols = true;
@@ -615,7 +615,7 @@ void BtrfsPropSheet::apply_changes_file(HWND, const wstring& fn) {
     if (!NT_SUCCESS(Status))
         throw ntstatus_error(Status);
 
-    if (bii2.inode == SUBVOL_ROOT_INODE && ro_changed) {
+    if (bii2.inode == BTRFS_FIRST_FREE_OBJECTID && ro_changed) {
         BY_HANDLE_FILE_INFORMATION bhfi;
         FILE_BASIC_INFO fbi;
 

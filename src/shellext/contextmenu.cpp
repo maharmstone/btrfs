@@ -547,7 +547,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         throw ntstatus_error(Status);
 
     // if subvol, do snapshot instead
-    if (bii.inode == SUBVOL_ROOT_INODE) {
+    if (bii.inode == BTRFS_FIRST_FREE_OBJECTID) {
         btrfs_create_snapshot* bcs;
         win_handle dirh;
         wstring destname, search;
@@ -1287,7 +1287,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
         throw ntstatus_error(Status);
 
     // if subvol, do snapshot instead
-    if (bii.inode == SUBVOL_ROOT_INODE) {
+    if (bii.inode == BTRFS_FIRST_FREE_OBJECTID) {
         btrfs_create_snapshot* bcs;
         win_handle dirh;
 

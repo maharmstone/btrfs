@@ -237,7 +237,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                             le2 = le2->Flink;
                         }
 
-                        *inode = SUBVOL_ROOT_INODE;
+                        *inode = BTRFS_FIRST_FREE_OBJECTID;
                     } else {
                         *subvol = fcb->subvol;
                         *inode = dc->key.objectid;
@@ -284,7 +284,7 @@ NTSTATUS find_file_in_dir(PUNICODE_STRING filename, fcb* fcb, root** subvol, uin
                             le2 = le2->Flink;
                         }
 
-                        *inode = SUBVOL_ROOT_INODE;
+                        *inode = BTRFS_FIRST_FREE_OBJECTID;
                     } else {
                         *subvol = fcb->subvol;
                         *inode = dc->key.objectid;
@@ -636,7 +636,7 @@ cont:
             break;
     }
 
-    if (!Vcb->options.no_root_dir && fcb->inode == SUBVOL_ROOT_INODE) {
+    if (!Vcb->options.no_root_dir && fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
         root* top_subvol;
 
         if (Vcb->root_fileref && Vcb->root_fileref->fcb)
@@ -1039,7 +1039,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                             if (fcb->type != BTRFS_FT_DIR)
                                 fcb->atts &= ~FILE_ATTRIBUTE_DIRECTORY;
 
-                            if (inode == SUBVOL_ROOT_INODE) {
+                            if (inode == BTRFS_FIRST_FREE_OBJECTID) {
                                 if (subvol->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY)
                                     fcb->atts |= FILE_ATTRIBUTE_READONLY;
                                 else
@@ -1343,7 +1343,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         }
     }
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID && fcb->subvol != Vcb->root_fileref->fcb->subvol)
+    if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID && fcb->subvol != Vcb->root_fileref->fcb->subvol)
         fcb->atts |= FILE_ATTRIBUTE_HIDDEN;
 
     subvol->fcbs_version++;
@@ -1627,7 +1627,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 return STATUS_SUCCESS;
             }
 
-            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && inode == SUBVOL_ROOT_INODE && subvol->parent != sf->fcb->subvol->id && !dc->root_dir)) {
+            if (!subvol || (subvol != Vcb->root_fileref->fcb->subvol && inode == BTRFS_FIRST_FREE_OBJECTID && subvol->parent != sf->fcb->subvol->id && !dc->root_dir)) {
                 fcb = Vcb->dummy_fcb;
                 InterlockedIncrement(&fcb->refcount);
             } else {
@@ -4003,7 +4003,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
                     FILE_READ_EA | FILE_READ_ATTRIBUTES | FILE_EXECUTE | FILE_LIST_DIRECTORY |
                     FILE_TRAVERSE;
 
-        if (!Vcb->readonly && (fileref->fcb == Vcb->dummy_fcb || fileref->fcb->inode == SUBVOL_ROOT_INODE))
+        if (!Vcb->readonly && (fileref->fcb == Vcb->dummy_fcb || fileref->fcb->inode == BTRFS_FIRST_FREE_OBJECTID))
             allowed |= DELETE;
 
         if (fileref->fcb != Vcb->dummy_fcb && !is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
@@ -4011,7 +4011,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
 
             if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_FT_DIR)
                 allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
-        } else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
+        } else if (fileref->fcb->inode == BTRFS_FIRST_FREE_OBJECTID && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
             // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
 
             allowed |= FILE_WRITE_ATTRIBUTES;
@@ -4409,7 +4409,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
             }
         } else {
             if (!Vcb->options.no_root_dir && subvol->id == BTRFS_FS_TREE_OBJECTID && Vcb->root_fileref->fcb->subvol != subvol) {
-                Status = open_fileref_by_inode(Vcb, Vcb->root_fileref->fcb->subvol, SUBVOL_ROOT_INODE, &parfr, Irp);
+                Status = open_fileref_by_inode(Vcb, Vcb->root_fileref->fcb->subvol, BTRFS_FIRST_FREE_OBJECTID, &parfr, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("open_fileref_by_inode returned %08lx\n", Status);
                     free_fcb(fcb);
