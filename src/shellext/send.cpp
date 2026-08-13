@@ -30,7 +30,7 @@ DWORD BtrfsSend::Thread() {
         IO_STATUS_BLOCK iosb;
         btrfs_send_subvol* bss;
         btrfs_stream_header header;
-        btrfs_send_command end;
+        btrfs_cmd_header end;
         ULONG i;
 
         buf = (char*)malloc(SEND_BUFFER_LEN);
@@ -146,9 +146,9 @@ DWORD BtrfsSend::Thread() {
                     if (Status != STATUS_END_OF_FILE)
                         throw string_error(IDS_SEND_FSCTL_BTRFS_READ_SEND_BUFFER_FAILED, Status, format_ntstatus(Status).c_str());
 
-                    end.length = 0;
+                    end.len = 0;
                     end.cmd = BTRFS_SEND_CMD_END;
-                    end.csum = 0x9dc96c50;
+                    end.crc = 0x9dc96c50;
 
                     if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
                         throw string_error(IDS_SEND_WRITEFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
@@ -565,7 +565,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
     btrfs_stream_header header;
-    btrfs_send_command end;
+    btrfs_cmd_header end;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
 
@@ -643,9 +643,9 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
             if (Status != STATUS_END_OF_FILE)
                 throw ntstatus_error(Status);
 
-            end.length = 0;
+            end.len = 0;
             end.cmd = BTRFS_SEND_CMD_END;
-            end.csum = 0x9dc96c50;
+            end.crc = 0x9dc96c50;
 
             if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
                 throw last_error(GetLastError());

@@ -114,19 +114,19 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
 static NTSTATUS wait_for_flush(send_context* context, traverse_ptr* tp1, traverse_ptr* tp2);
 
 static void send_command(send_context* context, uint16_t cmd) {
-    btrfs_send_command* bsc = (btrfs_send_command*)&context->data[context->datalen];
+    struct btrfs_cmd_header* bsc = (struct btrfs_cmd_header*)&context->data[context->datalen];
 
     bsc->cmd = cmd;
-    bsc->csum = 0;
+    bsc->crc = 0;
 
-    context->datalen += sizeof(btrfs_send_command);
+    context->datalen += sizeof(struct btrfs_cmd_header);
 }
 
 static void send_command_finish(send_context* context, ULONG pos) {
-    btrfs_send_command* bsc = (btrfs_send_command*)&context->data[pos];
+    struct btrfs_cmd_header* bsc = (struct btrfs_cmd_header*)&context->data[pos];
 
-    bsc->length = context->datalen - pos - sizeof(btrfs_send_command);
-    bsc->csum = calc_crc32c(0, (uint8_t*)bsc, context->datalen - pos);
+    bsc->len = context->datalen - pos - sizeof(struct btrfs_cmd_header);
+    bsc->crc = calc_crc32c(0, (uint8_t*)bsc, context->datalen - pos);
 }
 
 static void send_add_tlv(send_context* context, uint16_t type, void* data, uint16_t length) {

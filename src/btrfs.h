@@ -587,11 +587,11 @@ struct btrfs_stream_header {
     uint32_t version;
 };
 
-typedef struct {
-    uint32_t length;
+struct btrfs_cmd_header {
+    uint32_t len;
     uint16_t cmd;
-    uint32_t csum;
-} btrfs_send_command;
+    uint32_t crc;
+};
 
 typedef struct {
     uint16_t type;
