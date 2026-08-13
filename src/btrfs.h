@@ -411,10 +411,6 @@ struct btrfs_extent_inline_ref {
     uint64_t offset;
 };
 
-typedef struct {
-    uint64_t offset;
-} TREE_BLOCK_REF;
-
 struct btrfs_extent_data_ref {
     uint64_t root;
     uint64_t objectid;
@@ -434,10 +430,6 @@ struct btrfs_extent_ref_v0 {
     uint64_t objectid;
     uint32_t count;
 };
-
-typedef struct {
-    uint64_t offset;
-} SHARED_BLOCK_REF;
 
 typedef struct {
     uint64_t offset;
