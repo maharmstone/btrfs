@@ -61,10 +61,10 @@ typedef struct {
     WCHAR name[1];
 } btrfs_create_snapshot32;
 
-#define BTRFS_COMPRESSION_ANY   0
-#define BTRFS_COMPRESSION_ZLIB  1
-#define BTRFS_COMPRESSION_LZO   2
-#define BTRFS_COMPRESSION_ZSTD  3
+#define BTRFS_COMPRESS_ANY   0
+#define BTRFS_COMPRESS_ZLIB  1
+#define BTRFS_COMPRESS_LZO   2
+#define BTRFS_COMPRESS_ZSTD  3
 
 typedef struct {
     uint64_t subvol;

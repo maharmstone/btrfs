@@ -1232,19 +1232,19 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
                     // FIXME - compressed extents with a hole in them are counted more than once
                     if (ext->extent_data.disk_num_bytes != 0) {
                         switch (ext->extent_data.compression) {
-                            case BTRFS_COMPRESSION_NONE:
+                            case BTRFS_COMPRESS_NONE:
                                 bii->disk_size_uncompressed += ext->extent_data.num_bytes;
                                 break;
 
-                            case BTRFS_COMPRESSION_ZLIB:
+                            case BTRFS_COMPRESS_ZLIB:
                                 bii->disk_size_zlib += ext->extent_data.disk_num_bytes;
                                 break;
 
-                            case BTRFS_COMPRESSION_LZO:
+                            case BTRFS_COMPRESS_LZO:
                                 bii->disk_size_lzo += ext->extent_data.disk_num_bytes;
                                 break;
 
-                            case BTRFS_COMPRESSION_ZSTD:
+                            case BTRFS_COMPRESS_ZSTD:
                                 if (!old_style)
                                     bii->disk_size_zstd += ext->extent_data.disk_num_bytes;
                                 break;
@@ -1288,19 +1288,19 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
 
     switch (fcb->prop_compression) {
         case PropCompression_Zlib:
-            bii->compression_type = BTRFS_COMPRESSION_ZLIB;
+            bii->compression_type = BTRFS_COMPRESS_ZLIB;
             break;
 
         case PropCompression_LZO:
-            bii->compression_type = BTRFS_COMPRESSION_LZO;
+            bii->compression_type = BTRFS_COMPRESS_LZO;
             break;
 
         case PropCompression_ZSTD:
-            bii->compression_type = BTRFS_COMPRESSION_ZSTD;
+            bii->compression_type = BTRFS_COMPRESS_ZSTD;
             break;
 
         default:
-            bii->compression_type = BTRFS_COMPRESSION_ANY;
+            bii->compression_type = BTRFS_COMPRESS_ANY;
             break;
     }
 
@@ -1341,7 +1341,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         return STATUS_ACCESS_DENIED;
     }
 
-    if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESSION_ZSTD)
+    if (bsii->compression_type_changed && bsii->compression_type > BTRFS_COMPRESS_ZSTD)
         return STATUS_INVALID_PARAMETER;
 
     if (fcb->ads)
@@ -1397,19 +1397,19 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
 
     if (bsii->compression_type_changed) {
         switch (bsii->compression_type) {
-            case BTRFS_COMPRESSION_ANY:
+            case BTRFS_COMPRESS_ANY:
                 fcb->prop_compression = PropCompression_None;
             break;
 
-            case BTRFS_COMPRESSION_ZLIB:
+            case BTRFS_COMPRESS_ZLIB:
                 fcb->prop_compression = PropCompression_Zlib;
             break;
 
-            case BTRFS_COMPRESSION_LZO:
+            case BTRFS_COMPRESS_LZO:
                 fcb->prop_compression = PropCompression_LZO;
             break;
 
-            case BTRFS_COMPRESSION_ZSTD:
+            case BTRFS_COMPRESS_ZSTD:
                 fcb->prop_compression = PropCompression_ZSTD;
             break;
         }
@@ -1858,7 +1858,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, uint64_t start, uint6
 
         ed->generation = Vcb->superblock.generation;
         ed->ram_bytes = end_data;
-        ed->compression = BTRFS_COMPRESSION_NONE;
+        ed->compression = BTRFS_COMPRESS_NONE;
         ed->encryption = BTRFS_ENCRYPTION_NONE;
         ed->other_encoding = BTRFS_ENCODING_NONE;
         ed->type = BTRFS_FILE_EXTENT_INLINE;
@@ -3446,7 +3446,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
 
             ed->generation = Vcb->superblock.generation;
             ed->ram_bytes = fcb->inode_item.size;
-            ed->compression = BTRFS_COMPRESSION_NONE;
+            ed->compression = BTRFS_COMPRESS_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
             ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
@@ -3530,7 +3530,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                     }
 
                     if (ext->csum) {
-                        if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE) {
+                        if (ext->extent_data.compression == BTRFS_COMPRESS_NONE) {
                             ext2->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((ext2->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                             if (!ext2->csum) {
                                 ERR("out of memory\n");
@@ -5068,7 +5068,7 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
 
             out->Extents[i].NextVcn.QuadPart = (ext->offset + ext->extent_data.ram_bytes) >> Vcb->sector_shift;
 
-            if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
+            if (ext->extent_data.compression == BTRFS_COMPRESS_NONE)
                 out->Extents[i].Lcn.QuadPart = (ext->extent_data.disk_bytenr + ext->extent_data.offset) >> Vcb->sector_shift;
             else
                 out->Extents[i].Lcn.QuadPart = -1;
@@ -5264,7 +5264,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
                 sparse_hash_found = true;
             }
 
-            if (ext->extent_data.compression != BTRFS_COMPRESSION_NONE)
+            if (ext->extent_data.compression != BTRFS_COMPRESS_NONE)
                 memset(ptr, 0, (ext->extent_data.num_bytes >> Vcb->sector_shift) * Vcb->csum_size); // dummy value for compressed extents
             else {
                 if (ext->csum)

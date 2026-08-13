@@ -875,15 +875,15 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         type = fcb->Vcb->options.compress_type;
     else {
         if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
-            type = BTRFS_COMPRESSION_ZSTD;
+            type = BTRFS_COMPRESS_ZSTD;
         else if (fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
-            type = BTRFS_COMPRESSION_ZSTD;
+            type = BTRFS_COMPRESS_ZSTD;
         else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
-            type = BTRFS_COMPRESSION_LZO;
+            type = BTRFS_COMPRESS_LZO;
         else if (fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
-            type = BTRFS_COMPRESSION_LZO;
+            type = BTRFS_COMPRESS_LZO;
         else
-            type = BTRFS_COMPRESSION_ZLIB;
+            type = BTRFS_COMPRESS_ZLIB;
     }
 
     Status = excise_extents(fcb->Vcb, fcb, start_data, end_data, Irp, rollback);
@@ -946,9 +946,9 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
             parts[i].compression_type = type;
             parts[i].outlen = parts[i].inlen - parts[i].cj->space_left;
 
-            if (type == BTRFS_COMPRESSION_LZO)
+            if (type == BTRFS_COMPRESS_LZO)
                 fcb->Vcb->superblock.incompat_flags |= BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO;
-            else if (type == BTRFS_COMPRESSION_ZSTD)
+            else if (type == BTRFS_COMPRESS_ZSTD)
                 fcb->Vcb->superblock.incompat_flags |= BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD;
 
             if ((parts[i].outlen & (fcb->Vcb->superblock.sectorsize - 1)) != 0) {
@@ -959,7 +959,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
                 parts[i].outlen = newlen;
             }
         } else {
-            parts[i].compression_type = BTRFS_COMPRESSION_NONE;
+            parts[i].compression_type = BTRFS_COMPRESS_NONE;
             parts[i].outlen = (unsigned int)sector_align(parts[i].inlen, fcb->Vcb->superblock.sectorsize);
         }
 
@@ -969,7 +969,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
 
     // check if first 128 KB of file is incompressible
 
-    if (start_data == 0 && parts[0].compression_type == BTRFS_COMPRESSION_NONE && !fcb->Vcb->options.compress_force) {
+    if (start_data == 0 && parts[0].compression_type == BTRFS_COMPRESS_NONE && !fcb->Vcb->options.compress_force) {
         TRACE("adding nocompress flag to subvol %I64x, inode %I64x\n", fcb->subvol->id, fcb->inode);
 
         fcb->inode_item.flags |= BTRFS_INODE_NOCOMPRESS;
@@ -990,7 +990,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         uint8_t* buf2 = buf;
 
         for (i = 0; i < num_parts; i++) {
-            if (parts[i].compression_type == BTRFS_COMPRESSION_NONE)
+            if (parts[i].compression_type == BTRFS_COMPRESS_NONE)
                 RtlCopyMemory(buf2, (uint8_t*)data + (i * COMPRESSED_EXTENT_SIZE), parts[i].outlen);
             else
                 RtlCopyMemory(buf2, parts[i].buf, parts[i].outlen);

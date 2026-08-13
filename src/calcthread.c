@@ -200,15 +200,15 @@ NTSTATUS add_calc_job_decomp(device_extension* Vcb, uint8_t compression, void* i
     cj->Status = STATUS_SUCCESS;
 
     switch (compression) {
-        case BTRFS_COMPRESSION_ZLIB:
+        case BTRFS_COMPRESS_ZLIB:
             cj->type = calc_thread_decomp_zlib;
         break;
 
-        case BTRFS_COMPRESSION_LZO:
+        case BTRFS_COMPRESS_LZO:
             cj->type = calc_thread_decomp_lzo;
         break;
 
-        case BTRFS_COMPRESSION_ZSTD:
+        case BTRFS_COMPRESS_ZSTD:
             cj->type = calc_thread_decomp_zstd;
         break;
 
@@ -253,15 +253,15 @@ NTSTATUS add_calc_job_comp(device_extension* Vcb, uint8_t compression, void* in,
     cj->Status = STATUS_SUCCESS;
 
     switch (compression) {
-        case BTRFS_COMPRESSION_ZLIB:
+        case BTRFS_COMPRESS_ZLIB:
             cj->type = calc_thread_comp_zlib;
         break;
 
-        case BTRFS_COMPRESSION_LZO:
+        case BTRFS_COMPRESS_LZO:
             cj->type = calc_thread_comp_lzo;
         break;
 
-        case BTRFS_COMPRESSION_ZSTD:
+        case BTRFS_COMPRESS_ZSTD:
             cj->type = calc_thread_comp_zstd;
         break;
 

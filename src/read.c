@@ -2858,11 +2858,11 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                     uint64_t off = start + bytes_read - ext->offset;
                     uint32_t read;
 
-                    if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                    if (ed->compression == BTRFS_COMPRESS_NONE) {
                         read = (uint32_t)min(min(len, ext->datalen) - off, length);
 
                         RtlCopyMemory(data + bytes_read, (uint8_t*)&ed->disk_bytenr + off, read);
-                    } else if (ed->compression == BTRFS_COMPRESSION_ZLIB || ed->compression == BTRFS_COMPRESSION_LZO || ed->compression == BTRFS_COMPRESSION_ZSTD) {
+                    } else if (ed->compression == BTRFS_COMPRESS_ZLIB || ed->compression == BTRFS_COMPRESS_LZO || ed->compression == BTRFS_COMPRESS_ZSTD) {
                         uint8_t* decomp;
                         bool decomp_alloc;
                         uint16_t inlen = ext->datalen - (uint16_t)offsetof(struct btrfs_file_extent_item, disk_bytenr);
@@ -2889,14 +2889,14 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                             decomp_alloc = false;
                         }
 
-                        if (ed->compression == BTRFS_COMPRESSION_ZLIB) {
+                        if (ed->compression == BTRFS_COMPRESS_ZLIB) {
                             Status = zlib_decompress((uint8_t*)&ed->disk_bytenr, inlen, decomp, (uint32_t)(read + off));
                             if (!NT_SUCCESS(Status)) {
                                 ERR("zlib_decompress returned %08lx\n", Status);
                                 if (decomp_alloc) ExFreePool(decomp);
                                 goto exit;
                             }
-                        } else if (ed->compression == BTRFS_COMPRESSION_LZO) {
+                        } else if (ed->compression == BTRFS_COMPRESS_LZO) {
                             if (inlen < sizeof(uint32_t)) {
                                 ERR("extent data was truncated\n");
                                 Status = STATUS_INTERNAL_ERROR;
@@ -2911,7 +2911,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                                 if (decomp_alloc) ExFreePool(decomp);
                                 goto exit;
                             }
-                        } else if (ed->compression == BTRFS_COMPRESSION_ZSTD) {
+                        } else if (ed->compression == BTRFS_COMPRESS_ZSTD) {
                             Status = zstd_decompress((uint8_t*)&ed->disk_bytenr, inlen, decomp, (uint32_t)(read + off));
                             if (!NT_SUCCESS(Status)) {
                                 ERR("zstd_decompress returned %08lx\n", Status);
@@ -2956,7 +2956,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                     rp->read = (uint32_t)(len - rp->extents[0].off);
                     if (rp->read > length) rp->read = (uint32_t)length;
 
-                    if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                    if (ed->compression == BTRFS_COMPRESS_NONE) {
                         rp->addr = ed->disk_bytenr + ed->offset + rp->extents[0].off;
                         rp->to_read = (uint32_t)sector_align(rp->read, fcb->Vcb->superblock.sectorsize);
 
@@ -2970,7 +2970,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                         rp->to_read = (uint32_t)sector_align(ed->disk_num_bytes, fcb->Vcb->superblock.sectorsize);
                     }
 
-                    if (ed->compression == BTRFS_COMPRESSION_NONE && (start & (fcb->Vcb->superblock.sectorsize - 1)) == 0 &&
+                    if (ed->compression == BTRFS_COMPRESS_NONE && (start & (fcb->Vcb->superblock.sectorsize - 1)) == 0 &&
                         (length & (fcb->Vcb->superblock.sectorsize - 1)) == 0) {
                         rp->buf = data + bytes_read;
                         rp->buf_free = false;
@@ -3003,7 +3003,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                     }
 
                     if (ext->csum) {
-                        if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                        if (ed->compression == BTRFS_COMPRESS_NONE) {
                             rp->csum = (uint8_t*)ext->csum + (fcb->Vcb->csum_size * (rp->extents[0].off >> fcb->Vcb->sector_shift));
                         } else
                             rp->csum = ext->csum;
@@ -3064,7 +3064,7 @@ nextitem:
             read_part* rp = CONTAINING_RECORD(le, read_part, list_entry);
 
             // merge together runs
-            if (rp->compression != BTRFS_COMPRESSION_NONE && rp->compression == last_rp->compression && rp->addr == last_rp->addr + last_rp->to_read &&
+            if (rp->compression != BTRFS_COMPRESS_NONE && rp->compression == last_rp->compression && rp->addr == last_rp->addr + last_rp->to_read &&
                 rp->data == (uint8_t*)last_rp->data + last_rp->read && rp->c == last_rp->c && ((rp->csum && last_rp->csum) || (!rp->csum && !last_rp->csum))) {
                 read_part* rp2;
 
@@ -3158,7 +3158,7 @@ nextitem:
             goto exit;
         }
 
-        if (rp->compression == BTRFS_COMPRESSION_NONE) {
+        if (rp->compression == BTRFS_COMPRESS_NONE) {
             if (rp->buf_free)
                 RtlCopyMemory(rp->data, rp->buf + rp->bumpoff, rp->read);
         } else {
@@ -3174,7 +3174,7 @@ nextitem:
                 buf2 = buf;
                 inlen = (ULONG)rp->extents[i].ed_size;
 
-                if (rp->compression == BTRFS_COMPRESSION_LZO) {
+                if (rp->compression == BTRFS_COMPRESS_LZO) {
                     ULONG inoff = sizeof(uint32_t);
 
                     inlen -= sizeof(uint32_t);

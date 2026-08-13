@@ -4418,7 +4418,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t s
 
     ed->generation = fcb->Vcb->superblock.generation;
     ed->ram_bytes = length;
-    ed->compression = BTRFS_COMPRESSION_NONE;
+    ed->compression = BTRFS_COMPRESS_NONE;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
     ed->other_encoding = BTRFS_ENCODING_NONE;
     ed->type = BTRFS_FILE_EXTENT_REG;
@@ -4641,7 +4641,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-        if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+        if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
             if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
 
@@ -4728,7 +4728,7 @@ cont:
                 while (le2 != &fcb->extents) {
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
-                    if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                    if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
                             NTSTATUS Status;
 
@@ -4783,7 +4783,7 @@ cont:
                 while (le2 != &fcb->extents) {
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
-                    if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                    if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
                             NTSTATUS Status;
 
@@ -4870,7 +4870,7 @@ cont:
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-        if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+        if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
             if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
 
@@ -5000,7 +5000,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
             if (ext->inserted && ext->csum && ext->extent_data.type == BTRFS_FILE_EXTENT_REG) {
                 if (ext->extent_data.disk_num_bytes > 0) { // not sparse
-                    if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
+                    if (ext->extent_data.compression == BTRFS_COMPRESS_NONE)
                         add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr + ext->extent_data.offset, (ULONG)(ext->extent_data.num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
                     else
                         add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr, (ULONG)(ext->extent_data.disk_num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
@@ -5028,7 +5028,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                             nextext->offset == ext->offset + ext->extent_data.num_bytes && nextext->extent_data.offset == ext->extent_data.offset + ext->extent_data.num_bytes) {
                             chunk* c;
 
-                            if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->csum) {
+                            if (ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->csum) {
                                 ULONG len = (ULONG)((ext->extent_data.num_bytes + nextext->extent_data.num_bytes) >> fcb->Vcb->sector_shift);
                                 void* csum;
 

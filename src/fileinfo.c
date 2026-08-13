@@ -515,7 +515,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
             if (ext->csum) {
                 ULONG len;
 
-                if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
+                if (ext->extent_data.compression == BTRFS_COMPRESS_NONE)
                     len = (ULONG)ext->extent_data.num_bytes;
                 else
                     len = (ULONG)ext->extent_data.disk_num_bytes;
@@ -1713,7 +1713,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
 
             ed->generation = Vcb->superblock.generation;
             ed->ram_bytes = adsdata.Length;
-            ed->compression = BTRFS_COMPRESSION_NONE;
+            ed->compression = BTRFS_COMPRESS_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
             ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = BTRFS_FILE_EXTENT_INLINE;

@@ -3557,7 +3557,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         if (!ext->ignore && ext->extent_data.type == BTRFS_FILE_EXTENT_REG) {
             uint64_t len;
 
-            len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ext->extent_data.num_bytes : ext->extent_data.disk_num_bytes) >> Vcb->sector_shift;
+            len = (ext->extent_data.compression == BTRFS_COMPRESS_NONE ? ext->extent_data.num_bytes : ext->extent_data.disk_num_bytes) >> Vcb->sector_shift;
 
             ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * Vcb->csum_size), ALLOC_TAG);
             if (!ext->csum) {
@@ -3565,7 +3565,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
                 goto end;
             }
 
-            Status = load_csum(Vcb, ext->csum, ext->extent_data.disk_bytenr + (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ext->extent_data.offset : 0), len, Irp);
+            Status = load_csum(Vcb, ext->csum, ext->extent_data.disk_bytenr + (ext->extent_data.compression == BTRFS_COMPRESS_NONE ? ext->extent_data.offset : 0), len, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("load_csum returned %08lx\n", Status);

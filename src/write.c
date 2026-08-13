@@ -2484,7 +2484,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         newext->inserted = true;
 
                         if (ext->csum) {
-                            if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                            if (ed->compression == BTRFS_COMPRESS_NONE) {
                                 newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
@@ -2545,7 +2545,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         newext->inserted = true;
 
                         if (ext->csum) {
-                            if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                            if (ed->compression == BTRFS_COMPRESS_NONE) {
                                 newext->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext->csum) {
                                     ERR("out of memory\n");
@@ -2645,7 +2645,7 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
                         newext2->inserted = true;
 
                         if (ext->csum) {
-                            if (ed->compression == BTRFS_COMPRESSION_NONE) {
+                            if (ed->compression == BTRFS_COMPRESS_NONE) {
                                 newext1->csum = ExAllocatePoolWithTag(PagedPool, (ULONG)((newext1->extent_data.num_bytes * Vcb->csum_size) >> Vcb->sector_shift), ALLOC_TAG);
                                 if (!newext1->csum) {
                                     ERR("out of memory\n");
@@ -2956,7 +2956,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
         if (s->address == ed->disk_bytenr + ed->disk_num_bytes) {
             uint64_t newlen = min(min(s->size, length), MAX_EXTENT_SIZE);
 
-            success = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen, file_write, irp_offset);
+            success = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESS_NONE, newlen, file_write, irp_offset);
 
             if (success)
                 *written += newlen;
@@ -3008,7 +3008,7 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t lengt
                     space* s = CONTAINING_RECORD(c->space_size.Flink, space, list_entry_size);
                     uint64_t extlen = min(length, s->size);
 
-                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, prealloc && !page_file, data, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, false, 0)) {
+                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, prealloc && !page_file, data, NULL, rollback, BTRFS_COMPRESS_NONE, extlen, false, 0)) {
                         start += extlen;
                         length -= extlen;
                         if (data) data += extlen;
@@ -3055,7 +3055,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
                 acquire_chunk_lock(c, fcb->Vcb);
 
                 if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= extlen) {
-                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, false, 0)) {
+                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESS_NONE, extlen, false, 0)) {
                         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                         goto cont;
                     }
@@ -3083,7 +3083,7 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
         acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= extlen) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESSION_NONE, extlen, false, 0))
+            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESS_NONE, extlen, false, 0))
                 goto cont;
         }
 
@@ -3148,7 +3148,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
                 acquire_chunk_lock(c, Vcb);
 
                 if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= newlen &&
-                    insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen, file_write, irp_offset)) {
+                    insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESS_NONE, newlen, file_write, irp_offset)) {
                     written += newlen;
 
                     if (written == orig_length) {
@@ -3190,7 +3190,7 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
             acquire_chunk_lock(c, Vcb);
 
             if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= newlen &&
-                insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESSION_NONE, newlen, file_write, irp_offset)) {
+                insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESS_NONE, newlen, file_write, irp_offset)) {
                 written += newlen;
 
                 if (written == orig_length)
@@ -3262,7 +3262,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
 
             ed->generation = fcb->Vcb->superblock.generation;
             ed->ram_bytes = end;
-            ed->compression = BTRFS_COMPRESSION_NONE;
+            ed->compression = BTRFS_COMPRESS_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
             ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
@@ -3406,7 +3406,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                     ed->generation = fcb->Vcb->superblock.generation;
                     ed->ram_bytes = end - ext->offset;
-                    ed->compression = BTRFS_COMPRESSION_NONE;
+                    ed->compression = BTRFS_COMPRESS_NONE;
                     ed->encryption = BTRFS_ENCRYPTION_NONE;
                     ed->other_encoding = BTRFS_ENCODING_NONE;
                     ed->type = BTRFS_FILE_EXTENT_INLINE;
@@ -3510,7 +3510,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 ed->generation = fcb->Vcb->superblock.generation;
                 ed->ram_bytes = end;
-                ed->compression = BTRFS_COMPRESSION_NONE;
+                ed->compression = BTRFS_COMPRESS_NONE;
                 ed->encryption = BTRFS_ENCRYPTION_NONE;
                 ed->other_encoding = BTRFS_ENCODING_NONE;
                 ed->type = BTRFS_FILE_EXTENT_INLINE;
@@ -3926,7 +3926,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
             if (ext->offset > start + written + length)
                 break;
 
-            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == BTRFS_FILE_EXTENT_PREALLOC) && ext->unique && ed->compression == BTRFS_COMPRESSION_NONE) {
+            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == BTRFS_FILE_EXTENT_PREALLOC) && ext->unique && ed->compression == BTRFS_COMPRESS_NONE) {
                 if (max(last_cow_start, start + written) < ext->offset) {
                     uint64_t start_write = max(last_cow_start, start + written);
 
@@ -4393,7 +4393,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2 = (struct btrfs_file_extent_item*)data;
             ed2->generation = fcb->Vcb->superblock.generation;
             ed2->ram_bytes = newlength;
-            ed2->compression = BTRFS_COMPRESSION_NONE;
+            ed2->compression = BTRFS_COMPRESS_NONE;
             ed2->encryption = BTRFS_ENCRYPTION_NONE;
             ed2->other_encoding = BTRFS_ENCODING_NONE;
             ed2->type = BTRFS_FILE_EXTENT_INLINE;
