@@ -1154,10 +1154,12 @@ void _debug_message(_In_ const char* func, _In_ char* s, ...) __attribute__((for
 
 #else
 
-#define TRACE(s, ...) do { } while(0)
-#define WARN(s, ...) do { } while(0)
+#define TRACE(s, ...) do { if (0) _debug_message(s, ##__VA_ARGS__); } while (0)
+#define WARN(s, ...) do { if (0) _debug_message(s, ##__VA_ARGS__); } while (0)
 #define FIXME(s, ...) DbgPrint("Btrfs FIXME : %s : " s, funcname, ##__VA_ARGS__)
 #define ERR(s, ...) DbgPrint("Btrfs ERR : %s : " s, funcname, ##__VA_ARGS__)
+
+void _debug_message(_In_ char* s, ...) __attribute__((format(printf, 1, 2)));
 
 #endif
 
