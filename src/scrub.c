@@ -476,7 +476,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     ptr = (uint8_t*)&ei[1];
     len = tp.item->size - sizeof(struct btrfs_extent_item);
 
-    if (tp.item->key.objectid == BTRFS_EXTENT_ITEM_KEY && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (tp.item->key.objectid == BTRFS_EXTENT_ITEM_KEY && ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                                                                           tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
@@ -2542,7 +2542,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                         goto end;
                     }
 
-                    if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK)
                         extent_is_tree = true;
                 }
 
@@ -2985,7 +2985,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
                     goto end;
                 }
 
-                if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK)
                     is_tree = true;
             }
 

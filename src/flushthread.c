@@ -720,7 +720,7 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
 
     eism->ei.refs = 1;
     eism->ei.generation = Vcb->superblock.generation;
-    eism->ei.flags = EXTENT_ITEM_TREE_BLOCK;
+    eism->ei.flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
     eism->eir.type = BTRFS_TREE_BLOCK_REF_KEY;
     eism->eir.offset = root_id;
 
@@ -851,7 +851,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
 
     eit2->extent_item.refs = 1;
     eit2->extent_item.generation = Vcb->superblock.generation;
-    eit2->extent_item.flags = EXTENT_ITEM_TREE_BLOCK;
+    eit2->extent_item.flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
     eit2->tbi.level = level;
     eit2->eir.type = BTRFS_TREE_BLOCK_REF_KEY;
     eit2->eir.offset = root_id;
@@ -1122,7 +1122,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (flags & EXTENT_ITEM_SHARED_BACKREFS || t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+    if (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || t->header.flags & HEADER_FLAG_SHARED_BACKREF || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
         bool unique = rc > 1 ? false : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp, rollback) : false);
         uint64_t offset;
 
@@ -1185,7 +1185,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                                 return Status;
                             }
 
-                            if ((flags & EXTENT_ITEM_SHARED_BACKREFS && unique) || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
+                            if ((flags & BTRFS_BLOCK_FLAG_FULL_BACKREF && unique) || !(t->header.flags & HEADER_FLAG_MIXED_BACKREF)) {
                                 uint64_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, t->header.bytenr, Irp);
 
                                 if (sdrrc > 0) {
@@ -1323,9 +1323,9 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
     t->has_address = false;
 
-    if ((rc > 1 || t->header.owner != t->root->id) && !(flags & EXTENT_ITEM_SHARED_BACKREFS)) {
+    if ((rc > 1 || t->header.owner != t->root->id) && !(flags & BTRFS_BLOCK_FLAG_FULL_BACKREF)) {
         if (t->header.owner == t->root->id) {
-            flags |= EXTENT_ITEM_SHARED_BACKREFS;
+            flags |= BTRFS_BLOCK_FLAG_FULL_BACKREF;
             update_extent_flags(Vcb, t->header.bytenr, flags, Irp);
         }
 
@@ -3279,7 +3279,7 @@ bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp) {
         if (ei->refs > 1)
             goto end;
 
-        if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+        if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
             struct btrfs_tree_block_info* ei2;
 
             if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info))

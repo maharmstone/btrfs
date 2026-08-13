@@ -382,9 +382,9 @@ struct btrfs_inode_extref {
     uint8_t name[];
 };
 
-#define EXTENT_ITEM_DATA            0x001
-#define EXTENT_ITEM_TREE_BLOCK      0x002
-#define EXTENT_ITEM_SHARED_BACKREFS 0x100
+#define BTRFS_EXTENT_FLAG_DATA            0x001
+#define BTRFS_EXTENT_FLAG_TREE_BLOCK      0x002
+#define BTRFS_BLOCK_FLAG_FULL_BACKREF     0x100
 
 struct btrfs_extent_item {
     uint64_t refs;

@@ -68,7 +68,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 
         ei->refs = refcount;
         ei->generation = Vcb->superblock.generation;
-        ei->flags = EXTENT_ITEM_DATA;
+        ei->flags = BTRFS_EXTENT_FLAG_DATA;
 
         eir = (struct btrfs_extent_inline_ref*)&ei[1];
         eir->type = BTRFS_EXTENT_DATA_REF_KEY;
@@ -108,7 +108,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         ERR("(%I64x,%x,%I64x) had TREE_BLOCK flag set\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
         return STATUS_INTERNAL_ERROR;
     }
@@ -442,7 +442,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
         ei->refs = count;
         ei->generation = Vcb->superblock.generation;
-        ei->flags = EXTENT_ITEM_DATA;
+        ei->flags = BTRFS_EXTENT_FLAG_DATA;
 
         eir = (struct btrfs_extent_inline_ref*)&ei[1];
 
@@ -485,7 +485,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         ERR("(%I64x,%x,%I64x) had TREE_BLOCK flag set\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
         return STATUS_INTERNAL_ERROR;
     }
@@ -823,7 +823,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
         ei->refs = 1;
         ei->generation = Vcb->superblock.generation;
-        ei->flags = EXTENT_ITEM_TREE_BLOCK;
+        ei->flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
         ptr = (uint8_t*)&ei[1];
 
         if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
@@ -870,7 +870,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
             return STATUS_INTERNAL_ERROR;
@@ -958,7 +958,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         len = tp.item->size - sizeof(struct btrfs_extent_item);
         ptr = (uint8_t*)&ei[1];
 
-        if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+        if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK && !skinny) {
             len -= sizeof(struct btrfs_tree_block_info);
             ptr += sizeof(struct btrfs_tree_block_info);
         }
@@ -1115,7 +1115,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
         ei->refs = 1;
         ei->generation = Vcb->superblock.generation;
-        ei->flags = EXTENT_ITEM_TREE_BLOCK;
+        ei->flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
         ptr = (uint8_t*)&ei[1];
 
         if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)) {
@@ -1170,7 +1170,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
             return STATUS_INTERNAL_ERROR;
@@ -1257,7 +1257,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         len = tp.item->size - sizeof(struct btrfs_extent_item);
         ptr = (uint8_t*)&ei[1];
 
-        if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+        if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK && !skinny) {
             len -= sizeof(struct btrfs_tree_block_info);
             ptr += sizeof(struct btrfs_tree_block_info);
         }
@@ -1431,7 +1431,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         ERR("(%I64x,%x,%I64x) had TREE_BLOCK flag set\n", tp.item->key.objectid,
             tp.item->key.type, tp.item->key.offset);
 
@@ -1746,7 +1746,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         ERR("(%I64x,%x,%I64x) had TREE_BLOCK flag set\n", tp.item->key.objectid,
             tp.item->key.type, tp.item->key.offset);
 
@@ -2069,7 +2069,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
                 tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
@@ -2339,7 +2339,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK && !skinny) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK && !skinny) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
                 tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
@@ -2748,7 +2748,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             WARN("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
             return false;
@@ -3168,7 +3168,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (searchkey.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (searchkey.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x): size was %u, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                                                                           tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));

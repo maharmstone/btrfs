@@ -260,7 +260,7 @@ static NTSTATUS add_metadata_reloc_parent(_Requires_exclusive_lock_held_(_Curr_-
              tp.item->size >= sizeof(struct btrfs_extent_item)) {
         struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
-        if (!(ei->flags & EXTENT_ITEM_TREE_BLOCK)) {
+        if (!(ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK)) {
             ERR("EXTENT_ITEM for %I64x found, but tree flag not set\n", address);
             return STATUS_INTERNAL_ERROR;
         }
@@ -434,7 +434,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
         }
     }
 
-    if (ei->flags & EXTENT_ITEM_SHARED_BACKREFS || mr->data->flags & HEADER_FLAG_SHARED_BACKREF || !(mr->data->flags & HEADER_FLAG_MIXED_BACKREF)) {
+    if (ei->flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || mr->data->flags & HEADER_FLAG_SHARED_BACKREF || !(mr->data->flags & HEADER_FLAG_MIXED_BACKREF)) {
         if (mr->data->level > 0) {
             uint16_t i;
             struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)&mr->data[1];
@@ -1127,7 +1127,7 @@ static NTSTATUS balance_metadata_chunk(device_extension* Vcb, chunk* c, bool* ch
                        tp.item->size >= sizeof(struct btrfs_extent_item)) {
                 struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
-                if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK)
                     tree = true;
             }
 
@@ -1756,7 +1756,7 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
             if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
                 struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
-                if (ei->flags & EXTENT_ITEM_TREE_BLOCK)
+                if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK)
                     tree = true;
             }
 

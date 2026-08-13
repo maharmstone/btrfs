@@ -517,7 +517,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
 
             eim.ei.refs = 1;
             eim.ei.generation = 1;
-            eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
+            eim.ei.flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
             eim.eir.type = BTRFS_TREE_BLOCK_REF_KEY;
             eim.eir.offset = r->id;
 
@@ -538,7 +538,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
 
             eim2.ei.refs = 1;
             eim2.ei.generation = 1;
-            eim2.ei.flags = EXTENT_ITEM_TREE_BLOCK;
+            eim2.ei.flags = BTRFS_EXTENT_FLAG_TREE_BLOCK;
             eim2.ei2.key = firstitem;
             eim2.ei2.level = 0;
             eim2.eir.type = BTRFS_TREE_BLOCK_REF_KEY;
