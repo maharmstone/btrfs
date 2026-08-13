@@ -421,13 +421,6 @@ struct btrfs_block_group_item {
     uint64_t flags;
 };
 
-struct btrfs_extent_ref_v0 {
-    uint64_t root;
-    uint64_t generation;
-    uint64_t objectid;
-    uint32_t count;
-};
-
 struct btrfs_shared_data_ref {
     uint32_t count;
 };
