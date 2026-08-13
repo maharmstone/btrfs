@@ -509,7 +509,6 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     struct btrfs_key searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
-    ULONG num_children = 0;
     uint64_t max_index = 2;
 
     fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
@@ -626,8 +625,6 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
         InsertTailList(&fcb->dir_children_index, &dc->list_entry_index);
 
         insert_dir_child_into_hash_lists(fcb, dc);
-
-        num_children++;
 
 cont:
         if (find_next_item(Vcb, &tp, &next_tp, false, Irp))
