@@ -196,7 +196,7 @@ struct btrfs_dev_item {
     uint8_t fsid[BTRFS_UUID_SIZE];
 };
 
-#define SYS_CHUNK_ARRAY_SIZE 0x800
+#define BTRFS_SYSTEM_CHUNK_ARRAY_SIZE 0x800
 #define BTRFS_NUM_BACKUP_ROOTS 4
 
 struct btrfs_root_backup {
@@ -263,7 +263,7 @@ struct btrfs_super_block {
     uint64_t remap_root_generation;
     uint8_t remap_root_level;
     uint8_t reserved[199];
-    uint8_t sys_chunk_array[SYS_CHUNK_ARRAY_SIZE];
+    uint8_t sys_chunk_array[BTRFS_SYSTEM_CHUNK_ARRAY_SIZE];
     struct btrfs_root_backup super_roots[BTRFS_NUM_BACKUP_ROOTS];
     uint8_t padding[565];
 };

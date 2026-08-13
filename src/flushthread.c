@@ -4167,7 +4167,7 @@ static NTSTATUS add_to_bootstrap(device_extension* Vcb, uint64_t objectid, uint8
     sys_chunk* sc;
     LIST_ENTRY* le;
 
-    if (Vcb->superblock.sys_chunk_array_size + sizeof(struct btrfs_key) + size > SYS_CHUNK_ARRAY_SIZE) {
+    if (Vcb->superblock.sys_chunk_array_size + sizeof(struct btrfs_key) + size > BTRFS_SYSTEM_CHUNK_ARRAY_SIZE) {
         ERR("error - bootstrap is full\n");
         return STATUS_INTERNAL_ERROR;
     }
