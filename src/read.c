@@ -107,19 +107,19 @@ NTSTATUS check_csum(device_extension* Vcb, uint8_t* data, uint32_t sectors, void
 
 void get_tree_checksum(device_extension* Vcb, struct btrfs_header* th, void* csum) {
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             *(uint32_t*)csum = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             *(uint64_t*)csum = XXH64((uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum), 0);
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             calc_sha256(csum, &th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             blake2b(csum, BLAKE2_HASH_SIZE, (uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
         break;
     }
@@ -127,7 +127,7 @@ void get_tree_checksum(device_extension* Vcb, struct btrfs_header* th, void* csu
 
 bool check_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C: {
+        case BTRFS_CSUM_TYPE_CRC32: {
             uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
 
             if (crc32 == *((uint32_t*)th->csum))
@@ -138,7 +138,7 @@ bool check_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
             break;
         }
 
-        case CSUM_TYPE_XXHASH: {
+        case BTRFS_CSUM_TYPE_XXHASH: {
             uint64_t hash = XXH64((uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum), 0);
 
             if (hash == *((uint64_t*)th->csum))
@@ -149,7 +149,7 @@ bool check_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
             break;
         }
 
-        case CSUM_TYPE_SHA256: {
+        case BTRFS_CSUM_TYPE_SHA256: {
             uint8_t hash[SHA256_HASH_SIZE];
 
             calc_sha256(hash, (uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
@@ -162,7 +162,7 @@ bool check_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
             break;
         }
 
-        case CSUM_TYPE_BLAKE2: {
+        case BTRFS_CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
             blake2b(hash, sizeof(hash), (uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
@@ -181,19 +181,19 @@ bool check_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
 
 void get_sector_csum(device_extension* Vcb, void* buf, void* csum) {
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             *(uint32_t*)csum = ~calc_crc32c(0xffffffff, buf, Vcb->superblock.sectorsize);
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             *(uint64_t*)csum = XXH64(buf, Vcb->superblock.sectorsize, 0);
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             calc_sha256(csum, buf, Vcb->superblock.sectorsize);
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             blake2b(csum, BLAKE2_HASH_SIZE, buf, Vcb->superblock.sectorsize);
         break;
     }
@@ -201,19 +201,19 @@ void get_sector_csum(device_extension* Vcb, void* buf, void* csum) {
 
 bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C: {
+        case BTRFS_CSUM_TYPE_CRC32: {
             uint32_t crc32 = ~calc_crc32c(0xffffffff, buf, Vcb->superblock.sectorsize);
 
             return *(uint32_t*)csum == crc32;
         }
 
-        case CSUM_TYPE_XXHASH: {
+        case BTRFS_CSUM_TYPE_XXHASH: {
             uint64_t hash = XXH64(buf, Vcb->superblock.sectorsize, 0);
 
             return *(uint64_t*)csum == hash;
         }
 
-        case CSUM_TYPE_SHA256: {
+        case BTRFS_CSUM_TYPE_SHA256: {
             uint8_t hash[SHA256_HASH_SIZE];
 
             calc_sha256(hash, buf, Vcb->superblock.sectorsize);
@@ -221,7 +221,7 @@ bool check_sector_csum(device_extension* Vcb, void* buf, void* csum) {
             return RtlCompareMemory(hash, csum, SHA256_HASH_SIZE) == SHA256_HASH_SIZE;
         }
 
-        case CSUM_TYPE_BLAKE2: {
+        case BTRFS_CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
             blake2b(hash, sizeof(hash), buf, Vcb->superblock.sectorsize);

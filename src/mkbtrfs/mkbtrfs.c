@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
     uint64_t incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA |
                               BTRFS_INCOMPAT_FLAGS_NO_HOLES;
     uint64_t compat_ro_flags = BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE;
-    uint16_t csum_type = CSUM_TYPE_CRC32C;
+    uint16_t csum_type = BTRFS_CSUM_TYPE_CRC32;
     pSetIncompatFlags SetIncompatFlags;
     pSetCsumType SetCsumType;
 
@@ -136,13 +136,13 @@ int main(int argc, char** argv) {
                     v = &colon[1];
 
                     if (!_stricmp(v, "crc32c"))
-                        csum_type = CSUM_TYPE_CRC32C;
+                        csum_type = BTRFS_CSUM_TYPE_CRC32;
                     else if (!_stricmp(v, "xxhash"))
-                        csum_type = CSUM_TYPE_XXHASH;
+                        csum_type = BTRFS_CSUM_TYPE_XXHASH;
                     else if (!_stricmp(v, "sha256"))
-                        csum_type = CSUM_TYPE_SHA256;
+                        csum_type = BTRFS_CSUM_TYPE_SHA256;
                     else if (!_stricmp(v, "blake2"))
-                        csum_type = CSUM_TYPE_BLAKE2;
+                        csum_type = BTRFS_CSUM_TYPE_BLAKE2;
                     else {
                         print_string(stdout, IDS_INVALID_CSUM_TYPE);
                         invalid_args = true;

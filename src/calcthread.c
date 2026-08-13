@@ -147,19 +147,19 @@ void do_calc_job(device_extension* Vcb, uint8_t* data, uint32_t sectors, void* c
     cj.left = cj.not_started = sectors;
 
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             cj.type = calc_thread_crc32c;
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             cj.type = calc_thread_xxhash;
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             cj.type = calc_thread_sha256;
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             cj.type = calc_thread_blake2;
         break;
     }

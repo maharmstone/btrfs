@@ -157,7 +157,7 @@ HMODULE module;
 ULONG def_sector_size = 0, def_node_size = 0;
 uint64_t def_incompat_flags = BTRFS_INCOMPAT_FLAGS_EXTENDED_IREF | BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA;
 uint64_t def_compat_ro_flags = 0;
-uint16_t def_csum_type = CSUM_TYPE_CRC32C;
+uint16_t def_csum_type = BTRFS_CSUM_TYPE_CRC32;
 
 // the following definitions come from fmifs.h in ReactOS
 
@@ -590,19 +590,19 @@ static NTSTATUS write_data(HANDLE h, uint64_t address, btrfs_chunk* c, void* dat
 
 static void calc_tree_checksum(struct btrfs_header* th, uint32_t node_size) {
     switch (def_csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             *(uint32_t*)th = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fsid, node_size - sizeof(th->csum));
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             *(uint64_t*)th = XXH64((uint8_t*)&th->fsid, node_size - sizeof(th->csum), 0);
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)th, &th->fsid, node_size - sizeof(th->csum));
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fsid, node_size - sizeof(th->csum));
         break;
     }
@@ -707,19 +707,19 @@ static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, uint8_t* fsu
 
 static void calc_superblock_checksum(struct btrfs_super_block* sb) {
     switch (def_csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             *(uint64_t*)sb = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)sb, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             blake2b((uint8_t*)sb, BLAKE2_HASH_SIZE, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
     }
@@ -1153,19 +1153,19 @@ static bool look_for_device(btrfs_filesystem* bfs, uint8_t* devuuid) {
 
 static bool check_superblock_checksum(struct btrfs_super_block* sb) {
     switch (sb->csum_type) {
-        case CSUM_TYPE_CRC32C: {
+        case BTRFS_CSUM_TYPE_CRC32: {
             uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             return crc32 == *(uint32_t*)sb;
         }
 
-        case CSUM_TYPE_XXHASH: {
+        case BTRFS_CSUM_TYPE_XXHASH: {
             uint64_t hash = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
 
             return hash == *(uint64_t*)sb;
         }
 
-        case CSUM_TYPE_SHA256: {
+        case BTRFS_CSUM_TYPE_SHA256: {
             uint8_t hash[SHA256_HASH_SIZE];
 
             calc_sha256(hash, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
@@ -1173,7 +1173,7 @@ static bool check_superblock_checksum(struct btrfs_super_block* sb) {
             return !memcmp(hash, sb, SHA256_HASH_SIZE);
         }
 
-        case CSUM_TYPE_BLAKE2: {
+        case BTRFS_CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
             blake2b(hash, sizeof(hash), &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
@@ -1364,8 +1364,8 @@ static NTSTATUS NTAPI FormatEx2(PUNICODE_STRING DriveRoot, FMIFS_MEDIA_FLAG Medi
     check_cpu();
 #endif
 
-    if (def_csum_type != CSUM_TYPE_CRC32C && def_csum_type != CSUM_TYPE_XXHASH && def_csum_type != CSUM_TYPE_SHA256 &&
-        def_csum_type != CSUM_TYPE_BLAKE2)
+    if (def_csum_type != BTRFS_CSUM_TYPE_CRC32 && def_csum_type != BTRFS_CSUM_TYPE_XXHASH && def_csum_type != BTRFS_CSUM_TYPE_SHA256 &&
+        def_csum_type != BTRFS_CSUM_TYPE_BLAKE2)
         return STATUS_INVALID_PARAMETER;
 
     InitializeObjectAttributes(&attr, DriveRoot, OBJ_CASE_INSENSITIVE, NULL, NULL);

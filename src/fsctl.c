@@ -5118,7 +5118,7 @@ static NTSTATUS add_csum_sparse_extents(device_extension* Vcb, uint64_t sparse_e
     }
 
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C: {
+        case BTRFS_CSUM_TYPE_CRC32: {
             uint32_t* csum = (uint32_t*)*ptr;
             uint32_t sparse_hash = *(uint32_t*)hash_ptr;
 
@@ -5129,7 +5129,7 @@ static NTSTATUS add_csum_sparse_extents(device_extension* Vcb, uint64_t sparse_e
             break;
         }
 
-        case CSUM_TYPE_XXHASH: {
+        case BTRFS_CSUM_TYPE_XXHASH: {
             uint64_t* csum = (uint64_t*)*ptr;
             uint64_t sparse_hash = *(uint64_t*)hash_ptr;
 
@@ -5140,8 +5140,8 @@ static NTSTATUS add_csum_sparse_extents(device_extension* Vcb, uint64_t sparse_e
             break;
         }
 
-        case CSUM_TYPE_SHA256:
-        case CSUM_TYPE_BLAKE2: {
+        case BTRFS_CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_BLAKE2: {
             uint8_t* csum = (uint8_t*)*ptr;
 
             for (uint64_t i = 0; i < sparse_extents; i++) {

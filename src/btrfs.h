@@ -133,10 +133,10 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 
 #define BTRFS_SUPER_FLAG_SEEDING   0x100000000
 
-#define CSUM_TYPE_CRC32C        0
-#define CSUM_TYPE_XXHASH        1
-#define CSUM_TYPE_SHA256        2
-#define CSUM_TYPE_BLAKE2        3
+#define BTRFS_CSUM_TYPE_CRC32         0
+#define BTRFS_CSUM_TYPE_XXHASH        1
+#define BTRFS_CSUM_TYPE_SHA256        2
+#define BTRFS_CSUM_TYPE_BLAKE2        3
 
 #define BTRFS_UUID_SIZE 16
 

@@ -1800,19 +1800,19 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
 
 void calc_tree_checksum(device_extension* Vcb, struct btrfs_header* th) {
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             *((uint32_t*)th) = ~calc_crc32c(0xffffffff, (uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             *((uint64_t*)th) = XXH64((uint8_t*)&th->fsid, Vcb->superblock.nodesize - sizeof(th->csum), 0);
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)th, &th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             blake2b((uint8_t*)th, BLAKE2_HASH_SIZE, &th->fsid, Vcb->superblock.nodesize - sizeof(th->csum));
         break;
     }
@@ -2208,19 +2208,19 @@ static NTSTATUS __stdcall write_superblock_completion(PDEVICE_OBJECT DeviceObjec
 
 static void calc_superblock_checksum(struct btrfs_super_block* sb) {
     switch (sb->csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             *(uint32_t*)sb = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             *(uint64_t*)sb = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
         break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             calc_sha256((uint8_t*)sb, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             blake2b((uint8_t*)sb, BLAKE2_HASH_SIZE, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
         break;
     }

@@ -2813,7 +2813,7 @@ exit:
 
 bool check_superblock_checksum(struct btrfs_super_block* sb) {
     switch (sb->csum_type) {
-        case CSUM_TYPE_CRC32C: {
+        case BTRFS_CSUM_TYPE_CRC32: {
             uint32_t crc32 = ~calc_crc32c(0xffffffff, (uint8_t*)&sb->fsid, (ULONG)sizeof(struct btrfs_super_block) - sizeof(sb->csum));
 
             if (crc32 == *((uint32_t*)sb->csum))
@@ -2824,7 +2824,7 @@ bool check_superblock_checksum(struct btrfs_super_block* sb) {
             break;
         }
 
-        case CSUM_TYPE_XXHASH: {
+        case BTRFS_CSUM_TYPE_XXHASH: {
             uint64_t hash = XXH64(&sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum), 0);
 
             if (hash == *((uint64_t*)sb->csum))
@@ -2835,7 +2835,7 @@ bool check_superblock_checksum(struct btrfs_super_block* sb) {
             break;
         }
 
-        case CSUM_TYPE_SHA256: {
+        case BTRFS_CSUM_TYPE_SHA256: {
             uint8_t hash[SHA256_HASH_SIZE];
 
             calc_sha256(hash, &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
@@ -2848,7 +2848,7 @@ bool check_superblock_checksum(struct btrfs_super_block* sb) {
             break;
         }
 
-        case CSUM_TYPE_BLAKE2: {
+        case BTRFS_CSUM_TYPE_BLAKE2: {
             uint8_t hash[BLAKE2_HASH_SIZE];
 
             blake2b(hash, sizeof(hash), &sb->fsid, sizeof(struct btrfs_super_block) - sizeof(sb->csum));
@@ -4645,19 +4645,19 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     switch (Vcb->superblock.csum_type) {
-        case CSUM_TYPE_CRC32C:
+        case BTRFS_CSUM_TYPE_CRC32:
             Vcb->csum_size = sizeof(uint32_t);
             break;
 
-        case CSUM_TYPE_XXHASH:
+        case BTRFS_CSUM_TYPE_XXHASH:
             Vcb->csum_size = sizeof(uint64_t);
             break;
 
-        case CSUM_TYPE_SHA256:
+        case BTRFS_CSUM_TYPE_SHA256:
             Vcb->csum_size = SHA256_HASH_SIZE;
             break;
 
-        case CSUM_TYPE_BLAKE2:
+        case BTRFS_CSUM_TYPE_BLAKE2:
             Vcb->csum_size = BLAKE2_HASH_SIZE;
             break;
 
