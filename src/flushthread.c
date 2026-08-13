@@ -4955,7 +4955,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         }
 
         if (fcb->marked_as_orphan) {
-            Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, BTRFS_ORPHAN_ITEM_KEY,
+            Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_OBJECTID, BTRFS_ORPHAN_ITEM_KEY,
                                             fcb->inode, NULL, 0, Batch_Delete);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item_batch returned %08lx\n", Status);
@@ -5459,7 +5459,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
     }
 
     if (fcb->inode_item.nlink == 0 && !fcb->marked_as_orphan) { // mark as orphan
-        Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_INODE_OBJID, BTRFS_ORPHAN_ITEM_KEY,
+        Status = insert_tree_item_batch(batchlist, fcb->Vcb, fcb->subvol, BTRFS_ORPHAN_OBJECTID, BTRFS_ORPHAN_ITEM_KEY,
                                         fcb->inode, NULL, 0, Batch_Insert);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
@@ -7366,7 +7366,7 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
 
     InitializeListHead(&rollback);
 
-    searchkey.objectid = BTRFS_ORPHAN_INODE_OBJID;
+    searchkey.objectid = BTRFS_ORPHAN_OBJECTID;
     searchkey.type = BTRFS_ORPHAN_ITEM_KEY;
     searchkey.offset = 0;
 
