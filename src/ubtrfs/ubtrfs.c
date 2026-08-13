@@ -350,7 +350,7 @@ static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev
 
     dev->dev_item.bytes_used += size;
 
-    de.chunk_tree = BTRFS_ROOT_CHUNK;
+    de.chunk_tree = BTRFS_CHUNK_TREE_OBJECTID;
     de.chunk_objectid = 0x100;
     de.chunk_offset = offset;
     de.length = size;
@@ -406,7 +406,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     c->chunk_item = malloc(offsetof(struct btrfs_chunk, stripe) + (stripes * sizeof(struct btrfs_stripe)));
 
     c->chunk_item->length = size;
-    c->chunk_item->owner = BTRFS_ROOT_EXTENT;
+    c->chunk_item->owner = BTRFS_EXTENT_TREE_OBJECTID;
     c->chunk_item->stripe_len = stripe_length;
     c->chunk_item->type = flags;
     c->chunk_item->io_align = stripe_length;
@@ -487,7 +487,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
     le = roots->Flink;
     while (le != roots) {
         btrfs_root* r = CONTAINING_RECORD(le, btrfs_root, list_entry);
-        btrfs_chunk* c = r->id == BTRFS_ROOT_CHUNK ? sys_chunk : metadata_chunk;
+        btrfs_chunk* c = r->id == BTRFS_CHUNK_TREE_OBJECTID ? sys_chunk : metadata_chunk;
         bool done_use = false;
 
         r->header.bytenr = get_next_address(c);
@@ -547,7 +547,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             add_item(extent_root, r->header.bytenr, BTRFS_EXTENT_ITEM_KEY, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
         }
 
-        if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
+        if (r->id != BTRFS_ROOT_TREE_OBJECTID && r->id != BTRFS_CHUNK_TREE_OBJECTID) {
             struct btrfs_root_item ri;
 
             memset(&ri, 0, sizeof(struct btrfs_root_item));
@@ -766,7 +766,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb->chunk_root = chunk_root->header.bytenr;
     sb->total_bytes = dev->dev_item.total_bytes;
     sb->bytes_used = bytes_used;
-    sb->root_dir_objectid = BTRFS_ROOT_TREEDIR;
+    sb->root_dir_objectid = BTRFS_ROOT_TREE_DIR_OBJECTID;
     sb->num_devices = 1;
     sb->sectorsize = sector_size;
     sb->nodesize = node_size;
@@ -977,7 +977,7 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
     static const char default_subvol[] = "default";
     static const uint32_t default_hash = 0x8dbfc2d2;
 
-    add_inode_ref(root_root, BTRFS_ROOT_FSTREE, BTRFS_ROOT_TREEDIR, 0, default_subvol);
+    add_inode_ref(root_root, BTRFS_FS_TREE_OBJECTID, BTRFS_ROOT_TREE_DIR_OBJECTID, 0, default_subvol);
 
     memset(&ii, 0, sizeof(struct btrfs_inode_item));
 
@@ -993,11 +993,11 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
     win_time_to_unix(time, &ii.atime);
     ii.ctime = ii.mtime = ii.otime = ii.atime;
 
-    add_item(root_root, BTRFS_ROOT_TREEDIR, BTRFS_INODE_ITEM_KEY, 0, &ii, sizeof(struct btrfs_inode_item));
+    add_item(root_root, BTRFS_ROOT_TREE_DIR_OBJECTID, BTRFS_INODE_ITEM_KEY, 0, &ii, sizeof(struct btrfs_inode_item));
 
-    add_inode_ref(root_root, BTRFS_ROOT_TREEDIR, BTRFS_ROOT_TREEDIR, 0, "..");
+    add_inode_ref(root_root, BTRFS_ROOT_TREE_DIR_OBJECTID, BTRFS_ROOT_TREE_DIR_OBJECTID, 0, "..");
 
-    add_dir_item(root_root, BTRFS_ROOT_TREEDIR, default_hash, BTRFS_ROOT_FSTREE, BTRFS_ROOT_ITEM_KEY,
+    add_dir_item(root_root, BTRFS_ROOT_TREE_DIR_OBJECTID, default_hash, BTRFS_FS_TREE_OBJECTID, BTRFS_ROOT_ITEM_KEY,
                  0xffffffffffffffff, 0, BTRFS_TYPE_DIRECTORY, default_subvol);
 }
 
@@ -1060,21 +1060,21 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     InitializeListHead(&roots);
     InitializeListHead(&chunks);
 
-    root_root = add_root(&roots, BTRFS_ROOT_ROOT);
-    chunk_root = add_root(&roots, BTRFS_ROOT_CHUNK);
-    extent_root = add_root(&roots, BTRFS_ROOT_EXTENT);
-    dev_root = add_root(&roots, BTRFS_ROOT_DEVTREE);
-    add_root(&roots, BTRFS_ROOT_CHECKSUM);
-    fs_root = add_root(&roots, BTRFS_ROOT_FSTREE);
-    reloc_root = add_root(&roots, BTRFS_ROOT_DATA_RELOC);
+    root_root = add_root(&roots, BTRFS_ROOT_TREE_OBJECTID);
+    chunk_root = add_root(&roots, BTRFS_CHUNK_TREE_OBJECTID);
+    extent_root = add_root(&roots, BTRFS_EXTENT_TREE_OBJECTID);
+    dev_root = add_root(&roots, BTRFS_DEV_TREE_OBJECTID);
+    add_root(&roots, BTRFS_CSUM_TREE_OBJECTID);
+    fs_root = add_root(&roots, BTRFS_FS_TREE_OBJECTID);
+    reloc_root = add_root(&roots, BTRFS_DATA_RELOC_TREE_OBJECTID);
 
     if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_FREE_SPACE_CACHE)
-        free_space_root = add_root(&roots, BTRFS_ROOT_FREE_SPACE);
+        free_space_root = add_root(&roots, BTRFS_FREE_SPACE_TREE_OBJECTID);
     else
         free_space_root = NULL;
 
     if (compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
-        block_group_root = add_root(&roots, BTRFS_ROOT_BLOCK_GROUP);
+        block_group_root = add_root(&roots, BTRFS_BLOCK_GROUP_TREE_OBJECTID);
     else
         block_group_root = NULL;
 

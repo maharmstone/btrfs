@@ -2699,7 +2699,7 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             break;
     }
 
-    if (dotfile || (r->id == BTRFS_ROOT_FSTREE && inode == SUBVOL_ROOT_INODE))
+    if (dotfile || (r->id == BTRFS_FS_TREE_OBJECTID && inode == SUBVOL_ROOT_INODE))
         att |= FILE_ATTRIBUTE_HIDDEN;
 
     att |= FILE_ATTRIBUTE_ARCHIVE;
@@ -3022,50 +3022,50 @@ static NTSTATUS add_root(_Inout_ device_extension* Vcb, _In_ uint64_t id, _In_ u
     } else
         RtlZeroMemory(&r->root_item, sizeof(struct btrfs_root_item));
 
-    if (!Vcb->readonly && (r->id == BTRFS_ROOT_ROOT || r->id == BTRFS_ROOT_FSTREE || (r->id >= 0x100 && !(r->id & 0xf000000000000000)))) { // FS tree root
+    if (!Vcb->readonly && (r->id == BTRFS_ROOT_TREE_OBJECTID || r->id == BTRFS_FS_TREE_OBJECTID || (r->id >= 0x100 && !(r->id & 0xf000000000000000)))) { // FS tree root
         // FIXME - don't call this if subvol is readonly (though we will have to if we ever toggle this flag)
         get_last_inode(Vcb, r, NULL);
 
-        if (r->id == BTRFS_ROOT_ROOT && r->lastinode < 0x100)
+        if (r->id == BTRFS_ROOT_TREE_OBJECTID && r->lastinode < 0x100)
             r->lastinode = 0x100;
     }
 
     InsertTailList(&Vcb->roots, &r->list_entry);
 
     switch (r->id) {
-        case BTRFS_ROOT_ROOT:
+        case BTRFS_ROOT_TREE_OBJECTID:
             Vcb->root_root = r;
             break;
 
-        case BTRFS_ROOT_EXTENT:
+        case BTRFS_EXTENT_TREE_OBJECTID:
             Vcb->extent_root = r;
             break;
 
-        case BTRFS_ROOT_CHUNK:
+        case BTRFS_CHUNK_TREE_OBJECTID:
             Vcb->chunk_root = r;
             break;
 
-        case BTRFS_ROOT_DEVTREE:
+        case BTRFS_DEV_TREE_OBJECTID:
             Vcb->dev_root = r;
             break;
 
-        case BTRFS_ROOT_CHECKSUM:
+        case BTRFS_CSUM_TREE_OBJECTID:
             Vcb->checksum_root = r;
             break;
 
-        case BTRFS_ROOT_UUID:
+        case BTRFS_UUID_TREE_OBJECTID:
             Vcb->uuid_root = r;
             break;
 
-        case BTRFS_ROOT_FREE_SPACE:
+        case BTRFS_FREE_SPACE_TREE_OBJECTID:
             Vcb->space_root = r;
             break;
 
-        case BTRFS_ROOT_DATA_RELOC:
+        case BTRFS_DATA_RELOC_TREE_OBJECTID:
             Vcb->data_reloc_root = r;
             break;
 
-        case BTRFS_ROOT_BLOCK_GROUP:
+        case BTRFS_BLOCK_GROUP_TREE_OBJECTID:
             if (Vcb->superblock.compat_ro_flags & BTRFS_COMPAT_RO_FLAGS_BLOCK_GROUP_TREE)
                 Vcb->block_group_root = r;
             break;
@@ -3130,7 +3130,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
         WARN("data reloc root doesn't exist, creating it\n");
 
-        Status = create_root(Vcb, BTRFS_ROOT_DATA_RELOC, &reloc_root, false, 0, Irp);
+        Status = create_root(Vcb, BTRFS_DATA_RELOC_TREE_OBJECTID, &reloc_root, false, 0, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08lx\n", Status);
@@ -4059,7 +4059,7 @@ end:
     while (le != &Vcb->roots) {
         root* r = CONTAINING_RECORD(le, root, list_entry);
 
-        if (r->id == BTRFS_ROOT_FSTREE)
+        if (r->id == BTRFS_FS_TREE_OBJECTID)
             return r;
 
         le = le->Flink;
@@ -4706,7 +4706,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     Vcb->log_to_phys_loaded = false;
 
-    add_root(Vcb, BTRFS_ROOT_CHUNK, Vcb->superblock.chunk_root, Vcb->superblock.chunk_root_generation, NULL);
+    add_root(Vcb, BTRFS_CHUNK_TREE_OBJECTID, Vcb->superblock.chunk_root, Vcb->superblock.chunk_root_generation, NULL);
 
     if (!Vcb->chunk_root) {
         ERR("Could not load chunk root.\n");
@@ -4793,7 +4793,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         }
     }
 
-    add_root(Vcb, BTRFS_ROOT_ROOT, Vcb->superblock.root, Vcb->superblock.generation - 1, NULL);
+    add_root(Vcb, BTRFS_ROOT_TREE_OBJECTID, Vcb->superblock.root, Vcb->superblock.generation - 1, NULL);
 
     if (!Vcb->root_root) {
         ERR("Could not load root of roots.\n");
@@ -4940,7 +4940,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     root_fcb->atts = get_file_attributes(Vcb, root_fcb->subvol, root_fcb->inode, root_fcb->type, false, false, Irp);
 
-    if (root_fcb->subvol->id == BTRFS_ROOT_FSTREE)
+    if (root_fcb->subvol->id == BTRFS_FS_TREE_OBJECTID)
         root_fcb->atts &= ~FILE_ATTRIBUTE_HIDDEN;
 
     Vcb->root_fileref = create_fileref(Vcb);

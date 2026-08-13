@@ -318,7 +318,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
         TRACE("uuid root doesn't exist, creating it\n");
 
-        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, false, 0, Irp);
+        Status = create_root(Vcb, BTRFS_UUID_TREE_OBJECTID, &uuid_root, false, 0, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08lx\n", Status);
@@ -886,7 +886,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
         TRACE("uuid root doesn't exist, creating it\n");
 
-        Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, false, 0, Irp);
+        Status = create_root(Vcb, BTRFS_UUID_TREE_OBJECTID, &uuid_root, false, 0, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08lx\n", Status);

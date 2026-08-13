@@ -882,7 +882,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     LIST_ENTRY* le;
     uint64_t flags, addr;
 
-    if (t->root->id == BTRFS_ROOT_CHUNK)
+    if (t->root->id == BTRFS_CHUNK_TREE_OBJECTID)
         flags = Vcb->system_flags;
     else
         flags = Vcb->metadata_flags;
@@ -2120,7 +2120,7 @@ static void update_backup_superblock(device_extension* Vcb, struct btrfs_root_ba
     sb->chunk_root_gen = Vcb->superblock.chunk_root_generation;
     sb->chunk_root_level = Vcb->superblock.chunk_root_level;
 
-    searchkey.objectid = BTRFS_ROOT_EXTENT;
+    searchkey.objectid = BTRFS_EXTENT_TREE_OBJECTID;
     searchkey.type = BTRFS_ROOT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
@@ -2134,7 +2134,7 @@ static void update_backup_superblock(device_extension* Vcb, struct btrfs_root_ba
         }
     }
 
-    searchkey.objectid = BTRFS_ROOT_FSTREE;
+    searchkey.objectid = BTRFS_FS_TREE_OBJECTID;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
@@ -2146,7 +2146,7 @@ static void update_backup_superblock(device_extension* Vcb, struct btrfs_root_ba
         }
     }
 
-    searchkey.objectid = BTRFS_ROOT_DEVTREE;
+    searchkey.objectid = BTRFS_DEV_TREE_OBJECTID;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
@@ -2158,7 +2158,7 @@ static void update_backup_superblock(device_extension* Vcb, struct btrfs_root_ba
         }
     }
 
-    searchkey.objectid = BTRFS_ROOT_CHECKSUM;
+    searchkey.objectid = BTRFS_CSUM_TREE_OBJECTID;
 
     if (NT_SUCCESS(find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp))) {
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type && tp.item->size >= sizeof(struct btrfs_root_item)) {
@@ -3776,7 +3776,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             t = CONTAINING_RECORD(le, tree, list_entry);
 
             if (t->write && t->header.level == level && t->header.nritems > 0 && t->parent &&
-                ((t->size < min_size && t->root->id != BTRFS_ROOT_FREE_SPACE) || (t->size < min_size_fst && t->root->id == BTRFS_ROOT_FREE_SPACE)) &&
+                ((t->size < min_size && t->root->id != BTRFS_FREE_SPACE_TREE_OBJECTID) || (t->size < min_size_fst && t->root->id == BTRFS_FREE_SPACE_TREE_OBJECTID)) &&
                 is_tree_unique(Vcb, t, Irp)) {
                 bool done;
 
@@ -7077,7 +7077,7 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
 
             TRACE("uuid root doesn't exist, creating it\n");
 
-            Status = create_root(Vcb, BTRFS_ROOT_UUID, &uuid_root, false, 0, Irp);
+            Status = create_root(Vcb, BTRFS_UUID_TREE_OBJECTID, &uuid_root, false, 0, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("create_root returned %08lx\n", Status);
@@ -7645,7 +7645,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     }
 
     // make sure we always update the extent tree
-    Status = add_root_item_to_cache(Vcb, BTRFS_ROOT_EXTENT, Irp);
+    Status = add_root_item_to_cache(Vcb, BTRFS_EXTENT_TREE_OBJECTID, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("add_root_item_to_cache returned %08lx\n", Status);
         return Status;

@@ -644,14 +644,14 @@ cont:
         else
             top_subvol = find_default_subvol(Vcb, NULL);
 
-        if (fcb->subvol == top_subvol && top_subvol->id != BTRFS_ROOT_FSTREE) {
+        if (fcb->subvol == top_subvol && top_subvol->id != BTRFS_FS_TREE_OBJECTID) {
             dir_child* dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
             if (!dc) {
                 ERR("out of memory\n");
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            dc->key.objectid = BTRFS_ROOT_FSTREE;
+            dc->key.objectid = BTRFS_FS_TREE_OBJECTID;
             dc->key.type = BTRFS_ROOT_ITEM_KEY;
             dc->key.offset = 0;
             dc->index = max_index + 1;
@@ -1343,7 +1343,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         }
     }
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_ROOT_FSTREE && fcb->subvol != Vcb->root_fileref->fcb->subvol)
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID && fcb->subvol != Vcb->root_fileref->fcb->subvol)
         fcb->atts |= FILE_ATTRIBUTE_HIDDEN;
 
     subvol->fcbs_version++;
@@ -4408,7 +4408,7 @@ NTSTATUS open_fileref_by_inode(_Requires_exclusive_lock_held_(_Curr_->fcb_lock) 
                 hl_alloc = true;
             }
         } else {
-            if (!Vcb->options.no_root_dir && subvol->id == BTRFS_ROOT_FSTREE && Vcb->root_fileref->fcb->subvol != subvol) {
+            if (!Vcb->options.no_root_dir && subvol->id == BTRFS_FS_TREE_OBJECTID && Vcb->root_fileref->fcb->subvol != subvol) {
                 Status = open_fileref_by_inode(Vcb, Vcb->root_fileref->fcb->subvol, SUBVOL_ROOT_INODE, &parfr, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("open_fileref_by_inode returned %08lx\n", Status);
@@ -4573,7 +4573,7 @@ static NTSTATUS open_file(PDEVICE_OBJECT DeviceObject, _Requires_lock_held_(_Cur
             RtlCopyMemory(&inode, fn.Buffer, sizeof(uint64_t));
             RtlCopyMemory(&subvol_id, (uint8_t*)fn.Buffer + sizeof(uint64_t), sizeof(uint64_t));
 
-            if (subvol_id == BTRFS_ROOT_FSTREE || (subvol_id >= 0x100 && subvol_id < 0x8000000000000000)) {
+            if (subvol_id == BTRFS_FS_TREE_OBJECTID || (subvol_id >= 0x100 && subvol_id < 0x8000000000000000)) {
                 LIST_ENTRY* le = Vcb->roots.Flink;
                 while (le != &Vcb->roots) {
                     root* r = CONTAINING_RECORD(le, root, list_entry);

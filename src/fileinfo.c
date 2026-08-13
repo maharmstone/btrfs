@@ -352,7 +352,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
         goto end;
     }
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_ROOT_FSTREE) {
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID) {
         WARN("not allowing \\$Root to be deleted\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -2538,7 +2538,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_ROOT_FSTREE) {
+    if (fcb->inode == SUBVOL_ROOT_INODE && fcb->subvol->id == BTRFS_FS_TREE_OBJECTID) {
         WARN("not allowing \\$Root to be renamed\n");
         Status = STATUS_ACCESS_DENIED;
         goto end;

@@ -1628,7 +1628,7 @@ static __inline bool write_fcb_compressed(fcb* fcb) {
         return false;
 
     // make sure we don't accidentally write the cache inodes or pagefile compressed
-    if (fcb->subvol->id == BTRFS_ROOT_ROOT || fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
+    if (fcb->subvol->id == BTRFS_ROOT_TREE_OBJECTID || fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE)
         return false;
 
     if (fcb->Vcb->options.compress_force)
