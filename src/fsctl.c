@@ -1860,7 +1860,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, uint64_t start, uint6
         ed->ram_bytes = end_data;
         ed->compression = BTRFS_COMPRESS_NONE;
         ed->encryption = 0;
-        ed->other_encoding = BTRFS_ENCODING_NONE;
+        ed->other_encoding = 0;
         ed->type = BTRFS_FILE_EXTENT_INLINE;
 
         Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, rollback);
@@ -3448,7 +3448,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             ed->ram_bytes = fcb->inode_item.size;
             ed->compression = BTRFS_COMPRESS_NONE;
             ed->encryption = 0;
-            ed->other_encoding = BTRFS_ENCODING_NONE;
+            ed->other_encoding = 0;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 
             RtlCopyMemory(&ed->disk_bytenr, data2, datalen2);

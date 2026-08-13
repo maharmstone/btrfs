@@ -2828,7 +2828,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     ed->ram_bytes = ram_bytes;
     ed->compression = compression;
     ed->encryption = 0;
-    ed->other_encoding = BTRFS_ENCODING_NONE;
+    ed->other_encoding = 0;
     ed->type = prealloc ? BTRFS_FILE_EXTENT_PREALLOC : BTRFS_FILE_EXTENT_REG;
     ed->disk_bytenr = address;
     ed->disk_num_bytes = length;
@@ -3264,7 +3264,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
             ed->ram_bytes = end;
             ed->compression = BTRFS_COMPRESS_NONE;
             ed->encryption = 0;
-            ed->other_encoding = BTRFS_ENCODING_NONE;
+            ed->other_encoding = 0;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 
             Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end), false, NULL, rollback);
@@ -3408,7 +3408,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     ed->ram_bytes = end - ext->offset;
                     ed->compression = BTRFS_COMPRESS_NONE;
                     ed->encryption = 0;
-                    ed->other_encoding = BTRFS_ENCODING_NONE;
+                    ed->other_encoding = 0;
                     ed->type = BTRFS_FILE_EXTENT_INLINE;
 
                     Status = read_file(fcb, (uint8_t*)&ed->disk_bytenr, ext->offset, oldalloc, NULL, Irp);
@@ -3512,7 +3512,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 ed->ram_bytes = end;
                 ed->compression = BTRFS_COMPRESS_NONE;
                 ed->encryption = 0;
-                ed->other_encoding = BTRFS_ENCODING_NONE;
+                ed->other_encoding = 0;
                 ed->type = BTRFS_FILE_EXTENT_INLINE;
 
                 RtlZeroMemory(&ed->disk_bytenr, (ULONG)end);
@@ -4395,7 +4395,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->ram_bytes = newlength;
             ed2->compression = BTRFS_COMPRESS_NONE;
             ed2->encryption = 0;
-            ed2->other_encoding = BTRFS_ENCODING_NONE;
+            ed2->other_encoding = 0;
             ed2->type = BTRFS_FILE_EXTENT_INLINE;
 
             Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + newlength), false, NULL, rollback);

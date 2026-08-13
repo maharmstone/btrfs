@@ -2846,7 +2846,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                 goto exit;
             }
 
-            if (ed->other_encoding != BTRFS_ENCODING_NONE) {
+            if (ed->other_encoding != 0) {
                 WARN("Other encodings not supported\n");
                 Status = STATUS_NOT_IMPLEMENTED;
                 goto exit;

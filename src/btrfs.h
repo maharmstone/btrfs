@@ -70,8 +70,6 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 #define BTRFS_COMPRESS_LZO   2
 #define BTRFS_COMPRESS_ZSTD  3
 
-#define BTRFS_ENCODING_NONE     0
-
 #define BTRFS_FILE_EXTENT_INLINE      0
 #define BTRFS_FILE_EXTENT_REG         1
 #define BTRFS_FILE_EXTENT_PREALLOC    2

@@ -1715,7 +1715,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             ed->ram_bytes = adsdata.Length;
             ed->compression = BTRFS_COMPRESS_NONE;
             ed->encryption = 0;
-            ed->other_encoding = BTRFS_ENCODING_NONE;
+            ed->other_encoding = 0;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 
             RtlCopyMemory(&ed->disk_bytenr, adsdata.Buffer, adsdata.Length);

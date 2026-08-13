@@ -2655,7 +2655,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->other_encoding != BTRFS_ENCODING_NONE) {
+        if (ed->other_encoding != 0) {
             ERR("unknown encoding type %u\n", ed->other_encoding);
             return STATUS_INTERNAL_ERROR;
         }
@@ -2711,7 +2711,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->other_encoding != BTRFS_ENCODING_NONE) {
+        if (ed->other_encoding != 0) {
             ERR("unknown encoding type %u\n", ed->other_encoding);
             return STATUS_INTERNAL_ERROR;
         }

@@ -4420,7 +4420,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t s
     ed->ram_bytes = length;
     ed->compression = BTRFS_COMPRESS_NONE;
     ed->encryption = 0;
-    ed->other_encoding = BTRFS_ENCODING_NONE;
+    ed->other_encoding = 0;
     ed->type = BTRFS_FILE_EXTENT_REG;
     ed->disk_bytenr = 0;
     ed->disk_num_bytes = 0;
