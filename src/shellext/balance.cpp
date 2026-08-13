@@ -29,7 +29,7 @@
 #include <shlwapi.h>
 #include <uxtheme.h>
 
-static uint64_t convtypes2[] = { BLOCK_FLAG_SINGLE, BTRFS_BLOCK_GROUP_DUP, BTRFS_BLOCK_GROUP_RAID0, BTRFS_BLOCK_GROUP_RAID1,
+static uint64_t convtypes2[] = { BTRFS_AVAIL_ALLOC_BIT_SINGLE, BTRFS_BLOCK_GROUP_DUP, BTRFS_BLOCK_GROUP_RAID0, BTRFS_BLOCK_GROUP_RAID1,
                                  BTRFS_BLOCK_GROUP_RAID5, BTRFS_BLOCK_GROUP_RAID1C3, BTRFS_BLOCK_GROUP_RAID6, BTRFS_BLOCK_GROUP_RAID10,
                                  BTRFS_BLOCK_GROUP_RAID1C4 };
 
@@ -353,7 +353,7 @@ void BtrfsBalance::SaveBalanceOpts(HWND hwndDlg) {
     if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES) == BST_CHECKED) {
         opts->flags |= BTRFS_BALANCE_OPTS_PROFILES;
 
-        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_SINGLE) == BST_CHECKED) opts->profiles |= BLOCK_FLAG_SINGLE;
+        if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_SINGLE) == BST_CHECKED) opts->profiles |= BTRFS_AVAIL_ALLOC_BIT_SINGLE;
         if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_DUP) == BST_CHECKED) opts->profiles |= BTRFS_BLOCK_GROUP_DUP;
         if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID0) == BST_CHECKED) opts->profiles |= BTRFS_BLOCK_GROUP_RAID0;
         if (IsDlgButtonChecked(hwndDlg, IDC_PROFILES_RAID1) == BST_CHECKED) opts->profiles |= BTRFS_BLOCK_GROUP_RAID1;
@@ -587,7 +587,7 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                 // profiles
 
                 CheckDlgButton(hwndDlg, IDC_PROFILES, opts->flags & BTRFS_BALANCE_OPTS_PROFILES ? BST_CHECKED : BST_UNCHECKED);
-                CheckDlgButton(hwndDlg, IDC_PROFILES_SINGLE, opts->profiles & BLOCK_FLAG_SINGLE ? BST_CHECKED : BST_UNCHECKED);
+                CheckDlgButton(hwndDlg, IDC_PROFILES_SINGLE, opts->profiles & BTRFS_AVAIL_ALLOC_BIT_SINGLE ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_PROFILES_DUP, opts->profiles & BTRFS_BLOCK_GROUP_DUP ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_PROFILES_RAID0, opts->profiles & BTRFS_BLOCK_GROUP_RAID0 ? BST_CHECKED : BST_UNCHECKED);
                 CheckDlgButton(hwndDlg, IDC_PROFILES_RAID1, opts->profiles & BTRFS_BLOCK_GROUP_RAID1 ? BST_CHECKED : BST_UNCHECKED);

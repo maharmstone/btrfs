@@ -2263,7 +2263,7 @@ static __inline uint64_t get_chunk_dup_type(chunk* c) {
     else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C4)
         return BTRFS_BLOCK_GROUP_RAID1C4;
     else
-        return BLOCK_FLAG_SINGLE;
+        return BTRFS_AVAIL_ALLOC_BIT_SINGLE;
 }
 
 static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) {
@@ -3101,19 +3101,19 @@ void __stdcall balance_thread(void* context) {
 
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_data_flags = Vcb->data_flags;
-        Vcb->data_flags = BTRFS_BLOCK_GROUP_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
+        Vcb->data_flags = BTRFS_BLOCK_GROUP_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BTRFS_AVAIL_ALLOC_BIT_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
 
         FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_metadata_flags = Vcb->metadata_flags;
-        Vcb->metadata_flags = BTRFS_BLOCK_GROUP_METADATA | (Vcb->balance.opts[BALANCE_OPTS_METADATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_METADATA].convert);
+        Vcb->metadata_flags = BTRFS_BLOCK_GROUP_METADATA | (Vcb->balance.opts[BALANCE_OPTS_METADATA].convert == BTRFS_AVAIL_ALLOC_BIT_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_METADATA].convert);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_system_flags = Vcb->system_flags;
-        Vcb->system_flags = BTRFS_BLOCK_GROUP_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
+        Vcb->system_flags = BTRFS_BLOCK_GROUP_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BTRFS_AVAIL_ALLOC_BIT_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
     }
 
     if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_MIXED_GROUPS) {
@@ -3588,7 +3588,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
         if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_ENABLED) {
             if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_PROFILES) {
                 bsb->opts[i].profiles &= BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID10 |
-                                         BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6 | BLOCK_FLAG_SINGLE | BTRFS_BLOCK_GROUP_RAID1C3 |
+                                         BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6 | BTRFS_AVAIL_ALLOC_BIT_SINGLE | BTRFS_BLOCK_GROUP_RAID1C3 |
                                          BTRFS_BLOCK_GROUP_RAID1C4;
 
                 if (bsb->opts[i].profiles == 0)
@@ -3638,7 +3638,7 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
                 if (bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID0 && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1 &&
                     bsb->opts[i].convert != BTRFS_BLOCK_GROUP_DUP && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID10 &&
                     bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID5 && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID6 &&
-                    bsb->opts[i].convert != BLOCK_FLAG_SINGLE && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1C3 &&
+                    bsb->opts[i].convert != BTRFS_AVAIL_ALLOC_BIT_SINGLE && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1C3 &&
                     bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1C4)
                     return STATUS_INVALID_PARAMETER;
             }
