@@ -2763,37 +2763,41 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     // Loop through inline extent entries
 
     while (len > 0) {
-        uint8_t secttype = *ptr;
-        ULONG sectlen = get_extent_data_len(secttype);
-        uint64_t sectcount = get_extent_data_refcount(secttype, ptr + sizeof(uint8_t));
+        struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
+        struct btrfs_extent_data_ref* edr;
 
-        len--;
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("%I64x,%x,%I64x was truncated\n", tp.item->key.objectid,
+                tp.item->key.type, tp.item->key.offset);
 
-        if (sectlen > len) {
-            WARN("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, len, sectlen);
             return false;
         }
 
-        if (sectlen == 0) {
-            WARN("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, secttype);
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        if (eir->type != TYPE_EXTENT_DATA_REF)
+            return false;
+
+        if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+            ERR("%I64x,%x,%I64x was truncated\n", tp.item->key.objectid,
+                tp.item->key.type, tp.item->key.offset);
+
             return false;
         }
 
-        if (secttype == TYPE_EXTENT_DATA_REF) {
-            struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
+        edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
 
-            if (root == 0 && inode == 0) {
-                root = sectedr->root;
-                inode = sectedr->objectid;
-                offset = sectedr->offset;
-            } else if (root != sectedr->root || inode != sectedr->objectid || offset != sectedr->offset)
-                return false;
-        } else
+        ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+        len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+        rcrun += edr->count;
+
+        if (root == 0 && inode == 0) {
+            root = edr->root;
+            inode = edr->objectid;
+            offset = edr->offset;
+        } else if (root != edr->root || inode != edr->objectid || offset != edr->offset)
             return false;
-
-        len -= sectlen;
-        ptr += sizeof(uint8_t) + sectlen;
-        rcrun += sectcount;
     }
 
     if (rcrun == rc)
