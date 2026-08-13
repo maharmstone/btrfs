@@ -1223,7 +1223,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
     }
 
     vc->size = length;
-    vc->seeding = sb->flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? true : false;
+    vc->seeding = sb->flags & BTRFS_SUPER_FLAG_SEEDING ? true : false;
     vc->disk_num = disk_num;
     vc->part_num = part_num;
     vc->had_drive_letter = false;

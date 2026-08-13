@@ -4685,7 +4685,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         dev->devitem.total_bytes = readobjsize;
     }
 
-    dev->seeding = Vcb->superblock.flags & BTRFS_SUPERBLOCK_FLAGS_SEEDING ? true : false;
+    dev->seeding = Vcb->superblock.flags & BTRFS_SUPER_FLAG_SEEDING ? true : false;
 
     init_device(Vcb, dev, true);
 
