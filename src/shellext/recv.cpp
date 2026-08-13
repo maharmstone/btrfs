@@ -41,19 +41,19 @@ bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** val
     size_t off = 0;
 
     while (off < datalen) {
-        btrfs_send_tlv* tlv = (btrfs_send_tlv*)(data + off);
-        uint8_t* payload = data + off + sizeof(btrfs_send_tlv);
+        btrfs_tlv_header* tlv = (btrfs_tlv_header*)(data + off);
+        uint8_t* payload = data + off + sizeof(btrfs_tlv_header);
 
-        if (off + sizeof(btrfs_send_tlv) + tlv->length > datalen) // file is truncated
+        if (off + sizeof(btrfs_tlv_header) + tlv->tlv_len > datalen) // file is truncated
             return false;
 
-        if (tlv->type == type) {
+        if (tlv->tlv_type == type) {
             *value = payload;
-            *len = tlv->length;
+            *len = tlv->tlv_len;
             return true;
         }
 
-        off += sizeof(btrfs_send_tlv) + tlv->length;
+        off += sizeof(btrfs_tlv_header) + tlv->tlv_len;
     }
 
     return false;

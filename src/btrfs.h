@@ -593,9 +593,9 @@ struct btrfs_cmd_header {
     uint32_t crc;
 };
 
-typedef struct {
-    uint16_t type;
-    uint16_t length;
-} btrfs_send_tlv;
+struct btrfs_tlv_header {
+    uint16_t tlv_type;
+    uint16_t tlv_len;
+};
 
 #pragma pack(pop)

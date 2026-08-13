@@ -130,15 +130,15 @@ static void send_command_finish(send_context* context, ULONG pos) {
 }
 
 static void send_add_tlv(send_context* context, uint16_t type, void* data, uint16_t length) {
-    btrfs_send_tlv* tlv = (btrfs_send_tlv*)&context->data[context->datalen];
+    struct btrfs_tlv_header* tlv = (struct btrfs_tlv_header*)&context->data[context->datalen];
 
-    tlv->type = type;
-    tlv->length = length;
+    tlv->tlv_type = type;
+    tlv->tlv_len = length;
 
     if (length > 0 && data)
         RtlCopyMemory(&tlv[1], data, length);
 
-    context->datalen += sizeof(btrfs_send_tlv) + length;
+    context->datalen += sizeof(struct btrfs_tlv_header) + length;
 }
 
 static char* uint64_to_char(uint64_t num, char* buf) {
