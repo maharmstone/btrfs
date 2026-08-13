@@ -296,7 +296,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
     if (inodelen < sizeof(uint64_t))
         throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"inode", inodelen, sizeof(uint64_t));
 
-    if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
+    if (cmd->cmd == BTRFS_SEND_C_MKNOD || cmd->cmd == BTRFS_SEND_C_MKFIFO || cmd->cmd == BTRFS_SEND_C_MKSOCK) {
         ULONG rdevlen, modelen;
 
         if (!find_tlv(data, cmd->len, BTRFS_SEND_TLV_RDEV, (void**)&rdev, &rdevlen))
@@ -310,7 +310,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
 
         if (modelen < sizeof(uint64_t))
             throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"mode", modelen, sizeof(uint64_t));
-    } else if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
+    } else if (cmd->cmd == BTRFS_SEND_C_SYMLINK) {
         char* pathlink;
         ULONG pathlinklen;
 
@@ -325,13 +325,13 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
 
     bmn->inode = *inode;
 
-    if (cmd->cmd == BTRFS_SEND_CMD_MKDIR)
+    if (cmd->cmd == BTRFS_SEND_C_MKDIR)
         bmn->type = BTRFS_FT_DIR;
-    else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD)
+    else if (cmd->cmd == BTRFS_SEND_C_MKNOD)
         bmn->type = *mode & S_IFCHR ? BTRFS_FT_CHRDEV : BTRFS_FT_BLKDEV;
-    else if (cmd->cmd == BTRFS_SEND_CMD_MKFIFO)
+    else if (cmd->cmd == BTRFS_SEND_C_MKFIFO)
         bmn->type = BTRFS_FT_FIFO;
-    else if (cmd->cmd == BTRFS_SEND_CMD_MKSOCK)
+    else if (cmd->cmd == BTRFS_SEND_C_MKSOCK)
         bmn->type = BTRFS_FT_SOCK;
     else
         bmn->type = BTRFS_FT_REG_FILE;
@@ -348,7 +348,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
 
     free(bmn);
 
-    if (cmd->cmd == BTRFS_SEND_CMD_SYMLINK) {
+    if (cmd->cmd == BTRFS_SEND_C_SYMLINK) {
         REPARSE_DATA_BUFFER* rdb;
         btrfs_set_inode_info bsii;
 
@@ -395,7 +395,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
         Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_SET_INODE_INFO, &bsii, sizeof(btrfs_set_inode_info), nullptr, 0);
         if (!NT_SUCCESS(Status))
             throw string_error(IDS_RECV_SETINODEINFO_FAILED, Status, format_ntstatus(Status).c_str());
-    } else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD || cmd->cmd == BTRFS_SEND_CMD_MKFIFO || cmd->cmd == BTRFS_SEND_CMD_MKSOCK) {
+    } else if (cmd->cmd == BTRFS_SEND_C_MKNOD || cmd->cmd == BTRFS_SEND_C_MKFIFO || cmd->cmd == BTRFS_SEND_C_MKSOCK) {
         uint64_t* mode;
         ULONG modelen;
 
@@ -1214,12 +1214,12 @@ void BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const
                 if (!check_csum(&cmd, data))
                     throw string_error(IDS_RECV_CSUM_ERROR);
 
-                if (cmd.cmd == BTRFS_SEND_CMD_END) {
+                if (cmd.cmd == BTRFS_SEND_C_END) {
                     ended = true;
                     break;
                 }
 
-                if (lastwritefile != INVALID_HANDLE_VALUE && cmd.cmd != BTRFS_SEND_CMD_WRITE) {
+                if (lastwritefile != INVALID_HANDLE_VALUE && cmd.cmd != BTRFS_SEND_C_WRITE) {
                     if (lastwriteatt & FILE_ATTRIBUTE_READONLY) {
                         if (!SetFileAttributesW((subvolpath + lastwritepath).c_str(), lastwriteatt))
                             throw string_error(IDS_RECV_SETFILEATTRIBUTES_FAILED, GetLastError(), format_message(GetLastError()).c_str());
@@ -1233,72 +1233,72 @@ void BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const
                 }
 
                 switch (cmd.cmd) {
-                    case BTRFS_SEND_CMD_SUBVOL:
+                    case BTRFS_SEND_C_SUBVOL:
                         cmd_subvol(&cmd, data, parent);
                     break;
 
-                    case BTRFS_SEND_CMD_SNAPSHOT:
+                    case BTRFS_SEND_C_SNAPSHOT:
                         cmd_snapshot(&cmd, data, parent);
                     break;
 
-                    case BTRFS_SEND_CMD_MKFILE:
-                    case BTRFS_SEND_CMD_MKDIR:
-                    case BTRFS_SEND_CMD_MKNOD:
-                    case BTRFS_SEND_CMD_MKFIFO:
-                    case BTRFS_SEND_CMD_MKSOCK:
-                    case BTRFS_SEND_CMD_SYMLINK:
+                    case BTRFS_SEND_C_MKFILE:
+                    case BTRFS_SEND_C_MKDIR:
+                    case BTRFS_SEND_C_MKNOD:
+                    case BTRFS_SEND_C_MKFIFO:
+                    case BTRFS_SEND_C_MKSOCK:
+                    case BTRFS_SEND_C_SYMLINK:
                         cmd_mkfile(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_RENAME:
+                    case BTRFS_SEND_C_RENAME:
                         cmd_rename(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_LINK:
+                    case BTRFS_SEND_C_LINK:
                         cmd_link(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_UNLINK:
+                    case BTRFS_SEND_C_UNLINK:
                         cmd_unlink(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_RMDIR:
+                    case BTRFS_SEND_C_RMDIR:
                         cmd_rmdir(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_SET_XATTR:
+                    case BTRFS_SEND_C_SET_XATTR:
                         cmd_setxattr(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_REMOVE_XATTR:
+                    case BTRFS_SEND_C_REMOVE_XATTR:
                         cmd_removexattr(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_WRITE:
+                    case BTRFS_SEND_C_WRITE:
                         cmd_write(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_CLONE:
+                    case BTRFS_SEND_C_CLONE:
                         cmd_clone(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_TRUNCATE:
+                    case BTRFS_SEND_C_TRUNCATE:
                         cmd_truncate(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_CHMOD:
+                    case BTRFS_SEND_C_CHMOD:
                         cmd_chmod(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_CHOWN:
+                    case BTRFS_SEND_C_CHOWN:
                         cmd_chown(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_UTIMES:
+                    case BTRFS_SEND_C_UTIMES:
                         cmd_utimes(&cmd, data);
                     break;
 
-                    case BTRFS_SEND_CMD_UPDATE_EXTENT:
+                    case BTRFS_SEND_C_UPDATE_EXTENT:
                         // does nothing
                     break;
 

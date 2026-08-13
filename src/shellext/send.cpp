@@ -147,7 +147,7 @@ DWORD BtrfsSend::Thread() {
                         throw string_error(IDS_SEND_FSCTL_BTRFS_READ_SEND_BUFFER_FAILED, Status, format_ntstatus(Status).c_str());
 
                     end.len = 0;
-                    end.cmd = BTRFS_SEND_CMD_END;
+                    end.cmd = BTRFS_SEND_C_END;
                     end.crc = 0x9dc96c50;
 
                     if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
@@ -644,7 +644,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
                 throw ntstatus_error(Status);
 
             end.len = 0;
-            end.cmd = BTRFS_SEND_CMD_END;
+            end.cmd = BTRFS_SEND_C_END;
             end.crc = 0x9dc96c50;
 
             if (!WriteFile(stream, &end, sizeof(end), nullptr, nullptr))
