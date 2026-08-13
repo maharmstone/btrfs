@@ -1154,15 +1154,15 @@ static bool check_csum(btrfs_send_command* cmd, uint8_t* data) {
 
 void BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent) {
     try {
-        btrfs_send_header header;
+        btrfs_stream_header header;
         bool ended = false;
 
-        if (!ReadFile(f, &header, sizeof(btrfs_send_header), nullptr, nullptr))
+        if (!ReadFile(f, &header, sizeof(btrfs_stream_header), nullptr, nullptr))
             throw string_error(IDS_RECV_READFILE_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
-        *pos += sizeof(btrfs_send_header);
+        *pos += sizeof(btrfs_stream_header);
 
-        if (memcmp(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic)))
+        if (memcmp(header.magic, BTRFS_SEND_STREAM_MAGIC, sizeof(header.magic)))
             throw string_error(IDS_RECV_NOT_A_SEND_STREAM);
 
         if (header.version > 1)

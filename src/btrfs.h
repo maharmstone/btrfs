@@ -580,12 +580,12 @@ struct btrfs_free_space_info {
 #define BTRFS_SEND_TLV_CLONE_OFFSET    23
 #define BTRFS_SEND_TLV_CLONE_LENGTH    24
 
-#define BTRFS_SEND_MAGIC "btrfs-stream"
+#define BTRFS_SEND_STREAM_MAGIC "btrfs-stream"
 
-typedef struct {
-    uint8_t magic[13];
+struct btrfs_stream_header {
+    uint8_t magic[sizeof(BTRFS_SEND_STREAM_MAGIC)];
     uint32_t version;
-} btrfs_send_header;
+};
 
 typedef struct {
     uint32_t length;

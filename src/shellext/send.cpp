@@ -29,7 +29,7 @@ DWORD BtrfsSend::Thread() {
         NTSTATUS Status;
         IO_STATUS_BLOCK iosb;
         btrfs_send_subvol* bss;
-        btrfs_send_header header;
+        btrfs_stream_header header;
         btrfs_send_command end;
         ULONG i;
 
@@ -128,7 +128,7 @@ DWORD BtrfsSend::Thread() {
                     throw string_error(IDS_SEND_CANT_OPEN_FILE, file, GetLastError(), format_message(GetLastError()).c_str());
 
                 try {
-                    memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic));
+                    memcpy(header.magic, BTRFS_SEND_STREAM_MAGIC, sizeof(header.magic));
                     header.version = 1;
 
                     if (!WriteFile(stream, &header, sizeof(header), nullptr, nullptr))
@@ -564,7 +564,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
     btrfs_send_subvol* bss;
     IO_STATUS_BLOCK iosb;
     NTSTATUS Status;
-    btrfs_send_header header;
+    btrfs_stream_header header;
     btrfs_send_command end;
 
     buf = (char*)malloc(SEND_BUFFER_LEN);
@@ -627,7 +627,7 @@ static void send_subvol(const wstring& subvol, const wstring& file, const wstrin
             if (!NT_SUCCESS(Status))
                 throw ntstatus_error(Status);
 
-            memcpy(header.magic, BTRFS_SEND_MAGIC, sizeof(header.magic));
+            memcpy(header.magic, BTRFS_SEND_STREAM_MAGIC, sizeof(header.magic));
             header.version = 1;
 
             if (!WriteFile(stream, &header, sizeof(header), nullptr, nullptr))
