@@ -1859,7 +1859,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, uint64_t start, uint6
         ed->generation = Vcb->superblock.generation;
         ed->ram_bytes = end_data;
         ed->compression = BTRFS_COMPRESS_NONE;
-        ed->encryption = BTRFS_ENCRYPTION_NONE;
+        ed->encryption = 0;
         ed->other_encoding = BTRFS_ENCODING_NONE;
         ed->type = BTRFS_FILE_EXTENT_INLINE;
 
@@ -3447,7 +3447,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             ed->generation = Vcb->superblock.generation;
             ed->ram_bytes = fcb->inode_item.size;
             ed->compression = BTRFS_COMPRESS_NONE;
-            ed->encryption = BTRFS_ENCRYPTION_NONE;
+            ed->encryption = 0;
             ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 

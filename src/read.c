@@ -2840,7 +2840,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
             if (length == 0 || ext->offset > start + bytes_read + length)
                 break;
 
-            if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+            if (ed->encryption != 0) {
                 WARN("Encryption not supported\n");
                 Status = STATUS_NOT_IMPLEMENTED;
                 goto exit;

@@ -1714,7 +1714,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             ed->generation = Vcb->superblock.generation;
             ed->ram_bytes = adsdata.Length;
             ed->compression = BTRFS_COMPRESS_NONE;
-            ed->encryption = BTRFS_ENCRYPTION_NONE;
+            ed->encryption = 0;
             ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 

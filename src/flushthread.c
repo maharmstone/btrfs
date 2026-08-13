@@ -4419,7 +4419,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t s
     ed->generation = fcb->Vcb->superblock.generation;
     ed->ram_bytes = length;
     ed->compression = BTRFS_COMPRESS_NONE;
-    ed->encryption = BTRFS_ENCRYPTION_NONE;
+    ed->encryption = 0;
     ed->other_encoding = BTRFS_ENCODING_NONE;
     ed->type = BTRFS_FILE_EXTENT_REG;
     ed->disk_bytenr = 0;

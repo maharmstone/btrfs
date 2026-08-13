@@ -1117,7 +1117,7 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         ed->generation = fcb->Vcb->superblock.generation;
         ed->ram_bytes = parts[i].inlen;
         ed->compression = parts[i].compression_type;
-        ed->encryption = BTRFS_ENCRYPTION_NONE;
+        ed->encryption = 0;
         ed->other_encoding = BTRFS_ENCODING_NONE;
         ed->type = BTRFS_FILE_EXTENT_REG;
         ed->disk_bytenr = extaddr;

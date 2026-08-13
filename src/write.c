@@ -2827,7 +2827,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     ed->generation = Vcb->superblock.generation;
     ed->ram_bytes = ram_bytes;
     ed->compression = compression;
-    ed->encryption = BTRFS_ENCRYPTION_NONE;
+    ed->encryption = 0;
     ed->other_encoding = BTRFS_ENCODING_NONE;
     ed->type = prealloc ? BTRFS_FILE_EXTENT_PREALLOC : BTRFS_FILE_EXTENT_REG;
     ed->disk_bytenr = address;
@@ -3263,7 +3263,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
             ed->generation = fcb->Vcb->superblock.generation;
             ed->ram_bytes = end;
             ed->compression = BTRFS_COMPRESS_NONE;
-            ed->encryption = BTRFS_ENCRYPTION_NONE;
+            ed->encryption = 0;
             ed->other_encoding = BTRFS_ENCODING_NONE;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 
@@ -3407,7 +3407,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     ed->generation = fcb->Vcb->superblock.generation;
                     ed->ram_bytes = end - ext->offset;
                     ed->compression = BTRFS_COMPRESS_NONE;
-                    ed->encryption = BTRFS_ENCRYPTION_NONE;
+                    ed->encryption = 0;
                     ed->other_encoding = BTRFS_ENCODING_NONE;
                     ed->type = BTRFS_FILE_EXTENT_INLINE;
 
@@ -3511,7 +3511,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 ed->generation = fcb->Vcb->superblock.generation;
                 ed->ram_bytes = end;
                 ed->compression = BTRFS_COMPRESS_NONE;
-                ed->encryption = BTRFS_ENCRYPTION_NONE;
+                ed->encryption = 0;
                 ed->other_encoding = BTRFS_ENCODING_NONE;
                 ed->type = BTRFS_FILE_EXTENT_INLINE;
 
@@ -4394,7 +4394,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->generation = fcb->Vcb->superblock.generation;
             ed2->ram_bytes = newlength;
             ed2->compression = BTRFS_COMPRESS_NONE;
-            ed2->encryption = BTRFS_ENCRYPTION_NONE;
+            ed2->encryption = 0;
             ed2->other_encoding = BTRFS_ENCODING_NONE;
             ed2->type = BTRFS_FILE_EXTENT_INLINE;
 

@@ -2650,7 +2650,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
         ed = (struct btrfs_file_extent_item*)tp->item->data;
 
-        if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+        if (ed->encryption != 0) {
             ERR("unknown encryption type %u\n", ed->encryption);
             return STATUS_INTERNAL_ERROR;
         }
@@ -2706,7 +2706,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
 
         ed = (struct btrfs_file_extent_item*)tp2->item->data;
 
-        if (ed->encryption != BTRFS_ENCRYPTION_NONE) {
+        if (ed->encryption != 0) {
             ERR("unknown encryption type %u\n", ed->encryption);
             return STATUS_INTERNAL_ERROR;
         }
