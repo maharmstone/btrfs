@@ -56,7 +56,11 @@ typedef struct {
 
     union {
         struct btrfs_extent_data_ref edr;
-        SHARED_DATA_REF sdr;
+
+        struct {
+            uint64_t offset;
+            struct btrfs_shared_data_ref sdr;
+        };
     };
 
     metadata_reloc* parent;
@@ -1342,63 +1346,90 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     ptr = (uint8_t*)tp->item->data + sizeof(struct btrfs_extent_item);
 
     while (len > 0) {
-        uint8_t secttype = *ptr;
-        uint16_t sectlen = secttype == TYPE_EXTENT_DATA_REF ? sizeof(struct btrfs_extent_data_ref) : (secttype == TYPE_SHARED_DATA_REF ? sizeof(SHARED_DATA_REF) : 0);
+        struct btrfs_extent_inline_ref* eir;
 
-        len--;
+        eir = (struct btrfs_extent_inline_ref*)ptr;
 
-        if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, len, sectlen);
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
+                tp->item->key.type, tp->item->key.offset);
+
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, secttype);
-            return STATUS_INTERNAL_ERROR;
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        switch (eir->type) {
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
+
+                if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
+                        tp->item->key.type, tp->item->key.offset);
+
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+
+                inline_rc += edr->count;
+
+                Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, edr, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
+                    return Status;
+                }
+
+                break;
+            }
+
+            case TYPE_SHARED_DATA_REF: {
+                struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
+                metadata_reloc* mr;
+                data_reloc_ref* ref;
+
+                if (len < sizeof(struct btrfs_shared_data_ref)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
+                        tp->item->key.type, tp->item->key.offset);
+
+                    return STATUS_INTERNAL_ERROR;
+                }
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+                len -= sizeof(struct btrfs_shared_data_ref);
+
+                ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
+                if (!ref) {
+                    ERR("out of memory\n");
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                ref->type = TYPE_SHARED_DATA_REF;
+                ref->offset = eir->offset;
+                ref->sdr.count = sdr->count;
+
+                inline_rc += ref->sdr.count;
+
+                Status = add_metadata_reloc_parent(Vcb, metadata_items, ref->offset, &mr, rollback);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_metadata_reloc_parent returned %08lx\n", Status);
+                    ExFreePool(ref);
+                    return Status;
+                }
+
+                ref->parent = mr;
+
+                InsertTailList(&dr->refs, &ref->list_entry);
+
+                break;
+            }
+
+            default:
+                ERR("unexpected tree type %x\n", eir->type);
+                return STATUS_INTERNAL_ERROR;
         }
-
-        if (secttype == TYPE_EXTENT_DATA_REF) {
-            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
-
-            inline_rc += edr->count;
-
-            Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, edr, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
-                return Status;
-            }
-        } else if (secttype == TYPE_SHARED_DATA_REF) {
-            metadata_reloc* mr;
-            data_reloc_ref* ref;
-
-            ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
-            if (!ref) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            ref->type = TYPE_SHARED_DATA_REF;
-            RtlCopyMemory(&ref->sdr, ptr + sizeof(uint8_t), sizeof(SHARED_DATA_REF));
-            inline_rc += ref->sdr.count;
-
-            Status = add_metadata_reloc_parent(Vcb, metadata_items, ref->sdr.offset, &mr, rollback);
-            if (!NT_SUCCESS(Status)) {
-                ERR("add_metadata_reloc_parent returned %08lx\n", Status);
-                ExFreePool(ref);
-                return Status;
-            }
-
-            ref->parent = mr;
-
-            InsertTailList(&dr->refs, &ref->list_entry);
-        } else {
-            ERR("unexpected tree type %x\n", secttype);
-            return STATUS_INTERNAL_ERROR;
-        }
-
-
-        len -= sectlen;
-        ptr += sizeof(uint8_t) + sectlen;
     }
 
     if (inline_rc < ei->refs) { // look for non-inline entries
@@ -1409,7 +1440,9 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
             if (tp2.item->key.objectid == tp->item->key.objectid) {
                 if (tp2.item->key.type == TYPE_EXTENT_DATA_REF && tp2.item->size >= sizeof(struct btrfs_extent_data_ref)) {
-                    Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, (struct btrfs_extent_data_ref*)tp2.item->data, rollback);
+                    Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr,
+                                                     (struct btrfs_extent_data_ref*)tp2.item->data,
+                                                     rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
                         return Status;
@@ -1420,7 +1453,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                         ERR("delete_tree_item returned %08lx\n", Status);
                         return Status;
                     }
-                } else if (tp2.item->key.type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(uint32_t)) {
+                } else if (tp2.item->key.type == TYPE_SHARED_DATA_REF && tp2.item->size >= sizeof(struct btrfs_shared_data_ref)) {
                     metadata_reloc* mr;
                     data_reloc_ref* ref;
 
@@ -1431,10 +1464,11 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                     }
 
                     ref->type = TYPE_SHARED_DATA_REF;
-                    ref->sdr.offset = tp2.item->key.offset;
+                    ref->offset = tp2.item->key.offset;
                     ref->sdr.count = *((uint32_t*)tp2.item->data);
 
-                    Status = add_metadata_reloc_parent(Vcb, metadata_items, ref->sdr.offset, &mr, rollback);
+                    Status = add_metadata_reloc_parent(Vcb, metadata_items,
+                                                       ref->offset, &mr, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_metadata_reloc_parent returned %08lx\n", Status);
                         ExFreePool(ref);
@@ -1538,22 +1572,26 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
     le = dr->refs.Flink;
     while (le != &dr->refs) {
         data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
-        uint16_t extlen = 0;
+        uint16_t extlen = sizeof(struct btrfs_extent_inline_ref);
 
-        if (ref->type == TYPE_EXTENT_DATA_REF) {
-            extlen += sizeof(struct btrfs_extent_data_ref);
-            rc += ref->edr.count;
-        } else if (ref->type == TYPE_SHARED_DATA_REF) {
-            extlen += sizeof(SHARED_DATA_REF);
-            rc++;
+        switch (ref->type) {
+            case TYPE_EXTENT_DATA_REF:
+                extlen += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                rc += ref->edr.count;
+                break;
+
+            case TYPE_SHARED_DATA_REF:
+                extlen += sizeof(struct btrfs_shared_data_ref);
+                rc++;
+                break;
         }
 
         if (all_inline) {
-            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.nodesize >> 2)) {
+            if ((ULONG)(inline_len + extlen) > (Vcb->superblock.nodesize >> 2)) {
                 all_inline = false;
                 first_noninline = ref;
             } else
-                inline_len += extlen + 1;
+                inline_len += extlen;
         }
 
         le = le->Flink;
@@ -1572,27 +1610,39 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
 
     le = dr->refs.Flink;
     while (le != &dr->refs) {
+        struct btrfs_extent_inline_ref* eir;
+
         data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
 
         if (ref == first_noninline)
             break;
 
-        *ptr = ref->type;
-        ptr++;
+        eir = (struct btrfs_extent_inline_ref*)ptr;
+        eir->type = ref->type;
 
-        if (ref->type == TYPE_EXTENT_DATA_REF) {
-            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)ptr;
+        ptr += sizeof(struct btrfs_extent_inline_ref);
 
-            RtlCopyMemory(edr, &ref->edr, sizeof(struct btrfs_extent_data_ref));
+        switch (ref->type) {
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
 
-            ptr += sizeof(struct btrfs_extent_data_ref);
-        } else if (ref->type == TYPE_SHARED_DATA_REF) {
-            SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)ptr;
+                RtlCopyMemory(edr, &ref->edr, sizeof(struct btrfs_extent_data_ref));
 
-            sdr->offset = ref->parent->new_address;
-            sdr->count = ref->sdr.count;
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
 
-            ptr += sizeof(SHARED_DATA_REF);
+                break;
+            }
+
+            case TYPE_SHARED_DATA_REF: {
+                struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                eir->offset = ref->parent->new_address;
+                sdr->count = ref->sdr.count;
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+
+                break;
+            }
         }
 
         le = le->Flink;
@@ -1610,37 +1660,52 @@ static NTSTATUS add_data_reloc_extent_item(_Requires_exclusive_lock_held_(_Curr_
         while (le != &dr->refs) {
             data_reloc_ref* ref = CONTAINING_RECORD(le, data_reloc_ref, list_entry);
 
-            if (ref->type == TYPE_EXTENT_DATA_REF) {
-                struct btrfs_extent_data_ref* edr;
+            switch (ref->type) {
+                case TYPE_EXTENT_DATA_REF: {
+                    struct btrfs_extent_data_ref* edr;
 
-                edr = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_extent_data_ref), ALLOC_TAG);
-                if (!edr) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
+                    edr = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_extent_data_ref), ALLOC_TAG);
+                    if (!edr) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
+                    RtlCopyMemory(edr, &ref->edr, sizeof(struct btrfs_extent_data_ref));
+
+                    Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address,
+                                              TYPE_EXTENT_DATA_REF, ref->hash, edr,
+                                              sizeof(struct btrfs_extent_data_ref),
+                                              NULL, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_tree_item returned %08lx\n", Status);
+                        return Status;
+                    }
+
+                    break;
                 }
 
-                RtlCopyMemory(edr, &ref->edr, sizeof(struct btrfs_extent_data_ref));
+                case TYPE_SHARED_DATA_REF: {
+                    struct btrfs_shared_data_ref* sdr;
 
-                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_EXTENT_DATA_REF, ref->hash, edr, sizeof(struct btrfs_extent_data_ref), NULL, NULL);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_tree_item returned %08lx\n", Status);
-                    return Status;
-                }
-            } else if (ref->type == TYPE_SHARED_DATA_REF) {
-                uint32_t* sdr;
+                    sdr = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_shared_data_ref),
+                                                ALLOC_TAG);
+                    if (!sdr) {
+                        ERR("out of memory\n");
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
 
-                sdr = ExAllocatePoolWithTag(PagedPool, sizeof(uint32_t), ALLOC_TAG);
-                if (!sdr) {
-                    ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
+                    sdr->count = ref->sdr.count;
 
-                *sdr = ref->sdr.count;
+                    Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address,
+                                              TYPE_SHARED_DATA_REF, ref->parent->new_address,
+                                              sdr, sizeof(struct btrfs_shared_data_ref),
+                                              NULL, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("insert_tree_item returned %08lx\n", Status);
+                        return Status;
+                    }
 
-                Status = insert_tree_item(Vcb, Vcb->extent_root, dr->new_address, TYPE_SHARED_DATA_REF, ref->parent->new_address, sdr, sizeof(uint32_t), NULL, NULL);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("insert_tree_item returned %08lx\n", Status);
-                    return Status;
+                    break;
                 }
             }
 
