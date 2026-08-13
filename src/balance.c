@@ -335,21 +335,15 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
     le = mr->refs.Flink;
     while (le != &mr->refs) {
         metadata_reloc_ref* ref = CONTAINING_RECORD(le, metadata_reloc_ref, list_entry);
-        uint16_t extlen = 0;
 
         rc++;
 
-        if (ref->type == TYPE_TREE_BLOCK_REF)
-            extlen += sizeof(TREE_BLOCK_REF);
-        else if (ref->type == TYPE_SHARED_BLOCK_REF)
-            extlen += sizeof(SHARED_BLOCK_REF);
-
         if (all_inline) {
-            if ((ULONG)(inline_len + 1 + extlen) > (Vcb->superblock.nodesize >> 2)) {
+            if ((ULONG)(inline_len + sizeof(struct btrfs_extent_inline_ref)) > (Vcb->superblock.nodesize >> 2)) {
                 all_inline = false;
                 first_noninline = ref;
             } else
-                inline_len += extlen + 1;
+                inline_len += sizeof(struct btrfs_extent_inline_ref);
         }
 
         le = le->Flink;
