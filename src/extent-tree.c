@@ -3284,32 +3284,60 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     ptr = (uint8_t*)&ei[1];
 
     while (len > 0) {
-        uint8_t secttype = *ptr;
-        ULONG sectlen = get_extent_data_len(secttype);
-        uint64_t sectcount = get_extent_data_refcount(secttype, ptr + sizeof(uint8_t));
+        struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
 
-        len--;
+        if (len < sizeof(struct btrfs_extent_inline_ref)) {
+            ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid,
+                tp.item->key.type, tp.item->key.offset);
 
-        if (sectlen > len) {
-            ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, len, sectlen);
             return 0;
         }
 
-        if (sectlen == 0) {
-            ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, secttype);
-            return 0;
+        ptr += sizeof(struct btrfs_extent_inline_ref);
+        len -= sizeof(struct btrfs_extent_inline_ref);
+
+        switch (eir->type) {
+            case TYPE_EXTENT_DATA_REF: {
+                struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
+
+                if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid,
+                        tp.item->key.type, tp.item->key.offset);
+                    return 0;
+                }
+
+                ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                inline_rc += edr->count;
+
+                break;
+            }
+
+            case TYPE_SHARED_DATA_REF: {
+                struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                if (len < sizeof(struct btrfs_shared_data_ref)) {
+                    ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid,
+                        tp.item->key.type, tp.item->key.offset);
+                    return 0;
+                }
+
+                ptr += sizeof(struct btrfs_shared_data_ref);
+                len -= sizeof(struct btrfs_shared_data_ref);
+                inline_rc += sdr->count;
+
+                if (eir->offset == parent)
+                    return sdr->count;
+
+                break;
+            }
+
+            default:
+                ERR("(%I64x,%x,%I64x): unexpected type %x\n",
+                    tp.item->key.objectid, tp.item->key.type,
+                    tp.item->key.offset, eir->type);
+                return 0;
         }
-
-        if (secttype == TYPE_SHARED_DATA_REF) {
-            SHARED_DATA_REF* sectsdr = (SHARED_DATA_REF*)(ptr + sizeof(uint8_t));
-
-            if (sectsdr->offset == parent)
-                return sectsdr->count;
-        }
-
-        len -= sectlen;
-        ptr += sizeof(uint8_t) + sectlen;
-        inline_rc += sectcount;
     }
 
     // FIXME - what if old?
@@ -3328,11 +3356,14 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     }
 
     if (!keycmp(searchkey, tp.item->key)) {
-        if (tp.item->size < sizeof(uint32_t))
-            ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(uint32_t));
-        else {
-            uint32_t* count = (uint32_t*)tp.item->data;
-            return *count;
+        if (tp.item->size < sizeof(struct btrfs_shared_data_ref)) {
+            ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n",
+                tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                tp.item->size, sizeof(struct btrfs_shared_data_ref));
+        } else {
+            struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)tp.item->data;
+
+            return sdr->count;
         }
     }
 
