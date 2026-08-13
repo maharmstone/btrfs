@@ -4355,7 +4355,7 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
     xa->transid = Vcb->superblock.generation;
     xa->data_len = datalen;
     xa->name_len = namelen;
-    xa->type = BTRFS_TYPE_EA;
+    xa->type = BTRFS_FT_XATTR;
     RtlCopyMemory(&xa[1], name, namelen);
     RtlCopyMemory((uint8_t*)&xa[1] + namelen, data, datalen);
 
@@ -4391,7 +4391,7 @@ static NTSTATUS delete_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root*
     xa->transid = Vcb->superblock.generation;
     xa->data_len = 0;
     xa->name_len = namelen;
-    xa->type = BTRFS_TYPE_EA;
+    xa->type = BTRFS_FT_XATTR;
     RtlCopyMemory(&xa[1], name, namelen);
 
     Status = insert_tree_item_batch(batchlist, Vcb, subvol, inode, BTRFS_XATTR_ITEM_KEY, crc32, xa, xasize, Batch_DeleteXattr);
@@ -5231,7 +5231,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         }
 
 #ifdef DEBUG_PARANOID
-        if (!extents_changed && fcb->type != BTRFS_TYPE_DIRECTORY && old_size != fcb->inode_item.size) {
+        if (!extents_changed && fcb->type != BTRFS_FT_DIR && old_size != fcb->inode_item.size) {
             ERR("error - size has changed but extents not marked as changed\n");
             int3;
         }
@@ -7392,7 +7392,7 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
                 ERR("open_fcb returned %08lx\n", Status);
             else {
                 if (fcb->inode_item.nlink == 0) {
-                    if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0) {
+                    if (fcb->type != BTRFS_FT_DIR && fcb->inode_item.size > 0) {
                         Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.size, Vcb->superblock.sectorsize), Irp, &rollback);
                         if (!NT_SUCCESS(Status)) {
                             ERR("excise_extents returned %08lx\n", Status);

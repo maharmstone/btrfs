@@ -274,7 +274,7 @@ HRESULT BtrfsPropSheet::check_file(const wstring& fn, UINT i, UINT num_files, UI
 
         ignore = false;
 
-        if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+        if (bii2.type != BTRFS_FT_DIR && GetFileSizeEx(h, &filesize)) {
             if (filesize.QuadPart != 0)
                 can_change_nocow = false;
         }
@@ -502,7 +502,7 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
 
         ignore = false;
 
-        if (bii2.type != BTRFS_TYPE_DIRECTORY && GetFileSizeEx(h, &filesize)) {
+        if (bii2.type != BTRFS_FT_DIR && GetFileSizeEx(h, &filesize)) {
             if (filesize.QuadPart != 0)
                 can_change_nocow = false;
         }
@@ -530,25 +530,25 @@ void BtrfsPropSheet::set_cmdline(const wstring& cmdline) {
 
 static ULONG inode_type_to_string_ref(uint8_t type) {
     switch (type) {
-        case BTRFS_TYPE_FILE:
+        case BTRFS_FT_REG_FILE:
             return IDS_INODE_FILE;
 
-        case BTRFS_TYPE_DIRECTORY:
+        case BTRFS_FT_DIR:
             return IDS_INODE_DIR;
 
-        case BTRFS_TYPE_CHARDEV:
+        case BTRFS_FT_CHRDEV:
             return IDS_INODE_CHAR;
 
-        case BTRFS_TYPE_BLOCKDEV:
+        case BTRFS_FT_BLKDEV:
             return IDS_INODE_BLOCK;
 
-        case BTRFS_TYPE_FIFO:
+        case BTRFS_FT_FIFO:
             return IDS_INODE_FIFO;
 
-        case BTRFS_TYPE_SOCKET:
+        case BTRFS_FT_SOCK:
             return IDS_INODE_SOCKET;
 
-        case BTRFS_TYPE_SYMLINK:
+        case BTRFS_FT_SYMLINK:
             return IDS_INODE_SYMLINK;
 
         default:

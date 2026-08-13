@@ -52,13 +52,13 @@ using namespace std;
 #define BTRFS_BLOCK_GROUP_RAID5        0x080
 #define BTRFS_BLOCK_GROUP_RAID6        0x100
 
-#define BTRFS_TYPE_FILE      1
-#define BTRFS_TYPE_DIRECTORY 2
-#define BTRFS_TYPE_CHARDEV   3
-#define BTRFS_TYPE_BLOCKDEV  4
-#define BTRFS_TYPE_FIFO      5
-#define BTRFS_TYPE_SOCKET    6
-#define BTRFS_TYPE_SYMLINK   7
+#define BTRFS_FT_REG_FILE      1
+#define BTRFS_FT_DIR           2
+#define BTRFS_FT_CHRDEV        3
+#define BTRFS_FT_BLKDEV        4
+#define BTRFS_FT_FIFO          5
+#define BTRFS_FT_SOCK          6
+#define BTRFS_FT_SYMLINK       7
 
 #ifdef _MSC_VER
 #define funcname __FUNCTION__

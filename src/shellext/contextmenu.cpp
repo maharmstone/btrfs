@@ -601,7 +601,7 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
     if (!NT_SUCCESS(Status))
         throw ntstatus_error(Status);
 
-    if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
+    if (bii.type == BTRFS_FT_CHRDEV || bii.type == BTRFS_FT_BLKDEV || bii.type == BTRFS_FT_FIFO || bii.type == BTRFS_FT_SOCK) {
         win_handle dirh;
         btrfs_mknod* bmn;
 
@@ -1316,7 +1316,7 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
     if (!NT_SUCCESS(Status))
         throw ntstatus_error(Status);
 
-    if (bii.type == BTRFS_TYPE_CHARDEV || bii.type == BTRFS_TYPE_BLOCKDEV || bii.type == BTRFS_TYPE_FIFO || bii.type == BTRFS_TYPE_SOCKET) {
+    if (bii.type == BTRFS_FT_CHRDEV || bii.type == BTRFS_FT_BLKDEV || bii.type == BTRFS_FT_FIFO || bii.type == BTRFS_FT_SOCK) {
         win_handle dirh;
         btrfs_mknod* bmn;
 

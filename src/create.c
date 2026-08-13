@@ -655,7 +655,7 @@ cont:
             dc->key.type = BTRFS_ROOT_ITEM_KEY;
             dc->key.offset = 0;
             dc->index = max_index + 1;
-            dc->type = BTRFS_TYPE_DIRECTORY;
+            dc->type = BTRFS_FT_DIR;
             dc->fileref = NULL;
             dc->root_dir = true;
 
@@ -802,22 +802,22 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     if (fcb->type == 0) { // guess the type from the inode mode, if the caller doesn't know already
         if ((fcb->inode_item.mode & __S_IFDIR) == __S_IFDIR)
-            fcb->type = BTRFS_TYPE_DIRECTORY;
+            fcb->type = BTRFS_FT_DIR;
         else if ((fcb->inode_item.mode & __S_IFCHR) == __S_IFCHR)
-            fcb->type = BTRFS_TYPE_CHARDEV;
+            fcb->type = BTRFS_FT_CHRDEV;
         else if ((fcb->inode_item.mode & __S_IFBLK) == __S_IFBLK)
-            fcb->type = BTRFS_TYPE_BLOCKDEV;
+            fcb->type = BTRFS_FT_BLKDEV;
         else if ((fcb->inode_item.mode & __S_IFIFO) == __S_IFIFO)
-            fcb->type = BTRFS_TYPE_FIFO;
+            fcb->type = BTRFS_FT_FIFO;
         else if ((fcb->inode_item.mode & __S_IFLNK) == __S_IFLNK)
-            fcb->type = BTRFS_TYPE_SYMLINK;
+            fcb->type = BTRFS_FT_SYMLINK;
         else if ((fcb->inode_item.mode & __S_IFSOCK) == __S_IFSOCK)
-            fcb->type = BTRFS_TYPE_SOCKET;
+            fcb->type = BTRFS_FT_SOCK;
         else
-            fcb->type = BTRFS_TYPE_FILE;
+            fcb->type = BTRFS_FT_REG_FILE;
     }
 
-    no_data = fcb->inode_item.size == 0 || (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK);
+    no_data = fcb->inode_item.size == 0 || (fcb->type != BTRFS_FT_REG_FILE && fcb->type != BTRFS_FT_SYMLINK);
 
     while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
         tp = next_tp;
@@ -1031,12 +1031,12 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                         if (get_file_attributes_from_xattr((char*)&di[1] + di->name_len, di->data_len, &fcb->atts)) {
                             atts_set = true;
 
-                            if (fcb->type == BTRFS_TYPE_DIRECTORY)
+                            if (fcb->type == BTRFS_FT_DIR)
                                 fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
-                            else if (fcb->type == BTRFS_TYPE_SYMLINK)
+                            else if (fcb->type == BTRFS_FT_SYMLINK)
                                 fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
 
-                            if (fcb->type != BTRFS_TYPE_DIRECTORY)
+                            if (fcb->type != BTRFS_FT_DIR)
                                 fcb->atts &= ~FILE_ATTRIBUTE_DIRECTORY;
 
                             if (inode == SUBVOL_ROOT_INODE) {
@@ -1223,7 +1223,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         }
     }
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type == BTRFS_FT_DIR) {
         Status = load_dir_children(Vcb, fcb, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("load_dir_children returned %08lx\n", Status);
@@ -1304,7 +1304,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
             }
         }
 
-        if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
+        if (fcb->type == BTRFS_FT_DIR && fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT && fcb->reparse_xattr.Length == 0) {
             fcb->atts &= ~FILE_ATTRIBUTE_REPARSE_POINT;
 
             if (!Vcb->readonly && !is_subvol_readonly(subvol, Irp)) {
@@ -1617,7 +1617,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
             file_ref* duff_fr = NULL;
 
             if (dc->fileref) {
-                if (!lastpart && dc->type != BTRFS_TYPE_DIRECTORY) {
+                if (!lastpart && dc->type != BTRFS_FT_DIR) {
                     TRACE("passed path including file as subdirectory\n");
                     return STATUS_OBJECT_PATH_NOT_FOUND;
                 }
@@ -1639,7 +1639,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 }
             }
 
-            if (dc->type != BTRFS_TYPE_DIRECTORY && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            if (dc->type != BTRFS_FT_DIR && !lastpart && !(fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
                 TRACE("passed path including file as subdirectory\n");
                 free_fcb(fcb);
                 return STATUS_OBJECT_PATH_NOT_FOUND;
@@ -1663,7 +1663,7 @@ NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_ex
                 InsertTailList(&sf->children, &sf2->list_entry);
                 increase_fileref_refcount(sf);
 
-                if (dc->type == BTRFS_TYPE_DIRECTORY)
+                if (dc->type == BTRFS_FT_DIR)
                     fcb->fileref = sf2;
             } else {
                 duff_fr = sf2;
@@ -1748,7 +1748,7 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         fnus2.MaximumLength -= sizeof(WCHAR);
     }
 
-    if (dir->fcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
+    if (dir->fcb->type != BTRFS_FT_DIR && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
         WARN("passed related fileref which isn't a directory (fnus = %.*S)\n",
              (int)(fnus->Length / sizeof(WCHAR)), fnus->Buffer);
         return STATUS_OBJECT_PATH_NOT_FOUND;
@@ -2059,21 +2059,21 @@ static NTSTATUS file_create_parse_ea(fcb* fcb, FILE_FULL_EA_INFORMATION* ea) {
             fcb->inode_item.mode &= ~allowed;
             fcb->inode_item.mode |= val & allowed;
 
-            if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+            if (fcb->type != BTRFS_FT_DIR) {
                 if (__S_ISTYPE(val, __S_IFCHR)) {
-                    fcb->type = BTRFS_TYPE_CHARDEV;
+                    fcb->type = BTRFS_FT_CHRDEV;
                     fcb->inode_item.mode &= ~__S_IFMT;
                     fcb->inode_item.mode |= __S_IFCHR;
                 } else if (__S_ISTYPE(val, __S_IFBLK)) {
-                    fcb->type = BTRFS_TYPE_BLOCKDEV;
+                    fcb->type = BTRFS_FT_BLKDEV;
                     fcb->inode_item.mode &= ~__S_IFMT;
                     fcb->inode_item.mode |= __S_IFBLK;
                 } else if (__S_ISTYPE(val, __S_IFIFO)) {
-                    fcb->type = BTRFS_TYPE_FIFO;
+                    fcb->type = BTRFS_FT_FIFO;
                     fcb->inode_item.mode &= ~__S_IFMT;
                     fcb->inode_item.mode |= __S_IFIFO;
                 } else if (__S_ISTYPE(val, __S_IFSOCK)) {
-                    fcb->type = BTRFS_TYPE_SOCKET;
+                    fcb->type = BTRFS_FT_SOCK;
                     fcb->inode_item.mode &= ~__S_IFMT;
                     fcb->inode_item.mode |= __S_IFSOCK;
                 }
@@ -2102,7 +2102,7 @@ static NTSTATUS file_create_parse_ea(fcb* fcb, FILE_FULL_EA_INFORMATION* ea) {
         le = le2;
     }
 
-    if (fcb->type != BTRFS_TYPE_CHARDEV && fcb->type != BTRFS_TYPE_BLOCKDEV)
+    if (fcb->type != BTRFS_FT_CHRDEV && fcb->type != BTRFS_FT_BLKDEV)
         fcb->inode_item.rdev = 0;
 
     if (IsListEmpty(&ealist))
@@ -2244,7 +2244,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     inode = InterlockedIncrement64(&parfileref->fcb->subvol->lastinode);
 
-    type = options & FILE_DIRECTORY_FILE ? BTRFS_TYPE_DIRECTORY : BTRFS_TYPE_FILE;
+    type = options & FILE_DIRECTORY_FILE ? BTRFS_FT_DIR : BTRFS_FT_REG_FILE;
 
     // FIXME - link FILE_ATTRIBUTE_READONLY to mode
 
@@ -2295,7 +2295,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->inode_item.block_group = 0;
     fcb->inode_item.nlink = 1;
     fcb->inode_item.gid = GID_NOBODY; // FIXME?
-    fcb->inode_item.mode = inherit_mode(parfileref->fcb, type == BTRFS_TYPE_DIRECTORY); // use parent's permissions by default
+    fcb->inode_item.mode = inherit_mode(parfileref->fcb, type == BTRFS_FT_DIR); // use parent's permissions by default
     fcb->inode_item.rdev = 0;
     fcb->inode_item.flags = 0;
     fcb->inode_item.sequence = 1;
@@ -2304,7 +2304,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fcb->inode_item.mtime = now;
     fcb->inode_item.otime = now;
 
-    if (type == BTRFS_TYPE_DIRECTORY)
+    if (type == BTRFS_FT_DIR)
         fcb->inode_item.mode |= S_IFDIR;
     else {
         fcb->inode_item.mode |= S_IFREG;
@@ -2318,7 +2318,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         if (parfileref->fcb->inode_item.flags & BTRFS_INODE_NODATACOW || Vcb->options.nodatacow) {
             fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
 
-            if (type != BTRFS_TYPE_DIRECTORY)
+            if (type != BTRFS_FT_DIR)
                 fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
         }
 
@@ -2461,7 +2461,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
 
     fileref->fcb = fcb;
 
-    if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb) && fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (Irp->Overlay.AllocationSize.QuadPart > 0 && !write_fcb_compressed(fcb) && fcb->type != BTRFS_FT_DIR) {
         Status = extend_file(fcb, fileref, Irp->Overlay.AllocationSize.QuadPart, true, NULL, rollback);
 
         if (!NT_SUCCESS(Status)) {
@@ -2478,7 +2478,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         }
     }
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type == BTRFS_FT_DIR) {
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
             ERR("out of memory\n");
@@ -2615,7 +2615,7 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
     fileref->dc = dc;
     dc->fileref = fileref;
 
-    if (type == BTRFS_TYPE_DIRECTORY)
+    if (type == BTRFS_FT_DIR)
         fileref->fcb->fileref = fileref;
 
     InsertTailList(&parfileref->children, &fileref->list_entry);
@@ -2720,7 +2720,7 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
     parfileref = newpar;
     *pparfileref = parfileref;
 
-    if (parfileref->fcb->type != BTRFS_TYPE_FILE && parfileref->fcb->type != BTRFS_TYPE_SYMLINK && parfileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (parfileref->fcb->type != BTRFS_FT_REG_FILE && parfileref->fcb->type != BTRFS_FT_SYMLINK && parfileref->fcb->type != BTRFS_FT_DIR) {
         WARN("parent not file, directory, or symlink\n");
         free_fileref(parfileref);
         return STATUS_INVALID_PARAMETER;
@@ -3070,7 +3070,7 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     } else
         parfileref = related;
 
-    if (parfileref->fcb->type != BTRFS_TYPE_DIRECTORY && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
+    if (parfileref->fcb->type != BTRFS_FT_DIR && (fnus->Length < sizeof(WCHAR) || fnus->Buffer[0] != ':')) {
         Status = STATUS_OBJECT_PATH_NOT_FOUND;
         goto end;
     }
@@ -3239,12 +3239,12 @@ static NTSTATUS file_create(PIRP Irp, _Requires_lock_held_(_Curr_->tree_lock) _R
     if (acec && acec->InFlags & ATOMIC_CREATE_ECP_IN_FLAG_REPARSE_POINT_SPECIFIED) {
         if (acec->ReparseBufferLength > sizeof(uint32_t) && *(uint32_t*)acec->ReparseBuffer == IO_REPARSE_TAG_SYMLINK) {
             fileref->fcb->inode_item.mode &= ~(__S_IFIFO | __S_IFCHR | __S_IFBLK | __S_IFSOCK);
-            fileref->fcb->type = BTRFS_TYPE_FILE;
+            fileref->fcb->type = BTRFS_FT_REG_FILE;
             fileref->fcb->atts &= ~FILE_ATTRIBUTE_DIRECTORY;
         }
 
-        if (fileref->fcb->type == BTRFS_TYPE_SOCKET || fileref->fcb->type == BTRFS_TYPE_FIFO ||
-            fileref->fcb->type == BTRFS_TYPE_CHARDEV || fileref->fcb->type == BTRFS_TYPE_BLOCKDEV) {
+        if (fileref->fcb->type == BTRFS_FT_SOCK || fileref->fcb->type == BTRFS_FT_FIFO ||
+            fileref->fcb->type == BTRFS_FT_CHRDEV || fileref->fcb->type == BTRFS_FT_BLKDEV) {
             // NOP. If called from LXSS, humour it - we hardcode the values elsewhere.
         } else {
             Status = set_reparse_point2(fileref->fcb, acec->ReparseBuffer, acec->ReparseBufferLength, NULL, NULL, Irp, rollback);
@@ -3421,10 +3421,10 @@ static __inline void debug_create_options(ULONG RequestedOptions) {
 static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
     NTSTATUS Status;
 
-    if (fcb->type == BTRFS_TYPE_FILE || fcb->type == BTRFS_TYPE_SYMLINK) {
+    if (fcb->type == BTRFS_FT_REG_FILE || fcb->type == BTRFS_FT_SYMLINK) {
         ULONG size, bytes_read, i;
 
-        if (fcb->type == BTRFS_TYPE_FILE && fcb->inode_item.size < sizeof(ULONG)) {
+        if (fcb->type == BTRFS_FT_REG_FILE && fcb->inode_item.size < sizeof(ULONG)) {
             WARN("file was too short to be a reparse point\n");
             return STATUS_INVALID_PARAMETER;
         }
@@ -3448,7 +3448,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
             return Status;
         }
 
-        if (fcb->type == BTRFS_TYPE_SYMLINK) {
+        if (fcb->type == BTRFS_FT_SYMLINK) {
             ULONG stringlen, reqlen;
             uint16_t subnamelen, printnamelen;
             REPARSE_DATA_BUFFER* rdb;
@@ -3512,7 +3512,7 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
                 return Status;
             }
         }
-    } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    } else if (fcb->type == BTRFS_FT_DIR) {
         if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length == 0)
             return STATUS_INTERNAL_ERROR;
 
@@ -3939,7 +3939,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
     if (RequestedDisposition == FILE_SUPERSEDE || RequestedDisposition == FILE_OVERWRITE || RequestedDisposition == FILE_OVERWRITE_IF) {
         LARGE_INTEGER zero;
 
-        if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY || is_subvol_readonly(fileref->fcb->subvol, Irp)) {
+        if (fileref->fcb->type == BTRFS_FT_DIR || is_subvol_readonly(fileref->fcb->subvol, Irp)) {
             Status = STATUS_ACCESS_DENIED;
             goto end;
         }
@@ -4009,7 +4009,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         if (fileref->fcb != Vcb->dummy_fcb && !is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
             allowed |= DELETE | WRITE_OWNER | WRITE_DAC | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
 
-            if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_TYPE_DIRECTORY)
+            if (!fileref->fcb->ads && fileref->fcb->type == BTRFS_FT_DIR)
                 allowed |= FILE_ADD_SUBDIRECTORY | FILE_ADD_FILE | FILE_DELETE_CHILD;
         } else if (fileref->fcb->inode == SUBVOL_ROOT_INODE && is_subvol_readonly(fileref->fcb->subvol, Irp) && !Vcb->readonly) {
             // We allow a subvolume root to be opened read-write even if its readonly flag is set, so it can be cleared
@@ -4032,7 +4032,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         }
     }
 
-    if ((fileref->fcb->type == BTRFS_TYPE_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
+    if ((fileref->fcb->type == BTRFS_FT_SYMLINK || fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) && !(options & FILE_OPEN_REPARSE_POINT))  {
         REPARSE_DATA_BUFFER* data;
 
         /* How reparse points work from the point of view of the filesystem appears to
@@ -4059,7 +4059,7 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         }
     }
 
-    if (fileref->fcb->type == BTRFS_TYPE_DIRECTORY && !fileref->fcb->ads) {
+    if (fileref->fcb->type == BTRFS_FT_DIR && !fileref->fcb->ads) {
         if (options & FILE_NON_DIRECTORY_FILE && !(fileref->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT)) {
             Status = STATUS_FILE_IS_A_DIRECTORY;
             goto end;

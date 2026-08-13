@@ -169,7 +169,7 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    if (fbi->FileAttributes & FILE_ATTRIBUTE_DIRECTORY && fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (fbi->FileAttributes & FILE_ATTRIBUTE_DIRECTORY && fcb->type != BTRFS_FT_DIR) {
         WARN("attempted to set FILE_ATTRIBUTE_DIRECTORY on non-directory\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
@@ -252,9 +252,9 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         defda = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, fileref && fileref->dc && fileref->dc->name.Length >= sizeof(WCHAR) && fileref->dc->name.Buffer[0] == '.',
                                     true, Irp);
 
-        if (fcb->type == BTRFS_TYPE_DIRECTORY)
+        if (fcb->type == BTRFS_FT_DIR)
             fbi->FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
-        else if (fcb->type == BTRFS_TYPE_SYMLINK)
+        else if (fcb->type == BTRFS_FT_SYMLINK)
             fbi->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
 
         fcb->atts_changed = true;
@@ -359,7 +359,7 @@ static NTSTATUS set_disposition_information(device_extension* Vcb, PIRP Irp, PFI
     }
 
     // FIXME - can we skip this bit for subvols?
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
+    if (fcb->type == BTRFS_FT_DIR && fcb->inode_item.size > 0 && (!fileref || fileref->fcb != Vcb->dummy_fcb)) {
         TRACE("directory not empty\n");
         Status = STATUS_DIRECTORY_NOT_EMPTY;
         goto end;
@@ -386,7 +386,7 @@ end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
     // send notification that directory is about to be deleted
-    if (NT_SUCCESS(Status) && flags & FILE_DISPOSITION_DELETE && fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (NT_SUCCESS(Status) && flags & FILE_DISPOSITION_DELETE && fcb->type == BTRFS_FT_DIR) {
         FsRtlNotifyFullChangeDirectory(Vcb->NotifySync, &Vcb->DirNotifyList, FileObject->FsContext,
                                        NULL, false, false, 0, NULL, NULL, NULL);
     }
@@ -756,7 +756,7 @@ static NTSTATUS create_directory_fcb(device_extension* Vcb, root* r, fcb* parfcb
     fcb->subvol = r;
     fcb->inode = InterlockedIncrement64(&r->lastinode);
     fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&fcb->inode, sizeof(uint64_t));
-    fcb->type = BTRFS_TYPE_DIRECTORY;
+    fcb->type = BTRFS_FT_DIR;
 
     fcb->inode_item.generation = Vcb->superblock.generation;
     fcb->inode_item.transid = Vcb->superblock.generation;
@@ -957,7 +957,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         le = le->Flink;
     }
 
-    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
+    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
     // loop through list and create new inodes
 
@@ -1191,7 +1191,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         InsertTailList(&me->dummyfileref->parent->children, &me->dummyfileref->list_entry);
         ExReleaseResourceLite(&me->dummyfileref->parent->fcb->nonpaged->dir_children_lock);
 
-        if (me->dummyfileref->fcb->type == BTRFS_TYPE_DIRECTORY)
+        if (me->dummyfileref->fcb->type == BTRFS_FT_DIR)
             me->dummyfileref->fcb->fileref = me->dummyfileref;
 
         if (!me->parent) {
@@ -1390,7 +1390,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
     destdir->fcb->subvol->root_item.ctime = now;
 
     me = CONTAINING_RECORD(move_list.Flink, move_entry, list_entry);
-    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+    send_notification_fileref(fileref, fileref->fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
     send_notification_fileref(me->dummyfileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
     send_notification_fileref(fileref->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
@@ -1516,7 +1516,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
     dir_child* dc;
     fcb* dummyfcb;
 
-    if (fileref->fcb->type != BTRFS_TYPE_FILE)
+    if (fileref->fcb->type != BTRFS_FT_REG_FILE)
         return STATUS_INVALID_PARAMETER;
 
     if (!(flags & FILE_RENAME_IGNORE_READONLY_ATTRIBUTE) && fileref->parent->fcb->atts & FILE_ATTRIBUTE_READONLY) {
@@ -2089,7 +2089,7 @@ static NTSTATUS rename_file_to_stream(device_extension* Vcb, file_ref* fileref, 
         return STATUS_ACCESS_DENIED;
     }
 
-    if (fileref->fcb->type != BTRFS_TYPE_FILE)
+    if (fileref->fcb->type != BTRFS_FT_REG_FILE)
         return STATUS_INVALID_PARAMETER;
 
     fn.Buffer = &fri->FileName[1];
@@ -2631,7 +2631,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
                 WARN("trying to overwrite readonly file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            } else if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            } else if (oldfileref->fcb->type == BTRFS_FT_DIR) {
                 WARN("trying to overwrite directory\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -2660,7 +2660,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     SeCaptureSubjectContext(&subjcont);
 
-    if (!SeAccessCheck(related->fcb->sd, &subjcont, false, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
+    if (!SeAccessCheck(related->fcb->sd, &subjcont, false, fcb->type == BTRFS_FT_DIR ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
         IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
         SeReleaseSubjectContext(&subjcont);
         TRACE("SeAccessCheck failed, returning %08lx\n", Status);
@@ -2859,9 +2859,9 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
         FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&oldfn, name_offset, NULL, NULL,
-                                      fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_OLD_NAME, NULL, NULL);
+                                      fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_OLD_NAME, NULL, NULL);
         FsRtlNotifyFilterReportChange(fcb->Vcb->NotifySync, &fcb->Vcb->DirNotifyList, (PSTRING)&newfn, name_offset, NULL, NULL,
-                                      fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_NEW_NAME, NULL, NULL);
+                                      fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_RENAMED_NEW_NAME, NULL, NULL);
 
         ExFreePool(oldfn.Buffer);
         ExFreePool(newfn.Buffer);
@@ -2873,7 +2873,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     // We move files by moving the existing fileref to the new directory, and
     // replacing it with a dummy fileref with the same original values, but marked as deleted.
 
-    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
+    send_notification_fileref(fileref, fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
     fr2 = create_fileref(Vcb);
 
@@ -2901,7 +2901,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
         fr2->oldutf8.Length = fr2->oldutf8.MaximumLength = fileref->dc->utf8.Length;
     }
 
-    if (fr2->fcb->type == BTRFS_TYPE_DIRECTORY)
+    if (fr2->fcb->type == BTRFS_FT_DIR)
         fr2->fcb->fileref = fr2;
 
     if (fileref->fcb->inode == SUBVOL_ROOT_INODE)
@@ -3092,7 +3092,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     fr2->parent->fcb->inode_item_changed = true;
     mark_fcb_dirty(fr2->parent->fcb);
 
-    send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+    send_notification_fileref(fileref, fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
     send_notification_fileref(related, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
     send_notification_fileref(fr2->parent, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
 
@@ -3571,7 +3571,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type == BTRFS_FT_DIR) {
         WARN("tried to create hard link on directory\n");
         Status = STATUS_FILE_IS_A_DIRECTORY;
         goto end;
@@ -3640,7 +3640,7 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
                 WARN("trying to overwrite readonly file\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
-            } else if (oldfileref->fcb->type == BTRFS_TYPE_DIRECTORY) {
+            } else if (oldfileref->fcb->type == BTRFS_FT_DIR) {
                 WARN("trying to overwrite directory\n");
                 Status = STATUS_ACCESS_DENIED;
                 goto end;
@@ -4513,7 +4513,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     suf.Buffer = (WCHAR*)datasuf;
     suf.Length = suf.MaximumLength = sizeof(datasuf) - sizeof(WCHAR);
 
-    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY)
+    if (fileref->fcb->type != BTRFS_FT_DIR)
         reqsize = sizeof(FILE_STREAM_INFORMATION) - sizeof(WCHAR) + suf.Length + sizeof(WCHAR);
     else
         reqsize = 0;
@@ -4543,7 +4543,7 @@ static NTSTATUS fill_in_file_stream_information(FILE_STREAM_INFORMATION* fsi, fi
     entry = fsi;
     lastentry = NULL;
 
-    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (fileref->fcb->type != BTRFS_FT_DIR) {
         ULONG off;
 
         entry->NextEntryOffset = 0;
@@ -4613,7 +4613,7 @@ static NTSTATUS fill_in_file_standard_link_information(FILE_STANDARD_LINK_INFORM
     fsli->NumberOfAccessibleLinks = fcb->inode_item.nlink;
     fsli->TotalNumberOfLinks = fcb->inode_item.nlink;
     fsli->DeletePending = fileref ? fileref->delete_on_close : false;
-    fsli->Directory = (!fcb->ads && fcb->type == BTRFS_TYPE_DIRECTORY) ? true : false;
+    fsli->Directory = (!fcb->ads && fcb->type == BTRFS_FT_DIR) ? true : false;
 
     *length -= sizeof(FILE_STANDARD_LINK_INFORMATION);
 
@@ -5002,20 +5002,20 @@ static NTSTATUS fill_in_file_stat_information(FILE_STAT_INFORMATION* fsi, fcb* f
         fsi->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
-    if (fcb->type == BTRFS_TYPE_SOCKET)
+    if (fcb->type == BTRFS_FT_SOCK)
         fsi->ReparseTag = IO_REPARSE_TAG_AF_UNIX;
-    else if (fcb->type == BTRFS_TYPE_FIFO)
+    else if (fcb->type == BTRFS_FT_FIFO)
         fsi->ReparseTag = IO_REPARSE_TAG_LX_FIFO;
-    else if (fcb->type == BTRFS_TYPE_CHARDEV)
+    else if (fcb->type == BTRFS_FT_CHRDEV)
         fsi->ReparseTag = IO_REPARSE_TAG_LX_CHR;
-    else if (fcb->type == BTRFS_TYPE_BLOCKDEV)
+    else if (fcb->type == BTRFS_FT_BLKDEV)
         fsi->ReparseTag = IO_REPARSE_TAG_LX_BLK;
     else if (!(fsi->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         fsi->ReparseTag = 0;
     else
         fsi->ReparseTag = get_reparse_tag_fcb(fcb);
 
-    if (fcb->type == BTRFS_TYPE_SOCKET || fcb->type == BTRFS_TYPE_FIFO || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV)
+    if (fcb->type == BTRFS_FT_SOCK || fcb->type == BTRFS_FT_FIFO || fcb->type == BTRFS_FT_CHRDEV || fcb->type == BTRFS_FT_BLKDEV)
         fsi->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
 
     if (fcb->ads)
@@ -5061,20 +5061,20 @@ static NTSTATUS fill_in_file_stat_lx_information(FILE_STAT_LX_INFORMATION* fsli,
         fsli->FileAttributes = fcb->atts == 0 ? FILE_ATTRIBUTE_NORMAL : fcb->atts;
     }
 
-    if (fcb->type == BTRFS_TYPE_SOCKET)
+    if (fcb->type == BTRFS_FT_SOCK)
         fsli->ReparseTag = IO_REPARSE_TAG_AF_UNIX;
-    else if (fcb->type == BTRFS_TYPE_FIFO)
+    else if (fcb->type == BTRFS_FT_FIFO)
         fsli->ReparseTag = IO_REPARSE_TAG_LX_FIFO;
-    else if (fcb->type == BTRFS_TYPE_CHARDEV)
+    else if (fcb->type == BTRFS_FT_CHRDEV)
         fsli->ReparseTag = IO_REPARSE_TAG_LX_CHR;
-    else if (fcb->type == BTRFS_TYPE_BLOCKDEV)
+    else if (fcb->type == BTRFS_FT_BLKDEV)
         fsli->ReparseTag = IO_REPARSE_TAG_LX_BLK;
     else if (!(fsli->FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
         fsli->ReparseTag = 0;
     else
         fsli->ReparseTag = get_reparse_tag_fcb(fcb);
 
-    if (fcb->type == BTRFS_TYPE_SOCKET || fcb->type == BTRFS_TYPE_FIFO || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV)
+    if (fcb->type == BTRFS_FT_SOCK || fcb->type == BTRFS_FT_FIFO || fcb->type == BTRFS_FT_CHRDEV || fcb->type == BTRFS_FT_BLKDEV)
         fsli->FileAttributes |= FILE_ATTRIBUTE_REPARSE_POINT;
 
     if (fcb->ads)

@@ -593,7 +593,7 @@ static NTSTATUS __stdcall drv_flush_buffers(_In_ PDEVICE_OBJECT DeviceObject, _I
     Status = STATUS_SUCCESS;
     Irp->IoStatus.Status = Status;
 
-    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type != BTRFS_FT_DIR) {
         CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &Irp->IoStatus);
 
         if (fcb->Header.PagingIoResource) {
@@ -2208,7 +2208,7 @@ static NTSTATUS delete_fileref_fcb(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT
 
     // excise extents
 
-    if (fileref->fcb->type != BTRFS_TYPE_DIRECTORY && fileref->fcb->inode_item.size > 0) {
+    if (fileref->fcb->type != BTRFS_FT_DIR && fileref->fcb->inode_item.size > 0) {
         Status = excise_extents(fileref->fcb->Vcb, fileref->fcb, 0, sector_align(fileref->fcb->inode_item.size, fileref->fcb->Vcb->superblock.sectorsize), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
@@ -2494,7 +2494,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         if (ccb && ccb->options & FILE_DELETE_ON_CLOSE && fileref)
             fileref->delete_on_close = true;
 
-        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0 && fcb != fcb->Vcb->dummy_fcb)
+        if (fileref && fileref->delete_on_close && fcb->type == BTRFS_FT_DIR && fcb->inode_item.size > 0 && fcb != fcb->Vcb->dummy_fcb)
             fileref->delete_on_close = false;
 
         if (fcb->Vcb->locked && fcb->Vcb->locked_fileobj == FileObject) {
@@ -2542,10 +2542,10 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
 
                         if (!fileref->fcb->ads || fileref->dc) {
                             if (fileref->fcb->ads) {
-                                send_notification_fileref(fileref->parent, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
+                                send_notification_fileref(fileref->parent, fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME,
                                                         FILE_ACTION_REMOVED, &fileref->dc->name);
                             } else
-                                send_notification_fileref(fileref, fcb->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
+                                send_notification_fileref(fileref, fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
                         }
 
                         ExReleaseResourceLite(fcb->Header.Resource);
@@ -2664,12 +2664,12 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         if (get_file_attributes_from_xattr(eaval, ealen, &dosnum)) {
             ExFreePool(eaval);
 
-            if (type == BTRFS_TYPE_DIRECTORY)
+            if (type == BTRFS_FT_DIR)
                 dosnum |= FILE_ATTRIBUTE_DIRECTORY;
-            else if (type == BTRFS_TYPE_SYMLINK)
+            else if (type == BTRFS_FT_SYMLINK)
                 dosnum |= FILE_ATTRIBUTE_REPARSE_POINT;
 
-            if (type != BTRFS_TYPE_DIRECTORY)
+            if (type != BTRFS_FT_DIR)
                 dosnum &= ~FILE_ATTRIBUTE_DIRECTORY;
 
             if (inode == SUBVOL_ROOT_INODE) {
@@ -2686,11 +2686,11 @@ ULONG get_file_attributes(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     }
 
     switch (type) {
-        case BTRFS_TYPE_DIRECTORY:
+        case BTRFS_FT_DIR:
             att = FILE_ATTRIBUTE_DIRECTORY;
             break;
 
-        case BTRFS_TYPE_SYMLINK:
+        case BTRFS_FT_SYMLINK:
             att = FILE_ATTRIBUTE_REPARSE_POINT;
             break;
 
@@ -4861,7 +4861,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     Vcb->dummy_fcb->Vcb = Vcb;
-    Vcb->dummy_fcb->type = BTRFS_TYPE_DIRECTORY;
+    Vcb->dummy_fcb->type = BTRFS_FT_DIR;
     Vcb->dummy_fcb->inode = 2;
     Vcb->dummy_fcb->subvol = Vcb->root_root;
     Vcb->dummy_fcb->atts = FILE_ATTRIBUTE_DIRECTORY;
@@ -4896,7 +4896,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     root_fcb->Vcb = Vcb;
     root_fcb->inode = SUBVOL_ROOT_INODE;
     root_fcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&root_fcb->inode, sizeof(uint64_t));
-    root_fcb->type = BTRFS_TYPE_DIRECTORY;
+    root_fcb->type = BTRFS_FT_DIR;
 
 #ifdef DEBUG_FCB_REFCOUNTS
     WARN("volume FCB = %p\n", Vcb->volume_fcb);

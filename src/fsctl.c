@@ -243,7 +243,7 @@ void flush_subvol_fcbs(root* subvol) {
         struct _fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry);
         IO_STATUS_BLOCK iosb;
 
-        if (fcb->type != BTRFS_TYPE_DIRECTORY && !fcb->deleted)
+        if (fcb->type != BTRFS_FT_DIR && !fcb->deleted)
             CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
 
         le = le->Flink;
@@ -425,7 +425,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
 
-    Status = open_fcb(Vcb, r, r->root_item.root_dirid, BTRFS_TYPE_DIRECTORY, utf8, false, fcb, &fr->fcb, PagedPool, Irp);
+    Status = open_fcb(Vcb, r, r->root_item.root_dirid, BTRFS_FT_DIR, utf8, false, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08lx\n", Status);
         free_fileref(fr);
@@ -434,7 +434,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     fr->parent = fileref;
 
-    Status = add_dir_child(fileref->fcb, r->id, true, utf8, name, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, true, utf8, name, BTRFS_FT_DIR, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08lx\n", Status);
 
@@ -450,7 +450,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr->created = true;
     mark_fileref_dirty(fr);
 
-    if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
+    if (fr->fcb->type == BTRFS_FT_DIR)
         fr->fcb->fileref = fr;
 
     fr->fcb->subvol->parent = fileref->fcb->subvol->id;
@@ -570,7 +570,7 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
     fcb = FileObject->FsContext;
     ccb = FileObject->FsContext2;
 
-    if (!fcb || !ccb || fcb->type != BTRFS_TYPE_DIRECTORY)
+    if (!fcb || !ccb || fcb->type != BTRFS_FT_DIR)
         return STATUS_INVALID_PARAMETER;
 
     fileref = ccb->fileref;
@@ -774,7 +774,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     fileref = ccb->fileref;
 
-    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type != BTRFS_FT_DIR) {
         ERR("parent FCB was not a directory\n");
         return STATUS_NOT_A_DIRECTORY;
     }
@@ -954,7 +954,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     rootfcb->Vcb = Vcb;
 
     rootfcb->subvol = r;
-    rootfcb->type = BTRFS_TYPE_DIRECTORY;
+    rootfcb->type = BTRFS_FT_DIR;
     rootfcb->inode = SUBVOL_ROOT_INODE;
     rootfcb->hash = calc_crc32c(0xffffffff, (uint8_t*)&rootfcb->inode, sizeof(uint64_t)); // FIXME - we can hardcode this
 
@@ -1059,7 +1059,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     fr->parent = fileref;
 
-    Status = add_dir_child(fileref->fcb, r->id, true, &utf8, &nameus, BTRFS_TYPE_DIRECTORY, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, true, &utf8, &nameus, BTRFS_FT_DIR, &dc);
     if (!NT_SUCCESS(Status))
         WARN("add_dir_child returned %08lx\n", Status);
 
@@ -1092,7 +1092,7 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     increase_fileref_refcount(fileref);
 
-    if (fr->fcb->type == BTRFS_TYPE_DIRECTORY)
+    if (fr->fcb->type == BTRFS_FT_DIR)
         fr->fcb->fileref = fr;
 
     fr->created = true;
@@ -1211,7 +1211,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
         bii->sparse_size = 0;
     }
 
-    if (fcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type != BTRFS_FT_DIR) {
         uint64_t last_end = 0;
         LIST_ENTRY* le;
         bool extents_inline = false;
@@ -1359,7 +1359,7 @@ static NTSTATUS set_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
     if (bsii->flags_changed) {
-        if (fcb->type != BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0 &&
+        if (fcb->type != BTRFS_FT_DIR && fcb->inode_item.size > 0 &&
             (bsii->flags & BTRFS_INODE_NODATACOW) != (fcb->inode_item.flags & BTRFS_INODE_NODATACOW)) {
             WARN("trying to change nocow flag on non-empty file\n");
             Status = STATUS_INVALID_PARAMETER;
@@ -1758,7 +1758,7 @@ static NTSTATUS set_sparse(device_extension* Vcb, PFILE_OBJECT FileObject, void*
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    if (fcb->type != BTRFS_TYPE_FILE) {
+    if (fcb->type != BTRFS_FT_REG_FILE) {
         WARN("FileObject did not point to a file\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
@@ -1955,7 +1955,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     CcFlushCache(FileObject->SectionObjectPointer, NULL, 0, &iosb);
 
-    if (fcb->type != BTRFS_TYPE_FILE) {
+    if (fcb->type != BTRFS_FT_REG_FILE) {
         WARN("FileObject did not point to a file\n");
         Status = STATUS_INVALID_PARAMETER;
         goto end;
@@ -2214,7 +2214,7 @@ static void flush_fcb_caches(device_extension* Vcb) {
         struct _fcb* fcb = CONTAINING_RECORD(le, struct _fcb, list_entry_all);
         IO_STATUS_BLOCK iosb;
 
-        if (fcb->type != BTRFS_TYPE_DIRECTORY && !fcb->deleted)
+        if (fcb->type != BTRFS_FT_DIR && !fcb->deleted)
             CcFlushCache(&fcb->nonpaged->segment_object, NULL, 0, &iosb);
 
         le = le->Flink;
@@ -3278,7 +3278,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         return STATUS_ACCESS_DENIED;
     }
 
-    if (!fcb->ads && fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_SYMLINK)
+    if (!fcb->ads && fcb->type != BTRFS_FT_REG_FILE && fcb->type != BTRFS_FT_SYMLINK)
         return STATUS_INVALID_PARAMETER;
 
     Status = ObReferenceObjectByHandle(ded->FileHandle, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&sourcefo, NULL);
@@ -3319,7 +3319,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         return STATUS_ACCESS_DENIED;
     }
 
-    if (!sourcefcb->ads && sourcefcb->type != BTRFS_TYPE_FILE && sourcefcb->type != BTRFS_TYPE_SYMLINK) {
+    if (!sourcefcb->ads && sourcefcb->type != BTRFS_FT_REG_FILE && sourcefcb->type != BTRFS_FT_SYMLINK) {
         ObDereferenceObject(sourcefo);
         return STATUS_INVALID_PARAMETER;
     }
@@ -3743,7 +3743,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     parfcb = FileObject->FsContext;
 
-    if (parfcb->type != BTRFS_TYPE_DIRECTORY) {
+    if (parfcb->type != BTRFS_FT_DIR) {
         WARN("trying to create file in something other than a directory\n");
         return STATUS_INVALID_PARAMETER;
     }
@@ -3765,11 +3765,11 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     if (datalen < offsetof(btrfs_mknod, name[0]) + bmn->namelen || bmn->namelen < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
 
-    if (bmn->type == BTRFS_TYPE_UNKNOWN || bmn->type > BTRFS_TYPE_SYMLINK)
+    if (bmn->type == BTRFS_FT_UNKNOWN || bmn->type > BTRFS_FT_SYMLINK)
         return STATUS_INVALID_PARAMETER;
 
-    if ((bmn->type == BTRFS_TYPE_DIRECTORY && !(parccb->access & FILE_ADD_SUBDIRECTORY)) ||
-        (bmn->type != BTRFS_TYPE_DIRECTORY && !(parccb->access & FILE_ADD_FILE))) {
+    if ((bmn->type == BTRFS_FT_DIR && !(parccb->access & FILE_ADD_SUBDIRECTORY)) ||
+        (bmn->type != BTRFS_FT_DIR && !(parccb->access & FILE_ADD_FILE))) {
         WARN("insufficient privileges\n");
         return STATUS_ACCESS_DENIED;
     }
@@ -3854,9 +3854,9 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode_item.nlink = 1;
     fcb->inode_item.uid = UID_NOBODY;
     fcb->inode_item.gid = GID_NOBODY;
-    fcb->inode_item.mode = inherit_mode(parfcb, bmn->type == BTRFS_TYPE_DIRECTORY);
+    fcb->inode_item.mode = inherit_mode(parfcb, bmn->type == BTRFS_FT_DIR);
 
-    if (bmn->type == BTRFS_TYPE_BLOCKDEV || bmn->type == BTRFS_TYPE_CHARDEV)
+    if (bmn->type == BTRFS_FT_BLKDEV || bmn->type == BTRFS_FT_CHRDEV)
         fcb->inode_item.rdev = (minor(bmn->rdev) & 0xFFFFF) | ((major(bmn->rdev) & 0xFFFFFFFFFFF) << 20);
     else
         fcb->inode_item.rdev = 0;
@@ -3868,29 +3868,29 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode_item.mtime = now;
     fcb->inode_item.otime = now;
 
-    if (bmn->type == BTRFS_TYPE_DIRECTORY)
+    if (bmn->type == BTRFS_FT_DIR)
         fcb->inode_item.mode |= __S_IFDIR;
-    else if (bmn->type == BTRFS_TYPE_CHARDEV)
+    else if (bmn->type == BTRFS_FT_CHRDEV)
         fcb->inode_item.mode |= __S_IFCHR;
-    else if (bmn->type == BTRFS_TYPE_BLOCKDEV)
+    else if (bmn->type == BTRFS_FT_BLKDEV)
         fcb->inode_item.mode |= __S_IFBLK;
-    else if (bmn->type == BTRFS_TYPE_FIFO)
+    else if (bmn->type == BTRFS_FT_FIFO)
         fcb->inode_item.mode |= __S_IFIFO;
-    else if (bmn->type == BTRFS_TYPE_SOCKET)
+    else if (bmn->type == BTRFS_FT_SOCK)
         fcb->inode_item.mode |= __S_IFSOCK;
-    else if (bmn->type == BTRFS_TYPE_SYMLINK)
+    else if (bmn->type == BTRFS_FT_SYMLINK)
         fcb->inode_item.mode |= __S_IFLNK;
     else
         fcb->inode_item.mode |= __S_IFREG;
 
-    if (bmn->type != BTRFS_TYPE_DIRECTORY)
+    if (bmn->type != BTRFS_FT_DIR)
         fcb->inode_item.mode &= ~(S_IXUSR | S_IXGRP | S_IXOTH); // remove executable bit if not directory
 
     // inherit nodatacow flag from parent directory
     if (parfcb->inode_item.flags & BTRFS_INODE_NODATACOW) {
         fcb->inode_item.flags |= BTRFS_INODE_NODATACOW;
 
-        if (bmn->type != BTRFS_TYPE_DIRECTORY)
+        if (bmn->type != BTRFS_FT_DIR)
             fcb->inode_item.flags |= BTRFS_INODE_NODATASUM;
     }
 
@@ -3912,7 +3912,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     if (bmn->name[0] == '.')
         fcb->atts |= FILE_ATTRIBUTE_HIDDEN;
 
-    if (bmn->type == BTRFS_TYPE_DIRECTORY)
+    if (bmn->type == BTRFS_FT_DIR)
         fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
 
     fcb->atts_changed = false;
@@ -3922,7 +3922,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     SeCaptureSubjectContext(&subjcont);
 
-    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_TYPE_DIRECTORY,
+    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR,
                                 SEF_SACL_AUTO_INHERIT, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
 
     if (!NT_SUCCESS(Status)) {
@@ -4016,7 +4016,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     increase_fileref_refcount(parfileref);
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    if (fcb->type == BTRFS_FT_DIR) {
         fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
         if (!fcb->hash_ptrs) {
             release_fcb_lock(Vcb);
@@ -4047,7 +4047,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     add_fcb_to_subvol(fcb);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
 
-    if (bmn->type == BTRFS_TYPE_DIRECTORY)
+    if (bmn->type == BTRFS_FT_DIR)
         fileref->fcb->fileref = fileref;
 
     ExAcquireResourceExclusiveLite(parfcb->Header.Resource, true);
@@ -4070,7 +4070,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     parfcb->inode_item_changed = true;
     mark_fcb_dirty(parfcb);
 
-    send_notification_fileref(fileref, bmn->type == BTRFS_TYPE_DIRECTORY ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
+    send_notification_fileref(fileref, bmn->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_ADDED, NULL);
 
     if (!parccb->user_set_write_time)
         queue_notification_fcb(parfileref, FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_ACTION_MODIFIED, NULL);
@@ -4299,9 +4299,9 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         if (bsxa->valuelen > 0 && get_file_attributes_from_xattr(bsxa->data + bsxa->namelen, bsxa->valuelen, &atts)) {
             fcb->atts = atts;
 
-            if (fcb->type == BTRFS_TYPE_DIRECTORY)
+            if (fcb->type == BTRFS_FT_DIR)
                 fcb->atts |= FILE_ATTRIBUTE_DIRECTORY;
-            else if (fcb->type == BTRFS_TYPE_SYMLINK)
+            else if (fcb->type == BTRFS_FT_SYMLINK)
                 fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
 
             if (fcb->inode == SUBVOL_ROOT_INODE) {
@@ -4894,7 +4894,7 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (fcb->type != BTRFS_TYPE_FILE && fcb->type != BTRFS_TYPE_DIRECTORY)
+    if (fcb->type != BTRFS_FT_REG_FILE && fcb->type != BTRFS_FT_DIR)
         return STATUS_INVALID_PARAMETER;
 
     if (fsctl == FSCTL_REQUEST_OPLOCK) {
@@ -4919,7 +4919,7 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
 
     bool shared_request = (fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_2) || (fsctl == FSCTL_REQUEST_OPLOCK && !(buf->RequestedOplockLevel & OPLOCK_LEVEL_CACHE_WRITE));
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && (fsctl != FSCTL_REQUEST_OPLOCK || !shared_request)) {
+    if (fcb->type == BTRFS_FT_DIR && (fsctl != FSCTL_REQUEST_OPLOCK || !shared_request)) {
         WARN("oplock requests on directories can only be for read or read-handle oplocks\n");
         return STATUS_INVALID_PARAMETER;
     }
@@ -4931,7 +4931,7 @@ static NTSTATUS fsctl_oplock(device_extension* Vcb, PIRP* Pirp) {
     if (fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_1 || fsctl == FSCTL_REQUEST_BATCH_OPLOCK || fsctl == FSCTL_REQUEST_FILTER_OPLOCK ||
         fsctl == FSCTL_REQUEST_OPLOCK_LEVEL_2 || oplock_request) {
         if (shared_request) {
-            if (fcb->type == BTRFS_TYPE_FILE) {
+            if (fcb->type == BTRFS_FT_REG_FILE) {
                 if (fFsRtlCheckLockForOplockRequest)
                     oplock_count = !fFsRtlCheckLockForOplockRequest(&fcb->lock, &fcb->Header.AllocationSize);
                 else if (fFsRtlAreThereCurrentOrInProgressFileLocks)
@@ -5205,7 +5205,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
             leave;
         }
 
-        if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        if (fcb->type == BTRFS_FT_DIR) {
             Status = STATUS_FILE_IS_A_DIRECTORY;
             leave;
         }

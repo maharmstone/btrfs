@@ -26,7 +26,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, L
     NTSTATUS Status;
     fcb* fcb;
 
-    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, false, NULL, &fcb, PagedPool, Irp);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_FT_REG_FILE, NULL, false, NULL, &fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08lx\n", Status);
         return Status;
@@ -509,7 +509,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     num_entries = fsi->num_entries;
     num_bitmaps = fsi->num_bitmaps;
 
-    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_TYPE_FILE, NULL, false, NULL, &c->cache, PagedPool, Irp);
+    Status = open_fcb(Vcb, Vcb->root_root, inode, BTRFS_FT_REG_FILE, NULL, false, NULL, &c->cache, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08lx\n", Status);
         return STATUS_NOT_FOUND;
@@ -1149,7 +1149,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         c->cache->inode = InterlockedIncrement64(&Vcb->root_root->lastinode);
         c->cache->hash = calc_crc32c(0xffffffff, (uint8_t*)&c->cache->inode, sizeof(uint64_t));
 
-        c->cache->type = BTRFS_TYPE_FILE;
+        c->cache->type = BTRFS_FT_REG_FILE;
         c->cache->created = true;
 
         // create new free space entry

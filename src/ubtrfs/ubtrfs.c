@@ -998,7 +998,7 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
     add_inode_ref(root_root, BTRFS_ROOT_TREE_DIR_OBJECTID, BTRFS_ROOT_TREE_DIR_OBJECTID, 0, "..");
 
     add_dir_item(root_root, BTRFS_ROOT_TREE_DIR_OBJECTID, default_hash, BTRFS_FS_TREE_OBJECTID, BTRFS_ROOT_ITEM_KEY,
-                 0xffffffffffffffff, 0, BTRFS_TYPE_DIRECTORY, default_subvol);
+                 0xffffffffffffffff, 0, BTRFS_FT_DIR, default_subvol);
 }
 
 static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_root) {

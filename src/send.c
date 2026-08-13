@@ -1161,7 +1161,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
 
         if (di->name_len == namelen && RtlCompareMemory(&di[1], name, namelen) == namelen) {
             *inode = di->location.type == BTRFS_INODE_ITEM_KEY ? di->location.objectid : 0;
-            *dir = di->type == BTRFS_TYPE_DIRECTORY ? true: false;
+            *dir = di->type == BTRFS_FT_DIR ? true: false;
             return STATUS_OBJECT_NAME_COLLISION;
         }
 

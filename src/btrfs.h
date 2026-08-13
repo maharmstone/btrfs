@@ -265,15 +265,15 @@ struct btrfs_super_block {
     uint8_t padding[565];
 };
 
-#define BTRFS_TYPE_UNKNOWN   0
-#define BTRFS_TYPE_FILE      1
-#define BTRFS_TYPE_DIRECTORY 2
-#define BTRFS_TYPE_CHARDEV   3
-#define BTRFS_TYPE_BLOCKDEV  4
-#define BTRFS_TYPE_FIFO      5
-#define BTRFS_TYPE_SOCKET    6
-#define BTRFS_TYPE_SYMLINK   7
-#define BTRFS_TYPE_EA        8
+#define BTRFS_FT_UNKNOWN    0
+#define BTRFS_FT_REG_FILE   1
+#define BTRFS_FT_DIR        2
+#define BTRFS_FT_CHRDEV     3
+#define BTRFS_FT_BLKDEV     4
+#define BTRFS_FT_FIFO       5
+#define BTRFS_FT_SOCK       6
+#define BTRFS_FT_SYMLINK    7
+#define BTRFS_FT_XATTR      8
 
 struct btrfs_dir_item {
     struct btrfs_key location;

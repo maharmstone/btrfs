@@ -378,7 +378,7 @@ static BOOLEAN __stdcall fast_io_lock(PFILE_OBJECT FileObject, PLARGE_INTEGER Fi
     TRACE("(%p, %I64x, %I64x, %p, %lx, %u, %u, %p, %p)\n", FileObject, FileOffset ? FileOffset->QuadPart : 0, Length ? Length->QuadPart : 0,
           ProcessId, Key, FailImmediately, ExclusiveLock, IoStatus, DeviceObject);
 
-    if (fcb->type != BTRFS_TYPE_FILE) {
+    if (fcb->type != BTRFS_FT_REG_FILE) {
         WARN("can only lock files\n");
         IoStatus->Status = STATUS_INVALID_PARAMETER;
         IoStatus->Information = 0;
@@ -412,7 +412,7 @@ static BOOLEAN __stdcall fast_io_unlock_single(PFILE_OBJECT FileObject, PLARGE_I
 
     IoStatus->Information = 0;
 
-    if (fcb->type != BTRFS_TYPE_FILE) {
+    if (fcb->type != BTRFS_FT_REG_FILE) {
         WARN("can only lock files\n");
         IoStatus->Status = STATUS_INVALID_PARAMETER;
         return true;
@@ -439,7 +439,7 @@ static BOOLEAN __stdcall fast_io_unlock_all(PFILE_OBJECT FileObject, PEPROCESS P
 
     IoStatus->Information = 0;
 
-    if (fcb->type != BTRFS_TYPE_FILE) {
+    if (fcb->type != BTRFS_FT_REG_FILE) {
         WARN("can only lock files\n");
         IoStatus->Status = STATUS_INVALID_PARAMETER;
         return true;
@@ -471,7 +471,7 @@ static BOOLEAN __stdcall fast_io_unlock_all_by_key(PFILE_OBJECT FileObject, PVOI
 
     IoStatus->Information = 0;
 
-    if (fcb->type != BTRFS_TYPE_FILE) {
+    if (fcb->type != BTRFS_FT_REG_FILE) {
         WARN("can only lock files\n");
         IoStatus->Status = STATUS_INVALID_PARAMETER;
         return true;

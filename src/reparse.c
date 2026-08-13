@@ -41,7 +41,7 @@ NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, 
     ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
     ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
-    if (fcb->type == BTRFS_TYPE_SYMLINK) {
+    if (fcb->type == BTRFS_FT_SYMLINK) {
         if (ccb->lxss) {
             reqlen = offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer.DataBuffer) + sizeof(uint32_t);
 
@@ -140,7 +140,7 @@ NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, 
 
         Status = STATUS_SUCCESS;
     } else if (fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
-        if (fcb->type == BTRFS_TYPE_FILE) {
+        if (fcb->type == BTRFS_FT_REG_FILE) {
             ULONG len;
 
             Status = read_file(fcb, buffer, 0, buflen, &len, NULL);
@@ -150,7 +150,7 @@ NTSTATUS get_reparse_point(PFILE_OBJECT FileObject, void* buffer, DWORD buflen, 
             }
 
             *retlen = len;
-        } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+        } else if (fcb->type == BTRFS_FT_DIR) {
             if (!fcb->reparse_xattr.Buffer || fcb->reparse_xattr.Length < sizeof(ULONG)) {
                 Status = STATUS_NOT_A_REPARSE_POINT;
                 goto end;
@@ -254,7 +254,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
         return STATUS_INTERNAL_ERROR;
     }
 
-    fcb->type = BTRFS_TYPE_SYMLINK;
+    fcb->type = BTRFS_FT_SYMLINK;
     fcb->inode_item.mode &= ~__S_IFMT;
     fcb->inode_item.mode |= __S_IFLNK;
     fcb->inode_item.generation = fcb->Vcb->superblock.generation; // so we don't confuse btrfs send on Linux
@@ -308,7 +308,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
     NTSTATUS Status;
     ULONG tag;
 
-    if (fcb->type == BTRFS_TYPE_SYMLINK) {
+    if (fcb->type == BTRFS_FT_SYMLINK) {
         WARN("tried to set a reparse point on an existing symlink\n");
         return STATUS_INVALID_PARAMETER;
     }
@@ -317,7 +317,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
 
     // FIXME - die if not file or directory
 
-    if (fcb->type == BTRFS_TYPE_DIRECTORY && fcb->inode_item.size > 0) {
+    if (fcb->type == BTRFS_FT_DIR && fcb->inode_item.size > 0) {
         TRACE("directory not empty\n");
         return STATUS_DIRECTORY_NOT_EMPTY;
     }
@@ -335,10 +335,10 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
 
     tag = *(ULONG*)rdb;
 
-    if (tag == IO_REPARSE_TAG_MOUNT_POINT && fcb->type != BTRFS_TYPE_DIRECTORY)
+    if (tag == IO_REPARSE_TAG_MOUNT_POINT && fcb->type != BTRFS_FT_DIR)
         return STATUS_NOT_A_DIRECTORY;
 
-    if (fcb->type == BTRFS_TYPE_FILE &&
+    if (fcb->type == BTRFS_FT_REG_FILE &&
         ((tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) || tag == IO_REPARSE_TAG_LX_SYMLINK)) {
         Status = set_symlink(Irp, fileref, fcb, ccb, rdb, buflen, rollback);
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
@@ -346,7 +346,7 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
         LARGE_INTEGER offset, time;
         struct btrfs_timespec now;
 
-        if (fcb->type == BTRFS_TYPE_DIRECTORY || fcb->type == BTRFS_TYPE_CHARDEV || fcb->type == BTRFS_TYPE_BLOCKDEV) { // store as xattr
+        if (fcb->type == BTRFS_FT_DIR || fcb->type == BTRFS_FT_CHRDEV || fcb->type == BTRFS_FT_BLKDEV) { // store as xattr
             ANSI_STRING buf;
 
             buf.Buffer = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
@@ -546,7 +546,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         goto end;
     }
 
-    if (fcb->type == BTRFS_TYPE_SYMLINK) {
+    if (fcb->type == BTRFS_FT_SYMLINK) {
         LARGE_INTEGER time;
         struct btrfs_timespec now;
 
@@ -559,7 +559,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
         KeQuerySystemTime(&time);
         win_time_to_unix(time, &now);
 
-        fileref->fcb->type = BTRFS_TYPE_FILE;
+        fileref->fcb->type = BTRFS_FT_REG_FILE;
         fileref->fcb->inode_item.mode &= ~__S_IFLNK;
         fileref->fcb->inode_item.mode |= __S_IFREG;
         fileref->fcb->inode_item.generation = fileref->fcb->Vcb->superblock.generation; // so we don't confuse btrfs send on Linux
@@ -584,7 +584,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
 
         fileref->fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fileref->fcb->subvol->root_item.ctime = now;
-    } else if (fcb->type == BTRFS_TYPE_FILE) {
+    } else if (fcb->type == BTRFS_FT_REG_FILE) {
         LARGE_INTEGER time;
         struct btrfs_timespec now;
 
@@ -616,7 +616,7 @@ NTSTATUS delete_reparse_point(PIRP Irp) {
 
         fcb->subvol->root_item.ctransid = fcb->Vcb->superblock.generation;
         fcb->subvol->root_item.ctime = now;
-    } else if (fcb->type == BTRFS_TYPE_DIRECTORY) {
+    } else if (fcb->type == BTRFS_FT_DIR) {
         LARGE_INTEGER time;
         struct btrfs_timespec now;
 

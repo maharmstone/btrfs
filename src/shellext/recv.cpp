@@ -326,15 +326,15 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
     bmn->inode = *inode;
 
     if (cmd->cmd == BTRFS_SEND_CMD_MKDIR)
-        bmn->type = BTRFS_TYPE_DIRECTORY;
+        bmn->type = BTRFS_FT_DIR;
     else if (cmd->cmd == BTRFS_SEND_CMD_MKNOD)
-        bmn->type = *mode & S_IFCHR ? BTRFS_TYPE_CHARDEV : BTRFS_TYPE_BLOCKDEV;
+        bmn->type = *mode & S_IFCHR ? BTRFS_FT_CHRDEV : BTRFS_FT_BLKDEV;
     else if (cmd->cmd == BTRFS_SEND_CMD_MKFIFO)
-        bmn->type = BTRFS_TYPE_FIFO;
+        bmn->type = BTRFS_FT_FIFO;
     else if (cmd->cmd == BTRFS_SEND_CMD_MKSOCK)
-        bmn->type = BTRFS_TYPE_SOCKET;
+        bmn->type = BTRFS_FT_SOCK;
     else
-        bmn->type = BTRFS_TYPE_FILE;
+        bmn->type = BTRFS_FT_REG_FILE;
 
     bmn->rdev = rdev ? *rdev : 0;
     bmn->namelen = (uint16_t)(nameu.length() * sizeof(WCHAR));
