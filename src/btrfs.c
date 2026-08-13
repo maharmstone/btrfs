@@ -400,7 +400,7 @@ static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
         return false;
     }
 
-    if ((tp.item->key.type == TYPE_INODE_ITEM || tp.item->key.type == TYPE_ROOT_ITEM) && tp.item->key.objectid <= BTRFS_LAST_FREE_OBJECTID) {
+    if ((tp.item->key.type == BTRFS_INODE_ITEM_KEY || tp.item->key.type == BTRFS_ROOT_ITEM_KEY) && tp.item->key.objectid <= BTRFS_LAST_FREE_OBJECTID) {
         r->lastinode = tp.item->key.objectid;
         TRACE("last inode for tree %I64x is %I64x\n", r->id, r->lastinode);
         return true;
@@ -411,7 +411,7 @@ static bool get_last_inode(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock
 
         TRACE("moving on to %I64x,%x,%I64x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-        if ((tp.item->key.type == TYPE_INODE_ITEM || tp.item->key.type == TYPE_ROOT_ITEM) && tp.item->key.objectid <= BTRFS_LAST_FREE_OBJECTID) {
+        if ((tp.item->key.type == BTRFS_INODE_ITEM_KEY || tp.item->key.type == BTRFS_ROOT_ITEM_KEY) && tp.item->key.objectid <= BTRFS_LAST_FREE_OBJECTID) {
             r->lastinode = tp.item->key.objectid;
             TRACE("last inode for tree %I64x is %I64x\n", r->id, r->lastinode);
             return true;
@@ -479,7 +479,7 @@ bool get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
     TRACE("(%p, %I64x, %I64x, %s, %08x, %p, %p)\n", Vcb, subvol->id, inode, name, crc32, data, datalen);
 
     searchkey.objectid = inode;
-    searchkey.type = TYPE_XATTR_ITEM;
+    searchkey.type = BTRFS_XATTR_ITEM_KEY;
     searchkey.offset = crc32;
 
     Status = find_item(Vcb, subvol, &tp, &searchkey, false, Irp);
@@ -1310,7 +1310,7 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
     // We ask here for a traverse_ptr to the item we're inserting, so we can
     // copy some of the tree's variables
 
-    Status = insert_tree_item(Vcb, Vcb->root_root, id, TYPE_ROOT_ITEM, offset, ri, sizeof(struct btrfs_root_item), &tp, Irp);
+    Status = insert_tree_item(Vcb, Vcb->root_root, id, BTRFS_ROOT_ITEM_KEY, offset, ri, sizeof(struct btrfs_root_item), &tp, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(ri);
@@ -3093,7 +3093,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     do {
         TRACE("(%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-        if (tp.item->key.type == TYPE_ROOT_ITEM) {
+        if (tp.item->key.type == BTRFS_ROOT_ITEM_KEY) {
             struct btrfs_root_item* ri = (struct btrfs_root_item*)tp.item->data;
 
             if (tp.item->size < offsetof(struct btrfs_root_item, byte_limit)) {
@@ -3107,7 +3107,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                     return Status;
                 }
             }
-        } else if (tp.item->key.type == TYPE_ROOT_BACKREF && !IsListEmpty(&Vcb->roots)) {
+        } else if (tp.item->key.type == BTRFS_ROOT_BACKREF_KEY && !IsListEmpty(&Vcb->roots)) {
             root* lastroot = CONTAINING_RECORD(Vcb->roots.Blink, root, list_entry);
 
             if (lastroot->id == tp.item->key.objectid)
@@ -3164,7 +3164,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         ii->ctime = now;
         ii->mtime = now;
 
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, BTRFS_INODE_ITEM_KEY, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(ii);
@@ -3183,7 +3183,7 @@ static NTSTATUS look_for_roots(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         *(char*)&ir[1] = '.';
         *((char*)&ir[1] + 1) = '.';
 
-        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, TYPE_INODE_REF, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
+        Status = insert_tree_item(Vcb, reloc_root, SUBVOL_ROOT_INODE, BTRFS_INODE_REF_KEY, SUBVOL_ROOT_INODE, ir, irlen, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             ExFreePool(ir);
@@ -3207,7 +3207,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     InitializeListHead(&dev->space);
 
     searchkey.objectid = 0;
-    searchkey.type = TYPE_DEV_STATS;
+    searchkey.type = BTRFS_PERSISTENT_ITEM_KEY;
     searchkey.offset = dev->devitem.devid;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
@@ -3215,7 +3215,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
         RtlCopyMemory(dev->stats, tp.item->data, min(sizeof(uint64_t) * 5, tp.item->size));
 
     searchkey.objectid = dev->devitem.devid;
-    searchkey.type = TYPE_DEV_EXTENT;
+    searchkey.type = BTRFS_DEV_EXTENT_KEY;
     searchkey.offset = 0;
 
     Status = find_item(Vcb, Vcb->dev_root, &tp, &searchkey, false, Irp);
@@ -3227,7 +3227,7 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     lastaddr = 0;
 
     do {
-        if (tp.item->key.objectid == dev->devitem.devid && tp.item->key.type == TYPE_DEV_EXTENT) {
+        if (tp.item->key.objectid == dev->devitem.devid && tp.item->key.type == BTRFS_DEV_EXTENT_KEY) {
             if (tp.item->size >= sizeof(struct btrfs_dev_extent)) {
                 struct btrfs_dev_extent* de = (struct btrfs_dev_extent*)tp.item->data;
 
@@ -3527,7 +3527,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     do {
         TRACE("(%I64x,%x,%I64x)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
 
-        if (tp.item->key.objectid == 1 && tp.item->key.type == TYPE_DEV_ITEM) {
+        if (tp.item->key.objectid == 1 && tp.item->key.type == BTRFS_DEV_ITEM_KEY) {
             if (tp.item->size < sizeof(struct btrfs_dev_item)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_dev_item));
             } else {
@@ -3632,7 +3632,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                     ExReleaseResourceLite(&pdode->child_lock);
                 }
             }
-        } else if (tp.item->key.type == TYPE_CHUNK_ITEM) {
+        } else if (tp.item->key.type == BTRFS_CHUNK_ITEM_KEY) {
             if (tp.item->size < offsetof(struct btrfs_chunk, stripe)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, offsetof(struct btrfs_chunk, stripe));
             } else {
@@ -3883,7 +3883,7 @@ NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
     } else
         r = Vcb->extent_root;
 
-    searchkey.type = TYPE_BLOCK_GROUP_ITEM;
+    searchkey.type = BTRFS_BLOCK_GROUP_ITEM_KEY;
 
     Vcb->superblock.bytes_used = 0;
 
@@ -3935,7 +3935,7 @@ static NTSTATUS load_sys_chunks(_In_ device_extension* Vcb) {
 
         TRACE("bootstrap: %I64x,%x,%I64x\n", key.objectid, key.type, key.offset);
 
-        if (key.type == TYPE_CHUNK_ITEM) {
+        if (key.type == BTRFS_CHUNK_ITEM_KEY) {
             struct btrfs_chunk* ci;
             USHORT cisize;
             sys_chunk* sc;
@@ -4005,7 +4005,7 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
         struct btrfs_dir_item* di;
 
         searchkey.objectid = Vcb->superblock.root_dir_objectid;
-        searchkey.type = TYPE_DIR_ITEM;
+        searchkey.type = BTRFS_DIR_ITEM_KEY;
         searchkey.offset = crc32;
 
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
@@ -4036,7 +4036,7 @@ root* find_default_subvol(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_ex
             goto end;
         }
 
-        if (di->location.type != TYPE_ROOT_ITEM) {
+        if (di->location.type != BTRFS_ROOT_ITEM_KEY) {
             ERR("default root has key (%I64x,%x,%I64x), expected subvolume\n", di->location.objectid, di->location.type, di->location.offset);
             goto end;
         }
@@ -4918,7 +4918,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     searchkey.objectid = root_fcb->inode;
-    searchkey.type = TYPE_INODE_ITEM;
+    searchkey.type = BTRFS_INODE_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, root_fcb->subvol, &tp, &searchkey, false, Irp);

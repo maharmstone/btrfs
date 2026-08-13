@@ -40,7 +40,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     struct btrfs_extent_item* newei;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -51,7 +51,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 
     // If entry doesn't exist yet, create new inline extent item
 
-    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != TYPE_EXTENT_ITEM) {
+    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != BTRFS_EXTENT_ITEM_KEY) {
         uint16_t eisize;
         struct btrfs_extent_inline_ref* eir;
         struct btrfs_extent_data_ref* edr;
@@ -71,7 +71,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
         ei->flags = EXTENT_ITEM_DATA;
 
         eir = (struct btrfs_extent_inline_ref*)&ei[1];
-        eir->type = TYPE_EXTENT_DATA_REF;
+        eir->type = BTRFS_EXTENT_DATA_REF_KEY;
 
         edr = (struct btrfs_extent_data_ref*)&eir->offset;
 
@@ -80,7 +80,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
         edr->offset = offset;
         edr->count = refcount;
 
-        Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, size, ei, eisize, NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_EXTENT_ITEM_KEY, size, ei, eisize, NULL, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
@@ -88,7 +88,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
         }
 
         return STATUS_SUCCESS;
-    } else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != size) {
+    } else if (tp.item->key.objectid == address && tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->key.offset != size) {
         ERR("extent %I64x exists, but with size %I64x rather than %I64x as expected\n", tp.item->key.objectid, tp.item->key.offset, size);
         return STATUS_INTERNAL_ERROR;
     }
@@ -129,7 +129,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -146,7 +146,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF:
+            case BTRFS_EXTENT_DATA_REF_KEY:
                 // If inline extent already present, increase refcount and return
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -193,8 +193,8 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 
                 break;
 
-            case TYPE_TREE_BLOCK_REF:
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
@@ -223,10 +223,10 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
         while (len > 0) {
             struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
 
-            if (eir->type == TYPE_TREE_BLOCK_REF) {
+            if (eir->type == BTRFS_TREE_BLOCK_REF_KEY) {
                 len -= sizeof(struct btrfs_extent_inline_ref);
                 ptr += sizeof(struct btrfs_extent_inline_ref);
-            } else if (eir->type == TYPE_EXTENT_DATA_REF) {
+            } else if (eir->type == BTRFS_EXTENT_DATA_REF_KEY) {
                 struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)&eir->offset;
                 uint64_t sectoff = get_extent_data_ref_hash2(sectedr->root, sectedr->objectid, sectedr->offset);
 
@@ -254,7 +254,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
 
         eir = (struct btrfs_extent_inline_ref*)((ptr - tp.item->data) + (uint8_t*)newei);
 
-        eir->type = TYPE_EXTENT_DATA_REF;
+        eir->type = BTRFS_EXTENT_DATA_REF_KEY;
 
         edr = (struct btrfs_extent_data_ref*)&eir->offset;
 
@@ -286,7 +286,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
         traverse_ptr tp2;
 
         searchkey.objectid = address;
-        searchkey.type = TYPE_EXTENT_DATA_REF;
+        searchkey.type = BTRFS_EXTENT_DATA_REF_KEY;
         searchkey.offset = hash;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -366,7 +366,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
     data2->offset = offset;
     data2->count = refcount;
 
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_DATA_REF,
+    Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_EXTENT_DATA_REF_KEY,
                               hash, data2, sizeof(struct btrfs_extent_data_ref),
                               NULL, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -415,7 +415,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     struct btrfs_shared_data_ref* sdr;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -426,7 +426,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
     // If entry doesn't exist yet, create new inline extent item
 
-    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != TYPE_EXTENT_ITEM) {
+    if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != BTRFS_EXTENT_ITEM_KEY) {
         struct btrfs_extent_inline_ref* eir;
         uint16_t eisize;
 
@@ -446,13 +446,13 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
         eir = (struct btrfs_extent_inline_ref*)&ei[1];
 
-        eir->type = TYPE_SHARED_DATA_REF;
+        eir->type = BTRFS_SHARED_DATA_REF_KEY;
         eir->offset = offset;
 
         sdr = (struct btrfs_shared_data_ref*)&eir[1];
         sdr->count = count;
 
-        Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM,
+        Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_EXTENT_ITEM_KEY,
                                   size, ei, eisize, NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
@@ -460,7 +460,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
         }
 
         return STATUS_SUCCESS;
-    } else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != size) {
+    } else if (tp.item->key.objectid == address && tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->key.offset != size) {
         ERR("extent %I64x exists, but with size %I64x rather than %I64x as expected\n",
             tp.item->key.objectid, tp.item->key.offset, size);
 
@@ -506,7 +506,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -556,7 +556,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF:
+            case BTRFS_EXTENT_DATA_REF_KEY:
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                     return STATUS_INTERNAL_ERROR;
@@ -570,8 +570,8 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
                 break;
 
-            case TYPE_TREE_BLOCK_REF:
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
@@ -597,16 +597,16 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
         while (len > 0) {
             eir = (struct btrfs_extent_inline_ref*)ptr;
 
-            if (eir->type == TYPE_TREE_BLOCK_REF) {
+            if (eir->type == BTRFS_TREE_BLOCK_REF_KEY) {
                 len -= sizeof(struct btrfs_extent_inline_ref);
                 ptr += sizeof(struct btrfs_extent_inline_ref);
-            } else if (eir->type == TYPE_EXTENT_DATA_REF) {
+            } else if (eir->type == BTRFS_EXTENT_DATA_REF_KEY) {
                 len -= offsetof(struct btrfs_extent_inline_ref, offset) + sizeof(struct btrfs_extent_data_ref);
                 ptr += offsetof(struct btrfs_extent_inline_ref, offset) + sizeof(struct btrfs_extent_data_ref);
-            } else if (eir->type == TYPE_SHARED_BLOCK_REF) {
+            } else if (eir->type == BTRFS_SHARED_BLOCK_REF_KEY) {
                 len -= sizeof(struct btrfs_extent_inline_ref);
                 ptr += sizeof(struct btrfs_extent_inline_ref);
-            } else if (eir->type == TYPE_SHARED_DATA_REF) {
+            } else if (eir->type == BTRFS_SHARED_DATA_REF_KEY) {
                 if (eir->offset < offset)
                     break;
 
@@ -632,7 +632,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
         eir = (struct btrfs_extent_inline_ref*)((ptr - tp.item->data) + (uint8_t*)newei);
 
-        eir->type = TYPE_SHARED_DATA_REF;
+        eir->type = BTRFS_SHARED_DATA_REF_KEY;
         eir->offset = offset;
 
         sdr = (struct btrfs_shared_data_ref*)&eir[1];
@@ -663,7 +663,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
         traverse_ptr tp2;
 
         searchkey.objectid = address;
-        searchkey.type = TYPE_SHARED_DATA_REF;
+        searchkey.type = BTRFS_SHARED_DATA_REF_KEY;
         searchkey.offset = offset;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -743,7 +743,7 @@ NTSTATUS increase_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
     sdr->count = count;
 
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_SHARED_DATA_REF,
+    Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_SHARED_DATA_REF_KEY,
                               offset, sdr, sizeof(struct btrfs_shared_data_ref),
                               NULL, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -793,7 +793,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
     bool skinny;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -804,7 +804,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
     // If entry doesn't exist yet, create new inline extent item
 
-    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_EXTENT_ITEM && tp.item->key.type != TYPE_METADATA_ITEM)) {
+    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != BTRFS_EXTENT_ITEM_KEY && tp.item->key.type != BTRFS_METADATA_ITEM_KEY)) {
         struct btrfs_extent_inline_ref* eir;
         uint16_t eisize;
 
@@ -834,13 +834,13 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         }
 
         eir = (struct btrfs_extent_inline_ref*)ptr;
-        eir->type = TYPE_TREE_BLOCK_REF;
+        eir->type = BTRFS_TREE_BLOCK_REF_KEY;
         eir->offset = offset;
 
         if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA)
-            Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM, level, ei, eisize, NULL, Irp);
+            Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_METADATA_ITEM_KEY, level, ei, eisize, NULL, Irp);
         else
-            Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM, size, ei, eisize, NULL, Irp);
+            Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_EXTENT_ITEM_KEY, size, ei, eisize, NULL, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
@@ -848,12 +848,12 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         }
 
         return STATUS_SUCCESS;
-    } else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != size) {
+    } else if (tp.item->key.objectid == address && tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->key.offset != size) {
         ERR("extent %I64x exists, but with size %I64x rather than %I64x expected\n", tp.item->key.objectid, tp.item->key.offset, size);
         return STATUS_INTERNAL_ERROR;
     }
 
-    skinny = tp.item->key.type == TYPE_METADATA_ITEM;
+    skinny = tp.item->key.type == BTRFS_METADATA_ITEM_KEY;
 
     if (tp.item->size == sizeof(struct btrfs_extent_item_v0) && !skinny) {
         ERR("old-style extents no longer supported\n");
@@ -896,7 +896,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -913,7 +913,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                     return STATUS_INTERNAL_ERROR;
@@ -928,7 +928,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                 break;
             }
 
-            case TYPE_TREE_BLOCK_REF: {
+            case BTRFS_TREE_BLOCK_REF_KEY: {
                 if (eir->offset == offset) {
                     TRACE("trying to increase refcount of non-shared tree extent\n");
                     return STATUS_SUCCESS;
@@ -938,7 +938,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                 break;
             }
 
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
@@ -969,7 +969,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         while (len > 0) {
             eir = (struct btrfs_extent_inline_ref*)ptr;
 
-            if (eir->type == TYPE_TREE_BLOCK_REF) {
+            if (eir->type == BTRFS_TREE_BLOCK_REF_KEY) {
                 if (eir->offset < offset)
                     break;
 
@@ -994,7 +994,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
         eir = (struct btrfs_extent_inline_ref*)((ptr - tp.item->data) + (uint8_t*)newei);
 
-        eir->type = TYPE_TREE_BLOCK_REF;
+        eir->type = BTRFS_TREE_BLOCK_REF_KEY;
         eir->offset = offset;
 
         Status = delete_tree_item(Vcb, &tp);
@@ -1020,7 +1020,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         traverse_ptr tp2;
 
         searchkey.objectid = address;
-        searchkey.type = TYPE_TREE_BLOCK_REF;
+        searchkey.type = BTRFS_TREE_BLOCK_REF_KEY;
         searchkey.offset = offset;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -1037,7 +1037,7 @@ NTSTATUS increase_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
     // Otherwise, add new non-inline entry
 
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_TREE_BLOCK_REF,
+    Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_TREE_BLOCK_REF_KEY,
                               offset, NULL, 0, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
@@ -1085,7 +1085,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     bool skinny;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -1096,7 +1096,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
     // If entry doesn't exist yet, create new inline extent item
 
-    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_EXTENT_ITEM && tp.item->key.type != TYPE_METADATA_ITEM)) {
+    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != BTRFS_EXTENT_ITEM_KEY && tp.item->key.type != BTRFS_METADATA_ITEM_KEY)) {
         struct btrfs_extent_inline_ref* eir;
         uint16_t eisize;
 
@@ -1126,14 +1126,14 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         }
 
         eir = (struct btrfs_extent_inline_ref*)ptr;
-        eir->type = TYPE_SHARED_BLOCK_REF;
+        eir->type = BTRFS_SHARED_BLOCK_REF_KEY;
         eir->offset = offset;
 
         if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
-            Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_METADATA_ITEM,
+            Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_METADATA_ITEM_KEY,
                                       level, ei, eisize, NULL, Irp);
         } else {
-            Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_EXTENT_ITEM,
+            Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_EXTENT_ITEM_KEY,
                                       Vcb->superblock.nodesize, ei, eisize, NULL, Irp);
         }
 
@@ -1143,14 +1143,14 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         }
 
         return STATUS_SUCCESS;
-    } else if (tp.item->key.objectid == address && tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != Vcb->superblock.nodesize) {
+    } else if (tp.item->key.objectid == address && tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->key.offset != Vcb->superblock.nodesize) {
         ERR("extent %I64x exists, but with size %I64x rather than %x as expected\n",
             tp.item->key.objectid, tp.item->key.offset, Vcb->superblock.nodesize);
 
         return STATUS_INTERNAL_ERROR;
     }
 
-    skinny = tp.item->key.type == TYPE_METADATA_ITEM;
+    skinny = tp.item->key.type == BTRFS_METADATA_ITEM_KEY;
 
     if (tp.item->size == sizeof(struct btrfs_extent_item_v0) && !skinny) {
         ERR("old-style extents no longer supported\n");
@@ -1196,7 +1196,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                     return STATUS_INTERNAL_ERROR;
@@ -1211,11 +1211,11 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
                 break;
             }
 
-            case TYPE_TREE_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 if (eir->offset == offset) {
                     TRACE("trying to increase refcount of shared block ref\n");
                     return STATUS_SUCCESS;
@@ -1224,7 +1224,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
                 inline_rc++;
                 break;
 
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -1268,13 +1268,13 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         while (len > 0) {
             struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
 
-            if (eir->type == TYPE_TREE_BLOCK_REF) {
+            if (eir->type == BTRFS_TREE_BLOCK_REF_KEY) {
                 len -= sizeof(struct btrfs_extent_inline_ref);
                 ptr += sizeof(struct btrfs_extent_inline_ref);
-            } else if (eir->type == TYPE_EXTENT_DATA_REF) {
+            } else if (eir->type == BTRFS_EXTENT_DATA_REF_KEY) {
                 len -= offsetof(struct btrfs_extent_inline_ref, offset) + sizeof(struct btrfs_extent_data_ref);
                 ptr += offsetof(struct btrfs_extent_inline_ref, offset) + sizeof(struct btrfs_extent_data_ref);
-            } else if (eir->type == TYPE_SHARED_BLOCK_REF) {
+            } else if (eir->type == BTRFS_SHARED_BLOCK_REF_KEY) {
                 if (eir->offset < offset)
                     break;
 
@@ -1300,7 +1300,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
         eir = (struct btrfs_extent_inline_ref*)((ptr - tp.item->data) + (uint8_t*)newei);
 
-        eir->type = TYPE_SHARED_BLOCK_REF;
+        eir->type = BTRFS_SHARED_BLOCK_REF_KEY;
         eir->offset = offset;
 
         Status = delete_tree_item(Vcb, &tp);
@@ -1327,7 +1327,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         traverse_ptr tp2;
 
         searchkey.objectid = address;
-        searchkey.type = TYPE_SHARED_BLOCK_REF;
+        searchkey.type = BTRFS_SHARED_BLOCK_REF_KEY;
         searchkey.offset = offset;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -1344,7 +1344,7 @@ NTSTATUS increase_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
     // Otherwise, add new non-inline entry
 
-    Status = insert_tree_item(Vcb, Vcb->extent_root, address, TYPE_SHARED_BLOCK_REF,
+    Status = insert_tree_item(Vcb, Vcb->extent_root, address, BTRFS_SHARED_BLOCK_REF_KEY,
                               offset, NULL, 0, NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
@@ -1392,7 +1392,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
     struct btrfs_extent_data_ref* sectedr;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -1461,7 +1461,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -1478,7 +1478,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF:
+            case BTRFS_EXTENT_DATA_REF_KEY:
                 // If inline extent already present, decrease refcount and return
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -1563,8 +1563,8 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
                 inline_rc += sectedr->count;
                 break;
 
-            case TYPE_TREE_BLOCK_REF:
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
@@ -1581,7 +1581,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
     }
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_DATA_REF;
+    searchkey.type = BTRFS_EXTENT_DATA_REF_KEY;
     searchkey.offset = get_extent_data_ref_hash2(root, inode, offset);
 
     Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -1709,7 +1709,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     struct btrfs_shared_data_ref* sdr;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -1776,7 +1776,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
                     return STATUS_INTERNAL_ERROR;
@@ -1864,7 +1864,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 struct btrfs_extent_data_ref* sectedr;
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -1881,8 +1881,8 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
                 break;
             }
 
-            case TYPE_TREE_BLOCK_REF:
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
@@ -1898,7 +1898,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     }
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_SHARED_DATA_REF;
+    searchkey.type = BTRFS_SHARED_DATA_REF_KEY;
     searchkey.offset = offset;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -2014,7 +2014,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
         searchkey.objectid = address;
-        searchkey.type = TYPE_METADATA_ITEM;
+        searchkey.type = BTRFS_METADATA_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2029,7 +2029,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
 
     if (!skinny) {
         searchkey.objectid = address;
-        searchkey.type = TYPE_EXTENT_ITEM;
+        searchkey.type = BTRFS_EXTENT_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2103,7 +2103,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -2120,7 +2120,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 struct btrfs_extent_data_ref* edr;
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -2137,7 +2137,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                 break;
             }
 
-            case TYPE_TREE_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
                 // If inline extent already present, decrease refcount and return
 
                 if (eir->offset == root) {
@@ -2190,7 +2190,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
                 inline_rc++;
                 break;
 
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
@@ -2206,7 +2206,7 @@ NTSTATUS decrease_extent_refcount_tree(device_extension* Vcb, uint64_t address,
     }
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_TREE_BLOCK_REF;
+    searchkey.type = BTRFS_TREE_BLOCK_REF_KEY;
     searchkey.offset = root;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -2285,7 +2285,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA) {
         searchkey.objectid = address;
-        searchkey.type = TYPE_METADATA_ITEM;
+        searchkey.type = BTRFS_METADATA_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2300,7 +2300,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
 
     if (!skinny) {
         searchkey.objectid = address;
-        searchkey.type = TYPE_EXTENT_ITEM;
+        searchkey.type = BTRFS_EXTENT_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2373,7 +2373,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -2390,7 +2390,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 struct btrfs_extent_data_ref* edr;
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -2407,11 +2407,11 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
                 break;
             }
 
-            case TYPE_TREE_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
-            case TYPE_SHARED_BLOCK_REF:
+            case BTRFS_SHARED_BLOCK_REF_KEY:
                 // If inline extent already present, decrease refcount and return
 
                 if (eir->offset == offset) {
@@ -2476,7 +2476,7 @@ NTSTATUS decrease_extent_refcount_shared_block(device_extension* Vcb, uint64_t a
     }
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_SHARED_BLOCK_REF;
+    searchkey.type = BTRFS_SHARED_BLOCK_REF_KEY;
     searchkey.offset = offset;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp2, &searchkey, false, Irp);
@@ -2546,7 +2546,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     uint64_t inline_rc;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2586,7 +2586,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
             len -= sizeof(struct btrfs_extent_inline_ref);
 
             switch (eir->type) {
-                case TYPE_EXTENT_DATA_REF: {
+                case BTRFS_EXTENT_DATA_REF_KEY: {
                     struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
 
                     if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -2605,7 +2605,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
                     break;
                 }
 
-                case TYPE_SHARED_DATA_REF: {
+                case BTRFS_SHARED_DATA_REF_KEY: {
                     struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
 
                     if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -2634,7 +2634,7 @@ static uint32_t find_extent_data_refcount(device_extension* Vcb, uint64_t addres
     }
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_DATA_REF;
+    searchkey.type = BTRFS_EXTENT_DATA_REF_KEY;
     searchkey.offset = get_extent_data_ref_hash2(root, objid, offset);
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2663,7 +2663,7 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
     struct btrfs_extent_item* ei;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2673,14 +2673,14 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
     }
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.objectid == address &&
-        tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(struct btrfs_extent_item)) {
+        tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
         ei = (struct btrfs_extent_item*)tp.item->data;
 
         return ei->refs;
     }
 
-    if (tp.item->key.objectid != address || tp.item->key.type != TYPE_EXTENT_ITEM) {
-        ERR("couldn't find (%I64x,%x,%I64x) in extent tree\n", address, TYPE_EXTENT_ITEM, size);
+    if (tp.item->key.objectid != address || tp.item->key.type != BTRFS_EXTENT_ITEM_KEY) {
+        ERR("couldn't find (%I64x,%x,%I64x) in extent tree\n", address, BTRFS_EXTENT_ITEM_KEY, size);
         return 0;
     } else if (tp.item->key.offset != size) {
         ERR("extent %I64x had size %I64x, not %I64x as expected\n", address, tp.item->key.offset, size);
@@ -2721,7 +2721,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         return false;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = size;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2776,7 +2776,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
         ptr += sizeof(struct btrfs_extent_inline_ref);
         len -= sizeof(struct btrfs_extent_inline_ref);
 
-        if (eir->type != TYPE_EXTENT_DATA_REF)
+        if (eir->type != BTRFS_EXTENT_DATA_REF_KEY)
             return false;
 
         if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -2808,7 +2808,7 @@ bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PI
     do {
         b = find_next_item(Vcb, &tp, &next_tp, false, Irp);
 
-        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == TYPE_EXTENT_DATA_REF) {
+        if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == BTRFS_EXTENT_DATA_REF_KEY) {
             struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)tp.item->data;
 
             if (tp.item->size < sizeof(struct btrfs_extent_data_ref)) {
@@ -2851,7 +2851,7 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
     struct btrfs_extent_item* ei;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2861,13 +2861,13 @@ uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp) {
     }
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.objectid == address &&
-        tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(struct btrfs_extent_item)) {
+        tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
         ei = (struct btrfs_extent_item*)tp.item->data;
 
         return ei->flags;
     }
 
-    if (tp.item->key.objectid != address || tp.item->key.type != TYPE_EXTENT_ITEM) {
+    if (tp.item->key.objectid != address || tp.item->key.type != BTRFS_EXTENT_ITEM_KEY) {
         ERR("couldn't find %I64x in extent tree\n", address);
         return 0;
     }
@@ -2892,7 +2892,7 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     struct btrfs_extent_item* ei;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -2902,13 +2902,13 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     }
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA && tp.item->key.objectid == address &&
-        tp.item->key.type == TYPE_METADATA_ITEM && tp.item->size >= sizeof(struct btrfs_extent_item)) {
+        tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
         ei = (struct btrfs_extent_item*)tp.item->data;
         ei->flags = flags;
         return;
     }
 
-    if (tp.item->key.objectid != address || tp.item->key.type != TYPE_EXTENT_ITEM) {
+    if (tp.item->key.objectid != address || tp.item->key.type != BTRFS_EXTENT_ITEM_KEY) {
         ERR("couldn't find %I64x in extent tree\n", address);
         return;
     }
@@ -2982,7 +2982,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
     if (IsListEmpty(&ce->refs) && IsListEmpty(&ce->old_refs)) { // new entry
         searchkey.objectid = address;
-        searchkey.type = TYPE_EXTENT_ITEM;
+        searchkey.type = BTRFS_EXTENT_ITEM_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -3022,7 +3022,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
 
-        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
+        if (cer->type == BTRFS_EXTENT_DATA_REF_KEY && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
             Status = STATUS_SUCCESS;
@@ -3047,7 +3047,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
             goto end;
         }
 
-        cer->type = TYPE_EXTENT_DATA_REF;
+        cer->type = BTRFS_EXTENT_DATA_REF_KEY;
         cer->edr.root = root;
         cer->edr.objectid = objid;
         cer->edr.offset = offset;
@@ -3064,7 +3064,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
         goto end;
     }
 
-    cer->type = TYPE_EXTENT_DATA_REF;
+    cer->type = BTRFS_EXTENT_DATA_REF_KEY;
     cer->edr.root = root;
     cer->edr.objectid = objid;
     cer->edr.offset = offset;
@@ -3101,7 +3101,7 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
 
-        if (cer->type == TYPE_EXTENT_DATA_REF && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
+        if (cer->type == BTRFS_EXTENT_DATA_REF_KEY && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
             return;
@@ -3117,7 +3117,7 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
         return;
     }
 
-    cer->type = TYPE_EXTENT_DATA_REF;
+    cer->type = BTRFS_EXTENT_DATA_REF_KEY;
     cer->edr.root = root;
     cer->edr.objectid = objid;
     cer->edr.offset = offset;
@@ -3138,7 +3138,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     uint8_t* ptr;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -3147,12 +3147,12 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
         return 0;
     }
 
-    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_EXTENT_ITEM && tp.item->key.type != TYPE_METADATA_ITEM)) {
+    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != BTRFS_EXTENT_ITEM_KEY && tp.item->key.type != BTRFS_METADATA_ITEM_KEY)) {
         TRACE("could not find address %I64x in extent tree\n", address);
         return 0;
     }
 
-    if (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.offset != Vcb->superblock.nodesize) {
+    if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->key.offset != Vcb->superblock.nodesize) {
         ERR("extent %I64x had size %I64x, not %x as expected\n", address, tp.item->key.offset, Vcb->superblock.nodesize);
         return 0;
     }
@@ -3168,7 +3168,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (searchkey.type == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (searchkey.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x): size was %u, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                                                                           tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
@@ -3191,7 +3191,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -3208,7 +3208,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 struct btrfs_extent_data_ref* edr;
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -3225,11 +3225,11 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
                 break;
             }
 
-            case TYPE_TREE_BLOCK_REF:
+            case BTRFS_TREE_BLOCK_REF_KEY:
                 inline_rc++;
                 break;
 
-            case TYPE_SHARED_BLOCK_REF: {
+            case BTRFS_SHARED_BLOCK_REF_KEY: {
                 if (eir->offset == parent)
                     return 1;
 
@@ -3247,7 +3247,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
         return 0;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_SHARED_BLOCK_REF;
+    searchkey.type = BTRFS_SHARED_BLOCK_REF_KEY;
     searchkey.offset = parent;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -3272,7 +3272,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
     uint8_t* ptr;
 
     searchkey.objectid = address;
-    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? TYPE_METADATA_ITEM : TYPE_EXTENT_ITEM;
+    searchkey.type = Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_SKINNY_METADATA ? BTRFS_METADATA_ITEM_KEY : BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -3281,7 +3281,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
         return 0;
     }
 
-    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_EXTENT_ITEM && tp.item->key.type != TYPE_METADATA_ITEM)) {
+    if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != BTRFS_EXTENT_ITEM_KEY && tp.item->key.type != BTRFS_METADATA_ITEM_KEY)) {
         TRACE("could not find address %I64x in extent tree\n", address);
         return 0;
     }
@@ -3311,7 +3311,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -3327,7 +3327,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
                 break;
             }
 
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -3360,7 +3360,7 @@ uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t addres
         return 0;
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_SHARED_DATA_REF;
+    searchkey.type = BTRFS_SHARED_DATA_REF_KEY;
     searchkey.offset = parent;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);

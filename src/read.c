@@ -1510,7 +1510,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         while (le != &Vcb->sys_chunks) {
             sys_chunk* sc = CONTAINING_RECORD(le, sys_chunk, list_entry);
 
-            if (sc->key.objectid == 0x100 && sc->key.type == TYPE_CHUNK_ITEM && sc->key.offset <= addr) {
+            if (sc->key.objectid == 0x100 && sc->key.type == BTRFS_CHUNK_ITEM_KEY && sc->key.offset <= addr) {
                 struct btrfs_chunk* chunk_item = sc->data;
 
                 if ((addr - sc->key.offset) < chunk_item->length && chunk_item->num_stripes > 0) {

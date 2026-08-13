@@ -83,7 +83,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                 break;
 
             searchkey.objectid = r->id;
-            searchkey.type = TYPE_ROOT_BACKREF;
+            searchkey.type = BTRFS_ROOT_BACKREF_KEY;
             searchkey.offset = 0xffffffffffffffff;
 
             Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, NULL);
@@ -146,7 +146,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
             }
         } else {
             searchkey.objectid = dir;
-            searchkey.type = TYPE_INODE_EXTREF;
+            searchkey.type = BTRFS_INODE_EXTREF_KEY;
             searchkey.offset = 0xffffffffffffffff;
 
             Status = find_item(Vcb, r, &tp, &searchkey, false, NULL);
@@ -155,7 +155,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                 goto end;
             }
 
-            if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == TYPE_INODE_REF) {
+            if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == BTRFS_INODE_REF_KEY) {
                 struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
                 path_part* pp;
 
@@ -186,7 +186,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
                     break;
 
                 dir = tp.item->key.offset;
-            } else if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == TYPE_INODE_EXTREF) {
+            } else if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == BTRFS_INODE_EXTREF_KEY) {
                 struct btrfs_inode_extref* ier = (struct btrfs_inode_extref*)tp.item->data;
                 path_part* pp;
 
@@ -353,7 +353,7 @@ static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treea
     ln = (struct btrfs_item*)&tree[1];
 
     for (i = 0; i < tree->nritems; i++) {
-        if (ln[i].key.type == TYPE_EXTENT_DATA && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
+        if (ln[i].key.type == BTRFS_EXTENT_DATA_KEY && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
             struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)tree + sizeof(struct btrfs_header) + ln[i].offset);
 
             if (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0 && ed->disk_bytenr == addr)
@@ -451,7 +451,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     // FIXME - still log even if rest of this function fails
 
     searchkey.objectid = address;
-    searchkey.type = TYPE_METADATA_ITEM;
+    searchkey.type = BTRFS_METADATA_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -460,10 +460,10 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
         return;
     }
 
-    if ((tp.item->key.type != TYPE_EXTENT_ITEM && tp.item->key.type != TYPE_METADATA_ITEM) ||
+    if ((tp.item->key.type != BTRFS_EXTENT_ITEM_KEY && tp.item->key.type != BTRFS_METADATA_ITEM_KEY) ||
         tp.item->key.objectid >= address + Vcb->superblock.sectorsize ||
-        (tp.item->key.type == TYPE_EXTENT_ITEM && tp.item->key.objectid + tp.item->key.offset <= address) ||
-        (tp.item->key.type == TYPE_METADATA_ITEM && tp.item->key.objectid + Vcb->superblock.nodesize <= address)
+        (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->key.objectid + tp.item->key.offset <= address) ||
+        (tp.item->key.type == BTRFS_METADATA_ITEM_KEY && tp.item->key.objectid + Vcb->superblock.nodesize <= address)
     )
         return;
 
@@ -476,7 +476,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     ptr = (uint8_t*)&ei[1];
     len = tp.item->size - sizeof(struct btrfs_extent_item);
 
-    if (tp.item->key.objectid == TYPE_EXTENT_ITEM && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
+    if (tp.item->key.objectid == BTRFS_EXTENT_ITEM_KEY && ei->flags & EXTENT_ITEM_TREE_BLOCK) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                                                                           tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
@@ -506,13 +506,13 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
         len -= sizeof(struct btrfs_extent_inline_ref);
 
         switch (eir->type) {
-            case TYPE_TREE_BLOCK_REF: {
+            case BTRFS_TREE_BLOCK_REF_KEY: {
                 log_tree_checksum_error(Vcb, address, devid, eir->offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
                 rc++;
                 break;
             }
 
-            case TYPE_EXTENT_DATA_REF: {
+            case BTRFS_EXTENT_DATA_REF_KEY: {
                 struct btrfs_extent_data_ref* edr;
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -534,13 +534,13 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
                 break;
             }
 
-            case TYPE_SHARED_BLOCK_REF: {
+            case BTRFS_SHARED_BLOCK_REF_KEY: {
                 log_tree_checksum_error_shared(Vcb, eir->offset, address, devid);
                 rc++;
                 break;
             }
 
-            case TYPE_SHARED_DATA_REF: {
+            case BTRFS_SHARED_DATA_REF_KEY: {
                 struct btrfs_shared_data_ref* sdr;
 
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -581,9 +581,9 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
                 break;
 
             if (tp.item->key.objectid == address) {
-                if (tp.item->key.type == TYPE_TREE_BLOCK_REF)
+                if (tp.item->key.type == BTRFS_TREE_BLOCK_REF_KEY)
                     log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
-                else if (tp.item->key.type == TYPE_EXTENT_DATA_REF) {
+                else if (tp.item->key.type == BTRFS_EXTENT_DATA_REF_KEY) {
                     struct btrfs_extent_data_ref* edr;
 
                     if (tp.item->size < sizeof(struct btrfs_extent_data_ref)) {
@@ -595,9 +595,9 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
                     edr = (struct btrfs_extent_data_ref*)tp.item->data;
 
                     log_file_checksum_error(Vcb, address, devid, edr->root, edr->objectid, edr->offset + address - tp.item->key.objectid);
-                } else if (tp.item->key.type == TYPE_SHARED_BLOCK_REF)
+                } else if (tp.item->key.type == BTRFS_SHARED_BLOCK_REF_KEY)
                     log_tree_checksum_error_shared(Vcb, tp.item->key.offset, address, devid);
-                else if (tp.item->key.type == TYPE_SHARED_DATA_REF)
+                else if (tp.item->key.type == BTRFS_SHARED_DATA_REF_KEY)
                     log_file_checksum_error_shared(Vcb, tp.item->key.offset, address, devid, tp.item->key.objectid);
             } else
                 break;
@@ -2435,7 +2435,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
     run_end = c->offset + ((stripe_end + 1) * full_stripe_len);
 
     searchkey.objectid = run_start;
-    searchkey.type = TYPE_METADATA_ITEM;
+    searchkey.type = BTRFS_METADATA_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -2521,8 +2521,8 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
         if (tp.item->key.objectid >= run_end)
             break;
 
-        if (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM) {
-            uint64_t size = tp.item->key.type == TYPE_METADATA_ITEM ? Vcb->superblock.nodesize : tp.item->key.offset;
+        if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY || tp.item->key.type == BTRFS_METADATA_ITEM_KEY) {
+            uint64_t size = tp.item->key.type == BTRFS_METADATA_ITEM_KEY ? Vcb->superblock.nodesize : tp.item->key.offset;
 
             if (tp.item->key.objectid + size > run_start) {
                 uint64_t extent_start = max(run_start, tp.item->key.objectid);
@@ -2531,7 +2531,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
                 RtlSetBits(&context.alloc, (ULONG)((extent_start - run_start) >> Vcb->sector_shift), (ULONG)((extent_end - extent_start) >> Vcb->sector_shift));
 
-                if (tp.item->key.type == TYPE_METADATA_ITEM)
+                if (tp.item->key.type == BTRFS_METADATA_ITEM_KEY)
                     extent_is_tree = true;
                 else {
                     struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
@@ -2553,7 +2553,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     bool b2;
 
                     searchkey.objectid = EXTENT_CSUM_ID;
-                    searchkey.type = TYPE_EXTENT_CSUM;
+                    searchkey.type = BTRFS_EXTENT_CSUM_KEY;
                     searchkey.offset = extent_start;
 
                     Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, false, NULL);
@@ -2841,7 +2841,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
     *offset = c->offset + (stripe * full_stripe_len);
 
     searchkey.objectid = *offset;
-    searchkey.type = TYPE_METADATA_ITEM;
+    searchkey.type = BTRFS_METADATA_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -2858,8 +2858,8 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
         if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
             break;
 
-        if (tp.item->key.objectid >= *offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
-            uint64_t size = tp.item->key.type == TYPE_METADATA_ITEM ? Vcb->superblock.nodesize : tp.item->key.offset;
+        if (tp.item->key.objectid >= *offset && (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY || tp.item->key.type == BTRFS_METADATA_ITEM_KEY)) {
+            uint64_t size = tp.item->key.type == BTRFS_METADATA_ITEM_KEY ? Vcb->superblock.nodesize : tp.item->key.offset;
 
             TRACE("%I64x\n", tp.item->key.objectid);
 
@@ -2948,7 +2948,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
         type = BLOCK_FLAG_DUPLICATE;
 
     searchkey.objectid = *offset;
-    searchkey.type = TYPE_METADATA_ITEM;
+    searchkey.type = BTRFS_METADATA_ITEM_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -2963,8 +2963,8 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
         if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
             break;
 
-        if (tp.item->key.objectid >= *offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
-            uint64_t size = tp.item->key.type == TYPE_METADATA_ITEM ? Vcb->superblock.nodesize : tp.item->key.offset;
+        if (tp.item->key.objectid >= *offset && (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY || tp.item->key.type == BTRFS_METADATA_ITEM_KEY)) {
+            uint64_t size = tp.item->key.type == BTRFS_METADATA_ITEM_KEY ? Vcb->superblock.nodesize : tp.item->key.offset;
             bool is_tree;
             void* csum = NULL;
             RTL_BITMAP bmp;
@@ -2974,7 +2974,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
 
             is_tree = false;
 
-            if (tp.item->key.type == TYPE_METADATA_ITEM)
+            if (tp.item->key.type == BTRFS_METADATA_ITEM_KEY)
                 is_tree = true;
             else {
                 struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
@@ -3020,7 +3020,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
                 RtlSetAllBits(&bmp); // 1 = no csum, 0 = csum
 
                 searchkey.objectid = EXTENT_CSUM_ID;
-                searchkey.type = TYPE_EXTENT_CSUM;
+                searchkey.type = BTRFS_EXTENT_CSUM_KEY;
                 searchkey.offset = tp.item->key.objectid;
 
                 Status = find_item(Vcb, Vcb->checksum_root, &tp2, &searchkey, false, NULL);
@@ -3035,7 +3035,7 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
                     do {
                         traverse_ptr next_tp2;
 
-                        if (tp2.item->key.type == TYPE_EXTENT_CSUM) {
+                        if (tp2.item->key.type == BTRFS_EXTENT_CSUM_KEY) {
                             if (tp2.item->key.offset >= tp.item->key.objectid + size)
                                 break;
                             else if (tp2.item->size >= Vcb->csum_size && tp2.item->key.offset + (((uint64_t)tp2.item->size << Vcb->sector_shift) / Vcb->csum_size) >= tp.item->key.objectid) {

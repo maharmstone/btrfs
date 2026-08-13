@@ -1147,7 +1147,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             }
 
             me->fileref->dc->key.objectid = me->fileref->fcb->inode;
-            me->fileref->dc->key.type = TYPE_INODE_ITEM;
+            me->fileref->dc->key.type = BTRFS_INODE_ITEM_KEY;
 
             me->dummyfileref->fcb = me->fileref->fcb->Vcb->dummy_fcb;
         } else if (me->fileref->fcb->inode == SUBVOL_ROOT_INODE) {
@@ -1249,7 +1249,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
                 }
 
-                if (me->fileref->dc->key.type == TYPE_INODE_ITEM)
+                if (me->fileref->dc->key.type == BTRFS_INODE_ITEM_KEY)
                     me->fileref->dc->key.objectid = me->fileref->fcb->inode;
 
                 // add to new parent

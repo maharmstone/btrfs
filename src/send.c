@@ -175,7 +175,7 @@ static NTSTATUS get_orphan_name(send_context* context, uint64_t inode, uint64_t 
     ptr2 = ptr;
 
     searchkey.objectid = SUBVOL_ROOT_INODE;
-    searchkey.type = TYPE_DIR_ITEM;
+    searchkey.type = BTRFS_DIR_ITEM_KEY;
 
     do {
         NTSTATUS Status;
@@ -239,7 +239,7 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
     struct btrfs_file_extent_item* ed;
 
     searchkey.objectid = inode;
-    searchkey.type = TYPE_EXTENT_DATA;
+    searchkey.type = BTRFS_EXTENT_DATA_KEY;
     searchkey.offset = 0;
 
     Status = find_item(context->Vcb, context->root, &tp, &searchkey, false, NULL);
@@ -708,7 +708,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
         traverse_ptr tp;
 
         searchkey.objectid = dir;
-        searchkey.type = TYPE_INODE_REF; // directories should never have an extiref
+        searchkey.type = BTRFS_INODE_REF_KEY; // directories should never have an extiref
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(context->Vcb, context->parent, &tp, &searchkey, false, NULL);
@@ -1066,7 +1066,7 @@ static NTSTATUS get_dir_last_child(send_context* context, uint64_t* last_inode) 
     *last_inode = 0;
 
     searchkey.objectid = context->lastinode.inode;
-    searchkey.type = TYPE_DIR_INDEX;
+    searchkey.type = BTRFS_DIR_INDEX_KEY;
     searchkey.offset = 2;
 
     Status = find_item(context->Vcb, context->parent, &tp, &searchkey, false, NULL);
@@ -1086,7 +1086,7 @@ static NTSTATUS get_dir_last_child(send_context* context, uint64_t* last_inode) 
                 return STATUS_INTERNAL_ERROR;
             }
 
-            if (di->location.type == TYPE_INODE_ITEM)
+            if (di->location.type == BTRFS_INODE_ITEM_KEY)
                 *last_inode = max(*last_inode, di->location.objectid);
         } else
             break;
@@ -1138,7 +1138,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
     uint16_t len;
 
     searchkey.objectid = sd->inode;
-    searchkey.type = TYPE_DIR_ITEM;
+    searchkey.type = BTRFS_DIR_ITEM_KEY;
     searchkey.offset = calc_crc32c(0xfffffffe, (uint8_t*)name, namelen);
 
     Status = find_item(context->Vcb, context->parent, &tp, &searchkey, false, NULL);
@@ -1160,7 +1160,7 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
         }
 
         if (di->name_len == namelen && RtlCompareMemory(&di[1], name, namelen) == namelen) {
-            *inode = di->location.type == TYPE_INODE_ITEM ? di->location.objectid : 0;
+            *inode = di->location.type == BTRFS_INODE_ITEM_KEY ? di->location.objectid : 0;
             *dir = di->type == BTRFS_TYPE_DIRECTORY ? true: false;
             return STATUS_OBJECT_NAME_COLLISION;
         }
@@ -1833,7 +1833,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
 
     while (num != SUBVOL_ROOT_INODE) {
         searchkey.objectid = num;
-        searchkey.type = TYPE_INODE_EXTREF;
+        searchkey.type = BTRFS_INODE_EXTREF_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(context->Vcb, r, &tp, &searchkey, false, NULL);
@@ -1842,7 +1842,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             return false;
         }
 
-        if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_INODE_REF && tp.item->key.type != TYPE_INODE_EXTREF)) {
+        if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != BTRFS_INODE_REF_KEY && tp.item->key.type != BTRFS_INODE_EXTREF_KEY)) {
             ERR("could not find INODE_REF for inode %I64x\n", searchkey.objectid);
             return false;
         }
@@ -1850,7 +1850,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
         if (len > 0)
             len++;
 
-        if (tp.item->key.type == TYPE_INODE_REF) {
+        if (tp.item->key.type == BTRFS_INODE_REF_KEY) {
             struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
 
             if (tp.item->size < sizeof(struct btrfs_inode_ref) || tp.item->size < sizeof(struct btrfs_inode_ref) + ir->name_len) {
@@ -1880,7 +1880,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
 
     while (num != SUBVOL_ROOT_INODE) {
         searchkey.objectid = num;
-        searchkey.type = TYPE_INODE_EXTREF;
+        searchkey.type = BTRFS_INODE_EXTREF_KEY;
         searchkey.offset = 0xffffffffffffffff;
 
         Status = find_item(context->Vcb, r, &tp, &searchkey, false, NULL);
@@ -1889,7 +1889,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             return false;
         }
 
-        if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != TYPE_INODE_REF && tp.item->key.type != TYPE_INODE_EXTREF)) {
+        if (tp.item->key.objectid != searchkey.objectid || (tp.item->key.type != BTRFS_INODE_REF_KEY && tp.item->key.type != BTRFS_INODE_EXTREF_KEY)) {
             ERR("could not find INODE_REF for inode %I64x\n", searchkey.objectid);
             return false;
         }
@@ -1899,7 +1899,7 @@ static bool send_add_tlv_clone_path(send_context* context, root* r, uint64_t ino
             *ptr = '/';
         }
 
-        if (tp.item->key.type == TYPE_INODE_REF) {
+        if (tp.item->key.type == BTRFS_INODE_REF_KEY) {
             struct btrfs_inode_ref* ir = (struct btrfs_inode_ref*)tp.item->data;
 
             RtlCopyMemory(ptr - ir->name_len, &ir[1], ir->name_len);
@@ -1941,7 +1941,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_exte
         return false;
 
     searchkey.objectid = edr->objectid;
-    searchkey.type = TYPE_EXTENT_DATA;
+    searchkey.type = BTRFS_EXTENT_DATA_KEY;
     searchkey.offset = 0;
 
     Status = find_item(context->Vcb, r, &tp, &searchkey, false, NULL);
@@ -2013,7 +2013,7 @@ static bool try_clone(send_context* context, send_ext* se) {
     uint64_t rc = 0;
 
     searchkey.objectid = se->data.disk_bytenr;
-    searchkey.type = TYPE_EXTENT_ITEM;
+    searchkey.type = BTRFS_EXTENT_ITEM_KEY;
     searchkey.offset = se->data.disk_num_bytes;
 
     Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -2052,7 +2052,7 @@ static bool try_clone(send_context* context, send_ext* se) {
             len -= sizeof(struct btrfs_extent_inline_ref);
 
             switch (eir->type) {
-                case TYPE_EXTENT_DATA_REF: {
+                case BTRFS_EXTENT_DATA_REF_KEY: {
                     struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
 
                     if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
@@ -2073,7 +2073,7 @@ static bool try_clone(send_context* context, send_ext* se) {
                     break;
                 }
 
-                case TYPE_SHARED_DATA_REF: {
+                case BTRFS_SHARED_DATA_REF_KEY: {
                     struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
 
                     if (len < sizeof(struct btrfs_shared_data_ref)) {
@@ -2104,7 +2104,7 @@ static bool try_clone(send_context* context, send_ext* se) {
     if (rc >= ei->refs)
         return false;
 
-    searchkey.type = TYPE_EXTENT_DATA_REF;
+    searchkey.type = BTRFS_EXTENT_DATA_REF_KEY;
     searchkey.offset = 0;
 
     Status = find_item(context->Vcb, context->Vcb->extent_root, &tp, &searchkey, false, NULL);
@@ -3103,7 +3103,7 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
 
-                if (tp.item->key.type == TYPE_INODE_ITEM) {
+                if (tp.item->key.type == BTRFS_INODE_ITEM_KEY) {
                     if (tp.item->size == tp2.item->size && tp.item->size > 0 && RtlCompareMemory(tp.item->data, tp2.item->data, tp.item->size) == tp.item->size) {
                         uint64_t inode = tp.item->key.objectid;
 
@@ -3153,14 +3153,14 @@ static void __stdcall send_thread(void* ctx) {
                             if (tp2.item->key.objectid != inode)
                                 break;
 
-                            if (tp2.item->key.type == TYPE_INODE_REF) {
+                            if (tp2.item->key.type == BTRFS_INODE_REF_KEY) {
                                 Status = send_inode_ref(context, &tp2, true);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("send_inode_ref returned %08lx\n", Status);
                                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                                     goto end;
                                 }
-                            } else if (tp2.item->key.type == TYPE_INODE_EXTREF) {
+                            } else if (tp2.item->key.type == BTRFS_INODE_EXTREF_KEY) {
                                 Status = send_inode_extref(context, &tp2, true);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("send_inode_extref returned %08lx\n", Status);
@@ -3198,7 +3198,7 @@ static void __stdcall send_thread(void* ctx) {
                             goto end;
                         }
                     }
-                } else if (tp.item->key.type == TYPE_INODE_REF) {
+                } else if (tp.item->key.type == BTRFS_INODE_REF_KEY) {
                     Status = send_inode_ref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08lx\n", Status);
@@ -3212,7 +3212,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
+                } else if (tp.item->key.type == BTRFS_INODE_EXTREF_KEY) {
                     Status = send_inode_extref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08lx\n", Status);
@@ -3226,7 +3226,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
+                } else if (tp.item->key.type == BTRFS_EXTENT_DATA_KEY) {
                     Status = send_extent_data(context, &tp, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08lx\n", Status);
@@ -3238,7 +3238,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
+                } else if (tp.item->key.type == BTRFS_XATTR_ITEM_KEY) {
                     Status = send_xattr(context, &tp, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08lx\n", Status);
@@ -3282,28 +3282,28 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
 
-                if (tp.item->key.type == TYPE_INODE_ITEM) {
+                if (tp.item->key.type == BTRFS_INODE_ITEM_KEY) {
                     Status = send_inode(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_INODE_REF) {
+                } else if (tp.item->key.type == BTRFS_INODE_REF_KEY) {
                     Status = send_inode_ref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
+                } else if (tp.item->key.type == BTRFS_INODE_EXTREF_KEY) {
                     Status = send_inode_extref(context, &tp, false);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
+                } else if (tp.item->key.type == BTRFS_EXTENT_DATA_KEY) {
                     Status = send_extent_data(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08lx\n", Status);
@@ -3315,7 +3315,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
+                } else if (tp.item->key.type == BTRFS_XATTR_ITEM_KEY) {
                     Status = send_xattr(context, &tp, NULL);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08lx\n", Status);
@@ -3350,28 +3350,28 @@ static void __stdcall send_thread(void* ctx) {
                     }
                 }
 
-                if (tp2.item->key.type == TYPE_INODE_ITEM) {
+                if (tp2.item->key.type == BTRFS_INODE_ITEM_KEY) {
                     Status = send_inode(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.type == TYPE_INODE_REF) {
+                } else if (tp2.item->key.type == BTRFS_INODE_REF_KEY) {
                     Status = send_inode_ref(context, &tp2, true);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_ref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.type == TYPE_INODE_EXTREF) {
+                } else if (tp2.item->key.type == BTRFS_INODE_EXTREF_KEY) {
                     Status = send_inode_extref(context, &tp2, true);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_inode_extref returned %08lx\n", Status);
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.type == TYPE_EXTENT_DATA && !context->lastinode.deleting) {
+                } else if (tp2.item->key.type == BTRFS_EXTENT_DATA_KEY && !context->lastinode.deleting) {
                     Status = send_extent_data(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_extent_data returned %08lx\n", Status);
@@ -3383,7 +3383,7 @@ static void __stdcall send_thread(void* ctx) {
                         ExReleaseResourceLite(&context->Vcb->tree_lock);
                         goto end;
                     }
-                } else if (tp2.item->key.type == TYPE_XATTR_ITEM && !context->lastinode.deleting) {
+                } else if (tp2.item->key.type == BTRFS_XATTR_ITEM_KEY && !context->lastinode.deleting) {
                     Status = send_xattr(context, NULL, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("send_xattr returned %08lx\n", Status);
@@ -3450,28 +3450,28 @@ static void __stdcall send_thread(void* ctx) {
                 }
             }
 
-            if (tp.item->key.type == TYPE_INODE_ITEM) {
+            if (tp.item->key.type == BTRFS_INODE_ITEM_KEY) {
                 Status = send_inode(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode returned %08lx\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.type == TYPE_INODE_REF) {
+            } else if (tp.item->key.type == BTRFS_INODE_REF_KEY) {
                 Status = send_inode_ref(context, &tp, false);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode_ref returned %08lx\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.type == TYPE_INODE_EXTREF) {
+            } else if (tp.item->key.type == BTRFS_INODE_EXTREF_KEY) {
                 Status = send_inode_extref(context, &tp, false);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_inode_extref returned %08lx\n", Status);
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.type == TYPE_EXTENT_DATA) {
+            } else if (tp.item->key.type == BTRFS_EXTENT_DATA_KEY) {
                 Status = send_extent_data(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_extent_data returned %08lx\n", Status);
@@ -3483,7 +3483,7 @@ static void __stdcall send_thread(void* ctx) {
                     ExReleaseResourceLite(&context->Vcb->tree_lock);
                     goto end;
                 }
-            } else if (tp.item->key.type == TYPE_XATTR_ITEM) {
+            } else if (tp.item->key.type == BTRFS_XATTR_ITEM_KEY) {
                 Status = send_xattr(context, &tp, NULL);
                 if (!NT_SUCCESS(Status)) {
                     ERR("send_xattr returned %08lx\n", Status);

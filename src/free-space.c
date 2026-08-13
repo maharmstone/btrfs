@@ -89,7 +89,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
             if (tp.item->size >= sizeof(struct btrfs_free_space_header)) {
                 struct btrfs_free_space_header* fsi = (struct btrfs_free_space_header*)tp.item->data;
 
-                if (fsi->location.type != TYPE_INODE_ITEM)
+                if (fsi->location.type != BTRFS_INODE_ITEM_KEY)
                     WARN("key (%I64x,%x,%I64x) does not point to an INODE_ITEM\n", fsi->location.objectid, fsi->location.type, fsi->location.offset);
                 else {
                     LIST_ENTRY* le;
@@ -500,7 +500,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     fsi = (struct btrfs_free_space_header*)tp.item->data;
 
-    if (fsi->location.type != TYPE_INODE_ITEM) {
+    if (fsi->location.type != BTRFS_INODE_ITEM_KEY) {
         WARN("cache pointed to something other than an INODE_ITEM\n");
         return STATUS_NOT_FOUND;
     }
@@ -739,7 +739,7 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
         return STATUS_NOT_FOUND;
 
     searchkey.objectid = c->offset;
-    searchkey.type = TYPE_FREE_SPACE_INFO;
+    searchkey.type = BTRFS_FREE_SPACE_INFO_KEY;
     searchkey.offset = c->chunk_item->length;
 
     Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
@@ -764,14 +764,14 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
         if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
             break;
 
-        if (tp.item->key.type == TYPE_FREE_SPACE_EXTENT) {
+        if (tp.item->key.type == BTRFS_FREE_SPACE_EXTENT_KEY) {
             Status = add_space_entry(&c->space, &c->space_size, tp.item->key.objectid, tp.item->key.offset);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08lx\n", Status);
                 if (bmparr) ExFreePool(bmparr);
                 return Status;
             }
-        } else if (tp.item->key.type == TYPE_FREE_SPACE_BITMAP) {
+        } else if (tp.item->key.type == BTRFS_FREE_SPACE_BITMAP_KEY) {
             ULONG explen, index, runlength;
             RTL_BITMAP bmp;
             uint64_t lastoff;
@@ -911,7 +911,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
         TRACE("generating free space cache for chunk %I64x\n", c->offset);
 
         searchkey.objectid = c->offset;
-        searchkey.type = TYPE_EXTENT_ITEM;
+        searchkey.type = BTRFS_EXTENT_ITEM_KEY;
         searchkey.offset = 0;
 
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
@@ -926,7 +926,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
             if (tp.item->key.objectid >= c->offset + c->chunk_item->length)
                 break;
 
-            if (tp.item->key.objectid >= c->offset && (tp.item->key.type == TYPE_EXTENT_ITEM || tp.item->key.type == TYPE_METADATA_ITEM)) {
+            if (tp.item->key.objectid >= c->offset && (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY || tp.item->key.type == BTRFS_METADATA_ITEM_KEY)) {
                 if (tp.item->key.objectid > lastaddr) {
                     s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
@@ -944,7 +944,7 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
                     TRACE("(%I64x,%I64x)\n", s->address, s->size);
                 }
 
-                if (tp.item->key.type == TYPE_METADATA_ITEM)
+                if (tp.item->key.type == BTRFS_METADATA_ITEM_KEY)
                     lastaddr = tp.item->key.objectid + Vcb->superblock.nodesize;
                 else
                     lastaddr = tp.item->key.objectid + tp.item->key.offset;
@@ -1187,7 +1187,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         }
 
         fsi->location.objectid = c->cache->inode;
-        fsi->location.type = TYPE_INODE_ITEM;
+        fsi->location.type = BTRFS_INODE_ITEM_KEY;
         fsi->location.offset = 0;
 
         Status = insert_tree_item(Vcb, Vcb->root_root, FREE_SPACE_CACHE_ID, 0, c->offset, fsi, sizeof(struct btrfs_free_space_header), NULL, Irp);
@@ -1309,7 +1309,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
         // add INODE_ITEM and free_space entry to tree cache, for writing later
 
         searchkey.objectid = c->cache->inode;
-        searchkey.type = TYPE_INODE_ITEM;
+        searchkey.type = BTRFS_INODE_ITEM_KEY;
         searchkey.offset = 0;
 
         Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
@@ -1329,7 +1329,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
             RtlCopyMemory(ii, &c->cache->inode_item, sizeof(struct btrfs_inode_item));
 
-            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, TYPE_INODE_ITEM, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
+            Status = insert_tree_item(Vcb, Vcb->root_root, c->cache->inode, BTRFS_INODE_ITEM_KEY, 0, ii, sizeof(struct btrfs_inode_item), NULL, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("insert_tree_item returned %08lx\n", Status);
                 ExFreePool(ii);
@@ -1848,7 +1848,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
     space_list_merge(&space_list, NULL, &c->deleting);
 
     searchkey.objectid = c->offset;
-    searchkey.type = TYPE_FREE_SPACE_EXTENT;
+    searchkey.type = BTRFS_FREE_SPACE_EXTENT_KEY;
     searchkey.offset = 0xffffffffffffffff;
 
     Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
@@ -1867,13 +1867,13 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
     while (!IsListEmpty(&space_list) && tp.item->key.objectid < c->offset + c->chunk_item->length) {
         traverse_ptr next_tp;
 
-        if (tp.item->key.type == TYPE_FREE_SPACE_EXTENT) {
+        if (tp.item->key.type == BTRFS_FREE_SPACE_EXTENT_KEY) {
             space* s = CONTAINING_RECORD(space_list.Flink, space, list_entry);
 
             if (s->address < tp.item->key.objectid || (s->address == tp.item->key.objectid && s->size < tp.item->key.offset)) {
                 // add entry
 
-                Status = insert_tree_item(Vcb, Vcb->space_root, s->address, TYPE_FREE_SPACE_EXTENT, s->size, NULL, 0,
+                Status = insert_tree_item(Vcb, Vcb->space_root, s->address, BTRFS_FREE_SPACE_EXTENT_KEY, s->size, NULL, 0,
                                           NULL, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
@@ -1911,7 +1911,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
                     return Status;
                 }
             }
-        } else if (tp.item->key.type == TYPE_FREE_SPACE_BITMAP) {
+        } else if (tp.item->key.type == BTRFS_FREE_SPACE_BITMAP_KEY) {
             Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08lx\n", Status);
@@ -1935,7 +1935,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
     while (tp.item->key.objectid < c->offset + c->chunk_item->length) {
         traverse_ptr next_tp;
 
-        if (tp.item->key.type == TYPE_FREE_SPACE_EXTENT || tp.item->key.type == TYPE_FREE_SPACE_BITMAP) {
+        if (tp.item->key.type == BTRFS_FREE_SPACE_EXTENT_KEY || tp.item->key.type == BTRFS_FREE_SPACE_BITMAP_KEY) {
             Status = delete_tree_item(Vcb, &tp);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_tree_item returned %08lx\n", Status);
@@ -1955,7 +1955,7 @@ after_tree_walk:
     while (!IsListEmpty(&space_list)) {
         space* s = CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry);
 
-        Status = insert_tree_item(Vcb, Vcb->space_root, s->address, TYPE_FREE_SPACE_EXTENT, s->size, NULL, 0,
+        Status = insert_tree_item(Vcb, Vcb->space_root, s->address, BTRFS_FREE_SPACE_EXTENT_KEY, s->size, NULL, 0,
                                   NULL, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
@@ -1972,10 +1972,10 @@ after_tree_walk:
         ExFreePool(s);
     }
 
-    // change TYPE_FREE_SPACE_INFO in place if present, and insert otherwise
+    // change BTRFS_FREE_SPACE_INFO_KEY in place if present, and insert otherwise
 
     searchkey.objectid = c->offset;
-    searchkey.type = TYPE_FREE_SPACE_INFO;
+    searchkey.type = BTRFS_FREE_SPACE_INFO_KEY;
     searchkey.offset = c->chunk_item->length;
 
     Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
@@ -2025,7 +2025,7 @@ after_tree_walk:
     fsi->extent_count = fsi_count;
     fsi->flags = 0;
 
-    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length, fsi, sizeof(*fsi),
+    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, BTRFS_FREE_SPACE_INFO_KEY, c->chunk_item->length, fsi, sizeof(*fsi),
                               NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);

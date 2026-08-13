@@ -188,7 +188,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    if (de->key.type == TYPE_ROOT_ITEM) { // subvol
+    if (de->key.type == BTRFS_ROOT_ITEM_KEY) { // subvol
         LIST_ENTRY* le;
 
         r = NULL;
@@ -242,7 +242,7 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
                         traverse_ptr tp;
 
                         searchkey.objectid = inode;
-                        searchkey.type = TYPE_INODE_ITEM;
+                        searchkey.type = BTRFS_INODE_ITEM_KEY;
                         searchkey.offset = 0xffffffffffffffff;
 
                         Status = find_item(fcb->Vcb, r, &tp, &searchkey, false, Irp);
@@ -659,7 +659,7 @@ static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* d
     if (fileref->parent) { // don't return . and .. if root directory
         if (*offset == 0) {
             de->key.objectid = fileref->fcb->inode;
-            de->key.type = TYPE_INODE_ITEM;
+            de->key.type = BTRFS_INODE_ITEM_KEY;
             de->key.offset = 0;
             de->dir_entry_type = DirEntryType_Self;
             de->name.Buffer = L".";
@@ -672,7 +672,7 @@ static NTSTATUS next_dir_entry(file_ref* fileref, uint64_t* offset, dir_entry* d
             return STATUS_SUCCESS;
         } else if (*offset == 1) {
             de->key.objectid = fileref->parent->fcb->inode;
-            de->key.type = TYPE_INODE_ITEM;
+            de->key.type = BTRFS_INODE_ITEM_KEY;
             de->key.offset = 0;
             de->dir_entry_type = DirEntryType_Parent;
             de->name.Buffer = L"..";

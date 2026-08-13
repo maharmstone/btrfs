@@ -356,7 +356,7 @@ static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev
     de.length = size;
     memcpy(de.chunk_tree_uuid, chunkuuid, BTRFS_UUID_SIZE);
 
-    add_item(dev_root, dev->dev_item.devid, TYPE_DEV_EXTENT, off, &de, sizeof(struct btrfs_dev_extent));
+    add_item(dev_root, dev->dev_item.devid, BTRFS_DEV_EXTENT_KEY, off, &de, sizeof(struct btrfs_dev_extent));
 
     return off;
 }
@@ -423,7 +423,7 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
                BTRFS_UUID_SIZE);
     }
 
-    add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, offsetof(struct btrfs_chunk, stripe) + (stripes * sizeof(struct btrfs_stripe)));
+    add_item(chunk_root, 0x100, BTRFS_CHUNK_ITEM_KEY, c->offset, c->chunk_item, offsetof(struct btrfs_chunk, stripe) + (stripes * sizeof(struct btrfs_stripe)));
 
     InsertTailList(chunks, &c->list_entry);
 
@@ -518,10 +518,10 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim.ei.refs = 1;
             eim.ei.generation = 1;
             eim.ei.flags = EXTENT_ITEM_TREE_BLOCK;
-            eim.eir.type = TYPE_TREE_BLOCK_REF;
+            eim.eir.type = BTRFS_TREE_BLOCK_REF_KEY;
             eim.eir.offset = r->id;
 
-            add_item(extent_root, r->header.bytenr, TYPE_METADATA_ITEM, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
+            add_item(extent_root, r->header.bytenr, BTRFS_METADATA_ITEM_KEY, 0, &eim, sizeof(EXTENT_ITEM_METADATA));
         } else {
             EXTENT_ITEM_METADATA2 eim2;
             struct btrfs_key firstitem;
@@ -541,10 +541,10 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             eim2.ei.flags = EXTENT_ITEM_TREE_BLOCK;
             eim2.ei2.key = firstitem;
             eim2.ei2.level = 0;
-            eim2.eir.type = TYPE_TREE_BLOCK_REF;
+            eim2.eir.type = BTRFS_TREE_BLOCK_REF_KEY;
             eim2.eir.offset = r->id;
 
-            add_item(extent_root, r->header.bytenr, TYPE_EXTENT_ITEM, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
+            add_item(extent_root, r->header.bytenr, BTRFS_EXTENT_ITEM_KEY, node_size, &eim2, sizeof(EXTENT_ITEM_METADATA2));
         }
 
         if (r->id != BTRFS_ROOT_ROOT && r->id != BTRFS_ROOT_CHUNK) {
@@ -564,7 +564,7 @@ static void assign_addresses(LIST_ENTRY* roots, btrfs_chunk* sys_chunk, btrfs_ch
             ri.refs = 1;
             ri.generation_v2 = ri.generation;
 
-            add_item(root_root, r->id, TYPE_ROOT_ITEM, 0, &ri, sizeof(struct btrfs_root_item));
+            add_item(root_root, r->id, BTRFS_ROOT_ITEM_KEY, 0, &ri, sizeof(struct btrfs_root_item));
         }
 
         le = le->Flink;
@@ -747,9 +747,9 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     while (le != &extent_root->items) {
         pending_item* item = CONTAINING_RECORD(le, pending_item, list_entry);
 
-        if (item->key.type == TYPE_EXTENT_ITEM)
+        if (item->key.type == BTRFS_EXTENT_ITEM_KEY)
             bytes_used += item->key.offset;
-        else if (item->key.type == TYPE_METADATA_ITEM)
+        else if (item->key.type == BTRFS_METADATA_ITEM_KEY)
             bytes_used += node_size;
 
         le = le->Flink;
@@ -805,7 +805,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
 
     key = (struct btrfs_key*)sb->sys_chunk_array;
     key->objectid = 0x100;
-    key->type = TYPE_CHUNK_ITEM;
+    key->type = BTRFS_CHUNK_ITEM_KEY;
     key->offset = sys_chunk->offset;
     memcpy(&key[1], sys_chunk->chunk_item, offsetof(struct btrfs_chunk, stripe) + (sys_chunk->chunk_item->num_stripes * sizeof(struct btrfs_stripe)));
 
@@ -851,7 +851,7 @@ static void add_inode_ref(btrfs_root* r, uint64_t inode, uint64_t parent, uint64
     ir->name_len = name_len;
     memcpy(&ir[1], name, name_len);
 
-    add_item(r, inode, TYPE_INODE_REF, parent, ir, (uint16_t)sizeof(struct btrfs_inode_ref) + ir->name_len);
+    add_item(r, inode, BTRFS_INODE_REF_KEY, parent, ir, (uint16_t)sizeof(struct btrfs_inode_ref) + ir->name_len);
 
     free(ir);
 }
@@ -875,7 +875,7 @@ static void init_fs_tree(btrfs_root* r, uint32_t node_size) {
     win_time_to_unix(time, &ii.atime);
     ii.ctime = ii.mtime = ii.atime;
 
-    add_item(r, SUBVOL_ROOT_INODE, TYPE_INODE_ITEM, 0, &ii, sizeof(struct btrfs_inode_item));
+    add_item(r, SUBVOL_ROOT_INODE, BTRFS_INODE_ITEM_KEY, 0, &ii, sizeof(struct btrfs_inode_item));
 
     add_inode_ref(r, SUBVOL_ROOT_INODE, SUBVOL_ROOT_INODE, 0, "..");
 }
@@ -891,7 +891,7 @@ static void add_block_group_items(LIST_ENTRY* chunks, btrfs_root* root) {
         bgi.used = c->used;
         bgi.chunk_objectid = 0x100;
         bgi.flags = c->chunk_item->type;
-        add_item(root, c->offset, TYPE_BLOCK_GROUP_ITEM, c->chunk_item->length, &bgi, sizeof(struct btrfs_block_group_item));
+        add_item(root, c->offset, BTRFS_BLOCK_GROUP_ITEM_KEY, c->chunk_item->length, &bgi, sizeof(struct btrfs_block_group_item));
 
         le = le->Flink;
     }
@@ -964,7 +964,7 @@ static void add_dir_item(btrfs_root* root, uint64_t inode, uint32_t hash, uint64
     di->type = type;
     memcpy(&di[1], name, name_len);
 
-    add_item(root, inode, TYPE_DIR_ITEM, hash, di, (uint16_t)(sizeof(struct btrfs_dir_item) + di->data_len + di->name_len));
+    add_item(root, inode, BTRFS_DIR_ITEM_KEY, hash, di, (uint16_t)(sizeof(struct btrfs_dir_item) + di->data_len + di->name_len));
 
     free(di);
 }
@@ -993,11 +993,11 @@ static void set_default_subvol(btrfs_root* root_root, uint32_t node_size) {
     win_time_to_unix(time, &ii.atime);
     ii.ctime = ii.mtime = ii.otime = ii.atime;
 
-    add_item(root_root, BTRFS_ROOT_TREEDIR, TYPE_INODE_ITEM, 0, &ii, sizeof(struct btrfs_inode_item));
+    add_item(root_root, BTRFS_ROOT_TREEDIR, BTRFS_INODE_ITEM_KEY, 0, &ii, sizeof(struct btrfs_inode_item));
 
     add_inode_ref(root_root, BTRFS_ROOT_TREEDIR, BTRFS_ROOT_TREEDIR, 0, "..");
 
-    add_dir_item(root_root, BTRFS_ROOT_TREEDIR, default_hash, BTRFS_ROOT_FSTREE, TYPE_ROOT_ITEM,
+    add_dir_item(root_root, BTRFS_ROOT_TREEDIR, default_hash, BTRFS_ROOT_FSTREE, BTRFS_ROOT_ITEM_KEY,
                  0xffffffffffffffff, 0, BTRFS_TYPE_DIRECTORY, default_subvol);
 }
 
@@ -1019,7 +1019,7 @@ static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_
             used_space_extent* use = CONTAINING_RECORD(le2, used_space_extent, list_entry);
 
             if (use->address > last_end) {
-                add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, use->address - last_end,
+                add_item(free_space_root, last_end, BTRFS_FREE_SPACE_EXTENT_KEY, use->address - last_end,
                          NULL, 0);
                 fsi.extent_count++;
             }
@@ -1030,12 +1030,12 @@ static void populate_free_space_root(LIST_ENTRY* chunks, btrfs_root* free_space_
         }
 
         if (c->offset + c->chunk_item->length > last_end) {
-            add_item(free_space_root, last_end, TYPE_FREE_SPACE_EXTENT, c->offset + c->chunk_item->length - last_end,
+            add_item(free_space_root, last_end, BTRFS_FREE_SPACE_EXTENT_KEY, c->offset + c->chunk_item->length - last_end,
                      NULL, 0);
             fsi.extent_count++;
         }
 
-        add_item(free_space_root, c->offset, TYPE_FREE_SPACE_INFO, c->chunk_item->length, &fsi, sizeof(fsi));
+        add_item(free_space_root, c->offset, BTRFS_FREE_SPACE_INFO_KEY, c->chunk_item->length, &fsi, sizeof(fsi));
 
         le = le->Flink;
     }
@@ -1100,7 +1100,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
 
-    add_item(chunk_root, 1, TYPE_DEV_ITEM, dev.dev_item.devid, &dev.dev_item, sizeof(struct btrfs_dev_item));
+    add_item(chunk_root, 1, BTRFS_DEV_ITEM_KEY, dev.dev_item.devid, &dev.dev_item, sizeof(struct btrfs_dev_item));
 
     set_default_subvol(root_root, node_size);
 

@@ -1294,7 +1294,7 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     RtlCopyMemory(ier->name, &delir[1], delir->name_len);
 
     bi2->key.objectid = bi->key.objectid;
-    bi2->key.type = TYPE_INODE_EXTREF;
+    bi2->key.type = BTRFS_INODE_EXTREF_KEY;
     bi2->key.offset = calc_crc32c((uint32_t)bi->key.offset, (uint8_t*)ier->name, ier->name_len);
     bi2->data = ier;
     bi2->datalen = offsetof(struct btrfs_inode_extref, name) + ier->name_len;
@@ -1469,7 +1469,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                         }
 
                         bi2->key.objectid = bi->key.objectid;
-                        bi2->key.type = TYPE_INODE_EXTREF;
+                        bi2->key.type = BTRFS_INODE_EXTREF_KEY;
                         bi2->key.offset = calc_crc32c((uint32_t)ier->parent_objectid, (uint8_t*)ier->name, ier->name_len);
                         bi2->data = ier;
                         bi2->datalen = ierlen;
