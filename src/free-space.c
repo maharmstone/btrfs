@@ -605,7 +605,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
         fse = (struct btrfs_free_space_entry*)&data[off];
 
-        if (fse->type == FREE_SPACE_EXTENT) {
+        if (fse->type == BTRFS_FREE_SPACE_EXTENT) {
             Status = add_space_entry(&c->space, &c->space_size, fse->offset, fse->bytes);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_space_entry returned %08lx\n", Status);
@@ -614,7 +614,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
             }
 
             total_space += fse->bytes;
-        } else if (fse->type != FREE_SPACE_BITMAP) {
+        } else if (fse->type != BTRFS_FREE_SPACE_BITMAP) {
             ERR("unknown free-space type %x\n", fse->type);
         }
 
@@ -631,7 +631,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
             fse = (struct btrfs_free_space_entry*)&data[off];
 
-            if (fse->type == FREE_SPACE_BITMAP) {
+            if (fse->type == BTRFS_FREE_SPACE_BITMAP) {
                 // FIXME - make sure we don't overflow the buffer here
                 load_free_space_bitmap(Vcb, c, fse->offset, &data[bmpnum << Vcb->sector_shift], &total_space);
                 bmpnum++;
@@ -1742,7 +1742,7 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
 
         fse->offset = s->address;
         fse->bytes = s->size;
-        fse->type = FREE_SPACE_EXTENT;
+        fse->type = BTRFS_FREE_SPACE_EXTENT;
         num_entries++;
 
         off += sizeof(struct btrfs_free_space_entry);

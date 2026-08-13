@@ -423,8 +423,8 @@ struct btrfs_shared_data_ref {
     uint32_t count;
 };
 
-#define FREE_SPACE_EXTENT 1
-#define FREE_SPACE_BITMAP 2
+#define BTRFS_FREE_SPACE_EXTENT 1
+#define BTRFS_FREE_SPACE_BITMAP 2
 
 struct btrfs_free_space_entry {
     uint64_t offset;
