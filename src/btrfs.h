@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <assert.h>
 
-static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4000000000000, 0 };
+static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0 };
 
 #define BTRFS_MAGIC         0x4d5f53665248425f
 #define BTRFS_LABEL_SIZE    0x100
