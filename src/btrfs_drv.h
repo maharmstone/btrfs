@@ -1015,59 +1015,6 @@ __inline static bool is_subvol_readonly(root* r, PIRP Irp) {
     return (!Irp || Irp->RequestorMode == UserMode) && PsGetCurrentProcess() != r->reserved ? true : false;
 }
 
-__inline static uint16_t get_extent_data_len(uint8_t type) {
-    switch (type) {
-        case TYPE_TREE_BLOCK_REF:
-            return sizeof(TREE_BLOCK_REF);
-
-        case TYPE_EXTENT_DATA_REF:
-            return sizeof(struct btrfs_extent_data_ref);
-
-        case TYPE_EXTENT_REF_V0:
-            return sizeof(struct btrfs_extent_ref_v0);
-
-        case TYPE_SHARED_BLOCK_REF:
-            return sizeof(SHARED_BLOCK_REF);
-
-        case TYPE_SHARED_DATA_REF:
-            return sizeof(SHARED_DATA_REF);
-
-        default:
-            return 0;
-    }
-}
-
-__inline static uint32_t get_extent_data_refcount(uint8_t type, void* data) {
-    switch (type) {
-        case TYPE_TREE_BLOCK_REF:
-            return 1;
-
-        case TYPE_EXTENT_DATA_REF:
-        {
-            struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)data;
-            return edr->count;
-        }
-
-        case TYPE_EXTENT_REF_V0:
-        {
-            struct btrfs_extent_ref_v0* erv0 = (struct btrfs_extent_ref_v0*)data;
-            return erv0->count;
-        }
-
-        case TYPE_SHARED_BLOCK_REF:
-            return 1;
-
-        case TYPE_SHARED_DATA_REF:
-        {
-            SHARED_DATA_REF* sdr = (SHARED_DATA_REF*)data;
-            return sdr->count;
-        }
-
-        default:
-            return 0;
-    }
-}
-
 // in xor-gas.S
 #if defined(_X86_) || defined(_AMD64_)
 void __stdcall do_xor_sse2(uint8_t* buf1, uint8_t* buf2, uint32_t len);
