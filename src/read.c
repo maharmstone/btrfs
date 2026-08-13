@@ -1543,32 +1543,32 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
             *pc = NULL;
     }
 
-    if (ci->type & BLOCK_FLAG_DUPLICATE) {
-        type = BLOCK_FLAG_DUPLICATE;
+    if (ci->type & BTRFS_BLOCK_GROUP_DUP) {
+        type = BTRFS_BLOCK_GROUP_DUP;
         allowed_missing = ci->num_stripes - 1;
-    } else if (ci->type & BLOCK_FLAG_RAID0) {
-        type = BLOCK_FLAG_RAID0;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID0) {
+        type = BTRFS_BLOCK_GROUP_RAID0;
         allowed_missing = 0;
-    } else if (ci->type & BLOCK_FLAG_RAID1) {
-        type = BLOCK_FLAG_DUPLICATE;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID1) {
+        type = BTRFS_BLOCK_GROUP_DUP;
         allowed_missing = 1;
-    } else if (ci->type & BLOCK_FLAG_RAID10) {
-        type = BLOCK_FLAG_RAID10;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID10) {
+        type = BTRFS_BLOCK_GROUP_RAID10;
         allowed_missing = 1;
-    } else if (ci->type & BLOCK_FLAG_RAID5) {
-        type = BLOCK_FLAG_RAID5;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID5) {
+        type = BTRFS_BLOCK_GROUP_RAID5;
         allowed_missing = 1;
-    } else if (ci->type & BLOCK_FLAG_RAID6) {
-        type = BLOCK_FLAG_RAID6;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID6) {
+        type = BTRFS_BLOCK_GROUP_RAID6;
         allowed_missing = 2;
-    } else if (ci->type & BLOCK_FLAG_RAID1C3) {
-        type = BLOCK_FLAG_DUPLICATE;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID1C3) {
+        type = BTRFS_BLOCK_GROUP_DUP;
         allowed_missing = 2;
-    } else if (ci->type & BLOCK_FLAG_RAID1C4) {
-        type = BLOCK_FLAG_DUPLICATE;
+    } else if (ci->type & BTRFS_BLOCK_GROUP_RAID1C4) {
+        type = BTRFS_BLOCK_GROUP_DUP;
         allowed_missing = 3;
     } else { // SINGLE
-        type = BLOCK_FLAG_DUPLICATE;
+        type = BTRFS_BLOCK_GROUP_DUP;
         allowed_missing = 0;
     }
 
@@ -1581,7 +1581,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (c && (type == BLOCK_FLAG_RAID5 || type == BLOCK_FLAG_RAID6)) {
+    if (c && (type == BTRFS_BLOCK_GROUP_RAID5 || type == BTRFS_BLOCK_GROUP_RAID6)) {
         get_raid56_lock_range(c, addr, length, &lockaddr, &locklen);
         chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
@@ -1596,7 +1596,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
     context.tree = is_tree;
     context.type = type;
 
-    if (type == BLOCK_FLAG_RAID0) {
+    if (type == BTRFS_BLOCK_GROUP_RAID0) {
         uint64_t startoff, endoff;
         uint16_t endoffstripe, stripe;
         uint32_t *stripeoff, pos;
@@ -1720,7 +1720,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         IoFreeMdl(master_mdl);
 
         ExFreePool(stripeoff);
-    } else if (type == BLOCK_FLAG_RAID10) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID10) {
         uint64_t startoff, endoff;
         uint16_t endoffstripe, j, stripe;
         ULONG orig_ls;
@@ -1915,7 +1915,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 
         ExFreePool(stripeoff);
         ExFreePool(stripes);
-    } else if (type == BLOCK_FLAG_DUPLICATE) {
+    } else if (type == BTRFS_BLOCK_GROUP_DUP) {
         uint64_t orig_ls;
 
         if (c)
@@ -1978,7 +1978,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                 goto exit;
             }
         }
-    } else if (type == BLOCK_FLAG_RAID5) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID5) {
         uint64_t startoff, endoff;
         uint16_t endoffstripe, parity;
         uint32_t *stripeoff, pos;
@@ -2237,7 +2237,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         IoFreeMdl(master_mdl);
 
         ExFreePool(stripeoff);
-    } else if (type == BLOCK_FLAG_RAID6) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID6) {
         uint64_t startoff, endoff;
         uint16_t endoffstripe, parity1;
         uint32_t *stripeoff, pos;
@@ -2532,7 +2532,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         if (devices[i] && devices[i]->devobj && context.stripes[i].stripestart != context.stripes[i].stripeend && context.stripes[i].status != ReadDataStatus_Skip) {
             context.stripes[i].context = (struct read_data_context*)&context;
 
-            if (type == BLOCK_FLAG_RAID10) {
+            if (type == BTRFS_BLOCK_GROUP_RAID10) {
                 context.stripes[i].stripenum = i / ci->sub_stripes;
             }
 
@@ -2611,7 +2611,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         }
     }
 
-    if (type == BLOCK_FLAG_RAID0) {
+    if (type == BTRFS_BLOCK_GROUP_RAID0) {
         Status = read_data_raid0(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, generation, offset);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08lx\n", Status);
@@ -2626,7 +2626,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
             RtlCopyMemory(buf, context.va, length);
             ExFreePool(context.va);
         }
-    } else if (type == BLOCK_FLAG_RAID10) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID10) {
         Status = read_data_raid10(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, generation, offset);
 
         if (!NT_SUCCESS(Status)) {
@@ -2642,7 +2642,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
             RtlCopyMemory(buf, context.va, length);
             ExFreePool(context.va);
         }
-    } else if (type == BLOCK_FLAG_DUPLICATE) {
+    } else if (type == BTRFS_BLOCK_GROUP_DUP) {
         Status = read_data_dup(Vcb, file_read ? context.va : buf, addr, &context, ci, devices, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_dup returned %08lx\n", Status);
@@ -2657,7 +2657,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
             RtlCopyMemory(buf, context.va, length);
             ExFreePool(context.va);
         }
-    } else if (type == BLOCK_FLAG_RAID5) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID5) {
         Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c, missing_devices > 0 ? true : false);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08lx\n", Status);
@@ -2672,7 +2672,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
             RtlCopyMemory(buf, context.va, length);
             ExFreePool(context.va);
         }
-    } else if (type == BLOCK_FLAG_RAID6) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID6) {
         Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c, missing_devices > 0 ? true : false);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08lx\n", Status);
@@ -2690,7 +2690,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
     }
 
 exit:
-    if (c && (type == BLOCK_FLAG_RAID5 || type == BLOCK_FLAG_RAID6))
+    if (c && (type == BTRFS_BLOCK_GROUP_RAID5 || type == BTRFS_BLOCK_GROUP_RAID6))
         chunk_unlock_range(Vcb, c, lockaddr, locklen);
 
     if (dummy_mdl)

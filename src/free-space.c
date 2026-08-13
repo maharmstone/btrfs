@@ -371,7 +371,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
     InitializeListHead(&stripes);
 
     while (superblock_addrs[i] != 0) {
-        if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
+        if (ci->type & BTRFS_BLOCK_GROUP_RAID0 || ci->type & BTRFS_BLOCK_GROUP_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
                 ULONG sub_stripes = max(ci->sub_stripes, 1);
 
@@ -390,7 +390,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
                     }
                 }
             }
-        } else if (ci->type & BLOCK_FLAG_RAID5) {
+        } else if (ci->type & BTRFS_BLOCK_GROUP_RAID5) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint64_t stripe_size = ci->length / (ci->num_stripes - 1);
 
@@ -408,7 +408,7 @@ static NTSTATUS get_superblock_size(chunk* c, uint64_t* size) {
                     }
                 }
             }
-        } else if (ci->type & BLOCK_FLAG_RAID6) {
+        } else if (ci->type & BTRFS_BLOCK_GROUP_RAID6) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint64_t stripe_size = ci->length / (ci->num_stripes - 2);
 
@@ -2076,7 +2076,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
     while (le != &Vcb->chunks) {
         c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (c->changed && (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)) {
+        if (c->changed && (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)) {
             ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, true);
 
             while (!IsListEmpty(&c->partial_stripes)) {

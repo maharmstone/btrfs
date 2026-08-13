@@ -175,38 +175,38 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
     LIST_ENTRY* le;
     ULONG type;
 
-    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
-        type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
-        type = BLOCK_FLAG_RAID0;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
-        type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
-        type = BLOCK_FLAG_RAID10;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
-        type = BLOCK_FLAG_RAID5;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
-        type = BLOCK_FLAG_RAID6;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
-        type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
-        type = BLOCK_FLAG_DUPLICATE;
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DUP)
+        type = BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
+        type = BTRFS_BLOCK_GROUP_RAID0;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1)
+        type = BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
+        type = BTRFS_BLOCK_GROUP_RAID10;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
+        type = BTRFS_BLOCK_GROUP_RAID5;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
+        type = BTRFS_BLOCK_GROUP_RAID6;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C3)
+        type = BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C4)
+        type = BTRFS_BLOCK_GROUP_DUP;
     else // SINGLE
-        type = BLOCK_FLAG_DUPLICATE;
+        type = BTRFS_BLOCK_GROUP_DUP;
 
     le = c->deleting.Flink;
     while (le != &c->deleting) {
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
-        if (!Vcb->options.no_barrier || !(c->chunk_item->type & BLOCK_FLAG_METADATA)) {
-            if (type == BLOCK_FLAG_DUPLICATE) {
+        if (!Vcb->options.no_barrier || !(c->chunk_item->type & BTRFS_BLOCK_GROUP_METADATA)) {
+            if (type == BTRFS_BLOCK_GROUP_DUP) {
                 uint16_t i;
 
                 for (i = 0; i < c->chunk_item->num_stripes; i++) {
                     if (c->devices[i] && c->devices[i]->devobj && !c->devices[i]->readonly && c->devices[i]->trim)
                         add_trim_entry(c->devices[i], s->address - c->offset + c->chunk_item->stripe[i].offset, s->size);
                 }
-            } else if (type == BLOCK_FLAG_RAID0) {
+            } else if (type == BTRFS_BLOCK_GROUP_RAID0) {
                 uint64_t startoff, endoff;
                 uint16_t startoffstripe, endoffstripe, i;
 
@@ -235,7 +235,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
                             add_trim_entry(c->devices[i], stripestart + c->chunk_item->stripe[i].offset, stripeend - stripestart);
                     }
                 }
-            } else if (type == BLOCK_FLAG_RAID10) {
+            } else if (type == BTRFS_BLOCK_GROUP_RAID10) {
                 uint64_t startoff, endoff;
                 uint16_t sub_stripes, startoffstripe, endoffstripe, i;
 
@@ -1664,7 +1664,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
 
         tw->c = c;
 
-        if (c->chunk_item->type & (BLOCK_FLAG_RAID5 | BLOCK_FLAG_RAID6))
+        if (c->chunk_item->type & (BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6))
             raid56 = true;
 
         le = le->Flink;
@@ -4230,7 +4230,7 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         return Status;
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_SYSTEM) {
         Status = add_to_bootstrap(Vcb, 0x100, BTRFS_CHUNK_ITEM_KEY, c->offset, ci, c->size);
         if (!NT_SUCCESS(Status)) {
             ERR("add_to_bootstrap returned %08lx\n", Status);
@@ -4258,13 +4258,13 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         return Status;
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
         factor = c->chunk_item->num_stripes;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
         factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
         factor = c->chunk_item->num_stripes - 1;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
         factor = c->chunk_item->num_stripes - 2;
     else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
         factor = 1;
@@ -5523,13 +5523,13 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
     TRACE("dropping chunk %I64x\n", c->offset);
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
         factor = c->chunk_item->num_stripes;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
         factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
         factor = c->chunk_item->num_stripes - 1;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
         factor = c->chunk_item->num_stripes - 2;
     else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
         factor = 1;
@@ -5737,14 +5737,14 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             WARN("could not find BLOCK_GROUP_ITEM for chunk %I64x\n", c->offset);
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_SYSTEM)
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_SYSTEM)
         remove_from_bootstrap(Vcb, 0x100, BTRFS_CHUNK_ITEM_KEY, c->offset);
 
     RemoveEntryList(&c->list_entry);
 
     // clear raid56 incompat flag if dropping last RAID5/6 chunk
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
         LIST_ENTRY* le;
         bool clear_flag = true;
 
@@ -5752,7 +5752,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         while (le != &Vcb->chunks) {
             chunk* c2 = CONTAINING_RECORD(le, chunk, list_entry);
 
-            if (c2->chunk_item->type & BLOCK_FLAG_RAID5 || c2->chunk_item->type & BLOCK_FLAG_RAID6) {
+            if (c2->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c2->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
                 clear_flag = false;
                 break;
             }
@@ -5766,7 +5766,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
     // clear raid1c34 incompat flag if dropping last RAID5/6 chunk
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID1C3 || c->chunk_item->type & BLOCK_FLAG_RAID1C4) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C3 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C4) {
         LIST_ENTRY* le;
         bool clear_flag = true;
 
@@ -5774,7 +5774,7 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
         while (le != &Vcb->chunks) {
             chunk* c2 = CONTAINING_RECORD(le, chunk, list_entry);
 
-            if (c2->chunk_item->type & BLOCK_FLAG_RAID1C3 || c2->chunk_item->type & BLOCK_FLAG_RAID1C4) {
+            if (c2->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C3 || c2->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C4) {
                 clear_flag = false;
                 break;
             }
@@ -5834,7 +5834,7 @@ static NTSTATUS partial_stripe_read(device_extension* Vcb, chunk* c, partial_str
                 ERR("sync_read_phys returned %08lx\n", Status);
                 return Status;
             }
-        } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+        } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5) {
             uint16_t i;
             uint8_t* scratch;
 
@@ -5948,7 +5948,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     uint64_t startoff;
     ULONG runlength, index, last1;
     LIST_ENTRY* le;
-    uint16_t k, num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
+    uint16_t k, num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 ? 1 : 2);
     uint64_t ps_length = num_data_stripes * c->chunk_item->stripe_len;
     ULONG stripe_length = (ULONG)c->chunk_item->stripe_len;
 
@@ -6043,7 +6043,7 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     }
 
     // write parity
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5) {
         if (c->devices[parity2]->devobj) {
             uint16_t i;
 
@@ -6134,7 +6134,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
             acquire_chunk_lock(c, Vcb);
 
             // flush partial stripes
-            if (!Vcb->readonly && (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)) {
+            if (!Vcb->readonly && (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)) {
                 ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, true);
 
                 while (!IsListEmpty(&c->partial_stripes)) {
@@ -6171,7 +6171,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                 used_minus_cache = c->used;
 
                 // subtract self-hosted cache
-                if (used_minus_cache > 0 && c->chunk_item->type & BLOCK_FLAG_DATA && c->cache && c->cache->inode_item.size == c->used) {
+                if (used_minus_cache > 0 && c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA && c->cache && c->cache->inode_item.size == c->used) {
                     LIST_ENTRY* le3;
 
                     le3 = c->cache->extents.Flink;
@@ -7172,7 +7172,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
 
     could_alloc = 0;
 
-    if (Vcb->metadata_flags & BLOCK_FLAG_RAID5) {
+    if (Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID5) {
         uint64_t s1 = 0, s2 = 0, s3 = 0;
 
         le = Vcb->devices.Flink;
@@ -7197,7 +7197,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
         }
 
         could_alloc = s3 * 2;
-    } else if (Vcb->metadata_flags & (BLOCK_FLAG_RAID10 | BLOCK_FLAG_RAID6)) {
+    } else if (Vcb->metadata_flags & (BTRFS_BLOCK_GROUP_RAID10 | BTRFS_BLOCK_GROUP_RAID6)) {
         uint64_t s1 = 0, s2 = 0, s3 = 0, s4 = 0;
 
         le = Vcb->devices.Flink;
@@ -7227,7 +7227,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
         }
 
         could_alloc = s4 * 2;
-    } else if (Vcb->metadata_flags & (BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1)) {
+    } else if (Vcb->metadata_flags & (BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1)) {
         uint64_t s1 = 0, s2 = 0;
 
         le = Vcb->devices.Flink;
@@ -7247,11 +7247,11 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
             le = le->Flink;
         }
 
-        if (Vcb->metadata_flags & BLOCK_FLAG_RAID1)
+        if (Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID1)
             could_alloc = s2;
         else // RAID0
             could_alloc = s2 * 2;
-    } else if (Vcb->metadata_flags & BLOCK_FLAG_DUPLICATE) {
+    } else if (Vcb->metadata_flags & BTRFS_BLOCK_GROUP_DUP) {
         le = Vcb->devices.Flink;
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
@@ -7264,7 +7264,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
 
             le = le->Flink;
         }
-    } else if (Vcb->metadata_flags & BLOCK_FLAG_RAID1C3) {
+    } else if (Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID1C3) {
         uint64_t s1 = 0, s2 = 0, s3 = 0;
 
         le = Vcb->devices.Flink;
@@ -7289,7 +7289,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
         }
 
         could_alloc = s3;
-    } else if (Vcb->metadata_flags & BLOCK_FLAG_RAID1C4) {
+    } else if (Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID1C4) {
         uint64_t s1 = 0, s2 = 0, s3 = 0, s4 = 0;
 
         le = Vcb->devices.Flink;
@@ -7343,7 +7343,7 @@ static NTSTATUS test_not_full(device_extension* Vcb) {
     while (le != &Vcb->chunks) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
-        if (!c->reloc && !c->readonly && c->chunk_item->type & BLOCK_FLAG_METADATA) {
+        if (!c->reloc && !c->readonly && c->chunk_item->type & BTRFS_BLOCK_GROUP_METADATA) {
             free_space += c->chunk_item->length - c->used;
 
             if (free_space + could_alloc >= reserve)

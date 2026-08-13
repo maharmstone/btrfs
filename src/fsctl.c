@@ -1579,13 +1579,13 @@ static NTSTATUS get_usage(device_extension* Vcb, void* data, ULONG length, PIRP 
             bue->used = 0;
             bue->num_devices = 0;
 
-            if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+            if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
                 factor = c->chunk_item->num_stripes;
-            else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+            else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
                 factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-            else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+            else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
                 factor = c->chunk_item->num_stripes - 1;
-            else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+            else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
                 factor = c->chunk_item->num_stripes - 2;
             else
                 factor = 1;

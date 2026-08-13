@@ -387,17 +387,17 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
 
     // We purposely check for DATA first - mixed blocks have the same size
     // as DATA ones.
-    if (flags & BLOCK_FLAG_DATA) {
+    if (flags & BTRFS_BLOCK_GROUP_DATA) {
         max_stripe_size = 0x40000000; // 1 GB
         max_chunk_size = 10 * max_stripe_size;
-    } else if (flags & BLOCK_FLAG_METADATA) {
+    } else if (flags & BTRFS_BLOCK_GROUP_METADATA) {
         if (total_size > 0xC80000000) // 50 GB
             max_stripe_size = 0x40000000; // 1 GB
         else
             max_stripe_size = 0x10000000; // 256 MB
 
         max_chunk_size = max_stripe_size;
-    } else if (flags & BLOCK_FLAG_SYSTEM) {
+    } else if (flags & BTRFS_BLOCK_GROUP_SYSTEM) {
         max_stripe_size = 0x2000000; // 32 MB
         max_chunk_size = 2 * max_stripe_size;
     } else {
@@ -405,53 +405,53 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         return STATUS_INTERNAL_ERROR;
     }
 
-    if (flags & BLOCK_FLAG_DUPLICATE) {
+    if (flags & BTRFS_BLOCK_GROUP_DUP) {
         min_stripes = 2;
         max_stripes = 2;
         sub_stripes = 0;
-        type = BLOCK_FLAG_DUPLICATE;
+        type = BTRFS_BLOCK_GROUP_DUP;
         allowed_missing = 0;
-    } else if (flags & BLOCK_FLAG_RAID0) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID0) {
         min_stripes = 2;
         max_stripes = (uint16_t)min(0xffff, Vcb->superblock.num_devices);
         sub_stripes = 0;
-        type = BLOCK_FLAG_RAID0;
+        type = BTRFS_BLOCK_GROUP_RAID0;
         allowed_missing = 0;
-    } else if (flags & BLOCK_FLAG_RAID1) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID1) {
         min_stripes = 2;
         max_stripes = 2;
         sub_stripes = 1;
-        type = BLOCK_FLAG_RAID1;
+        type = BTRFS_BLOCK_GROUP_RAID1;
         allowed_missing = 1;
-    } else if (flags & BLOCK_FLAG_RAID10) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID10) {
         min_stripes = 4;
         max_stripes = (uint16_t)min(0xffff, Vcb->superblock.num_devices);
         sub_stripes = 2;
-        type = BLOCK_FLAG_RAID10;
+        type = BTRFS_BLOCK_GROUP_RAID10;
         allowed_missing = 1;
-    } else if (flags & BLOCK_FLAG_RAID5) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID5) {
         min_stripes = 3;
         max_stripes = (uint16_t)min(0xffff, Vcb->superblock.num_devices);
         sub_stripes = 1;
-        type = BLOCK_FLAG_RAID5;
+        type = BTRFS_BLOCK_GROUP_RAID5;
         allowed_missing = 1;
-    } else if (flags & BLOCK_FLAG_RAID6) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID6) {
         min_stripes = 4;
         max_stripes = 257;
         sub_stripes = 1;
-        type = BLOCK_FLAG_RAID6;
+        type = BTRFS_BLOCK_GROUP_RAID6;
         allowed_missing = 2;
-    } else if (flags & BLOCK_FLAG_RAID1C3) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID1C3) {
         min_stripes = 3;
         max_stripes = 3;
         sub_stripes = 1;
-        type = BLOCK_FLAG_RAID1C3;
+        type = BTRFS_BLOCK_GROUP_RAID1C3;
         allowed_missing = 2;
-    } else if (flags & BLOCK_FLAG_RAID1C4) {
+    } else if (flags & BTRFS_BLOCK_GROUP_RAID1C4) {
         min_stripes = 4;
         max_stripes = 4;
         sub_stripes = 1;
-        type = BLOCK_FLAG_RAID1C4;
+        type = BTRFS_BLOCK_GROUP_RAID1C4;
         allowed_missing = 3;
     } else { // SINGLE
         min_stripes = 1;
@@ -480,7 +480,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
 
     num_stripes = 0;
 
-    if (type == BLOCK_FLAG_DUPLICATE) {
+    if (type == BTRFS_BLOCK_GROUP_DUP) {
         if (!find_new_dup_stripes(Vcb, stripes, max_stripe_size, full_size)) {
             Status = STATUS_DISK_FULL;
             goto end;
@@ -512,7 +512,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     }
 
     // for RAID10, round down to an even number of stripes
-    if (type == BLOCK_FLAG_RAID10 && (num_stripes % sub_stripes) != 0) {
+    if (type == BTRFS_BLOCK_GROUP_RAID10 && (num_stripes % sub_stripes) != 0) {
         num_stripes -= num_stripes % sub_stripes;
     }
 
@@ -541,7 +541,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
 
     stripe_length = 0x10000; // FIXME? BTRFS_STRIPE_LEN in kernel
 
-    if (type == BLOCK_FLAG_DUPLICATE && stripes[1].dh == stripes[0].dh)
+    if (type == BTRFS_BLOCK_GROUP_DUP && stripes[1].dh == stripes[0].dh)
         stripe_size = min(stripes[0].dh->size / 2, max_stripe_size);
     else {
         stripe_size = max_stripe_size;
@@ -551,13 +551,13 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         }
     }
 
-    if (type == BLOCK_FLAG_RAID0)
+    if (type == BTRFS_BLOCK_GROUP_RAID0)
         factor = num_stripes;
-    else if (type == BLOCK_FLAG_RAID10)
+    else if (type == BTRFS_BLOCK_GROUP_RAID10)
         factor = num_stripes / sub_stripes;
-    else if (type == BLOCK_FLAG_RAID5)
+    else if (type == BTRFS_BLOCK_GROUP_RAID5)
         factor = num_stripes - 1;
-    else if (type == BLOCK_FLAG_RAID6)
+    else if (type == BTRFS_BLOCK_GROUP_RAID6)
         factor = num_stripes - 2;
     else
         factor = 1; // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
@@ -594,7 +594,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     for (i = 0; i < num_stripes; i++) {
         c->chunk_item->stripe[i].devid = stripes[i].device->devitem.devid;
 
-        if (type == BLOCK_FLAG_DUPLICATE && i == 1 && stripes[i].dh == stripes[0].dh)
+        if (type == BTRFS_BLOCK_GROUP_DUP && i == 1 && stripes[i].dh == stripes[0].dh)
             c->chunk_item->stripe[i].offset = stripes[0].dh->address + stripe_size;
         else
             c->chunk_item->stripe[i].offset = stripes[i].dh->address;
@@ -659,7 +659,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
 
     Status = STATUS_SUCCESS;
 
-    if (flags & BLOCK_FLAG_RAID5 || flags & BLOCK_FLAG_RAID6)
+    if (flags & BTRFS_BLOCK_GROUP_RAID5 || flags & BTRFS_BLOCK_GROUP_RAID6)
         Vcb->superblock.incompat_flags |= BTRFS_INCOMPAT_FLAGS_RAID56;
 
 end:
@@ -986,7 +986,7 @@ static NTSTATUS add_partial_stripe(device_extension* Vcb, chunk* c, uint64_t add
     uint64_t stripe_addr;
     uint16_t num_data_stripes;
 
-    num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
+    num_data_stripes = c->chunk_item->num_stripes - (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 ? 1 : 2);
     stripe_addr = address - ((address - c->offset) % (num_data_stripes * c->chunk_item->stripe_len));
 
     ExAcquireResourceExclusiveLite(&c->partial_stripes_lock, true);
@@ -1931,7 +1931,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
 
     RtlZeroMemory(stripes, sizeof(write_stripe) * c->chunk_item->num_stripes);
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID0) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0) {
         Status = prepare_raid0_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid0_write returned %08lx\n", Status);
@@ -1939,7 +1939,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
         }
 
         allowed_missing = 0;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+    } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10) {
         Status = prepare_raid10_write(c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid10_write returned %08lx\n", Status);
@@ -1947,7 +1947,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
         }
 
         allowed_missing = 1;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+    } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5) {
         Status = prepare_raid5_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid5_write returned %08lx\n", Status);
@@ -1955,7 +1955,7 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
         }
 
         allowed_missing = 1;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+    } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
         Status = prepare_raid6_write(Vcb, c, address, data, length, stripes, file_write ? Irp : NULL, irp_offset, priority, wtc);
         if (!NT_SUCCESS(Status)) {
             ERR("prepare_raid6_write returned %08lx\n", Status);
@@ -2176,7 +2176,7 @@ void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t
     uint64_t startoff, endoff;
     uint16_t startoffstripe, endoffstripe, datastripes;
 
-    datastripes = c->chunk_item->num_stripes - (c->chunk_item->type & BLOCK_FLAG_RAID5 ? 1 : 2);
+    datastripes = c->chunk_item->num_stripes - (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 ? 1 : 2);
 
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_len, datastripes, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_len, datastripes, &endoff, &endoffstripe);
@@ -2208,7 +2208,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
         }
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
         get_raid56_lock_range(c, address, length, &lockaddr, &locklen);
         chunk_lock_range(Vcb, c, lockaddr, locklen);
     }
@@ -2222,7 +2222,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
     if (!NT_SUCCESS(Status)) {
         ERR("write_data returned %08lx\n", Status);
 
-        if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
             chunk_unlock_range(Vcb, c, lockaddr, locklen);
 
         free_write_data_stripes(&wtc);
@@ -2265,7 +2265,7 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
         free_write_data_stripes(&wtc);
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID5 || c->chunk_item->type & BLOCK_FLAG_RAID6)
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
         chunk_unlock_range(Vcb, c, lockaddr, locklen);
 
     return Status;

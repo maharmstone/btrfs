@@ -1389,7 +1389,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
 
     context.stripes_left = 0;
 
-    if (type == BLOCK_FLAG_RAID0) {
+    if (type == BTRFS_BLOCK_GROUP_RAID0) {
         uint64_t startoff, endoff;
         uint16_t endoffstripe;
 
@@ -1413,7 +1413,7 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
         }
 
         allowed_missing = 0;
-    } else if (type == BLOCK_FLAG_RAID10) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID10) {
         uint64_t startoff, endoff;
         uint16_t endoffstripe, j, sub_stripes = max(c->chunk_item->sub_stripes, 1);
 
@@ -1462,10 +1462,10 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
 
         context.stripes[i].context = (struct _scrub_context*)&context;
 
-        if (type == BLOCK_FLAG_DUPLICATE) {
+        if (type == BTRFS_BLOCK_GROUP_DUP) {
             context.stripes[i].start = offset - c->offset;
             context.stripes[i].length = size;
-        } else if (type != BLOCK_FLAG_RAID0 && type != BLOCK_FLAG_RAID10) {
+        } else if (type != BTRFS_BLOCK_GROUP_RAID0 && type != BTRFS_BLOCK_GROUP_RAID10) {
             ERR("unexpected chunk type %lx\n", type);
             Status = STATUS_INTERNAL_ERROR;
             goto end;
@@ -1573,19 +1573,19 @@ static NTSTATUS scrub_extent(device_extension* Vcb, chunk* c, ULONG type, uint64
         }
     }
 
-    if (type == BLOCK_FLAG_DUPLICATE) {
+    if (type == BTRFS_BLOCK_GROUP_DUP) {
         Status = scrub_extent_dup(Vcb, c, offset, csum, &context);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent_dup returned %08lx\n", Status);
             goto end;
         }
-    } else if (type == BLOCK_FLAG_RAID0) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID0) {
         Status = scrub_extent_raid0(Vcb, c, offset, size, startoffstripe, csum, &context);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent_raid0 returned %08lx\n", Status);
             goto end;
         }
-    } else if (type == BLOCK_FLAG_RAID10) {
+    } else if (type == BTRFS_BLOCK_GROUP_RAID10) {
         Status = scrub_extent_raid10(Vcb, c, offset, size, startoffstripe, csum, &context);
         if (!NT_SUCCESS(Status)) {
             ERR("scrub_extent_raid10 returned %08lx\n", Status);
@@ -2424,7 +2424,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
     bool b;
     uint64_t run_start, run_end, full_stripe_len, stripe;
     uint32_t max_read, num_sectors;
-    ULONG arrlen, *allocarr, *csumarr = NULL, *treearr, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
+    ULONG arrlen, *allocarr, *csumarr = NULL, *treearr, num_parity_stripes = c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6 ? 2 : 1;
     scrub_context_raid56 context;
     uint16_t i;
 
@@ -2474,7 +2474,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA) {
         csumarr = ExAllocatePoolWithTag(PagedPool, arrlen, ALLOC_TAG);
         if (!csumarr) {
             ERR("out of memory\n");
@@ -2498,7 +2498,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
         }
     }
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
         context.parity_scratch2 = ExAllocatePoolWithTag(PagedPool, (ULONG)c->chunk_item->stripe_len, ALLOC_TAG);
         if (!context.parity_scratch2) {
             ERR("out of memory\n");
@@ -2506,7 +2506,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
             ExFreePool(treearr);
             ExFreePool(context.parity_scratch);
 
-            if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+            if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA) {
                 ExFreePool(csumarr);
                 ExFreePool(context.csum);
             }
@@ -2548,7 +2548,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
                 if (extent_is_tree)
                     RtlSetBits(&context.is_tree, (ULONG)((extent_start - run_start) >> Vcb->sector_shift), (ULONG)((extent_end - extent_start) >> Vcb->sector_shift));
-                else if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+                else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA) {
                     traverse_ptr tp2;
                     bool b2;
 
@@ -2734,11 +2734,11 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
             }
         }
 
-        if (c->chunk_item->type & BLOCK_FLAG_RAID5 && missing_devices > 1) {
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 && missing_devices > 1) {
             ERR("too many missing devices (%u, maximum 1)\n", missing_devices);
             Status = STATUS_UNEXPECTED_IO_ERROR;
             goto end3;
-        } else if (c->chunk_item->type & BLOCK_FLAG_RAID6 && missing_devices > 2) {
+        } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6 && missing_devices > 2) {
             ERR("too many missing devices (%u, maximum 2)\n", missing_devices);
             Status = STATUS_UNEXPECTED_IO_ERROR;
             goto end3;
@@ -2764,7 +2764,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
             }
         }
 
-        if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
             for (i = 0; i < read_stripes; i++) {
                 scrub_raid6_stripe(Vcb, c, &context, stripe_start, stripe, i, missing_devices);
             }
@@ -2816,10 +2816,10 @@ end:
     ExFreePool(allocarr);
     ExFreePool(context.parity_scratch);
 
-    if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
         ExFreePool(context.parity_scratch2);
 
-    if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA) {
         ExFreePool(csumarr);
         ExFreePool(context.csum);
     }
@@ -2833,7 +2833,7 @@ static NTSTATUS scrub_chunk_raid56(device_extension* Vcb, chunk* c, uint64_t* of
     traverse_ptr tp;
     bool b;
     uint64_t full_stripe_len, stripe, stripe_start = 0, stripe_end = 0, total_data = 0;
-    ULONG num_extents = 0, num_parity_stripes = c->chunk_item->type & BLOCK_FLAG_RAID6 ? 2 : 1;
+    ULONG num_extents = 0, num_parity_stripes = c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6 ? 2 : 1;
 
     full_stripe_len = (c->chunk_item->num_stripes - num_parity_stripes) * c->chunk_item->stripe_len;
     stripe = (*offset - c->offset) / full_stripe_len;
@@ -2926,26 +2926,26 @@ static NTSTATUS scrub_chunk(device_extension* Vcb, chunk* c, uint64_t* offset, b
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
-    if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
-        type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID0)
-        type = BLOCK_FLAG_RAID0;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
-        type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
-        type = BLOCK_FLAG_RAID10;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID5) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DUP)
+        type = BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
+        type = BTRFS_BLOCK_GROUP_RAID0;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1)
+        type = BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
+        type = BTRFS_BLOCK_GROUP_RAID10;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5) {
         Status = scrub_chunk_raid56(Vcb, c, offset, changed);
         goto end;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID6) {
+    } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
         Status = scrub_chunk_raid56(Vcb, c, offset, changed);
         goto end;
-    } else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
-        type = BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
-        type = BLOCK_FLAG_DUPLICATE;
+    } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C3)
+        type = BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C4)
+        type = BTRFS_BLOCK_GROUP_DUP;
     else // SINGLE
-        type = BLOCK_FLAG_DUPLICATE;
+        type = BTRFS_BLOCK_GROUP_DUP;
 
     searchkey.objectid = *offset;
     searchkey.type = BTRFS_METADATA_ITEM_KEY;

@@ -577,7 +577,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
             return Status;
         }
 
-        if (pc->chunk_item->type & BLOCK_FLAG_SYSTEM)
+        if (pc->chunk_item->type & BTRFS_BLOCK_GROUP_SYSTEM)
             mr->system = true;
 
         if (data_items && mr->data->level == 0) {
@@ -2246,22 +2246,22 @@ end:
 }
 
 static __inline uint64_t get_chunk_dup_type(chunk* c) {
-    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
-        return BLOCK_FLAG_RAID0;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1)
-        return BLOCK_FLAG_RAID1;
-    else if (c->chunk_item->type & BLOCK_FLAG_DUPLICATE)
-        return BLOCK_FLAG_DUPLICATE;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
-        return BLOCK_FLAG_RAID10;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
-        return BLOCK_FLAG_RAID5;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
-        return BLOCK_FLAG_RAID6;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C3)
-        return BLOCK_FLAG_RAID1C3;
-    else if (c->chunk_item->type & BLOCK_FLAG_RAID1C4)
-        return BLOCK_FLAG_RAID1C4;
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
+        return BTRFS_BLOCK_GROUP_RAID0;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1)
+        return BTRFS_BLOCK_GROUP_RAID1;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DUP)
+        return BTRFS_BLOCK_GROUP_DUP;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
+        return BTRFS_BLOCK_GROUP_RAID10;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
+        return BTRFS_BLOCK_GROUP_RAID5;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
+        return BTRFS_BLOCK_GROUP_RAID6;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C3)
+        return BTRFS_BLOCK_GROUP_RAID1C3;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID1C4)
+        return BTRFS_BLOCK_GROUP_RAID1C4;
     else
         return BLOCK_FLAG_SINGLE;
 }
@@ -2301,13 +2301,13 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
         uint64_t physsize;
         bool b = false;
 
-        if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
             factor = c->chunk_item->num_stripes;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
             factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
             factor = c->chunk_item->num_stripes - 1;
-        else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
             factor = c->chunk_item->num_stripes - 2;
         else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
             factor = 1;
@@ -2962,7 +2962,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, uint64_t flags, chunk**
             chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
 
             // FIXME - skip full-size chunks over e.g. 90% full?
-            if (c->chunk_item->type & BLOCK_FLAG_DATA && !c->readonly && c->balance_num != Vcb->balance.balance_num && (!rc || c->used < rc->used))
+            if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA && !c->readonly && c->balance_num != Vcb->balance.balance_num && (!rc || c->used < rc->used))
                 rc = c;
 
             le = le->Flink;
@@ -3061,13 +3061,13 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
                 if (stripe_size == 0) {
                     uint16_t factor;
 
-                    if (c->chunk_item->type & BLOCK_FLAG_RAID0)
+                    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
                         factor = c->chunk_item->num_stripes;
-                    else if (c->chunk_item->type & BLOCK_FLAG_RAID10)
+                    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
                         factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-                    else if (c->chunk_item->type & BLOCK_FLAG_RAID5)
+                    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
                         factor = c->chunk_item->num_stripes - 1;
-                    else if (c->chunk_item->type & BLOCK_FLAG_RAID6)
+                    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
                         factor = c->chunk_item->num_stripes - 2;
                     else // SINGLE, DUP, RAID1, RAID1C3, RAID1C4
                         factor = 1;
@@ -3101,19 +3101,19 @@ void __stdcall balance_thread(void* context) {
 
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_data_flags = Vcb->data_flags;
-        Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
+        Vcb->data_flags = BTRFS_BLOCK_GROUP_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
 
         FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_CHANGE_SIZE);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_metadata_flags = Vcb->metadata_flags;
-        Vcb->metadata_flags = BLOCK_FLAG_METADATA | (Vcb->balance.opts[BALANCE_OPTS_METADATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_METADATA].convert);
+        Vcb->metadata_flags = BTRFS_BLOCK_GROUP_METADATA | (Vcb->balance.opts[BALANCE_OPTS_METADATA].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_METADATA].convert);
     }
 
     if (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_SYSTEM].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_system_flags = Vcb->system_flags;
-        Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
+        Vcb->system_flags = BTRFS_BLOCK_GROUP_SYSTEM | (Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert == BLOCK_FLAG_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_SYSTEM].convert);
     }
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
@@ -3167,11 +3167,11 @@ void __stdcall balance_thread(void* context) {
 
         acquire_chunk_lock(c, Vcb);
 
-        if (c->chunk_item->type & BLOCK_FLAG_DATA)
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA)
             sort = BALANCE_OPTS_DATA;
-        else if (c->chunk_item->type & BLOCK_FLAG_METADATA)
+        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_METADATA)
             sort = BALANCE_OPTS_METADATA;
-        else if (c->chunk_item->type & BLOCK_FLAG_SYSTEM)
+        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_SYSTEM)
             sort = BALANCE_OPTS_SYSTEM;
         else {
             ERR("unexpected chunk type %I64x\n", c->chunk_item->type);
@@ -3330,7 +3330,7 @@ void __stdcall balance_thread(void* context) {
         chunk* c = CONTAINING_RECORD(le, chunk, list_entry_balance);
         LIST_ENTRY* le2 = le->Flink;
 
-        if (c->chunk_item->type & BLOCK_FLAG_DATA) {
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA) {
             bool changed;
 
             do {
@@ -3359,8 +3359,8 @@ void __stdcall balance_thread(void* context) {
         if (Vcb->balance.stopping)
             goto end;
 
-        if (c->chunk_item->type & BLOCK_FLAG_DATA &&
-            (!(Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) || !(c->chunk_item->type & BLOCK_FLAG_METADATA))) {
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA &&
+            (!(Vcb->balance.opts[BALANCE_OPTS_METADATA].flags & BTRFS_BALANCE_OPTS_ENABLED) || !(c->chunk_item->type & BTRFS_BLOCK_GROUP_METADATA))) {
             RemoveEntryList(&c->list_entry_balance);
             c->list_entry_balance.Flink = NULL;
 
@@ -3378,7 +3378,7 @@ void __stdcall balance_thread(void* context) {
         le = RemoveHeadList(&chunks);
         c = CONTAINING_RECORD(le, chunk, list_entry_balance);
 
-        if (c->chunk_item->type & BLOCK_FLAG_METADATA || c->chunk_item->type & BLOCK_FLAG_SYSTEM) {
+        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_METADATA || c->chunk_item->type & BTRFS_BLOCK_GROUP_SYSTEM) {
             do {
                 Status = balance_metadata_chunk(Vcb, c, &changed);
                 if (!NT_SUCCESS(Status)) {
@@ -3587,9 +3587,9 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
     for (i = 0; i < 3; i++) {
         if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_ENABLED) {
             if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_PROFILES) {
-                bsb->opts[i].profiles &= BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1 | BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_RAID10 |
-                                         BLOCK_FLAG_RAID5 | BLOCK_FLAG_RAID6 | BLOCK_FLAG_SINGLE | BLOCK_FLAG_RAID1C3 |
-                                         BLOCK_FLAG_RAID1C4;
+                bsb->opts[i].profiles &= BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID10 |
+                                         BTRFS_BLOCK_GROUP_RAID5 | BTRFS_BLOCK_GROUP_RAID6 | BLOCK_FLAG_SINGLE | BTRFS_BLOCK_GROUP_RAID1C3 |
+                                         BTRFS_BLOCK_GROUP_RAID1C4;
 
                 if (bsb->opts[i].profiles == 0)
                     return STATUS_INVALID_PARAMETER;
@@ -3635,11 +3635,11 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
             }
 
             if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_CONVERT) {
-                if (bsb->opts[i].convert != BLOCK_FLAG_RAID0 && bsb->opts[i].convert != BLOCK_FLAG_RAID1 &&
-                    bsb->opts[i].convert != BLOCK_FLAG_DUPLICATE && bsb->opts[i].convert != BLOCK_FLAG_RAID10 &&
-                    bsb->opts[i].convert != BLOCK_FLAG_RAID5 && bsb->opts[i].convert != BLOCK_FLAG_RAID6 &&
-                    bsb->opts[i].convert != BLOCK_FLAG_SINGLE && bsb->opts[i].convert != BLOCK_FLAG_RAID1C3 &&
-                    bsb->opts[i].convert != BLOCK_FLAG_RAID1C4)
+                if (bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID0 && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1 &&
+                    bsb->opts[i].convert != BTRFS_BLOCK_GROUP_DUP && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID10 &&
+                    bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID5 && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID6 &&
+                    bsb->opts[i].convert != BLOCK_FLAG_SINGLE && bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1C3 &&
+                    bsb->opts[i].convert != BTRFS_BLOCK_GROUP_RAID1C4)
                     return STATUS_INVALID_PARAMETER;
             }
         }
@@ -3892,9 +3892,9 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
         }
 
         if (num_rw_devices == 4 &&
-            ((Vcb->data_flags & BLOCK_FLAG_RAID10 || Vcb->metadata_flags & BLOCK_FLAG_RAID10 || Vcb->system_flags & BLOCK_FLAG_RAID10) ||
-             (Vcb->data_flags & BLOCK_FLAG_RAID6 || Vcb->metadata_flags & BLOCK_FLAG_RAID6 || Vcb->system_flags & BLOCK_FLAG_RAID6) ||
-             (Vcb->data_flags & BLOCK_FLAG_RAID1C4 || Vcb->metadata_flags & BLOCK_FLAG_RAID1C4 || Vcb->system_flags & BLOCK_FLAG_RAID1C4)
+            ((Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID10 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID10 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID10) ||
+             (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID6 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID6 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID6) ||
+             (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID1C4 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID1C4 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID1C4)
             )
         ) {
             ExReleaseResourceLite(&Vcb->tree_lock);
@@ -3903,8 +3903,8 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
         }
 
         if (num_rw_devices == 3 &&
-            ((Vcb->data_flags & BLOCK_FLAG_RAID5 || Vcb->metadata_flags & BLOCK_FLAG_RAID5 || Vcb->system_flags & BLOCK_FLAG_RAID5) ||
-            (Vcb->data_flags & BLOCK_FLAG_RAID1C3 || Vcb->metadata_flags & BLOCK_FLAG_RAID1C3 || Vcb->system_flags & BLOCK_FLAG_RAID1C3))
+            ((Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID5 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID5 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID5) ||
+            (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID1C3 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID1C3 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID1C3))
             ) {
             ExReleaseResourceLite(&Vcb->tree_lock);
             ERR("would not be enough devices to satisfy RAID requirement (RAID5/1C3)\n");
@@ -3912,8 +3912,8 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
         }
 
         if (num_rw_devices == 2 &&
-            ((Vcb->data_flags & BLOCK_FLAG_RAID0 || Vcb->metadata_flags & BLOCK_FLAG_RAID0 || Vcb->system_flags & BLOCK_FLAG_RAID0) ||
-             (Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->metadata_flags & BLOCK_FLAG_RAID1 || Vcb->system_flags & BLOCK_FLAG_RAID1))
+            ((Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID0 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID0 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID0) ||
+             (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID1 || Vcb->metadata_flags & BTRFS_BLOCK_GROUP_RAID1 || Vcb->system_flags & BTRFS_BLOCK_GROUP_RAID1))
         ) {
             ExReleaseResourceLite(&Vcb->tree_lock);
             ERR("would not be enough devices to satisfy RAID requirement (RAID0/1)\n");

@@ -142,14 +142,14 @@ void BtrfsVolPropSheet::FormatUsage(HWND, wstring& s, btrfs_usage* usage) {
     btrfs_usage* bue;
     wstring t, u, v;
 
-    static const uint64_t types[] = { BLOCK_FLAG_DATA, BLOCK_FLAG_DATA | BLOCK_FLAG_METADATA, BLOCK_FLAG_METADATA, BLOCK_FLAG_SYSTEM };
+    static const uint64_t types[] = { BTRFS_BLOCK_GROUP_DATA, BTRFS_BLOCK_GROUP_DATA | BTRFS_BLOCK_GROUP_METADATA, BTRFS_BLOCK_GROUP_METADATA, BTRFS_BLOCK_GROUP_SYSTEM };
     static const ULONG typestrings[] = { IDS_USAGE_DATA, IDS_USAGE_MIXED, IDS_USAGE_METADATA, IDS_USAGE_SYSTEM };
-    static const uint64_t duptypes[] = { 0, BLOCK_FLAG_DUPLICATE, BLOCK_FLAG_RAID0, BLOCK_FLAG_RAID1, BLOCK_FLAG_RAID10, BLOCK_FLAG_RAID5,
-                                         BLOCK_FLAG_RAID6, BLOCK_FLAG_RAID1C3, BLOCK_FLAG_RAID1C4 };
+    static const uint64_t duptypes[] = { 0, BTRFS_BLOCK_GROUP_DUP, BTRFS_BLOCK_GROUP_RAID0, BTRFS_BLOCK_GROUP_RAID1, BTRFS_BLOCK_GROUP_RAID10, BTRFS_BLOCK_GROUP_RAID5,
+                                         BTRFS_BLOCK_GROUP_RAID6, BTRFS_BLOCK_GROUP_RAID1C3, BTRFS_BLOCK_GROUP_RAID1C4 };
     static const ULONG dupstrings[] = { IDS_SINGLE, IDS_DUP, IDS_RAID0, IDS_RAID1, IDS_RAID10, IDS_RAID5, IDS_RAID6, IDS_RAID1C3, IDS_RAID1C4 };
 
-    static const uint64_t raid_types = BLOCK_FLAG_DUPLICATE | BLOCK_FLAG_RAID0 | BLOCK_FLAG_RAID1 | BLOCK_FLAG_RAID10 | BLOCK_FLAG_RAID5 |
-                                       BLOCK_FLAG_RAID6 | BLOCK_FLAG_RAID1C3 | BLOCK_FLAG_RAID1C4;
+    static const uint64_t raid_types = BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_RAID10 | BTRFS_BLOCK_GROUP_RAID5 |
+                                       BTRFS_BLOCK_GROUP_RAID6 | BTRFS_BLOCK_GROUP_RAID1C3 | BTRFS_BLOCK_GROUP_RAID1C4;
 
     s = L"";
 
@@ -212,19 +212,19 @@ void BtrfsVolPropSheet::FormatUsage(HWND, wstring& s, btrfs_usage* usage) {
         for (uint64_t k = 0; k < bue->num_devices; k++) {
             dev_alloc += bue->devices[k].alloc;
 
-            if (bue->type & BLOCK_FLAG_DATA) {
+            if (bue->type & BTRFS_BLOCK_GROUP_DATA) {
                 data_alloc += bue->devices[k].alloc;
             }
 
-            if (bue->type & BLOCK_FLAG_METADATA) {
+            if (bue->type & BTRFS_BLOCK_GROUP_METADATA) {
                 metadata_alloc += bue->devices[k].alloc;
             }
         }
 
-        if (bue->type & BLOCK_FLAG_DATA)
+        if (bue->type & BTRFS_BLOCK_GROUP_DATA)
             data_size += bue->size;
 
-        if (bue->type & BLOCK_FLAG_METADATA)
+        if (bue->type & BTRFS_BLOCK_GROUP_METADATA)
             metadata_size += bue->size;
 
         if (bue->next_entry > 0)
@@ -294,7 +294,7 @@ void BtrfsVolPropSheet::FormatUsage(HWND, wstring& s, btrfs_usage* usage) {
                 if ((bue->type & types[i]) == types[i] && ((duptypes[j] == 0 && (bue->type & raid_types) == 0) || bue->type & duptypes[j])) {
                     wstring sizestring, usedstring, typestring, dupstring;
 
-                    if (bue->type & BLOCK_FLAG_DATA && bue->type & BLOCK_FLAG_METADATA && (types[i] == BLOCK_FLAG_DATA || types[i] == BLOCK_FLAG_METADATA))
+                    if (bue->type & BTRFS_BLOCK_GROUP_DATA && bue->type & BTRFS_BLOCK_GROUP_METADATA && (types[i] == BTRFS_BLOCK_GROUP_DATA || types[i] == BTRFS_BLOCK_GROUP_METADATA))
                         break;
 
                     if (!load_string(module, typestrings[i], typestring))

@@ -620,19 +620,19 @@ end:
 static void calculate_total_space(_In_ device_extension* Vcb, _Out_ uint64_t* totalsize, _Out_ uint64_t* freespace) {
     uint64_t nfactor, dfactor, sectors_used;
 
-    if (Vcb->data_flags & BLOCK_FLAG_DUPLICATE || Vcb->data_flags & BLOCK_FLAG_RAID1 || Vcb->data_flags & BLOCK_FLAG_RAID10) {
+    if (Vcb->data_flags & BTRFS_BLOCK_GROUP_DUP || Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID1 || Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID10) {
         nfactor = 1;
         dfactor = 2;
-    } else if (Vcb->data_flags & BLOCK_FLAG_RAID5) {
+    } else if (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID5) {
         nfactor = Vcb->superblock.num_devices - 1;
         dfactor = Vcb->superblock.num_devices;
-    } else if (Vcb->data_flags & BLOCK_FLAG_RAID6) {
+    } else if (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID6) {
         nfactor = Vcb->superblock.num_devices - 2;
         dfactor = Vcb->superblock.num_devices;
-    } else if (Vcb->data_flags & BLOCK_FLAG_RAID1C3) {
+    } else if (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID1C3) {
         nfactor = 1;
         dfactor = 3;
-    } else if (Vcb->data_flags & BLOCK_FLAG_RAID1C4) {
+    } else if (Vcb->data_flags & BTRFS_BLOCK_GROUP_RAID1C4) {
         nfactor = 1;
         dfactor = 4;
     } else {
@@ -3665,16 +3665,16 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
                 RtlCopyMemory(c->chunk_item, tp.item->data, tp.item->size);
 
-                if (c->chunk_item->type & BLOCK_FLAG_DATA && c->chunk_item->type > Vcb->data_flags)
+                if (c->chunk_item->type & BTRFS_BLOCK_GROUP_DATA && c->chunk_item->type > Vcb->data_flags)
                     Vcb->data_flags = c->chunk_item->type;
 
-                if (c->chunk_item->type & BLOCK_FLAG_METADATA && c->chunk_item->type > Vcb->metadata_flags)
+                if (c->chunk_item->type & BTRFS_BLOCK_GROUP_METADATA && c->chunk_item->type > Vcb->metadata_flags)
                     Vcb->metadata_flags = c->chunk_item->type;
 
-                if (c->chunk_item->type & BLOCK_FLAG_SYSTEM && c->chunk_item->type > Vcb->system_flags)
+                if (c->chunk_item->type & BTRFS_BLOCK_GROUP_SYSTEM && c->chunk_item->type > Vcb->system_flags)
                     Vcb->system_flags = c->chunk_item->type;
 
-                if (c->chunk_item->type & BLOCK_FLAG_RAID10) {
+                if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10) {
                     if (c->chunk_item->sub_stripes == 0 || c->chunk_item->sub_stripes > c->chunk_item->num_stripes) {
                         ERR("chunk %I64x: invalid stripes (num_stripes %u, sub_stripes %u)\n", c->offset, c->chunk_item->num_stripes, c->chunk_item->sub_stripes);
                         ExFreePool(c->chunk_item);
@@ -3750,16 +3750,16 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     Vcb->log_to_phys_loaded = true;
 
     if (Vcb->data_flags == 0)
-        Vcb->data_flags = BLOCK_FLAG_DATA | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID0 : 0);
+        Vcb->data_flags = BTRFS_BLOCK_GROUP_DATA | (Vcb->superblock.num_devices > 1 ? BTRFS_BLOCK_GROUP_RAID0 : 0);
 
     if (Vcb->metadata_flags == 0)
-        Vcb->metadata_flags = BLOCK_FLAG_METADATA | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID1 : BLOCK_FLAG_DUPLICATE);
+        Vcb->metadata_flags = BTRFS_BLOCK_GROUP_METADATA | (Vcb->superblock.num_devices > 1 ? BTRFS_BLOCK_GROUP_RAID1 : BTRFS_BLOCK_GROUP_DUP);
 
     if (Vcb->system_flags == 0)
-        Vcb->system_flags = BLOCK_FLAG_SYSTEM | (Vcb->superblock.num_devices > 1 ? BLOCK_FLAG_RAID1 : BLOCK_FLAG_DUPLICATE);
+        Vcb->system_flags = BTRFS_BLOCK_GROUP_SYSTEM | (Vcb->superblock.num_devices > 1 ? BTRFS_BLOCK_GROUP_RAID1 : BTRFS_BLOCK_GROUP_DUP);
 
     if (Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS) {
-        Vcb->metadata_flags |= BLOCK_FLAG_DATA;
+        Vcb->metadata_flags |= BTRFS_BLOCK_GROUP_DATA;
         Vcb->data_flags = Vcb->metadata_flags;
     }
 
@@ -3779,7 +3779,7 @@ void protect_superblocks(_Inout_ chunk* c) {
     while (superblock_addrs[i] != 0) {
         struct btrfs_chunk* ci = c->chunk_item;
 
-        if (ci->type & BLOCK_FLAG_RAID0 || ci->type & BLOCK_FLAG_RAID10) {
+        if (ci->type & BTRFS_BLOCK_GROUP_RAID0 || ci->type & BTRFS_BLOCK_GROUP_RAID10) {
             for (j = 0; j < ci->num_stripes; j++) {
                 uint16_t sub_stripes = max(ci->sub_stripes, 1);
 
@@ -3807,7 +3807,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
-        } else if (ci->type & BLOCK_FLAG_RAID5) {
+        } else if (ci->type & BTRFS_BLOCK_GROUP_RAID5) {
             uint64_t stripe_size = ci->length / (ci->num_stripes - 1);
 
             for (j = 0; j < ci->num_stripes; j++) {
@@ -3826,7 +3826,7 @@ void protect_superblocks(_Inout_ chunk* c) {
                     space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
                 }
             }
-        } else if (ci->type & BLOCK_FLAG_RAID6) {
+        } else if (ci->type & BTRFS_BLOCK_GROUP_RAID6) {
             uint64_t stripe_size = ci->length / (ci->num_stripes - 2);
 
             for (j = 0; j < ci->num_stripes; j++) {

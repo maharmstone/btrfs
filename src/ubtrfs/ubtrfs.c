@@ -381,18 +381,18 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
         le = le->Flink;
     }
 
-    if (flags & BLOCK_FLAG_METADATA) {
+    if (flags & BTRFS_BLOCK_GROUP_METADATA) {
         if (dev->dev_item.total_bytes > 0xC80000000) // 50 GB
             size = 0x40000000; // 1 GB
         else
             size = 0x10000000; // 256 MB
-    } else // BLOCK_FLAG_SYSTEM
+    } else // BTRFS_BLOCK_GROUP_SYSTEM
         size = 0x800000;
 
     size = min(size, dev->dev_item.total_bytes / 10); // cap at 10%
     size &= ~(stripe_length - 1);
 
-    stripes = flags & BLOCK_FLAG_DUPLICATE ? 2 : 1;
+    stripes = flags & BTRFS_BLOCK_GROUP_DUP ? 2 : 1;
 
     if (dev->dev_item.total_bytes - dev->dev_item.bytes_used < stripes * size) // not enough space
         return NULL;
@@ -1082,18 +1082,18 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
 
     ssd = is_ssd(h);
 
-    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | (ssd ? 0 : BLOCK_FLAG_DUPLICATE),
+    sys_chunk = add_chunk(&chunks, BTRFS_BLOCK_GROUP_SYSTEM | (ssd ? 0 : BTRFS_BLOCK_GROUP_DUP),
                           chunk_root, &dev, dev_root, chunkuuid, sector_size);
     if (!sys_chunk)
         return STATUS_INTERNAL_ERROR;
 
-    metadata_flags = BLOCK_FLAG_METADATA;
+    metadata_flags = BTRFS_BLOCK_GROUP_METADATA;
 
     if (!ssd && !(incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS))
-        metadata_flags |= BLOCK_FLAG_DUPLICATE;
+        metadata_flags |= BTRFS_BLOCK_GROUP_DUP;
 
     if (incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
-        metadata_flags |= BLOCK_FLAG_DATA;
+        metadata_flags |= BTRFS_BLOCK_GROUP_DATA;
 
     metadata_chunk = add_chunk(&chunks, metadata_flags, chunk_root, &dev, dev_root,
                                chunkuuid, sector_size);
