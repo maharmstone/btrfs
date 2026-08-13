@@ -211,7 +211,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
 
             if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
-                log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+                log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRS);
                 break;
             }
 

@@ -1747,7 +1747,7 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
 
             if (stripe->status != WriteDataStatus_Ignore && !NT_SUCCESS(stripe->iosb.Status)) {
                 Status = stripe->iosb.Status;
-                log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+                log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRS);
                 break;
             }
 
@@ -2395,7 +2395,7 @@ static NTSTATUS write_superblocks(device_extension* Vcb, PIRP Irp) {
 
         if (!NT_SUCCESS(stripe->Status)) {
             ERR("device %I64x returned %08lx\n", stripe->device->devitem.devid, stripe->Status);
-            log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRORS);
+            log_device_error(Vcb, stripe->device, BTRFS_DEV_STAT_WRITE_ERRS);
             Status = stripe->Status;
             goto end;
         }

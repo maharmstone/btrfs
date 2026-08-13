@@ -516,11 +516,11 @@ struct btrfs_free_space_info {
     uint32_t flags;
 };
 
-#define BTRFS_DEV_STAT_WRITE_ERRORS          0
-#define BTRFS_DEV_STAT_READ_ERRORS           1
-#define BTRFS_DEV_STAT_FLUSH_ERRORS          2
-#define BTRFS_DEV_STAT_CORRUPTION_ERRORS     3
-#define BTRFS_DEV_STAT_GENERATION_ERRORS     4
+#define BTRFS_DEV_STAT_WRITE_ERRS          0
+#define BTRFS_DEV_STAT_READ_ERRS           1
+#define BTRFS_DEV_STAT_FLUSH_ERRS          2
+#define BTRFS_DEV_STAT_CORRUPTION_ERRS     3
+#define BTRFS_DEV_STAT_GENERATION_ERRS     4
 
 #define BTRFS_SEND_C_SUBVOL          1
 #define BTRFS_SEND_C_SNAPSHOT        2
