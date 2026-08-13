@@ -830,7 +830,7 @@ typedef struct {
 } bus_device_extension;
 
 typedef struct {
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
     uint64_t devid;
     uint64_t generation;
     PDEVICE_OBJECT devobj;
@@ -864,7 +864,7 @@ typedef struct _volume_device_extension {
 
 typedef struct pdo_device_extension {
     uint32_t type;
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
     volume_device_extension* vde;
     PDEVICE_OBJECT pdo;
     bool removable;
@@ -1027,7 +1027,7 @@ void __stdcall do_xor_avx2(uint8_t* buf1, uint8_t* buf2, uint32_t len);
 
 // in btrfs.c
 _Ret_maybenull_
-device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid);
+device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ uint8_t* uuid);
 
 _Success_(return)
 bool get_file_attributes_from_xattr(_In_reads_bytes_(len) char* val, _In_ uint16_t len, _Out_ ULONG* atts);
@@ -1486,8 +1486,8 @@ bool add_thread_job(device_extension* Vcb, PIRP Irp);
 
 // in registry.c
 void read_registry(PUNICODE_STRING regpath, bool refresh);
-NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid);
-NTSTATUS registry_mark_volume_unmounted(BTRFS_UUID* uuid);
+NTSTATUS registry_mark_volume_mounted(uint8_t* uuid);
+NTSTATUS registry_mark_volume_unmounted(uint8_t* uuid);
 NTSTATUS registry_load_volume_options(device_extension* Vcb);
 void watch_registry(HANDLE regh);
 
@@ -1568,7 +1568,7 @@ NTSTATUS __stdcall compat_FsRtlValidateReparsePointBuffer(IN ULONG BufferLength,
 // in boot.c
 void check_system_root();
 void boot_add_device(DEVICE_OBJECT* pdo);
-extern BTRFS_UUID boot_uuid;
+extern uint8_t boot_uuid[BTRFS_UUID_SIZE];
 
 // based on function in sys/sysmacros.h
 #define makedev(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | (((uint64_t)((minor) & ~0xFF)) << 12) | (((uint64_t)((major) & ~0xFFF)) << 32))

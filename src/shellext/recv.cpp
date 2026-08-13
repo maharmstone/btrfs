@@ -61,7 +61,7 @@ bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** val
 
 void BtrfsRecv::cmd_subvol(btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
     string name;
-    BTRFS_UUID* uuid;
+    uint8_t* uuid;
     uint64_t* gen;
     ULONG uuidlen, genlen;
     btrfs_create_subvol* bcs;
@@ -81,8 +81,8 @@ void BtrfsRecv::cmd_subvol(btrfs_send_command* cmd, uint8_t* data, const win_han
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
 
-    if (uuidlen < sizeof(BTRFS_UUID))
-        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
+    if (uuidlen < BTRFS_UUID_SIZE)
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, BTRFS_UUID_SIZE);
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"transid");
@@ -90,7 +90,7 @@ void BtrfsRecv::cmd_subvol(btrfs_send_command* cmd, uint8_t* data, const win_han
     if (genlen < sizeof(uint64_t))
         throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
 
-    this->subvol_uuid = *uuid;
+    memcpy(this->subvol_uuid, uuid, BTRFS_UUID_SIZE);
     this->stransid = *gen;
 
     auto nameu = utf8_to_utf16(name);
@@ -134,15 +134,15 @@ void BtrfsRecv::cmd_subvol(btrfs_send_command* cmd, uint8_t* data, const win_han
 
     subvolpath += L"\\";
 
-    add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
+    add_cache_entry(this->subvol_uuid, this->stransid, subvolpath);
 
     num_received++;
 }
 
-void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path) {
+void BtrfsRecv::add_cache_entry(uint8_t* uuid, uint64_t transid, const wstring& path) {
     subvol_cache sc;
 
-    sc.uuid = *uuid;
+    memcpy(sc.uuid, uuid, BTRFS_UUID_SIZE);
     sc.transid = transid;
     sc.path = path;
 
@@ -151,7 +151,7 @@ void BtrfsRecv::add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstrin
 
 void BtrfsRecv::cmd_snapshot(btrfs_send_command* cmd, uint8_t* data, const win_handle& parent) {
     string name;
-    BTRFS_UUID *uuid, *parent_uuid;
+    uint8_t *uuid, *parent_uuid;
     uint64_t *gen, *parent_transid;
     ULONG uuidlen, genlen, paruuidlen, partransidlen;
     btrfs_create_snapshot* bcs;
@@ -175,8 +175,8 @@ void BtrfsRecv::cmd_snapshot(btrfs_send_command* cmd, uint8_t* data, const win_h
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_UUID, (void**)&uuid, &uuidlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"uuid");
 
-    if (uuidlen < sizeof(BTRFS_UUID))
-        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, sizeof(BTRFS_UUID));
+    if (uuidlen < BTRFS_UUID_SIZE)
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"uuid", uuidlen, BTRFS_UUID_SIZE);
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_TRANSID, (void**)&gen, &genlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"transid");
@@ -187,8 +187,8 @@ void BtrfsRecv::cmd_snapshot(btrfs_send_command* cmd, uint8_t* data, const win_h
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&parent_uuid, &paruuidlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
 
-    if (paruuidlen < sizeof(BTRFS_UUID))
-        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", paruuidlen, sizeof(BTRFS_UUID));
+    if (paruuidlen < BTRFS_UUID_SIZE)
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", paruuidlen, BTRFS_UUID_SIZE);
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&parent_transid, &partransidlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
@@ -196,12 +196,12 @@ void BtrfsRecv::cmd_snapshot(btrfs_send_command* cmd, uint8_t* data, const win_h
     if (partransidlen < sizeof(uint64_t))
         throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(uint64_t));
 
-    this->subvol_uuid = *uuid;
+    memcpy(this->subvol_uuid, uuid, BTRFS_UUID_SIZE);
     this->stransid = *gen;
 
     auto nameu = utf8_to_utf16(name);
 
-    bfs.uuid = *parent_uuid;
+    memcpy(bfs.uuid, parent_uuid, BTRFS_UUID_SIZE);
     bfs.ctransid = *parent_transid;
 
     Status = NtFsControlFile(parent, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
@@ -267,7 +267,7 @@ void BtrfsRecv::cmd_snapshot(btrfs_send_command* cmd, uint8_t* data, const win_h
 
     subvolpath += L"\\";
 
-    add_cache_entry(&this->subvol_uuid, this->stransid, subvolpath);
+    add_cache_entry(this->subvol_uuid, this->stransid, subvolpath);
 
     num_received++;
 }
@@ -785,7 +785,7 @@ void BtrfsRecv::cmd_write(btrfs_send_command* cmd, uint8_t* data) {
 
 void BtrfsRecv::cmd_clone(btrfs_send_command* cmd, uint8_t* data) {
     uint64_t *offset, *cloneoffset, *clonetransid, *clonelen;
-    BTRFS_UUID* cloneuuid;
+    uint8_t* cloneuuid;
     ULONG i, offsetlen, cloneoffsetlen, cloneuuidlen, clonetransidlen, clonelenlen;
     wstring pathu, clonepathu, clonepar;
     btrfs_find_subvol bfs;
@@ -821,8 +821,8 @@ void BtrfsRecv::cmd_clone(btrfs_send_command* cmd, uint8_t* data) {
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_UUID, (void**)&cloneuuid, &cloneuuidlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_uuid");
 
-    if (cloneuuidlen < sizeof(BTRFS_UUID))
-        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", cloneuuidlen, sizeof(BTRFS_UUID));
+    if (cloneuuidlen < BTRFS_UUID_SIZE)
+        throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_uuid", cloneuuidlen, BTRFS_UUID_SIZE);
 
     if (!find_tlv(data, cmd->length, BTRFS_SEND_TLV_CLONE_CTRANSID, (void**)&clonetransid, &clonetransidlen))
         throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"clone_ctransid");
@@ -847,7 +847,7 @@ void BtrfsRecv::cmd_clone(btrfs_send_command* cmd, uint8_t* data) {
         throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_offset", cloneoffsetlen, sizeof(uint64_t));
 
     for (i = 0; i < cache.size(); i++) {
-        if (!memcmp(cloneuuid, &cache[i].uuid, sizeof(BTRFS_UUID)) && *clonetransid == cache[i].transid) {
+        if (!memcmp(cloneuuid, &cache[i].uuid, BTRFS_UUID_SIZE) && *clonetransid == cache[i].transid) {
             clonepar = cache[i].path;
             found = true;
             break;
@@ -857,7 +857,7 @@ void BtrfsRecv::cmd_clone(btrfs_send_command* cmd, uint8_t* data) {
     if (!found) {
         WCHAR volpathw[MAX_PATH];
 
-        bfs.uuid = *cloneuuid;
+        memcpy(bfs.uuid, cloneuuid, BTRFS_UUID_SIZE);
         bfs.ctransid = *clonetransid;
 
         Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_FIND_SUBVOL, &bfs, sizeof(btrfs_find_subvol),
@@ -1331,7 +1331,7 @@ void BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const
             btrfs_received_subvol brs;
 
             brs.generation = stransid;
-            brs.uuid = subvol_uuid;
+            memcpy(brs.uuid, subvol_uuid, BTRFS_UUID_SIZE);
 
             Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
                                     nullptr, 0);

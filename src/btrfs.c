@@ -1112,7 +1112,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
 
             TRACE("FileFsObjectIdInformation\n");
 
-            RtlCopyMemory(ffoi->ObjectId, &Vcb->superblock.fsid.uuid[0], sizeof(UCHAR) * 16);
+            RtlCopyMemory(ffoi->ObjectId, Vcb->superblock.fsid, sizeof(UCHAR) * 16);
             RtlZeroMemory(ffoi->ExtendedInfo, sizeof(ffoi->ExtendedInfo));
 
             BytesCopied = sizeof(FILE_FS_OBJECTID_INFORMATION);
@@ -1171,7 +1171,7 @@ static NTSTATUS __stdcall drv_query_volume_information(_In_ PDEVICE_OBJECT Devic
 
             RtlZeroMemory(&ffvi, offsetof(FILE_FS_VOLUME_INFORMATION, VolumeLabel));
 
-            ffvi.VolumeSerialNumber = Vcb->superblock.fsid.uuid[12] << 24 | Vcb->superblock.fsid.uuid[13] << 16 | Vcb->superblock.fsid.uuid[14] << 8 | Vcb->superblock.fsid.uuid[15];
+            ffvi.VolumeSerialNumber = Vcb->superblock.fsid[12] << 24 | Vcb->superblock.fsid[13] << 16 | Vcb->superblock.fsid[14] << 8 | Vcb->superblock.fsid[15];
             ffvi.VolumeLabelLength = orig_label_len;
 
             RtlCopyMemory(data, &ffvi, min(offsetof(FILE_FS_VOLUME_INFORMATION, VolumeLabel), IrpSp->Parameters.QueryVolume.Length));
@@ -1345,10 +1345,11 @@ NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) devi
         r->treeholder.tree = t;
 
         RtlZeroMemory(&t->header, sizeof(struct btrfs_header));
-        t->header.fsid = tp.tree->header.fsid;
+        memcpy(t->header.fsid, tp.tree->header.fsid, BTRFS_UUID_SIZE);
         t->header.bytenr = 0;
         t->header.flags = HEADER_FLAG_MIXED_BACKREF | 1; // 1 == "written"? Why does the Linux driver record this?
-        t->header.chunk_tree_uuid = tp.tree->header.chunk_tree_uuid;
+        memcpy(t->header.chunk_tree_uuid, tp.tree->header.chunk_tree_uuid,
+               BTRFS_UUID_SIZE);
         t->header.generation = Vcb->superblock.generation;
         t->header.owner = id;
         t->header.nritems = 0;
@@ -2057,7 +2058,7 @@ void uninit(_In_ device_extension* Vcb) {
         }
     }
 
-    Status = registry_mark_volume_unmounted(&Vcb->superblock.fsid);
+    Status = registry_mark_volume_unmounted(Vcb->superblock.fsid);
     if (!NT_SUCCESS(Status) && Status != STATUS_TOO_LATE)
         WARN("registry_mark_volume_unmounted returned %08lx\n", Status);
 
@@ -3288,7 +3289,7 @@ static void add_device_to_list(_In_ device_extension* Vcb, _In_ device* dev) {
 }
 
 _Ret_maybenull_
-device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid) {
+device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ uint8_t* uuid) {
     volume_device_extension* vde;
     pdo_device_extension* pdode;
     LIST_ENTRY* le;
@@ -3298,10 +3299,10 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
         TRACE("device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", dev->devitem.devid,
-            dev->devitem.uuid.uuid[0], dev->devitem.uuid.uuid[1], dev->devitem.uuid.uuid[2], dev->devitem.uuid.uuid[3], dev->devitem.uuid.uuid[4], dev->devitem.uuid.uuid[5], dev->devitem.uuid.uuid[6], dev->devitem.uuid.uuid[7],
-            dev->devitem.uuid.uuid[8], dev->devitem.uuid.uuid[9], dev->devitem.uuid.uuid[10], dev->devitem.uuid.uuid[11], dev->devitem.uuid.uuid[12], dev->devitem.uuid.uuid[13], dev->devitem.uuid.uuid[14], dev->devitem.uuid.uuid[15]);
+            dev->devitem.uuid[0], dev->devitem.uuid[1], dev->devitem.uuid[2], dev->devitem.uuid[3], dev->devitem.uuid[4], dev->devitem.uuid[5], dev->devitem.uuid[6], dev->devitem.uuid[7],
+            dev->devitem.uuid[8], dev->devitem.uuid[9], dev->devitem.uuid[10], dev->devitem.uuid[11], dev->devitem.uuid[12], dev->devitem.uuid[13], dev->devitem.uuid[14], dev->devitem.uuid[15]);
 
-        if (RtlCompareMemory(&dev->devitem.uuid, uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        if (RtlCompareMemory(&dev->devitem.uuid, uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
             TRACE("returning device %I64x\n", dev->devitem.devid);
             return dev;
         }
@@ -3324,7 +3325,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
         while (le != &pdode->children) {
             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
-            if (RtlCompareMemory(uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (RtlCompareMemory(uuid, &vc->uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                 device* dev;
 
                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
@@ -3337,7 +3338,7 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
                 RtlZeroMemory(dev, sizeof(device));
                 dev->devobj = vc->devobj;
                 dev->fileobj = vc->fileobj;
-                dev->devitem.uuid = *uuid;
+                memcpy(dev->devitem.uuid, uuid, BTRFS_UUID_SIZE);
                 dev->devitem.devid = vc->devid;
                 dev->devitem.total_bytes = vc->size;
                 dev->seeding = vc->seeding;
@@ -3365,8 +3366,8 @@ device* find_device_from_uuid(_In_ device_extension* Vcb, _In_ BTRFS_UUID* uuid)
 
 end:
     WARN("could not find device with uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
-         uuid->uuid[0], uuid->uuid[1], uuid->uuid[2], uuid->uuid[3], uuid->uuid[4], uuid->uuid[5], uuid->uuid[6], uuid->uuid[7],
-         uuid->uuid[8], uuid->uuid[9], uuid->uuid[10], uuid->uuid[11], uuid->uuid[12], uuid->uuid[13], uuid->uuid[14], uuid->uuid[15]);
+         uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
+         uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
 
     return NULL;
 }
@@ -3538,7 +3539,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                 while (le != &Vcb->devices) {
                     device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-                    if (dev->devobj && RtlCompareMemory(&dev->devitem.uuid, &di->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                    if (dev->devobj && RtlCompareMemory(&dev->devitem.uuid, &di->uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                         RtlCopyMemory(&dev->devitem, tp.item->data, min(tp.item->size, sizeof(struct btrfs_dev_item)));
 
                         if (le != Vcb->devices.Flink)
@@ -3563,7 +3564,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                         while (le != &pdode->children) {
                             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
-                            if (RtlCompareMemory(&di->uuid, &vc->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                            if (RtlCompareMemory(&di->uuid, &vc->uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                                 device* dev;
 
                                 dev = ExAllocatePoolWithTag(NonPagedPool, sizeof(device), ALLOC_TAG);
@@ -3603,8 +3604,8 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                         if (!done) {
                             if (!Vcb->options.allow_degraded) {
                                 ERR("volume not found: device %I64x, uuid %02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n", tp.item->key.offset,
-                                    di->uuid.uuid[0], di->uuid.uuid[1], di->uuid.uuid[2], di->uuid.uuid[3], di->uuid.uuid[4], di->uuid.uuid[5], di->uuid.uuid[6], di->uuid.uuid[7],
-                                    di->uuid.uuid[8], di->uuid.uuid[9], di->uuid.uuid[10], di->uuid.uuid[11], di->uuid.uuid[12], di->uuid.uuid[13], di->uuid.uuid[14], di->uuid.uuid[15]);
+                                    di->uuid[0], di->uuid[1], di->uuid[2], di->uuid[3], di->uuid[4], di->uuid[5], di->uuid[6], di->uuid[7],
+                                    di->uuid[8], di->uuid[9], di->uuid[10], di->uuid[11], di->uuid[12], di->uuid[13], di->uuid[14], di->uuid[15]);
                             } else {
                                 device* dev;
 
@@ -3695,7 +3696,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                     }
 
                     for (i = 0; i < c->chunk_item->num_stripes; i++) {
-                        c->devices[i] = find_device_from_uuid(Vcb, &c->chunk_item->stripe[i].dev_uuid);
+                        c->devices[i] = find_device_from_uuid(Vcb, c->chunk_item->stripe[i].dev_uuid);
                         TRACE("device %u = %p\n", i, c->devices[i]);
 
                         if (!c->devices[i]) {
@@ -4593,7 +4594,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     }
 
     if (pdode) {
-        if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID) && boot_subvol != 0)
+        if (RtlCompareMemory(&boot_uuid, &pdode->uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE && boot_subvol != 0)
             Vcb->options.subvol_id = boot_subvol;
 
         if (pdode->children_loaded < pdode->num_children && (!Vcb->options.allow_degraded || !finished_probing || degraded_wait)) {
@@ -4619,8 +4620,10 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_METADATA_UUID))
-        Vcb->superblock.metadata_uuid = Vcb->superblock.fsid;
+    if (!(Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_METADATA_UUID)) {
+        memcpy(Vcb->superblock.metadata_uuid, Vcb->superblock.fsid,
+               BTRFS_UUID_SIZE);
+    }
 
     Vcb->readonly = false;
     if (Vcb->superblock.compat_ro_flags & ~COMPAT_RO_SUPPORTED) {
@@ -5021,7 +5024,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    Status = registry_mark_volume_mounted(&Vcb->superblock.fsid);
+    Status = registry_mark_volume_mounted(Vcb->superblock.fsid);
     if (!NT_SUCCESS(Status))
         WARN("registry_mark_volume_mounted returned %08lx\n", Status);
 
@@ -5183,7 +5186,7 @@ static NTSTATUS verify_device(_In_ device_extension* Vcb, _Inout_ device* dev) {
         return STATUS_WRONG_VOLUME;
     }
 
-    if (RtlCompareMemory(&sb->fsid, &Vcb->superblock.fsid, sizeof(BTRFS_UUID)) != sizeof(BTRFS_UUID)) {
+    if (RtlCompareMemory(&sb->fsid, &Vcb->superblock.fsid, BTRFS_UUID_SIZE) != BTRFS_UUID_SIZE) {
         ERR("different UUIDs\n");
         ExFreePool(sb);
         return STATUS_WRONG_VOLUME;
@@ -6197,11 +6200,11 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     s = &volname.Buffer[(sizeof(BTRFS_VOLUME_PREFIX) / sizeof(WCHAR)) - 1];
 
     for (i = 0; i < 16; i++) {
-        *s = *anp = hex_digit(pdode->uuid.uuid[i] >> 4);
+        *s = *anp = hex_digit(pdode->uuid[i] >> 4);
         s++;
         anp++;
 
-        *s = *anp = hex_digit(pdode->uuid.uuid[i] & 0xf);
+        *s = *anp = hex_digit(pdode->uuid[i] & 0xf);
         s++;
         anp++;
 
@@ -6254,7 +6257,7 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
     if (pdode->removable)
         voldev->Characteristics |= FILE_REMOVABLE_MEDIA;
 
-    if (RtlCompareMemory(&boot_uuid, &pdode->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+    if (RtlCompareMemory(&boot_uuid, &pdode->uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
         voldev->Flags |= DO_SYSTEM_BOOT_PARTITION;
         PhysicalDeviceObject->Flags |= DO_SYSTEM_BOOT_PARTITION;
     }

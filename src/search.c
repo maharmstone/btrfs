@@ -60,7 +60,7 @@ typedef struct {
 static LIST_ENTRY fve_data_list = { &fve_data_list, &fve_data_list };
 KSPIN_LOCK fve_data_lock;
 
-static bool fs_ignored(BTRFS_UUID* uuid) {
+static bool fs_ignored(uint8_t* uuid) {
     UNICODE_STRING path, ignoreus;
     NTSTATUS Status;
     OBJECT_ATTRIBUTES oa;
@@ -85,8 +85,8 @@ static bool fs_ignored(BTRFS_UUID* uuid) {
     i++;
 
     for (j = 0; j < 16; j++) {
-        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
-        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        path.Buffer[i] = hex_digit((uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid[j] & 0xF);
 
         i += 2;
 
@@ -383,7 +383,7 @@ static bool test_vol(PDEVICE_OBJECT DeviceObject, PFILE_OBJECT FileObject,
                 ExFreePool(sb2);
             }
 
-            if (!fs_ignored(&sb->fsid)) {
+            if (!fs_ignored(sb->fsid)) {
                 DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
                 add_volume_device(sb, devpath, length, disk_num, part_num);
             }

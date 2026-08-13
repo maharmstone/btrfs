@@ -93,7 +93,7 @@ public:
     btrfs_device* devices;
     bool readonly;
     BtrfsBalance* balance;
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
     bool uuid_set;
 
 private:

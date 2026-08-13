@@ -341,7 +341,7 @@ static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
     }
 
     mduid = Irp->AssociatedIrp.SystemBuffer;
-    mduid->UniqueIdLength = sizeof(BTRFS_UUID);
+    mduid->UniqueIdLength = BTRFS_UUID_SIZE;
 
     if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength < offsetof(MOUNTDEV_UNIQUE_ID, UniqueId[0]) + mduid->UniqueIdLength) {
         Irp->IoStatus.Information = sizeof(MOUNTDEV_UNIQUE_ID);
@@ -353,7 +353,7 @@ static NTSTATUS vol_query_unique_id(volume_device_extension* vde, PIRP Irp) {
 
     pdode = vde->pdode;
 
-    RtlCopyMemory(mduid->UniqueId, &pdode->uuid, sizeof(BTRFS_UUID));
+    RtlCopyMemory(mduid->UniqueId, &pdode->uuid, BTRFS_UUID_SIZE);
 
     Irp->IoStatus.Information = offsetof(MOUNTDEV_UNIQUE_ID, UniqueId[0]) + mduid->UniqueIdLength;
 
@@ -745,7 +745,7 @@ static NTSTATUS vol_query_stable_guid(volume_device_extension* vde, PIRP Irp) {
 
     pdode = vde->pdode;
 
-    RtlCopyMemory(&mdsg->StableGuid, &pdode->uuid, sizeof(BTRFS_UUID));
+    RtlCopyMemory(&mdsg->StableGuid, &pdode->uuid, BTRFS_UUID_SIZE);
 
     Irp->IoStatus.Information = sizeof(MOUNTDEV_STABLE_GUID);
 
@@ -874,7 +874,7 @@ NTSTATUS __stdcall pnp_removal(PVOID NotificationStructure, PVOID Context) {
     return STATUS_SUCCESS;
 }
 
-static bool allow_degraded_mount(BTRFS_UUID* uuid) {
+static bool allow_degraded_mount(uint8_t* uuid) {
     HANDLE h;
     NTSTATUS Status;
     OBJECT_ATTRIBUTES oa;
@@ -898,8 +898,8 @@ static bool allow_degraded_mount(BTRFS_UUID* uuid) {
     i++;
 
     for (j = 0; j < 16; j++) {
-        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
-        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        path.Buffer[i] = hex_digit((uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid[j] & 0xF);
 
         i += 2;
 
@@ -952,7 +952,7 @@ typedef struct {
     LIST_ENTRY list_entry;
     UNICODE_STRING name;
     NTSTATUS Status;
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
 } drive_letter_removal;
 
 static void drive_letter_callback2(pdo_device_extension* pdode, PDEVICE_OBJECT mountmgr) {
@@ -1007,7 +1007,7 @@ static void drive_letter_callback2(pdo_device_extension* pdode, PDEVICE_OBJECT m
         RtlCopyMemory(dlr->name.Buffer, L"\\??", 3 * sizeof(WCHAR));
         RtlCopyMemory(&dlr->name.Buffer[3], vc->pnp_name.Buffer, vc->pnp_name.Length);
 
-        dlr->uuid = vc->uuid;
+        memcpy(dlr->uuid, vc->uuid, BTRFS_UUID_SIZE);
 
         InsertTailList(&dlrlist, &dlr->list_entry);
 
@@ -1040,7 +1040,7 @@ static void drive_letter_callback2(pdo_device_extension* pdode, PDEVICE_OBJECT m
         while (le != &pdode->children) {
             volume_child* vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
-            if (RtlCompareMemory(&vc->uuid, &dlr->uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (RtlCompareMemory(&vc->uuid, &dlr->uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                 vc->had_drive_letter = NT_SUCCESS(dlr->Status);
                 break;
             }
@@ -1095,7 +1095,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
     while (le != &pdo_list) {
         pdo_device_extension* pdode2 = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-        if (RtlCompareMemory(&pdode2->uuid, &sb->fsid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        if (RtlCompareMemory(&pdode2->uuid, &sb->fsid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
             pdode = pdode2;
             break;
         }
@@ -1145,7 +1145,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
 
         pdode->type = VCB_TYPE_PDO;
         pdode->pdo = pdo;
-        pdode->uuid = sb->fsid;
+        memcpy(pdode->uuid, sb->fsid, BTRFS_UUID_SIZE);
 
         ExInitializeResourceLite(&pdode->child_lock);
         InitializeListHead(&pdode->children);
@@ -1166,7 +1166,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
         while (le != &pdode->children) {
             volume_child* vc2 = CONTAINING_RECORD(le, volume_child, list_entry);
 
-            if (RtlCompareMemory(&vc2->uuid, &sb->dev_item.uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (RtlCompareMemory(&vc2->uuid, &sb->dev_item.uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                 // duplicate, ignore
                 ExReleaseResourceLite(&pdode->child_lock);
                 ExReleaseResourceLite(&pdo_list_lock);
@@ -1187,7 +1187,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
         goto fail;
     }
 
-    vc->uuid = sb->dev_item.uuid;
+    memcpy(vc->uuid, sb->dev_item.uuid, BTRFS_UUID_SIZE);
     vc->devid = sb->dev_item.devid;
     vc->generation = sb->generation;
     vc->notification_entry = NULL;
@@ -1258,7 +1258,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
         while (le != &Vcb->devices) {
             device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-            if (!dev->devobj && RtlCompareMemory(&dev->devitem.uuid, &sb->dev_item.uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (!dev->devobj && RtlCompareMemory(&dev->devitem.uuid, &sb->dev_item.uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                 dev->devobj = DeviceObject;
                 dev->disk_num = disk_num;
                 dev->part_num = part_num;
@@ -1279,7 +1279,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
             pdode->vde->device->Characteristics |= FILE_REMOVABLE_MEDIA;
     }
 
-    if (pdode->num_children == pdode->children_loaded || (pdode->children_loaded == 1 && allow_degraded_mount(&sb->fsid))) {
+    if (pdode->num_children == pdode->children_loaded || (pdode->children_loaded == 1 && allow_degraded_mount(sb->fsid))) {
         if ((!new_pdo || !no_pnp) && pdode->vde) {
             Status = IoSetDeviceInterfaceState(&pdode->vde->bus_name, true);
             if (!NT_SUCCESS(Status))
@@ -1300,7 +1300,7 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
         drive_letter_callback(pdode);
 
     if (new_pdo) {
-        if (RtlCompareMemory(&sb->fsid, &boot_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
+        if (RtlCompareMemory(&sb->fsid, &boot_uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE)
             boot_add_device(pdo);
         else if (no_pnp)
             AddDevice(drvobj, pdo);

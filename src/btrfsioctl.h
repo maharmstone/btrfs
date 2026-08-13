@@ -243,7 +243,7 @@ typedef struct {
 
 typedef struct {
     uint64_t generation;
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
 } btrfs_received_subvol;
 
 typedef struct {
@@ -260,7 +260,7 @@ typedef struct {
 } btrfs_create_subvol;
 
 typedef struct {
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
     uint64_t ctransid;
 } btrfs_find_subvol;
 

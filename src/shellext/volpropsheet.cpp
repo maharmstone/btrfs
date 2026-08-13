@@ -114,7 +114,7 @@ HRESULT __stdcall BtrfsVolPropSheet::Initialize(PCIDLIST_ABSOLUTE pidlFolder, ID
             if (!NT_SUCCESS(Status))
                 return E_FAIL;
 
-            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_UUID, nullptr, 0, &uuid, sizeof(BTRFS_UUID));
+            Status = NtFsControlFile(h, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_GET_UUID, nullptr, 0, &uuid, BTRFS_UUID_SIZE);
             uuid_set = NT_SUCCESS(Status);
 
             ignore = false;
@@ -1290,9 +1290,9 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
 
                     GetDlgItemTextW(hwndDlg, IDC_UUID, s, sizeof(s) / sizeof(WCHAR));
 
-                    wstring_sprintf(t, s, bps->uuid.uuid[0], bps->uuid.uuid[1], bps->uuid.uuid[2], bps->uuid.uuid[3], bps->uuid.uuid[4], bps->uuid.uuid[5],
-                                    bps->uuid.uuid[6], bps->uuid.uuid[7], bps->uuid.uuid[8], bps->uuid.uuid[9], bps->uuid.uuid[10], bps->uuid.uuid[11],
-                                    bps->uuid.uuid[12], bps->uuid.uuid[13], bps->uuid.uuid[14], bps->uuid.uuid[15]);
+                    wstring_sprintf(t, s, bps->uuid[0], bps->uuid[1], bps->uuid[2], bps->uuid[3], bps->uuid[4], bps->uuid[5],
+                                    bps->uuid[6], bps->uuid[7], bps->uuid[8], bps->uuid[9], bps->uuid[10], bps->uuid[11],
+                                    bps->uuid[12], bps->uuid[13], bps->uuid[14], bps->uuid[15]);
 
                     SetDlgItemTextW(hwndDlg, IDC_UUID, t.c_str());
                 } else

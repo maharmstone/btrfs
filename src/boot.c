@@ -26,7 +26,7 @@ extern LIST_ENTRY pdo_list;
 extern ERESOURCE boot_lock;
 extern PDRIVER_OBJECT drvobj;
 
-BTRFS_UUID boot_uuid; // initialized to 0
+uint8_t boot_uuid[BTRFS_UUID_SIZE]; // initialized to 0
 uint64_t boot_subvol = 0;
 
 // Not in any headers? Windbg knows about it though.
@@ -123,11 +123,11 @@ static bool get_system_root() {
 
         for (unsigned int i = 0; i < 16; i++) {
             if (*s >= '0' && *s <= '9')
-                boot_uuid.uuid[i] = (*s - '0') << 4;
+                boot_uuid[i] = (*s - '0') << 4;
             else if (*s >= 'a' && *s <= 'f')
-                boot_uuid.uuid[i] = (*s - 'a' + 0xa) << 4;
+                boot_uuid[i] = (*s - 'a' + 0xa) << 4;
             else if (*s >= 'A' && *s <= 'F')
-                boot_uuid.uuid[i] = (*s - 'A' + 0xa) << 4;
+                boot_uuid[i] = (*s - 'A' + 0xa) << 4;
             else {
                 ExFreePool(target.Buffer);
                 return false;
@@ -136,11 +136,11 @@ static bool get_system_root() {
             s++;
 
             if (*s >= '0' && *s <= '9')
-                boot_uuid.uuid[i] |= *s - '0';
+                boot_uuid[i] |= *s - '0';
             else if (*s >= 'a' && *s <= 'f')
-                boot_uuid.uuid[i] |= *s - 'a' + 0xa;
+                boot_uuid[i] |= *s - 'a' + 0xa;
             else if (*s >= 'A' && *s <= 'F')
-                boot_uuid.uuid[i] |= *s - 'A' + 0xa;
+                boot_uuid[i] |= *s - 'A' + 0xa;
             else {
                 ExFreePool(target.Buffer);
                 return false;
@@ -173,7 +173,7 @@ static bool get_system_root() {
     return false;
 }
 
-static void mountmgr_notification(BTRFS_UUID* uuid) {
+static void mountmgr_notification(uint8_t* uuid) {
     UNICODE_STRING mmdevpath;
     NTSTATUS Status;
     PFILE_OBJECT FileObject;
@@ -204,8 +204,8 @@ static void mountmgr_notification(BTRFS_UUID* uuid) {
     w = &mmtn->DeviceName[(sizeof(BTRFS_VOLUME_PREFIX) / sizeof(WCHAR)) - 1];
 
     for (unsigned int i = 0; i < 16; i++) {
-        *w = hex_digit(uuid->uuid[i] >> 4); w++;
-        *w = hex_digit(uuid->uuid[i] & 0xf); w++;
+        *w = hex_digit(uuid[i] >> 4); w++;
+        *w = hex_digit(uuid[i] & 0xf); w++;
 
         if (i == 3 || i == 5 || i == 7 || i == 9) {
             *w = L'-';
@@ -326,7 +326,7 @@ void boot_add_device(DEVICE_OBJECT* pdo) {
             ((DEVOBJ_EXTENSION2*)pdode->vde->device->DeviceObjectExtension)->ExtensionFlags &= ~DOE_START_PENDING;
     }
 
-    mountmgr_notification(&pdode->uuid);
+    mountmgr_notification(pdode->uuid);
 }
 
 void check_system_root() {
@@ -348,7 +348,7 @@ void check_system_root() {
     while (le != &pdo_list) {
         pdo_device_extension* pdode = CONTAINING_RECORD(le, pdo_device_extension, list_entry);
 
-        if (RtlCompareMemory(&pdode->uuid, &boot_uuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        if (RtlCompareMemory(&pdode->uuid, &boot_uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
             if (!pdode->vde)
                 pdo_to_add = pdode->pdo;
             else if (pdode->vde->device && !(pdode->vde->device->Flags & DO_SYSTEM_BOOT_PARTITION)) { // AddDevice has beaten us to it

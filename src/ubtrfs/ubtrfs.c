@@ -340,7 +340,8 @@ static void add_item(btrfs_root* r, uint64_t objectid, uint8_t type, uint64_t of
     InsertTailList(&r->items, &item->list_entry);
 }
 
-static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid) {
+static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev,
+                                  btrfs_root* dev_root, uint8_t* chunkuuid) {
     uint64_t off;
     struct btrfs_dev_extent de;
 
@@ -353,14 +354,16 @@ static uint64_t find_chunk_offset(uint64_t size, uint64_t offset, btrfs_dev* dev
     de.chunk_objectid = 0x100;
     de.chunk_offset = offset;
     de.length = size;
-    de.chunk_tree_uuid = *chunkuuid;
+    memcpy(de.chunk_tree_uuid, chunkuuid, BTRFS_UUID_SIZE);
 
     add_item(dev_root, dev->dev_item.devid, TYPE_DEV_EXTENT, off, &de, sizeof(struct btrfs_dev_extent));
 
     return off;
 }
 
-static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* chunk_root, btrfs_dev* dev, btrfs_root* dev_root, BTRFS_UUID* chunkuuid, uint32_t sector_size) {
+static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* chunk_root,
+                              btrfs_dev* dev, btrfs_root* dev_root, uint8_t* chunkuuid,
+                              uint32_t sector_size) {
     uint64_t off, size;
     uint16_t stripes, i;
     btrfs_chunk* c;
@@ -415,7 +418,9 @@ static btrfs_chunk* add_chunk(LIST_ENTRY* chunks, uint64_t flags, btrfs_root* ch
     for (i = 0; i < stripes; i++) {
         c->chunk_item->stripe[i].devid = dev->dev_item.devid;
         c->chunk_item->stripe[i].offset = find_chunk_offset(size, c->offset, dev, dev_root, chunkuuid);
-        c->chunk_item->stripe[i].dev_uuid = dev->dev_item.uuid;
+
+        memcpy(c->chunk_item->stripe[i].dev_uuid, dev->dev_item.uuid,
+               BTRFS_UUID_SIZE);
     }
 
     add_item(chunk_root, 0x100, TYPE_CHUNK_ITEM, c->offset, c->chunk_item, offsetof(struct btrfs_chunk, stripe) + (stripes * sizeof(struct btrfs_stripe)));
@@ -603,7 +608,8 @@ static void calc_tree_checksum(struct btrfs_header* th, uint32_t node_size) {
     }
 }
 
-static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTRFS_UUID* fsuuid, BTRFS_UUID* chunkuuid) {
+static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size,
+                            uint8_t* fsuuid, uint8_t* chunkuuid) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     uint8_t* tree;
@@ -619,9 +625,9 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
         memset(tree, 0, node_size);
 
         r->header.nritems = 0;
-        r->header.fsid = *fsuuid;
+        memcpy(r->header.fsid, fsuuid, BTRFS_UUID_SIZE);
         r->header.flags = HEADER_FLAG_MIXED_BACKREF | HEADER_FLAG_WRITTEN;
-        r->header.chunk_tree_uuid = *chunkuuid;
+        memcpy(r->header.chunk_tree_uuid, chunkuuid, BTRFS_UUID_SIZE);
         r->header.generation = 1;
         r->header.owner = r->id;
 
@@ -668,18 +674,19 @@ static NTSTATUS write_roots(HANDLE h, LIST_ENTRY* roots, uint32_t node_size, BTR
     return STATUS_SUCCESS;
 }
 
-static void get_uuid(BTRFS_UUID* uuid) {
+static void get_uuid(uint8_t* uuid) {
     uint8_t i;
 
-    for (i = 0; i < 16; i+=2) {
+    for (i = 0; i < BTRFS_UUID_SIZE; i += 2) {
         ULONG r = rand();
 
-        uuid->uuid[i] = (r & 0xff00) >> 8;
-        uuid->uuid[i+1] = r & 0xff;
+        uuid[i] = (r & 0xff00) >> 8;
+        uuid[i + 1] = r & 0xff;
     }
 }
 
-static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* fsuuid, uint32_t sector_size) {
+static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, uint8_t* fsuuid,
+                        uint32_t sector_size) {
     dev->dev_item.devid = id;
     dev->dev_item.total_bytes = size;
     dev->dev_item.bytes_used = 0;
@@ -692,8 +699,8 @@ static void init_device(btrfs_dev* dev, uint64_t id, uint64_t size, BTRFS_UUID* 
     dev->dev_item.dev_group = 0;
     dev->dev_item.seek_speed = 0;
     dev->dev_item.bandwidth = 0;
-    get_uuid(&dev->dev_item.uuid);
-    dev->dev_item.fsid = *fsuuid;
+    get_uuid(dev->dev_item.uuid);
+    memcpy(dev->dev_item.fsid, fsuuid, BTRFS_UUID_SIZE);
 
     dev->last_alloc = 0x100000; // skip first megabyte
 }
@@ -719,7 +726,7 @@ static void calc_superblock_checksum(struct btrfs_super_block* sb) {
 }
 
 static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_root, btrfs_root* root_root, btrfs_root* extent_root,
-                                  btrfs_chunk* sys_chunk, uint32_t node_size, BTRFS_UUID* fsuuid, uint32_t sector_size, PUNICODE_STRING label,
+                                  btrfs_chunk* sys_chunk, uint32_t node_size, uint8_t* fsuuid, uint32_t sector_size, PUNICODE_STRING label,
                                   uint64_t incompat_flags, uint64_t compat_ro_flags) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
@@ -751,7 +758,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
     sb = malloc(sblen);
     memset(sb, 0, sblen);
 
-    sb->fsid = *fsuuid;
+    memcpy(sb->fsid, fsuuid, BTRFS_UUID_SIZE);
     sb->flags = 1;
     sb->magic = BTRFS_MAGIC;
     sb->generation = 1;
@@ -1042,13 +1049,13 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
                *block_group_root, *free_space_root;
     btrfs_chunk *sys_chunk, *metadata_chunk;
     btrfs_dev dev;
-    BTRFS_UUID fsuuid, chunkuuid;
+    uint8_t fsuuid[BTRFS_UUID_SIZE], chunkuuid[BTRFS_UUID_SIZE];
     bool ssd;
     uint64_t metadata_flags;
 
     srand((unsigned int)time(0));
-    get_uuid(&fsuuid);
-    get_uuid(&chunkuuid);
+    get_uuid(fsuuid);
+    get_uuid(chunkuuid);
 
     InitializeListHead(&roots);
     InitializeListHead(&chunks);
@@ -1071,11 +1078,12 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     else
         block_group_root = NULL;
 
-    init_device(&dev, 1, size, &fsuuid, sector_size);
+    init_device(&dev, 1, size, fsuuid, sector_size);
 
     ssd = is_ssd(h);
 
-    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | (ssd ? 0 : BLOCK_FLAG_DUPLICATE), chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    sys_chunk = add_chunk(&chunks, BLOCK_FLAG_SYSTEM | (ssd ? 0 : BLOCK_FLAG_DUPLICATE),
+                          chunk_root, &dev, dev_root, chunkuuid, sector_size);
     if (!sys_chunk)
         return STATUS_INTERNAL_ERROR;
 
@@ -1087,7 +1095,8 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     if (incompat_flags & BTRFS_INCOMPAT_FLAGS_MIXED_GROUPS)
         metadata_flags |= BLOCK_FLAG_DATA;
 
-    metadata_chunk = add_chunk(&chunks, metadata_flags, chunk_root, &dev, dev_root, &chunkuuid, sector_size);
+    metadata_chunk = add_chunk(&chunks, metadata_flags, chunk_root, &dev, dev_root,
+                               chunkuuid, sector_size);
     if (!metadata_chunk)
         return STATUS_INTERNAL_ERROR;
 
@@ -1105,7 +1114,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     if (free_space_root)
         populate_free_space_root(&chunks, free_space_root);
 
-    Status = write_roots(h, &roots, node_size, &fsuuid, &chunkuuid);
+    Status = write_roots(h, &roots, node_size, fsuuid, chunkuuid);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -1113,7 +1122,8 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     if (!NT_SUCCESS(Status))
         return Status;
 
-    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk, node_size, &fsuuid, sector_size, label,
+    Status = write_superblocks(h, &dev, chunk_root, root_root, extent_root, sys_chunk,
+                               node_size, fsuuid, sector_size, label,
                                incompat_flags, compat_ro_flags);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -1124,7 +1134,7 @@ static NTSTATUS write_btrfs(HANDLE h, uint64_t size, PUNICODE_STRING label, uint
     return STATUS_SUCCESS;
 }
 
-static bool look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
+static bool look_for_device(btrfs_filesystem* bfs, uint8_t* devuuid) {
     uint32_t i;
     btrfs_filesystem_device* dev;
 
@@ -1134,7 +1144,7 @@ static bool look_for_device(btrfs_filesystem* bfs, BTRFS_UUID* devuuid) {
         else
             dev = (btrfs_filesystem_device*)((uint8_t*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
 
-        if (RtlCompareMemory(&dev->uuid, devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID))
+        if (RtlCompareMemory(&dev->uuid, devuuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE)
             return true;
     }
 
@@ -1182,7 +1192,7 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     ULONG sblen;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
-    BTRFS_UUID fsuuid, devuuid;
+    uint8_t fsuuid[BTRFS_UUID_SIZE], devuuid[BTRFS_UUID_SIZE];
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES atts;
     HANDLE h2;
@@ -1216,8 +1226,8 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
         return false;
     }
 
-    fsuuid = sb->fsid;
-    devuuid = sb->dev_item.uuid;
+    memcpy(fsuuid, sb->fsid, BTRFS_UUID_SIZE);
+    memcpy(devuuid, sb->dev_item.uuid, BTRFS_UUID_SIZE);
 
     free(sb);
 
@@ -1248,11 +1258,11 @@ static bool is_mounted_multi_device(HANDLE h, uint32_t sector_size) {
     if (bfs->num_devices != 0) {
         bfs2 = bfs;
         while (true) {
-            if (RtlCompareMemory(&bfs2->uuid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+            if (RtlCompareMemory(&bfs2->uuid, &fsuuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                 if (bfs2->num_devices == 1)
                     ret = false;
                 else
-                    ret = look_for_device(bfs2, &devuuid);
+                    ret = look_for_device(bfs2, devuuid);
 
                 goto end;
             }

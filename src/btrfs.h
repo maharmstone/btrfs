@@ -141,11 +141,9 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 #define CSUM_TYPE_SHA256        2
 #define CSUM_TYPE_BLAKE2        3
 
-#pragma pack(push, 1)
+#define BTRFS_UUID_SIZE 16
 
-typedef struct {
-    uint8_t uuid[16];
-} BTRFS_UUID;
+#pragma pack(push, 1)
 
 struct btrfs_key {
     uint64_t objectid;
@@ -159,10 +157,10 @@ struct btrfs_key {
 
 struct btrfs_header {
     uint8_t csum[32];
-    BTRFS_UUID fsid;
+    uint8_t fsid[BTRFS_UUID_SIZE];
     uint64_t bytenr;
     uint64_t flags;
-    BTRFS_UUID chunk_tree_uuid;
+    uint8_t chunk_tree_uuid[BTRFS_UUID_SIZE];
     uint64_t generation;
     uint64_t owner;
     uint32_t nritems;
@@ -194,8 +192,8 @@ struct btrfs_dev_item {
     uint32_t dev_group;
     uint8_t seek_speed;
     uint8_t bandwidth;
-    BTRFS_UUID uuid;
-    BTRFS_UUID fsid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
+    uint8_t fsid[BTRFS_UUID_SIZE];
 };
 
 #define SYS_CHUNK_ARRAY_SIZE 0x800
@@ -229,7 +227,7 @@ struct btrfs_root_backup {
 
 struct btrfs_super_block {
     uint8_t csum[32];
-    BTRFS_UUID fsid;
+    uint8_t fsid[BTRFS_UUID_SIZE];
     uint64_t bytenr;
     uint64_t flags;
     uint64_t magic;
@@ -259,7 +257,7 @@ struct btrfs_super_block {
     char label[MAX_LABEL_SIZE];
     uint64_t cache_generation;
     uint64_t uuid_tree_generation;
-    BTRFS_UUID metadata_uuid;
+    uint8_t metadata_uuid[BTRFS_UUID_SIZE];
     uint64_t nr_global_roots;
     uint64_t remap_root;
     uint64_t remap_root_generation;
@@ -329,9 +327,9 @@ struct btrfs_root_item {
     uint8_t drop_level;
     uint8_t level;
     uint64_t generation_v2;
-    BTRFS_UUID uuid;
-    BTRFS_UUID parent_uuid;
-    BTRFS_UUID received_uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
+    uint8_t parent_uuid[BTRFS_UUID_SIZE];
+    uint8_t received_uuid[BTRFS_UUID_SIZE];
     uint64_t ctransid;
     uint64_t otransid;
     uint64_t stransid;
@@ -346,7 +344,7 @@ struct btrfs_root_item {
 struct btrfs_stripe {
     uint64_t devid;
     uint64_t offset;
-    BTRFS_UUID dev_uuid;
+    uint8_t dev_uuid[BTRFS_UUID_SIZE];
 };
 
 struct btrfs_chunk {
@@ -462,7 +460,7 @@ struct btrfs_dev_extent {
     uint64_t chunk_objectid;
     uint64_t chunk_offset;
     uint64_t length;
-    BTRFS_UUID chunk_tree_uuid;
+    uint8_t chunk_tree_uuid[BTRFS_UUID_SIZE];
 };
 
 #define BALANCE_FLAGS_DATA          0x1

@@ -4961,7 +4961,8 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
 }
 
 static NTSTATUS fill_in_file_id_information(FILE_ID_INFORMATION* fii, fcb* fcb, LONG* length) {
-    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.fsid.uuid[8], sizeof(uint64_t));
+    RtlCopyMemory(&fii->VolumeSerialNumber, &fcb->Vcb->superblock.fsid[8],
+                  sizeof(uint64_t));
     RtlCopyMemory(&fii->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
     RtlCopyMemory(&fii->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
 

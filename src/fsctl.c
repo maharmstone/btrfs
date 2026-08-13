@@ -68,7 +68,7 @@ static NTSTATUS get_file_ids(PFILE_OBJECT FileObject, void* data, ULONG length) 
     return STATUS_SUCCESS;
 }
 
-static void get_uuid(BTRFS_UUID* uuid) {
+static void get_uuid(uint8_t* uuid) {
     LARGE_INTEGER seed;
     uint8_t i;
 
@@ -77,8 +77,8 @@ static void get_uuid(BTRFS_UUID* uuid) {
     for (i = 0; i < 16; i+=2) {
         ULONG rand = RtlRandomEx(&seed.LowPart);
 
-        uuid->uuid[i] = (rand & 0xff00) >> 8;
-        uuid->uuid[i+1] = rand & 0xff;
+        uuid[i] = (rand & 0xff00) >> 8;
+        uuid[i + 1] = rand & 0xff;
     }
 }
 
@@ -138,7 +138,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
     th->bytenr = t.new_address;
     th->owner = subvol->id;
     th->generation = Vcb->superblock.generation;
-    th->fsid = Vcb->superblock.metadata_uuid;
+    memcpy(th->fsid, Vcb->superblock.metadata_uuid, BTRFS_UUID_SIZE);
 
     if (th->level == 0) {
         uint32_t i;
@@ -338,11 +338,12 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     tp.tree = NULL;
 
     do {
-        get_uuid(&r->root_item.uuid);
+        get_uuid(r->root_item.uuid);
 
-        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid, sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid[0], sizeof(uint64_t));
         searchkey.type = TYPE_SUBVOL_UUID;
-        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid[sizeof(uint64_t)],
+                      sizeof(uint64_t));
 
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
     } while (NT_SUCCESS(Status) && !keycmp(searchkey, tp.item->key));
@@ -388,7 +389,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     r->root_item.last_snapshot = Vcb->superblock.generation;
     r->root_item.level = subvol->root_item.level;
     r->root_item.generation_v2 = Vcb->superblock.generation;
-    r->root_item.parent_uuid = subvol->root_item.uuid;
+    memcpy(r->root_item.parent_uuid, subvol->root_item.uuid, BTRFS_UUID_SIZE);
     r->root_item.ctransid = subvol->root_item.ctransid;
     r->root_item.otransid = Vcb->superblock.generation;
     r->root_item.ctime = subvol->root_item.ctime;
@@ -905,11 +906,12 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     tp.tree = NULL;
 
     do {
-        get_uuid(&r->root_item.uuid);
+        get_uuid(r->root_item.uuid);
 
-        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid, sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid[0], sizeof(uint64_t));
         searchkey.type = TYPE_SUBVOL_UUID;
-        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid[sizeof(uint64_t)],
+                      sizeof(uint64_t));
 
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
     } while (NT_SUCCESS(Status) && !keycmp(searchkey, tp.item->key));
@@ -2623,7 +2625,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
     NTSTATUS Status;
     ULONG to_read;
     struct btrfs_super_block* sb;
-    BTRFS_UUID fsuuid, devuuid;
+    uint8_t fsuuid[BTRFS_UUID_SIZE], devuuid[BTRFS_UUID_SIZE];
     LIST_ENTRY* le;
 
     to_read = devobj->SectorSize == 0 ? sizeof(struct btrfs_super_block) : (ULONG)sector_align(sizeof(struct btrfs_super_block), devobj->SectorSize);
@@ -2653,8 +2655,8 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
         return STATUS_SUCCESS;
     }
 
-    fsuuid = sb->fsid;
-    devuuid = sb->dev_item.uuid;
+    memcpy(fsuuid, sb->fsid, BTRFS_UUID_SIZE);
+    memcpy(devuuid, sb->dev_item.uuid, BTRFS_UUID_SIZE);
 
     ExFreePool(sb);
 
@@ -2665,7 +2667,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
     while (le != &VcbList) {
         device_extension* Vcb = CONTAINING_RECORD(le, device_extension, list_entry);
 
-        if (RtlCompareMemory(&Vcb->superblock.fsid, &fsuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+        if (RtlCompareMemory(&Vcb->superblock.fsid, &fsuuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
             LIST_ENTRY* le2;
 
             ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
@@ -2675,7 +2677,7 @@ static NTSTATUS is_device_part_of_mounted_btrfs_raid(PDEVICE_OBJECT devobj, PFIL
                 while (le2 != &Vcb->devices) {
                     device* dev = CONTAINING_RECORD(le2, device, list_entry);
 
-                    if (RtlCompareMemory(&dev->devitem.uuid, &devuuid, sizeof(BTRFS_UUID)) == sizeof(BTRFS_UUID)) {
+                    if (RtlCompareMemory(&dev->devitem.uuid, &devuuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                         ExReleaseResourceLite(&Vcb->tree_lock);
                         ExReleaseResourceLite(&global_loading_lock);
                         return STATUS_DEVICE_NOT_READY;
@@ -2931,8 +2933,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     dev->devitem.dev_group = 0;
     dev->devitem.seek_speed = 0;
     dev->devitem.bandwidth = 0;
-    get_uuid(&dev->devitem.uuid);
-    dev->devitem.fsid = Vcb->superblock.fsid;
+    get_uuid(dev->devitem.uuid);
+    memcpy(dev->devitem.fsid, Vcb->superblock.fsid, BTRFS_UUID_SIZE);
 
     di = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dev_item), ALLOC_TAG);
     if (!di) {
@@ -3018,7 +3020,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
         goto end;
     }
 
-    vc->uuid = dev->devitem.uuid;
+    memcpy(vc->uuid, dev->devitem.uuid, BTRFS_UUID_SIZE);
     vc->devid = dev_id;
     vc->generation = Vcb->superblock.generation;
     vc->devobj = DeviceObject;
@@ -3140,10 +3142,10 @@ static NTSTATUS allow_extended_dasd_io(device_extension* Vcb, PFILE_OBJECT FileO
 }
 
 static NTSTATUS query_uuid(device_extension* Vcb, void* data, ULONG length) {
-    if (length < sizeof(BTRFS_UUID))
+    if (length < BTRFS_UUID_SIZE)
         return STATUS_BUFFER_OVERFLOW;
 
-    RtlCopyMemory(data, &Vcb->superblock.fsid, sizeof(BTRFS_UUID));
+    RtlCopyMemory(data, &Vcb->superblock.fsid, BTRFS_UUID_SIZE);
 
     return STATUS_SUCCESS;
 }
@@ -4128,7 +4130,7 @@ static NTSTATUS recvd_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, voi
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
 
-    RtlCopyMemory(&fcb->subvol->root_item.received_uuid, &brs->uuid, sizeof(BTRFS_UUID));
+    RtlCopyMemory(&fcb->subvol->root_item.received_uuid, &brs->uuid, BTRFS_UUID_SIZE);
     fcb->subvol->root_item.stransid = brs->generation;
     fcb->subvol->root_item.rtransid = Vcb->superblock.generation;
     fcb->subvol->root_item.rtime = now;
@@ -4585,9 +4587,9 @@ static NTSTATUS find_subvol(device_extension* Vcb, void* in, ULONG inlen, void* 
         goto end;
     }
 
-    RtlCopyMemory(&searchkey.objectid, &bfs->uuid, sizeof(uint64_t));
+    RtlCopyMemory(&searchkey.objectid, &bfs->uuid[0], sizeof(uint64_t));
     searchkey.type = TYPE_SUBVOL_UUID;
-    RtlCopyMemory(&searchkey.offset, &bfs->uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
+    RtlCopyMemory(&searchkey.offset, &bfs->uuid[sizeof(uint64_t)], sizeof(uint64_t));
 
     Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
 

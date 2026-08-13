@@ -599,7 +599,8 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
         else
             c->chunk_item->stripe[i].offset = stripes[i].dh->address;
 
-        c->chunk_item->stripe[i].dev_uuid = stripes[i].device->devitem.uuid;
+        memcpy(c->chunk_item->stripe[i].dev_uuid, stripes[i].device->devitem.uuid,
+               BTRFS_UUID_SIZE);
 
         c->devices[i] = stripes[i].device;
     }

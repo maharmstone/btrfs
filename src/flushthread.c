@@ -1988,7 +1988,7 @@ static NTSTATUS write_trees(device_extension* Vcb, PIRP Irp) {
             t->header.generation = Vcb->superblock.generation;
             t->header.owner = t->root->id;
             t->header.flags |= HEADER_FLAG_MIXED_BACKREF;
-            t->header.fsid = Vcb->superblock.metadata_uuid;
+            memcpy(t->header.fsid, Vcb->superblock.metadata_uuid, BTRFS_UUID_SIZE);
             t->has_address = true;
 
             data = ExAllocatePoolWithTag(NonPagedPool, Vcb->superblock.nodesize, ALLOC_TAG);
@@ -3958,9 +3958,10 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
 
     // remove entries in uuid root (tree 9)
     if (Vcb->uuid_root) {
-        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid.uuid[0], sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.objectid, &r->root_item.uuid[0], sizeof(uint64_t));
         searchkey.type = TYPE_SUBVOL_UUID;
-        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.offset, &r->root_item.uuid[sizeof(uint64_t)],
+                      sizeof(uint64_t));
 
         if (searchkey.objectid != 0 || searchkey.offset != 0) {
             Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
@@ -3979,9 +3980,11 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
         }
 
         if (r->root_item.rtransid > 0) {
-            RtlCopyMemory(&searchkey.objectid, &r->root_item.received_uuid.uuid[0], sizeof(uint64_t));
+            RtlCopyMemory(&searchkey.objectid, &r->root_item.received_uuid[0],
+                          sizeof(uint64_t));
             searchkey.type = TYPE_SUBVOL_REC_UUID;
-            RtlCopyMemory(&searchkey.offset, &r->root_item.received_uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
+            RtlCopyMemory(&searchkey.offset, &r->root_item.received_uuid[sizeof(uint64_t)],
+                          sizeof(uint64_t));
 
             Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
             if (!NT_SUCCESS(Status))
@@ -4281,7 +4284,8 @@ static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         de->chunk_objectid = 0x100;
         de->chunk_offset = c->offset;
         de->length = c->chunk_item->length / factor;
-        de->chunk_tree_uuid = Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid;
+        memcpy(de->chunk_tree_uuid, Vcb->chunk_root->treeholder.tree->header.chunk_tree_uuid,
+               BTRFS_UUID_SIZE);
 
         Status = insert_tree_item(Vcb, Vcb->dev_root, c->devices[i]->devitem.devid, TYPE_DEV_EXTENT, c->chunk_item->stripe[i].offset, de, sizeof(struct btrfs_dev_extent), NULL, Irp);
         if (!NT_SUCCESS(Status)) {
@@ -7083,9 +7087,10 @@ static NTSTATUS flush_subvol(device_extension* Vcb, root* r, PIRP Irp) {
             Vcb->uuid_root = uuid_root;
         }
 
-        RtlCopyMemory(&searchkey.objectid, &r->root_item.received_uuid, sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.objectid, r->root_item.received_uuid, sizeof(uint64_t));
         searchkey.type = TYPE_SUBVOL_REC_UUID;
-        RtlCopyMemory(&searchkey.offset, &r->root_item.received_uuid.uuid[sizeof(uint64_t)], sizeof(uint64_t));
+        RtlCopyMemory(&searchkey.offset, &r->root_item.received_uuid[sizeof(uint64_t)],
+                      sizeof(uint64_t));
 
         Status = find_item(Vcb, Vcb->uuid_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {

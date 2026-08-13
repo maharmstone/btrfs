@@ -23,7 +23,7 @@
 extern LONG objs_loaded;
 
 typedef struct {
-    BTRFS_UUID uuid;
+    uint8_t uuid[BTRFS_UUID_SIZE];
     uint64_t transid;
     wstring path;
 } subvol_cache;
@@ -66,7 +66,7 @@ private:
     void cmd_chmod(btrfs_send_command* cmd, uint8_t* data);
     void cmd_chown(btrfs_send_command* cmd, uint8_t* data);
     void cmd_utimes(btrfs_send_command* cmd, uint8_t* data);
-    void add_cache_entry(BTRFS_UUID* uuid, uint64_t transid, const wstring& path);
+    void add_cache_entry(uint8_t* uuid, uint64_t transid, const wstring& path);
     bool find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
     void do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent);
 
@@ -76,7 +76,7 @@ private:
     DWORD lastwriteatt;
     ULONG num_received;
     uint64_t stransid;
-    BTRFS_UUID subvol_uuid;
+    uint8_t subvol_uuid[BTRFS_UUID_SIZE];
     bool running, cancelling;
     vector<subvol_cache> cache;
 };

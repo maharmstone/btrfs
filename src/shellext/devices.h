@@ -31,8 +31,8 @@ typedef struct {
     ULONG part_num;
     uint64_t size;
     bool has_parts;
-    BTRFS_UUID fs_uuid;
-    BTRFS_UUID dev_uuid;
+    uint8_t fs_uuid[BTRFS_UUID_SIZE];
+    uint8_t dev_uuid[BTRFS_UUID_SIZE];
     bool ignore;
     bool multi_device;
     bool is_disk;

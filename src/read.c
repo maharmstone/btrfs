@@ -1524,7 +1524,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                     }
 
                     for (i = 0; i < ci->num_stripes; i++) {
-                        devices[i] = find_device_from_uuid(Vcb, &chunk_item->stripe[i].dev_uuid);
+                        devices[i] = find_device_from_uuid(Vcb, chunk_item->stripe[i].dev_uuid);
                     }
 
                     break;

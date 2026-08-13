@@ -34,7 +34,7 @@ WORK_QUEUE_ITEM wqi;
 static const WCHAR option_mounted[] = L"Mounted";
 
 NTSTATUS registry_load_volume_options(device_extension* Vcb) {
-    BTRFS_UUID* uuid = &Vcb->superblock.fsid;
+    uint8_t* uuid = Vcb->superblock.fsid;
     mount_options* options = &Vcb->options;
     UNICODE_STRING path, ignoreus, compressus, compressforceus, compresstypeus, readonlyus, zliblevelus, flushintervalus,
                    maxinlineus, subvolidus, skipbalanceus, nobarrierus, notrimus, clearcacheus, allowdegradedus, zstdlevelus,
@@ -77,8 +77,8 @@ NTSTATUS registry_load_volume_options(device_extension* Vcb) {
     i++;
 
     for (j = 0; j < 16; j++) {
-        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
-        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        path.Buffer[i] = hex_digit((uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid[j] & 0xF);
 
         i += 2;
 
@@ -239,7 +239,7 @@ end:
     return Status;
 }
 
-NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
+NTSTATUS registry_mark_volume_mounted(uint8_t* uuid) {
     UNICODE_STRING path, mountedus;
     ULONG i, j;
     NTSTATUS Status;
@@ -262,8 +262,8 @@ NTSTATUS registry_mark_volume_mounted(BTRFS_UUID* uuid) {
     i++;
 
     for (j = 0; j < 16; j++) {
-        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
-        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        path.Buffer[i] = hex_digit((uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid[j] & 0xF);
 
         i += 2;
 
@@ -382,7 +382,7 @@ end:
     return Status;
 }
 
-NTSTATUS registry_mark_volume_unmounted(BTRFS_UUID* uuid) {
+NTSTATUS registry_mark_volume_unmounted(uint8_t* uuid) {
     UNICODE_STRING path;
     NTSTATUS Status;
     ULONG i, j;
@@ -402,8 +402,8 @@ NTSTATUS registry_mark_volume_unmounted(BTRFS_UUID* uuid) {
     i++;
 
     for (j = 0; j < 16; j++) {
-        path.Buffer[i] = hex_digit((uuid->uuid[j] & 0xF0) >> 4);
-        path.Buffer[i+1] = hex_digit(uuid->uuid[j] & 0xF);
+        path.Buffer[i] = hex_digit((uuid[j] & 0xF0) >> 4);
+        path.Buffer[i+1] = hex_digit(uuid[j] & 0xF);
 
         i += 2;
 
