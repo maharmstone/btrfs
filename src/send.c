@@ -2039,33 +2039,65 @@ static bool try_clone(send_context* context, send_ext* se) {
         uint8_t* ptr = (uint8_t*)&ei[1];
 
         while (len > 0) {
-            uint8_t secttype = *ptr;
-            ULONG sectlen = get_extent_data_len(secttype);
-            uint64_t sectcount = get_extent_data_refcount(secttype, ptr + sizeof(uint8_t));
+            struct btrfs_extent_inline_ref* eir = (struct btrfs_extent_inline_ref*)ptr;
 
-            len--;
+            if (len < sizeof(struct btrfs_extent_inline_ref)) {
+                ERR("%I64x,%x,%I64x was truncated\n", tp.item->key.objectid,
+                    tp.item->key.type, tp.item->key.offset);
 
-            if (sectlen > len) {
-                ERR("(%I64x,%x,%I64x): %x bytes left, expecting at least %lx\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, len, sectlen);
                 return false;
             }
 
-            if (sectlen == 0) {
-                ERR("(%I64x,%x,%I64x): unrecognized extent type %x\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, secttype);
-                return false;
+            ptr += sizeof(struct btrfs_extent_inline_ref);
+            len -= sizeof(struct btrfs_extent_inline_ref);
+
+            switch (eir->type) {
+                case TYPE_EXTENT_DATA_REF: {
+                    struct btrfs_extent_data_ref* edr = (struct btrfs_extent_data_ref*)(ptr - sizeof(uint64_t));
+
+                    if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
+                        ERR("%I64x,%x,%I64x was truncated\n", tp.item->key.objectid,
+                            tp.item->key.type, tp.item->key.offset);
+
+                        return false;
+                    }
+
+                    ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+                    len -= sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
+
+                    rc += edr->count;
+
+                    if (try_clone_edr(context, se, edr))
+                        return true;
+
+                    break;
+                }
+
+                case TYPE_SHARED_DATA_REF: {
+                    struct btrfs_shared_data_ref* sdr = (struct btrfs_shared_data_ref*)ptr;
+
+                    if (len < sizeof(struct btrfs_shared_data_ref)) {
+                        ERR("%I64x,%x,%I64x was truncated\n", tp.item->key.objectid,
+                            tp.item->key.type, tp.item->key.offset);
+
+                        return false;
+                    }
+
+                    ptr += sizeof(struct btrfs_shared_data_ref);
+                    len -= sizeof(struct btrfs_shared_data_ref);
+
+                    rc += sdr->count;
+
+                    break;
+                }
+
+                default:
+                    ERR("%I64x,%x,%I64x: unexpected type %x\n",
+                        tp.item->key.objectid, tp.item->key.type,
+                        tp.item->key.offset, eir->type);
+
+                    return false;
             }
-
-            rc += sectcount;
-
-            if (secttype == TYPE_EXTENT_DATA_REF) {
-                struct btrfs_extent_data_ref* sectedr = (struct btrfs_extent_data_ref*)(ptr + sizeof(uint8_t));
-
-                if (try_clone_edr(context, se, sectedr))
-                    return true;
-            }
-
-            len -= sectlen;
-            ptr += sizeof(uint8_t) + sectlen;
         }
     }
 
