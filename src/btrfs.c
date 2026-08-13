@@ -1406,7 +1406,7 @@ static NTSTATUS set_label(_In_ device_extension* Vcb, _In_ FILE_FS_LABEL_INFORMA
         if (!NT_SUCCESS(Status))
             goto end;
 
-        if (utf8len > MAX_LABEL_SIZE) {
+        if (utf8len > BTRFS_LABEL_SIZE) {
             Status = STATUS_INVALID_VOLUME_LABEL;
             goto end;
         }
@@ -1415,14 +1415,14 @@ static NTSTATUS set_label(_In_ device_extension* Vcb, _In_ FILE_FS_LABEL_INFORMA
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
 
     if (utf8len > 0) {
-        Status = utf16_to_utf8((PCHAR)&Vcb->superblock.label, MAX_LABEL_SIZE, &utf8len, ffli->VolumeLabel, vollen);
+        Status = utf16_to_utf8((PCHAR)&Vcb->superblock.label, BTRFS_LABEL_SIZE, &utf8len, ffli->VolumeLabel, vollen);
         if (!NT_SUCCESS(Status))
             goto release;
     } else
         Status = STATUS_SUCCESS;
 
-    if (utf8len < MAX_LABEL_SIZE)
-        RtlZeroMemory(Vcb->superblock.label + utf8len, MAX_LABEL_SIZE - utf8len);
+    if (utf8len < BTRFS_LABEL_SIZE)
+        RtlZeroMemory(Vcb->superblock.label + utf8len, BTRFS_LABEL_SIZE - utf8len);
 
     Vcb->need_write = true;
 

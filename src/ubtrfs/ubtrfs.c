@@ -791,7 +791,7 @@ static NTSTATUS write_superblocks(HANDLE h, btrfs_dev* dev, btrfs_root* chunk_ro
 
         utf8len = WideCharToMultiByte(CP_UTF8, 0, label->Buffer, label->Length / sizeof(WCHAR), NULL, 0, NULL, NULL);
 
-        if (utf8len == 0 || utf8len > MAX_LABEL_SIZE) {
+        if (utf8len == 0 || utf8len > BTRFS_LABEL_SIZE) {
             free(sb);
             return STATUS_INVALID_VOLUME_LABEL;
         }

@@ -14,7 +14,7 @@
 static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0x4000000000000, 0 };
 
 #define BTRFS_MAGIC         0x4d5f53665248425f
-#define MAX_LABEL_SIZE      0x100
+#define BTRFS_LABEL_SIZE    0x100
 #define SUBVOL_ROOT_INODE   0x100
 #define BTRFS_LAST_FREE_OBJECTID    0xffffffffffffff00
 
@@ -251,7 +251,7 @@ struct btrfs_super_block {
     uint8_t chunk_root_level;
     uint8_t log_root_level;
     struct btrfs_dev_item dev_item;
-    char label[MAX_LABEL_SIZE];
+    char label[BTRFS_LABEL_SIZE];
     uint64_t cache_generation;
     uint64_t uuid_tree_generation;
     uint8_t metadata_uuid[BTRFS_UUID_SIZE];
