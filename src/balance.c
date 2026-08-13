@@ -466,7 +466,7 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                 if (ln[i].key.type == BTRFS_EXTENT_DATA_KEY && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
                     struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
 
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                         if (ed->disk_num_bytes > 0) { // not sparse
                             uint32_t sdrrc = find_extent_shared_data_refcount(Vcb, ed->disk_bytenr, mr->address, NULL);
 
@@ -591,7 +591,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     if (ln[i].key.type == BTRFS_EXTENT_DATA_KEY && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
                         struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)mr->data + sizeof(struct btrfs_header) + ln[i].offset);
 
-                        if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                        if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                             if (ed->disk_bytenr == dr->address)
                                 ed->disk_bytenr = dr->new_address;
                         }
@@ -995,7 +995,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                                 if (!td->inserted && td->key.type == BTRFS_EXTENT_DATA_KEY && td->size >= sizeof(struct btrfs_file_extent_item)) {
                                     struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)td->data;
 
-                                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                                    if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                                         if (ed->disk_bytenr == dr->address)
                                             ed->disk_bytenr = dr->new_address;
                                     }
@@ -1260,7 +1260,7 @@ static NTSTATUS data_reloc_add_tree_edr(_Requires_lock_held_(_Curr_->tree_lock) 
         if (tp.item->size >= offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
             struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)tp.item->data;
 
-            if ((ed->type == EXTENT_TYPE_PREALLOC || ed->type == EXTENT_TYPE_REGULAR) && tp.item->size >= sizeof(struct btrfs_file_extent_item)) {
+            if ((ed->type == BTRFS_FILE_EXTENT_PREALLOC || ed->type == BTRFS_FILE_EXTENT_REG) && tp.item->size >= sizeof(struct btrfs_file_extent_item)) {
                 if (ed->disk_bytenr == dr->address && ed->disk_num_bytes == dr->size && tp.item->key.offset - ed->offset == edr->offset) {
                     if (ref && last_tree == tp.tree->header.bytenr)
                         ref->edr.count++;
@@ -2132,7 +2132,7 @@ end:
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
                     if (!ext->ignore) {
-                        if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                        if (ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) {
                             if (ext->extent_data.disk_num_bytes > 0 && ext->extent_data.disk_bytenr >= c->offset && ext->extent_data.disk_bytenr < c->offset + c->chunk_item->length) {
                                 LIST_ENTRY* le3 = items.Flink;
                                 while (le3 != &items) {
@@ -2181,7 +2181,7 @@ end:
                 extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
                 if (!ext->ignore) {
-                    if (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    if (ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) {
                         if (ext->extent_data.disk_num_bytes > 0 && ext->extent_data.disk_bytenr >= c->offset && ext->extent_data.disk_bytenr < c->offset + c->chunk_item->length) {
                             LIST_ENTRY* le3 = items.Flink;
                             while (le3 != &items) {

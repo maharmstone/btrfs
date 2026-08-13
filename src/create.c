@@ -1188,7 +1188,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 return STATUS_INTERNAL_ERROR;
             }
 
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+            if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                 if (tp.item->size < sizeof(struct btrfs_file_extent_item)) {
                     ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                         tp.item->size, sizeof(struct btrfs_file_extent_item));
@@ -1237,7 +1237,7 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         fcb->Header.FileSize.QuadPart = 0;
         fcb->Header.ValidDataLength.QuadPart = 0;
     } else {
-        if (ed && ed->type == EXTENT_TYPE_INLINE)
+        if (ed && ed->type == BTRFS_FILE_EXTENT_INLINE)
             fcb->Header.AllocationSize.QuadPart = fcb->inode_item.size;
         else
             fcb->Header.AllocationSize.QuadPart = sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize);
@@ -3554,7 +3554,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-        if (!ext->ignore && ext->extent_data.type == EXTENT_TYPE_REGULAR) {
+        if (!ext->ignore && ext->extent_data.type == BTRFS_FILE_EXTENT_REG) {
             uint64_t len;
 
             len = (ext->extent_data.compression == BTRFS_COMPRESSION_NONE ? ext->extent_data.num_bytes : ext->extent_data.disk_num_bytes) >> Vcb->sector_shift;
@@ -3826,8 +3826,8 @@ static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_
         while (le != &fileref->fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-            if (ext->extent_data.type == EXTENT_TYPE_PREALLOC) {
-                ext->extent_data.type = EXTENT_TYPE_REGULAR;
+            if (ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) {
+                ext->extent_data.type = BTRFS_FILE_EXTENT_REG;
                 changed = true;
             }
 

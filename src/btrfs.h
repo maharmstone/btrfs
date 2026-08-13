@@ -70,9 +70,9 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 
 #define BTRFS_ENCODING_NONE     0
 
-#define EXTENT_TYPE_INLINE      0
-#define EXTENT_TYPE_REGULAR     1
-#define EXTENT_TYPE_PREALLOC    2
+#define BTRFS_FILE_EXTENT_INLINE      0
+#define BTRFS_FILE_EXTENT_REG         1
+#define BTRFS_FILE_EXTENT_PREALLOC    2
 
 #define BLOCK_FLAG_DATA         0x001
 #define BLOCK_FLAG_SYSTEM       0x002

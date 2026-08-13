@@ -1102,7 +1102,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             while (le != &c->cache->extents) {
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-                if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+                if (!ext->ignore && (ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC)) {
                     if (ext->extent_data.disk_num_bytes != 0) {
                         chunk* c2 = get_chunk_from_address(Vcb, ext->extent_data.disk_bytenr);
 
@@ -1261,7 +1261,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
             while (le != &c->cache->extents) {
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-                if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+                if (!ext->ignore && (ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC)) {
                     if (ext->extent_data.disk_num_bytes != 0) {
                         chunk* c2 = get_chunk_from_address(Vcb, ext->extent_data.disk_bytenr);
 

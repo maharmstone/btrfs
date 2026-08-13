@@ -1086,8 +1086,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 re->ext->ignore = true;
 
                 switch (re->ext->extent_data.type) {
-                    case EXTENT_TYPE_REGULAR:
-                    case EXTENT_TYPE_PREALLOC: {
+                    case BTRFS_FILE_EXTENT_REG:
+                    case BTRFS_FILE_EXTENT_PREALLOC: {
                         if (re->ext->extent_data.disk_num_bytes != 0) {
                             chunk* c = get_chunk_from_address(Vcb, re->ext->extent_data.disk_bytenr);
 
@@ -1106,7 +1106,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         break;
                     }
 
-                    case EXTENT_TYPE_INLINE:
+                    case BTRFS_FILE_EXTENT_INLINE:
                         re->fcb->inode_item.nbytes -= re->ext->extent_data.ram_bytes;
                     break;
                 }
@@ -1122,8 +1122,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 re->ext->ignore = false;
 
                 switch (re->ext->extent_data.type) {
-                    case EXTENT_TYPE_REGULAR:
-                    case EXTENT_TYPE_PREALLOC: {
+                    case BTRFS_FILE_EXTENT_REG:
+                    case BTRFS_FILE_EXTENT_PREALLOC: {
                         if (re->ext->extent_data.disk_num_bytes != 0) {
                             chunk* c = get_chunk_from_address(Vcb, re->ext->extent_data.disk_bytenr);
 
@@ -1142,7 +1142,7 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         break;
                     }
 
-                    case EXTENT_TYPE_INLINE:
+                    case BTRFS_FILE_EXTENT_INLINE:
                         re->fcb->inode_item.nbytes += re->ext->extent_data.ram_bytes;
                     break;
                 }

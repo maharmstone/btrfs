@@ -148,7 +148,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
             if (ln[i].key.type == BTRFS_EXTENT_DATA_KEY && ln[i].size >= offsetof(struct btrfs_file_extent_item, disk_bytenr) && ln[i].offset + ln[i].size <= Vcb->superblock.nodesize - sizeof(struct btrfs_header)) {
                 struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)(((uint8_t*)&th[1]) + ln[i].offset);
 
-                if ((ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
+                if ((ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
                     if (ed->disk_num_bytes != 0) { // not sparse
                         Status = increase_extent_refcount_data(Vcb, ed->disk_bytenr, ed->disk_num_bytes, subvol->id, ln[i].key.objectid, ln[i].key.offset - ed->offset, 1, Irp);
 
@@ -1224,7 +1224,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
                 if (!old_style && ext->offset > last_end)
                     bii->sparse_size += ext->offset - last_end;
 
-                if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+                if (ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE) {
                     bii->inline_length += ext->datalen - (uint16_t)offsetof(struct btrfs_file_extent_item, disk_bytenr);
                     last_end = ext->offset + ext->extent_data.ram_bytes;
                     extents_inline = true;
@@ -1271,7 +1271,7 @@ static NTSTATUS get_inode_info(PFILE_OBJECT FileObject, void* data, ULONG length
             while (le != &fcb->extents) {
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-                if (!ext->ignore && ext->extent_data.type != EXTENT_TYPE_INLINE) {
+                if (!ext->ignore && ext->extent_data.type != BTRFS_FILE_EXTENT_INLINE) {
                     if (ext->extent_data.disk_num_bytes != 0) {
                         if (!last_ed2 || ext->extent_data.offset != last_ed2->offset + last_ed2->num_bytes)
                             bii->num_extents++;
@@ -1861,7 +1861,7 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, uint64_t start, uint6
         ed->compression = BTRFS_COMPRESSION_NONE;
         ed->encryption = BTRFS_ENCRYPTION_NONE;
         ed->other_encoding = BTRFS_ENCODING_NONE;
-        ed->type = EXTENT_TYPE_INLINE;
+        ed->type = BTRFS_FILE_EXTENT_INLINE;
 
         Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, rollback);
         if (!NT_SUCCESS(Status)) {
@@ -1990,7 +1990,7 @@ static NTSTATUS set_zero_data(device_extension* Vcb, PFILE_OBJECT FileObject, vo
         goto end;
     }
 
-    if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+    if (ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE) {
         Status = zero_data(Vcb, fcb, fzdi->FileOffset.QuadPart, fzdi->BeyondFinalZero.QuadPart - fzdi->FileOffset.QuadPart, Irp, &rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("zero_data returned %08lx\n", Status);
@@ -2128,7 +2128,7 @@ static NTSTATUS query_ranges(PFILE_OBJECT FileObject, FILE_ALLOCATED_RANGE_BUFFE
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if (!ext->ignore) {
-            uint64_t len = ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC ? ext->extent_data.num_bytes : ext->extent_data.ram_bytes;
+            uint64_t len = ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC ? ext->extent_data.num_bytes : ext->extent_data.ram_bytes;
 
             if (ext->offset > last_end) { // first extent after a hole
                 if (last_end > last_start) {
@@ -3238,7 +3238,7 @@ bool fcb_is_inline(fcb* fcb) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if (!ext->ignore)
-            return ext->extent_data.type == EXTENT_TYPE_INLINE;
+            return ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE;
 
         le = le->Flink;
     }
@@ -3449,7 +3449,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             ed->compression = BTRFS_COMPRESSION_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
             ed->other_encoding = BTRFS_ENCODING_NONE;
-            ed->type = EXTENT_TYPE_INLINE;
+            ed->type = BTRFS_FILE_EXTENT_INLINE;
 
             RtlCopyMemory(&ed->disk_bytenr, data2, datalen2);
 
@@ -3484,7 +3484,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 if (ext->offset >= (uint64_t)ded->SourceFileOffset.QuadPart + (uint64_t)ded->ByteCount.QuadPart)
                     break;
 
-                if (ext->extent_data.type != EXTENT_TYPE_INLINE) {
+                if (ext->extent_data.type != BTRFS_FILE_EXTENT_INLINE) {
                     ULONG extlen = offsetof(extent, extent_data) + sizeof(struct btrfs_file_extent_item);
                     extent* ext2;
                     chunk* c;
@@ -3595,14 +3595,14 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
         while (le != &sourcefcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-            if (!ext->ignore && ext->unique && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+            if (!ext->ignore && ext->unique && (ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC)) {
                 LIST_ENTRY* le2;
 
                 le2 = newexts.Flink;
                 while (le2 != &newexts) {
                     extent* ext2 = CONTAINING_RECORD(le2, extent, list_entry);
 
-                    if (ext2->extent_data.type == EXTENT_TYPE_REGULAR || ext2->extent_data.type == EXTENT_TYPE_PREALLOC) {
+                    if (ext2->extent_data.type == BTRFS_FILE_EXTENT_REG || ext2->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) {
                         if (ext2->extent_data.disk_bytenr == ext->extent_data.disk_bytenr && ext2->extent_data.disk_num_bytes == ext->extent_data.disk_num_bytes) {
                             ext->unique = false;
                             break;
@@ -5001,7 +5001,7 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-            if (ext->ignore || ext->extent_data.type == EXTENT_TYPE_INLINE) {
+            if (ext->ignore || ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE) {
                 le = le->Flink;
                 continue;
             }
@@ -5042,7 +5042,7 @@ static NTSTATUS get_retrieval_pointers(device_extension* Vcb, PFILE_OBJECT FileO
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-            if (ext->ignore || ext->extent_data.type == EXTENT_TYPE_INLINE) {
+            if (ext->ignore || ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE) {
                 le = le->Flink;
                 continue;
             }
@@ -5227,7 +5227,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
                 continue;
             }
 
-            if (ext->extent_data.type == EXTENT_TYPE_INLINE) {
+            if (ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE) {
                 buf->num_sectors = 0;
                 *retlen = offsetof(btrfs_csum_info, data[0]);
                 Status = STATUS_SUCCESS;
@@ -5252,7 +5252,7 @@ static NTSTATUS get_csum_info(device_extension* Vcb, PFILE_OBJECT FileObject, bt
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-            if (ext->ignore || ext->extent_data.type == EXTENT_TYPE_INLINE) {
+            if (ext->ignore || ext->extent_data.type == BTRFS_FILE_EXTENT_INLINE) {
                 le = le->Flink;
                 continue;
             }

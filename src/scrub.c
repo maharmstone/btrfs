@@ -356,7 +356,7 @@ static void log_file_checksum_error_shared(device_extension* Vcb, uint64_t treea
         if (ln[i].key.type == BTRFS_EXTENT_DATA_KEY && ln[i].size >= sizeof(struct btrfs_file_extent_item)) {
             struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)((uint8_t*)tree + sizeof(struct btrfs_header) + ln[i].offset);
 
-            if (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0 && ed->disk_bytenr == addr)
+            if (ed->type == BTRFS_FILE_EXTENT_REG && ed->disk_num_bytes != 0 && ed->disk_bytenr == addr)
                 log_file_checksum_error(Vcb, addr, devid, tree->owner, ln[i].key.objectid, ln[i].key.offset + addr - extent);
         }
     }

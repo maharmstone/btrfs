@@ -1136,7 +1136,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 if (!td->inserted && td->key.type == BTRFS_EXTENT_DATA_KEY && td->size >= sizeof(struct btrfs_file_extent_item)) {
                     struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)td->data;
 
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                         if (ed->disk_num_bytes > 0) {
                             struct btrfs_extent_data_ref edr;
                             changed_extent* ce = NULL;
@@ -1368,7 +1368,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 if (!td->inserted && td->key.type == BTRFS_EXTENT_DATA_KEY && td->size >= sizeof(struct btrfs_file_extent_item)) {
                     struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)td->data;
 
-                    if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                    if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                         if (ed->disk_num_bytes > 0) {
                             changed_extent* ce = NULL;
                             chunk* c = get_chunk_from_address(Vcb, ed->disk_bytenr);
@@ -4421,7 +4421,7 @@ static NTSTATUS insert_sparse_extent(fcb* fcb, LIST_ENTRY* batchlist, uint64_t s
     ed->compression = BTRFS_COMPRESSION_NONE;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
     ed->other_encoding = BTRFS_ENCODING_NONE;
-    ed->type = EXTENT_TYPE_REGULAR;
+    ed->type = BTRFS_FILE_EXTENT_REG;
     ed->disk_bytenr = 0;
     ed->disk_num_bytes = 0;
     ed->offset = 0;
@@ -4641,7 +4641,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-        if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+        if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
             if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
 
@@ -4728,7 +4728,7 @@ cont:
                 while (le2 != &fcb->extents) {
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
-                    if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                    if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
                             NTSTATUS Status;
 
@@ -4783,7 +4783,7 @@ cont:
                 while (le2 != &fcb->extents) {
                     extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
-                    if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+                    if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
                             NTSTATUS Status;
 
@@ -4870,7 +4870,7 @@ cont:
     while (le != &fcb->extents) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-        if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
+        if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESSION_NONE && ext->unique) {
             if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
 
@@ -4998,7 +4998,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         while (le != &fcb->extents) {
             extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-            if (ext->inserted && ext->csum && ext->extent_data.type == EXTENT_TYPE_REGULAR) {
+            if (ext->inserted && ext->csum && ext->extent_data.type == BTRFS_FILE_EXTENT_REG) {
                 if (ext->extent_data.disk_num_bytes > 0) { // not sparse
                     if (ext->extent_data.compression == BTRFS_COMPRESSION_NONE)
                         add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr + ext->extent_data.offset, (ULONG)(ext->extent_data.num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
@@ -5020,7 +5020,7 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 LIST_ENTRY* le2 = le->Flink;
                 extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
-                if ((ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC) && le->Flink != &fcb->extents) {
+                if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && le->Flink != &fcb->extents) {
                     extent* nextext = CONTAINING_RECORD(le->Flink, extent, list_entry);
 
                     if (ext->extent_data.type == nextext->extent_data.type) {
@@ -5124,14 +5124,14 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                 goto end;
             }
 
-            if (ed->type == EXTENT_TYPE_PREALLOC)
+            if (ed->type == BTRFS_FILE_EXTENT_PREALLOC)
                 prealloc = true;
 
-            if (ed->type == EXTENT_TYPE_INLINE)
+            if (ed->type == BTRFS_FILE_EXTENT_INLINE)
                 extents_inline = true;
 
             if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_INCOMPAT_FLAGS_NO_HOLES)) {
-                if (ed->type == EXTENT_TYPE_INLINE)
+                if (ed->type == BTRFS_FILE_EXTENT_INLINE)
                     last_end = ext->offset + ed->ram_bytes;
                 else
                     last_end = ext->offset + ed->num_bytes;
@@ -6180,7 +6180,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                         struct btrfs_file_extent_item* ed = &ext->extent_data;
 
                         if (!ext->ignore) {
-                            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC) {
+                            if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                                 if (ed->disk_num_bytes != 0 && ed->disk_bytenr >= c->offset && ed->disk_bytenr + ed->disk_num_bytes <= c->offset + c->chunk_item->length)
                                     used_minus_cache -= ed->disk_num_bytes;
                             }

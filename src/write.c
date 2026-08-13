@@ -2409,13 +2409,13 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, ui
             struct btrfs_file_extent_item* ed = &ext->extent_data;
             uint64_t len;
 
-            if (ed->type == EXTENT_TYPE_INLINE)
+            if (ed->type == BTRFS_FILE_EXTENT_INLINE)
                 len = ed->ram_bytes;
             else
                 len = ed->num_bytes;
 
             if (ext->offset < end_data && ext->offset + len > start_data) {
-                if (ed->type == EXTENT_TYPE_INLINE) {
+                if (ed->type == BTRFS_FILE_EXTENT_INLINE) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
                         remove_fcb_extent(fcb, ext, rollback);
 
@@ -2829,7 +2829,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     ed->compression = compression;
     ed->encryption = BTRFS_ENCRYPTION_NONE;
     ed->other_encoding = BTRFS_ENCODING_NONE;
-    ed->type = prealloc ? EXTENT_TYPE_PREALLOC : EXTENT_TYPE_REGULAR;
+    ed->type = prealloc ? BTRFS_FILE_EXTENT_PREALLOC : BTRFS_FILE_EXTENT_REG;
     ed->disk_bytenr = address;
     ed->disk_num_bytes = length;
     ed->offset = 0;
@@ -2917,7 +2917,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
 
     ed = &ext->extent_data;
 
-    if (ed->type != EXTENT_TYPE_REGULAR && ed->type != EXTENT_TYPE_PREALLOC) {
+    if (ed->type != BTRFS_FILE_EXTENT_REG && ed->type != BTRFS_FILE_EXTENT_PREALLOC) {
         TRACE("not extending extent which is not regular or prealloc\n");
         return false;
     }
@@ -3265,7 +3265,7 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
             ed->compression = BTRFS_COMPRESSION_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
             ed->other_encoding = BTRFS_ENCODING_NONE;
-            ed->type = EXTENT_TYPE_INLINE;
+            ed->type = BTRFS_FILE_EXTENT_INLINE;
 
             Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
@@ -3343,8 +3343,8 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
         if (ext) {
             struct btrfs_file_extent_item* ed = &ext->extent_data;
 
-            oldalloc = ext->offset + (ed->type == EXTENT_TYPE_INLINE ? ed->ram_bytes : ed->num_bytes);
-            cur_inline = ed->type == EXTENT_TYPE_INLINE;
+            oldalloc = ext->offset + (ed->type == BTRFS_FILE_EXTENT_INLINE ? ed->ram_bytes : ed->num_bytes);
+            cur_inline = ed->type == BTRFS_FILE_EXTENT_INLINE;
 
             if (cur_inline && end > fcb->Vcb->options.max_inline) {
                 uint64_t origlength, length;
@@ -3409,7 +3409,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     ed->compression = BTRFS_COMPRESSION_NONE;
                     ed->encryption = BTRFS_ENCRYPTION_NONE;
                     ed->other_encoding = BTRFS_ENCODING_NONE;
-                    ed->type = EXTENT_TYPE_INLINE;
+                    ed->type = BTRFS_FILE_EXTENT_INLINE;
 
                     Status = read_file(fcb, (uint8_t*)&ed->disk_bytenr, ext->offset, oldalloc, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
@@ -3513,7 +3513,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 ed->compression = BTRFS_COMPRESSION_NONE;
                 ed->encryption = BTRFS_ENCRYPTION_NONE;
                 ed->other_encoding = BTRFS_ENCODING_NONE;
-                ed->type = EXTENT_TYPE_INLINE;
+                ed->type = BTRFS_FILE_EXTENT_INLINE;
 
                 RtlZeroMemory(&ed->disk_bytenr, (ULONG)end);
 
@@ -3561,7 +3561,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         RtlCopyMemory(&newext->extent_data, &ext->extent_data, ext->datalen);
 
-        newext->extent_data.type = EXTENT_TYPE_REGULAR;
+        newext->extent_data.type = BTRFS_FILE_EXTENT_REG;
 
         Status = write_data_complete(fcb->Vcb, ed->disk_bytenr + ed->offset, (uint8_t*)data + ext->offset - start_data, (uint32_t)ed->num_bytes, Irp,
                                      NULL, file_write, irp_offset + ext->offset - start_data, priority);
@@ -3617,7 +3617,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         }
 
         RtlCopyMemory(&newext1->extent_data, &ext->extent_data, ext->datalen);
-        newext1->extent_data.type = EXTENT_TYPE_REGULAR;
+        newext1->extent_data.type = BTRFS_FILE_EXTENT_REG;
         newext1->extent_data.num_bytes = end_data - ext->offset;
 
         RtlCopyMemory(&newext2->extent_data, &ext->extent_data, ext->datalen);
@@ -3708,7 +3708,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         RtlCopyMemory(&newext2->extent_data, &ext->extent_data, ext->datalen);
 
-        newext2->extent_data.type = EXTENT_TYPE_REGULAR;
+        newext2->extent_data.type = BTRFS_FILE_EXTENT_REG;
         newext2->extent_data.offset += start_data - ext->offset;
         newext2->extent_data.num_bytes = ext->offset + ed->num_bytes - start_data;
 
@@ -3803,7 +3803,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         newext1->extent_data.num_bytes = start_data - ext->offset;
 
-        newext2->extent_data.type = EXTENT_TYPE_REGULAR;
+        newext2->extent_data.type = BTRFS_FILE_EXTENT_REG;
         newext2->extent_data.offset += start_data - ext->offset;
         newext2->extent_data.num_bytes = end_data - start_data;
 
@@ -3915,7 +3915,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
             struct btrfs_file_extent_item* ed = &ext->extent_data;
             uint64_t len;
 
-            if (ed->type == EXTENT_TYPE_INLINE)
+            if (ed->type == BTRFS_FILE_EXTENT_INLINE)
                 len = ed->ram_bytes;
             else
                 len = ed->num_bytes;
@@ -3926,7 +3926,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
             if (ext->offset > start + written + length)
                 break;
 
-            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == EXTENT_TYPE_PREALLOC) && ext->unique && ed->compression == BTRFS_COMPRESSION_NONE) {
+            if ((fcb->inode_item.flags & BTRFS_INODE_NODATACOW || ed->type == BTRFS_FILE_EXTENT_PREALLOC) && ext->unique && ed->compression == BTRFS_COMPRESSION_NONE) {
                 if (max(last_cow_start, start + written) < ext->offset) {
                     uint64_t start_write = max(last_cow_start, start + written);
 
@@ -3951,7 +3951,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
                         break;
                 }
 
-                if (ed->type == EXTENT_TYPE_REGULAR) {
+                if (ed->type == BTRFS_FILE_EXTENT_REG) {
                     uint64_t writeaddr = ed->disk_bytenr + ed->offset + start + written - ext->offset;
                     uint64_t write_len = min(len, length);
                     chunk* c;
@@ -3982,7 +3982,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
                     if (length == 0)
                         break;
-                } else if (ed->type == EXTENT_TYPE_PREALLOC) {
+                } else if (ed->type == BTRFS_FILE_EXTENT_PREALLOC) {
                     uint64_t write_len;
 
                     Status = do_write_file_prealloc(fcb, ext, start + written, end_data, (uint8_t*)data + written, &write_len,
@@ -4396,7 +4396,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2->compression = BTRFS_COMPRESSION_NONE;
             ed2->encryption = BTRFS_ENCRYPTION_NONE;
             ed2->other_encoding = BTRFS_ENCODING_NONE;
-            ed2->type = EXTENT_TYPE_INLINE;
+            ed2->type = BTRFS_FILE_EXTENT_INLINE;
 
             Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + newlength), false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {

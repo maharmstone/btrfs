@@ -1036,7 +1036,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     while (le2 != &me->fileref->fcb->extents) {
                         extent* ext = CONTAINING_RECORD(le2, extent, list_entry);
 
-                        if (!ext->ignore && (ext->extent_data.type == EXTENT_TYPE_REGULAR || ext->extent_data.type == EXTENT_TYPE_PREALLOC)) {
+                        if (!ext->ignore && (ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC)) {
                             if (ext->extent_data.disk_num_bytes != 0) {
                                 chunk* c = get_chunk_from_address(me->fileref->fcb->Vcb, ext->extent_data.disk_bytenr);
 
@@ -1716,7 +1716,7 @@ static NTSTATUS rename_stream_to_file(device_extension* Vcb, file_ref* fileref, 
             ed->compression = BTRFS_COMPRESSION_NONE;
             ed->encryption = BTRFS_ENCRYPTION_NONE;
             ed->other_encoding = BTRFS_ENCODING_NONE;
-            ed->type = EXTENT_TYPE_INLINE;
+            ed->type = BTRFS_FILE_EXTENT_INLINE;
 
             RtlCopyMemory(&ed->disk_bytenr, adsdata.Buffer, adsdata.Length);
 

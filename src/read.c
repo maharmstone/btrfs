@@ -2819,7 +2819,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
             struct btrfs_file_extent_item* ed = &ext->extent_data;
             uint64_t len;
 
-            if (ed->type == EXTENT_TYPE_REGULAR || ed->type == EXTENT_TYPE_PREALLOC)
+            if (ed->type == BTRFS_FILE_EXTENT_REG || ed->type == BTRFS_FILE_EXTENT_PREALLOC)
                 len = ed->num_bytes;
             else
                 len = ed->ram_bytes;
@@ -2853,7 +2853,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
             }
 
             switch (ed->type) {
-                case EXTENT_TYPE_INLINE:
+                case BTRFS_FILE_EXTENT_INLINE:
                 {
                     uint64_t off = start + bytes_read - ext->offset;
                     uint32_t read;
@@ -2936,7 +2936,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                     break;
                 }
 
-                case EXTENT_TYPE_REGULAR:
+                case BTRFS_FILE_EXTENT_REG:
                 {
                     read_part* rp;
 
@@ -3024,7 +3024,7 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                     break;
                 }
 
-                case EXTENT_TYPE_PREALLOC:
+                case BTRFS_FILE_EXTENT_PREALLOC:
                 {
                     uint64_t off = start + bytes_read - ext->offset;
                     uint32_t read = (uint32_t)(len - off);

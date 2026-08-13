@@ -261,7 +261,7 @@ static NTSTATUS send_read_symlink(send_context* context, uint64_t inode, char** 
 
     ed = (struct btrfs_file_extent_item*)tp.item->data;
 
-    if (ed->type != EXTENT_TYPE_INLINE) {
+    if (ed->type != BTRFS_FILE_EXTENT_INLINE) {
         WARN("symlink data was not inline, returning blank string\n");
         *link = NULL;
         *linklen = 0;
@@ -1668,13 +1668,13 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
             ext2->offset = lastoff;
             ext2->datalen = sizeof(struct btrfs_file_extent_item);
             ext2->data.ram_bytes = ext2->data.num_bytes = ext->offset - lastoff;
-            ext2->data.type = EXTENT_TYPE_REGULAR;
+            ext2->data.type = BTRFS_FILE_EXTENT_REG;
             ext2->data.disk_bytenr = ext2->data.disk_num_bytes = ext2->data.offset = 0;
 
             InsertHeadList(le->Blink, &ext2->list_entry);
         }
 
-        if (ext->data.type == EXTENT_TYPE_INLINE)
+        if (ext->data.type == BTRFS_FILE_EXTENT_INLINE)
             lastoff = ext->offset + ext->data.ram_bytes;
         else
             lastoff = ext->offset + ext->data.num_bytes;
@@ -1693,7 +1693,7 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
         ext2->offset = lastoff;
         ext2->datalen = sizeof(struct btrfs_file_extent_item);
         ext2->data.ram_bytes = ext2->data.num_bytes = sector_align(size - lastoff, Vcb->superblock.sectorsize);
-        ext2->data.type = EXTENT_TYPE_REGULAR;
+        ext2->data.type = BTRFS_FILE_EXTENT_REG;
         ext2->data.disk_bytenr = ext2->data.disk_num_bytes = ext2->data.offset = 0;
 
         InsertTailList(exts, &ext2->list_entry);
@@ -1705,7 +1705,7 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
 static NTSTATUS divide_ext(send_ext* ext, uint64_t len, bool trunc) {
     send_ext* ext2;
 
-    if (ext->data.type == EXTENT_TYPE_INLINE) {
+    if (ext->data.type == BTRFS_FILE_EXTENT_INLINE) {
         if (!trunc) {
             ext2 = ExAllocatePoolWithTag(PagedPool, (ULONG)(offsetof(send_ext, data.disk_bytenr) + ext->data.ram_bytes - len), ALLOC_TAG);
 
@@ -1779,8 +1779,8 @@ static NTSTATUS sync_ext_cutoff_points(send_context* context) {
     do {
         uint64_t len1, len2;
 
-        len1 = ext1->data.type == EXTENT_TYPE_INLINE ? ext1->data.ram_bytes : ext1->data.num_bytes;
-        len2 = ext2->data.type == EXTENT_TYPE_INLINE ? ext2->data.ram_bytes : ext2->data.num_bytes;
+        len1 = ext1->data.type == BTRFS_FILE_EXTENT_INLINE ? ext1->data.ram_bytes : ext1->data.num_bytes;
+        len2 = ext2->data.type == BTRFS_FILE_EXTENT_INLINE ? ext2->data.ram_bytes : ext2->data.num_bytes;
 
         if (len1 < len2) {
             Status = divide_ext(ext2, len1, false);
@@ -1959,7 +1959,7 @@ static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_exte
             else {
                 struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)tp.item->data;
 
-                if (ed->type == EXTENT_TYPE_REGULAR) {
+                if (ed->type == BTRFS_FILE_EXTENT_REG) {
                     if (tp.item->size < sizeof(struct btrfs_file_extent_item))
                         ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                             tp.item->size, sizeof(struct btrfs_file_extent_item));
@@ -2167,14 +2167,14 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
         ULONG pos;
 
         if (se2) {
-            if (se->data.type == EXTENT_TYPE_INLINE && se2->data.type == EXTENT_TYPE_INLINE &&
+            if (se->data.type == BTRFS_FILE_EXTENT_INLINE && se2->data.type == BTRFS_FILE_EXTENT_INLINE &&
                 RtlCompareMemory(&se->data.disk_bytenr, &se2->data.disk_bytenr, (ULONG)se->data.ram_bytes) == (ULONG)se->data.ram_bytes) {
                 ExFreePool(se);
                 ExFreePool(se2);
                 continue;
             }
 
-            if (se->data.type == EXTENT_TYPE_REGULAR && se2->data.type == EXTENT_TYPE_REGULAR) {
+            if (se->data.type == BTRFS_FILE_EXTENT_REG && se2->data.type == BTRFS_FILE_EXTENT_REG) {
                 if (RtlCompareMemory(&se->data.disk_bytenr, &se2->data.disk_bytenr, sizeof(struct btrfs_file_extent_item) - offsetof(struct btrfs_file_extent_item, disk_bytenr)) == sizeof(struct btrfs_file_extent_item) - offsetof(struct btrfs_file_extent_item, disk_bytenr)) {
                     ExFreePool(se);
                     ExFreePool(se2);
@@ -2183,7 +2183,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             }
         }
 
-        if (se->data.type == EXTENT_TYPE_INLINE) {
+        if (se->data.type == BTRFS_FILE_EXTENT_INLINE) {
             pos = context->datalen;
 
             send_command(context, BTRFS_SEND_CMD_WRITE);
@@ -2666,13 +2666,13 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->type == EXTENT_TYPE_REGULAR) {
+        if (ed->type == BTRFS_FILE_EXTENT_REG) {
             if (tp->item->size < sizeof(struct btrfs_file_extent_item)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
                     tp->item->size, sizeof(struct btrfs_file_extent_item));
                 return STATUS_INTERNAL_ERROR;
             }
-        } else if (ed->type == EXTENT_TYPE_INLINE) {
+        } else if (ed->type == BTRFS_FILE_EXTENT_INLINE) {
             if (tp->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes && ed->compression == BTRFS_COMPRESSION_NONE) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
                     tp->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
@@ -2680,7 +2680,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             }
         }
 
-        if ((ed->type == EXTENT_TYPE_INLINE || (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0)) && ed->ram_bytes != 0) {
+        if ((ed->type == BTRFS_FILE_EXTENT_INLINE || (ed->type == BTRFS_FILE_EXTENT_REG && ed->disk_num_bytes != 0)) && ed->ram_bytes != 0) {
             send_ext* se = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data) + tp->item->size, ALLOC_TAG);
 
             if (!se) {
@@ -2722,13 +2722,13 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             return STATUS_INTERNAL_ERROR;
         }
 
-        if (ed->type == EXTENT_TYPE_REGULAR) {
+        if (ed->type == BTRFS_FILE_EXTENT_REG) {
             if (tp2->item->size < sizeof(struct btrfs_file_extent_item)) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                     tp2->item->size, sizeof(struct btrfs_file_extent_item));
                 return STATUS_INTERNAL_ERROR;
             }
-        } else if (ed->type == EXTENT_TYPE_INLINE) {
+        } else if (ed->type == BTRFS_FILE_EXTENT_INLINE) {
             if (tp2->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                     tp2->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
@@ -2736,7 +2736,7 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
             }
         }
 
-        if ((ed->type == EXTENT_TYPE_INLINE || (ed->type == EXTENT_TYPE_REGULAR && ed->disk_num_bytes != 0)) && ed->ram_bytes != 0) {
+        if ((ed->type == BTRFS_FILE_EXTENT_INLINE || (ed->type == BTRFS_FILE_EXTENT_REG && ed->disk_num_bytes != 0)) && ed->ram_bytes != 0) {
             send_ext* se = ExAllocatePoolWithTag(PagedPool, offsetof(send_ext, data) + tp2->item->size, ALLOC_TAG);
 
             if (!se) {
