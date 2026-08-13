@@ -2360,52 +2360,52 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
 static void copy_balance_args(btrfs_balance_opts* opts, struct btrfs_disk_balance_args* args) {
     if (opts->flags & BTRFS_BALANCE_OPTS_PROFILES) {
         args->profiles = opts->profiles;
-        args->flags |= BALANCE_ARGS_FLAGS_PROFILES;
+        args->flags |= BTRFS_BALANCE_ARGS_PROFILES;
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_USAGE) {
         if (args->usage_min == 0) {
-            args->flags |= BALANCE_ARGS_FLAGS_USAGE_RANGE;
+            args->flags |= BTRFS_BALANCE_ARGS_USAGE_RANGE;
             args->usage_min = opts->usage_start;
             args->usage_max = opts->usage_end;
         } else {
-            args->flags |= BALANCE_ARGS_FLAGS_USAGE;
+            args->flags |= BTRFS_BALANCE_ARGS_USAGE;
             args->usage = opts->usage_end;
         }
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_DEVID) {
         args->devid = opts->devid;
-        args->flags |= BALANCE_ARGS_FLAGS_DEVID;
+        args->flags |= BTRFS_BALANCE_ARGS_DEVID;
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_DRANGE) {
         args->pstart = opts->drange_start;
         args->pend = opts->drange_end;
-        args->flags |= BALANCE_ARGS_FLAGS_DRANGE;
+        args->flags |= BTRFS_BALANCE_ARGS_DRANGE;
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_VRANGE) {
         args->vstart = opts->vrange_start;
         args->vend = opts->vrange_end;
-        args->flags |= BALANCE_ARGS_FLAGS_VRANGE;
+        args->flags |= BTRFS_BALANCE_ARGS_VRANGE;
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_CONVERT) {
         args->target = opts->convert;
-        args->flags |= BALANCE_ARGS_FLAGS_CONVERT;
+        args->flags |= BTRFS_BALANCE_ARGS_CONVERT;
 
         if (opts->flags & BTRFS_BALANCE_OPTS_SOFT)
-            args->flags |= BALANCE_ARGS_FLAGS_SOFT;
+            args->flags |= BTRFS_BALANCE_ARGS_SOFT;
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_LIMIT) {
         if (args->limit_min == 0) {
-            args->flags |= BALANCE_ARGS_FLAGS_LIMIT_RANGE;
+            args->flags |= BTRFS_BALANCE_ARGS_LIMIT_RANGE;
             args->limit_min = (uint32_t)opts->limit_start;
             args->limit_max = (uint32_t)opts->limit_end;
         } else {
-            args->flags |= BALANCE_ARGS_FLAGS_LIMIT;
+            args->flags |= BTRFS_BALANCE_ARGS_LIMIT;
             args->limit = opts->limit_end;
         }
     }
@@ -2413,7 +2413,7 @@ static void copy_balance_args(btrfs_balance_opts* opts, struct btrfs_disk_balanc
     if (opts->flags & BTRFS_BALANCE_OPTS_STRIPES) {
         args->stripes_min = opts->stripes_start;
         args->stripes_max = opts->stripes_end;
-        args->flags |= BALANCE_ARGS_FLAGS_STRIPES_RANGE;
+        args->flags |= BTRFS_BALANCE_ARGS_STRIPES_RANGE;
     }
 }
 
@@ -2534,64 +2534,64 @@ end:
 static void load_balance_args(btrfs_balance_opts* opts, struct btrfs_disk_balance_args* args) {
     opts->flags = BTRFS_BALANCE_OPTS_ENABLED;
 
-    if (args->flags & BALANCE_ARGS_FLAGS_PROFILES) {
+    if (args->flags & BTRFS_BALANCE_ARGS_PROFILES) {
         opts->flags |= BTRFS_BALANCE_OPTS_PROFILES;
         opts->profiles = args->profiles;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_USAGE) {
+    if (args->flags & BTRFS_BALANCE_ARGS_USAGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
 
         opts->usage_start = 0;
         opts->usage_end = (uint8_t)args->usage;
-    } else if (args->flags & BALANCE_ARGS_FLAGS_USAGE_RANGE) {
+    } else if (args->flags & BTRFS_BALANCE_ARGS_USAGE_RANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_USAGE;
 
         opts->usage_start = (uint8_t)args->usage_min;
         opts->usage_end = (uint8_t)args->usage_max;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_DEVID) {
+    if (args->flags & BTRFS_BALANCE_ARGS_DEVID) {
         opts->flags |= BTRFS_BALANCE_OPTS_DEVID;
         opts->devid = args->devid;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_DRANGE) {
+    if (args->flags & BTRFS_BALANCE_ARGS_DRANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_DRANGE;
         opts->drange_start = args->pstart;
         opts->drange_end = args->pend;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_VRANGE) {
+    if (args->flags & BTRFS_BALANCE_ARGS_VRANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_VRANGE;
         opts->vrange_start = args->vstart;
         opts->vrange_end = args->vend;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_LIMIT) {
+    if (args->flags & BTRFS_BALANCE_ARGS_LIMIT) {
         opts->flags |= BTRFS_BALANCE_OPTS_LIMIT;
 
         opts->limit_start = 0;
         opts->limit_end = args->limit;
-    } else if (args->flags & BALANCE_ARGS_FLAGS_LIMIT_RANGE) {
+    } else if (args->flags & BTRFS_BALANCE_ARGS_LIMIT_RANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_LIMIT;
 
         opts->limit_start = args->limit_min;
         opts->limit_end = args->limit_max;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_STRIPES_RANGE) {
+    if (args->flags & BTRFS_BALANCE_ARGS_STRIPES_RANGE) {
         opts->flags |= BTRFS_BALANCE_OPTS_STRIPES;
 
         opts->stripes_start = (uint16_t)args->stripes_min;
         opts->stripes_end = (uint16_t)args->stripes_max;
     }
 
-    if (args->flags & BALANCE_ARGS_FLAGS_CONVERT) {
+    if (args->flags & BTRFS_BALANCE_ARGS_CONVERT) {
         opts->flags |= BTRFS_BALANCE_OPTS_CONVERT;
         opts->convert = args->target;
 
-        if (args->flags & BALANCE_ARGS_FLAGS_SOFT)
+        if (args->flags & BTRFS_BALANCE_ARGS_SOFT)
             opts->flags |= BTRFS_BALANCE_OPTS_SOFT;
     }
 }

@@ -457,17 +457,17 @@ struct btrfs_dev_extent {
 #define BALANCE_FLAGS_SYSTEM        0x2
 #define BALANCE_FLAGS_METADATA      0x4
 
-#define BALANCE_ARGS_FLAGS_PROFILES         0x001
-#define BALANCE_ARGS_FLAGS_USAGE            0x002
-#define BALANCE_ARGS_FLAGS_DEVID            0x004
-#define BALANCE_ARGS_FLAGS_DRANGE           0x008
-#define BALANCE_ARGS_FLAGS_VRANGE           0x010
-#define BALANCE_ARGS_FLAGS_LIMIT            0x020
-#define BALANCE_ARGS_FLAGS_LIMIT_RANGE      0x040
-#define BALANCE_ARGS_FLAGS_STRIPES_RANGE    0x080
-#define BALANCE_ARGS_FLAGS_CONVERT          0x100
-#define BALANCE_ARGS_FLAGS_SOFT             0x200
-#define BALANCE_ARGS_FLAGS_USAGE_RANGE      0x400
+#define BTRFS_BALANCE_ARGS_PROFILES         0x001
+#define BTRFS_BALANCE_ARGS_USAGE            0x002
+#define BTRFS_BALANCE_ARGS_DEVID            0x004
+#define BTRFS_BALANCE_ARGS_DRANGE           0x008
+#define BTRFS_BALANCE_ARGS_VRANGE           0x010
+#define BTRFS_BALANCE_ARGS_LIMIT            0x020
+#define BTRFS_BALANCE_ARGS_LIMIT_RANGE      0x040
+#define BTRFS_BALANCE_ARGS_STRIPES_RANGE    0x080
+#define BTRFS_BALANCE_ARGS_CONVERT          0x100
+#define BTRFS_BALANCE_ARGS_SOFT             0x200
+#define BTRFS_BALANCE_ARGS_USAGE_RANGE      0x400
 
 struct btrfs_disk_balance_args {
     uint64_t profiles;
