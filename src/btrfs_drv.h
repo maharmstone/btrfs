@@ -585,7 +585,11 @@ typedef struct {
 
     union {
         struct btrfs_extent_data_ref edr;
-        SHARED_DATA_REF sdr;
+
+        struct {
+            uint64_t offset;
+            struct btrfs_shared_data_ref sdr;
+        };
     };
 
     LIST_ENTRY list_entry;

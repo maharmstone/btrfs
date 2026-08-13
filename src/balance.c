@@ -509,8 +509,8 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                                             while (le2 != &ce->refs) {
                                                 changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-                                                if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == mr->address) {
-                                                    cer->sdr.offset = mr->new_address;
+                                                if (cer->type == TYPE_SHARED_DATA_REF && cer->offset == mr->address) {
+                                                    cer->offset = mr->new_address;
                                                     break;
                                                 }
 
@@ -521,8 +521,8 @@ static NTSTATUS add_metadata_reloc_extent_item(_Requires_exclusive_lock_held_(_C
                                             while (le2 != &ce->old_refs) {
                                                 changed_extent_ref* cer = CONTAINING_RECORD(le2, changed_extent_ref, list_entry);
 
-                                                if (cer->type == TYPE_SHARED_DATA_REF && cer->sdr.offset == mr->address) {
-                                                    cer->sdr.offset = mr->new_address;
+                                                if (cer->type == TYPE_SHARED_DATA_REF && cer->offset == mr->address) {
+                                                    cer->offset = mr->new_address;
                                                     break;
                                                 }
 
