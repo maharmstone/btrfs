@@ -1659,6 +1659,9 @@ void queue_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In
     notification_fcb* nf;
     PIO_WORKITEM work_item;
 
+    if (shutting_down)
+        return;
+
     nf = ExAllocatePoolWithTag(PagedPool, sizeof(notification_fcb), ALLOC_TAG);
     if (!nf) {
         ERR("out of memory\n");
