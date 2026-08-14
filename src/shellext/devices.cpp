@@ -409,7 +409,7 @@ void BtrfsDeviceAdd::populate_device_tree(HWND tree) {
                             else
                                 dev = (btrfs_filesystem_device*)((uint8_t*)dev + offsetof(btrfs_filesystem_device, name[0]) + dev->name_length);
 
-                            if (RtlCompareMemory(&device_list[i].dev_uuid, &device_list[i].dev_uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
+                            if (RtlCompareMemory(dev->uuid, device_list[i].dev_uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
                                 for (k = 0; k < device_list.size(); k++) {
                                     if (k != i && device_list[k].fstype == L"Btrfs" && device_list[k].drive != L"" &&
                                         RtlCompareMemory(&device_list[k].fs_uuid, &device_list[i].fs_uuid, BTRFS_UUID_SIZE) == BTRFS_UUID_SIZE) {
