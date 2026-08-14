@@ -1432,7 +1432,7 @@ end:
 
 static NTSTATUS get_devices(device_extension* Vcb, void* data, ULONG length) {
     btrfs_device* dev = NULL;
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     LIST_ENTRY* le;
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
