@@ -1317,7 +1317,11 @@ void test_io(HANDLE token, const u16string& dir) {
             auto ret = read_file(h.get(), random.size(), 0);
             auto exp = random;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
             memset(exp.data() + 25, 0, 100);
+#pragma GCC diagnostic pop
 
             if (memcmp(ret.data(), exp.data(), exp.size()))
                 throw runtime_error("Data read did not match data written");
