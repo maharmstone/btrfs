@@ -54,7 +54,7 @@ void set_dpi_aware() {
     if (!shcore)
         return;
 
-    SetProcessDpiAwareness = (_SetProcessDpiAwareness)GetProcAddress(shcore, "SetProcessDpiAwareness");
+    SetProcessDpiAwareness = (_SetProcessDpiAwareness)(void*)GetProcAddress(shcore, "SetProcessDpiAwareness");
 
     if (!SetProcessDpiAwareness)
         return;
@@ -181,7 +181,7 @@ wstring format_ntstatus(NTSTATUS Status) {
     if (!ntdll)
         return L"(error loading ntdll.dll)";
 
-    RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+    RtlNtStatusToDosError = (_RtlNtStatusToDosError)(void*)GetProcAddress(ntdll, "RtlNtStatusToDosError");
 
     if (!RtlNtStatusToDosError) {
         FreeLibrary(ntdll);
@@ -754,7 +754,7 @@ ntstatus_error::ntstatus_error(NTSTATUS Status) : Status(Status) {
         throw runtime_error("Error loading ntdll.dll.");
 
     try {
-        RtlNtStatusToDosError = (_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError");
+        RtlNtStatusToDosError = (_RtlNtStatusToDosError)(void*)GetProcAddress(ntdll, "RtlNtStatusToDosError");
 
         if (!RtlNtStatusToDosError)
             throw runtime_error("Error loading RtlNtStatusToDosError in ntdll.dll.");
