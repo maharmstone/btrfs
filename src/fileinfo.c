@@ -4807,6 +4807,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
     len = bytes_needed;
     flefii = NULL;
 
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
     ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
     if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
@@ -4844,8 +4845,6 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
             len = bytes_needed;
         }
     } else {
-        ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
-
         if (IsListEmpty(&fcb->hardlinks)) {
             bytes_needed += offsetof(FILE_LINK_ENTRY_FULL_ID_INFORMATION, FileName[0]) + fileref->dc->name.Length;
 
@@ -4942,8 +4941,6 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                 le = le->Flink;
             }
         }
-
-        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
     }
 
     flfii->BytesNeeded = bytes_needed;
@@ -4953,6 +4950,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
     Status = overflow ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
 
     ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
 
     return Status;
 }
