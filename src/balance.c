@@ -127,7 +127,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         if (len < sizeof(struct btrfs_extent_inline_ref)) {
             ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
                 tp->item->key.type, tp->item->key.offset);
-
+            ExFreePool(mr);
             return STATUS_INTERNAL_ERROR;
         }
 
@@ -137,6 +137,7 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
         ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
         if (!ref) {
             ERR("out of memory\n");
+            ExFreePool(mr);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -151,6 +152,14 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
             default:
                 ERR("unexpected tree type %x\n", eir->type);
                 ExFreePool(ref);
+
+                while (!IsListEmpty(&mr->refs)) {
+                    metadata_reloc_ref* ref2 = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+                    ExFreePool(ref2);
+                }
+
+                ExFreePool(mr);
+
                 return STATUS_INTERNAL_ERROR;
         }
 
@@ -171,6 +180,14 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
                         metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                         if (!ref) {
                             ERR("out of memory\n");
+
+                            while (!IsListEmpty(&mr->refs)) {
+                                metadata_reloc_ref* ref2 = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+                                ExFreePool(ref2);
+                            }
+
+                            ExFreePool(mr);
+
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
@@ -183,6 +200,14 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
                         Status = delete_tree_item(Vcb, &tp2);
                         if (!NT_SUCCESS(Status)) {
                             ERR("delete_tree_item returned %08lx\n", Status);
+
+                            while (!IsListEmpty(&mr->refs)) {
+                                metadata_reloc_ref* ref2 = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+                                ExFreePool(ref2);
+                            }
+
+                            ExFreePool(mr);
+
                             return Status;
                         }
 
@@ -193,6 +218,14 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
                         metadata_reloc_ref* ref = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc_ref), ALLOC_TAG);
                         if (!ref) {
                             ERR("out of memory\n");
+
+                            while (!IsListEmpty(&mr->refs)) {
+                                metadata_reloc_ref* ref2 = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+                                ExFreePool(ref2);
+                            }
+
+                            ExFreePool(mr);
+
                             return STATUS_INSUFFICIENT_RESOURCES;
                         }
 
@@ -205,6 +238,14 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
                         Status = delete_tree_item(Vcb, &tp2);
                         if (!NT_SUCCESS(Status)) {
                             ERR("delete_tree_item returned %08lx\n", Status);
+
+                            while (!IsListEmpty(&mr->refs)) {
+                                metadata_reloc_ref* ref2 = CONTAINING_RECORD(RemoveHeadList(&mr->refs), metadata_reloc_ref, list_entry);
+                                ExFreePool(ref2);
+                            }
+
+                            ExFreePool(mr);
+
                             return Status;
                         }
 
