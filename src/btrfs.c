@@ -1820,6 +1820,7 @@ void reap_fcb(fcb* fcb) {
     if (fcb->hash_ptrs_uc)
         ExFreePool(fcb->hash_ptrs_uc);
 
+    FsRtlTeardownPerStreamContexts(&fcb->Header);
     FsRtlUninitializeFileLock(&fcb->lock);
     FsRtlUninitializeOplock(fcb_oplock(fcb));
 
