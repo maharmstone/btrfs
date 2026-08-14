@@ -2775,9 +2775,9 @@ static NTSTATUS finish_removing_device(_Requires_exclusive_lock_held_(_Curr_->tr
 
                 ExFreePool(vc->pnp_name.Buffer);
                 RemoveEntryList(&vc->list_entry);
-                ExFreePool(vc);
 
                 ObDereferenceObject(vc->fileobj);
+                ExFreePool(vc);
 
                 break;
             }
