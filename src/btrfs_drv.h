@@ -330,6 +330,7 @@ typedef struct _file_ref {
 
     LIST_ENTRY list_entry;
     LIST_ENTRY list_entry_dirty;
+    LIST_ENTRY list_entry_reap;
 } file_ref;
 
 typedef struct {
@@ -1085,7 +1086,7 @@ NTSTATUS __stdcall AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT Physica
 void reap_fcb(fcb* fcb);
 void reap_fcbs(device_extension* Vcb);
 void reap_fileref(device_extension* Vcb, file_ref* fr);
-void reap_filerefs(device_extension* Vcb, file_ref* fr);
+void reap_filerefs(device_extension* Vcb);
 NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, char* src, ULONG src_len);
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len);
 uint32_t get_num_of_processors();

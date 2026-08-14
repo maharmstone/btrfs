@@ -1898,23 +1898,28 @@ void reap_fileref(device_extension* Vcb, file_ref* fr) {
     ExFreeToPagedLookasideList(&Vcb->fileref_lookaside, fr);
 }
 
-void reap_filerefs(device_extension* Vcb, file_ref* fr) {
-    LIST_ENTRY* le;
+void reap_filerefs(device_extension* Vcb) {
+    LIST_ENTRY list = { &list, &list };
 
-    // FIXME - recursion is a bad idea in kernel mode
+    InsertTailList(&list, &Vcb->root_fileref->list_entry_reap);
 
-    le = fr->children.Flink;
-    while (le != &fr->children) {
-        file_ref* c = CONTAINING_RECORD(le, file_ref, list_entry);
-        LIST_ENTRY* le2 = le->Flink;
+    for (LIST_ENTRY* le = list.Flink; le != &list; le = le->Flink) {
+        file_ref* fr = CONTAINING_RECORD(le, file_ref, list_entry_reap);
 
-        reap_filerefs(Vcb, c);
-
-        le = le2;
+        for (LIST_ENTRY* le2 = fr->children.Flink; le2 != &fr->children; le2 = le2->Flink) {
+            file_ref* c = CONTAINING_RECORD(le2, file_ref, list_entry);
+            InsertTailList(&list, &c->list_entry_reap);
+        }
     }
 
-    if (fr->refcount == 0)
-        reap_fileref(Vcb, fr);
+    while (!IsListEmpty(&list)) {
+        file_ref* fr = CONTAINING_RECORD(list.Blink, file_ref, list_entry_reap);
+
+        RemoveEntryList(&fr->list_entry_reap);
+
+        if (fr->refcount == 0)
+            reap_fileref(Vcb, fr);
+    }
 }
 
 static NTSTATUS close_file(_In_ PFILE_OBJECT FileObject, _In_ PIRP Irp) {
