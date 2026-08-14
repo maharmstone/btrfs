@@ -793,7 +793,7 @@ NTSTATUS zstd_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t
     size_t init_res, written;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
-    ZSTD_parameters params;
+    ZSTD_compressionParameters cparams;
 
     stream = ZSTD_createCStream_advanced(zstd_mem);
 
@@ -802,15 +802,28 @@ NTSTATUS zstd_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t
         return STATUS_INTERNAL_ERROR;
     }
 
-    params = ZSTD_getParams(level, inlen, 0);
+    cparams = ZSTD_getCParams(level, inlen, 0);
 
-    if (params.cParams.windowLog > ZSTD_BTRFS_MAX_WINDOWLOG)
-        params.cParams.windowLog = ZSTD_BTRFS_MAX_WINDOWLOG;
+    if (cparams.windowLog > ZSTD_BTRFS_MAX_WINDOWLOG)
+        cparams.windowLog = ZSTD_BTRFS_MAX_WINDOWLOG;
 
-    init_res = ZSTD_initCStream_advanced(stream, NULL, 0, params, inlen);
-
+    init_res = ZSTD_CCtx_setParameter(stream, ZSTD_c_compressionLevel, level);
     if (ZSTD_isError(init_res)) {
-        ERR("ZSTD_initCStream_advanced failed: %s\n", ZSTD_getErrorName(init_res));
+        ERR("ZSTD_CCtx_setParameter failed: %s\n", ZSTD_getErrorName(init_res));
+        ZSTD_freeCStream(stream);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    init_res = ZSTD_CCtx_setParameter(stream, ZSTD_c_windowLog, cparams.windowLog);
+    if (ZSTD_isError(init_res)) {
+        ERR("ZSTD_CCtx_setParameter failed: %s\n", ZSTD_getErrorName(init_res));
+        ZSTD_freeCStream(stream);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    init_res = ZSTD_CCtx_setPledgedSrcSize(stream, inlen);
+    if (ZSTD_isError(init_res)) {
+        ERR("ZSTD_CCtx_setPledgedSrcSize failed: %s\n", ZSTD_getErrorName(init_res));
         ZSTD_freeCStream(stream);
         return STATUS_INTERNAL_ERROR;
     }
