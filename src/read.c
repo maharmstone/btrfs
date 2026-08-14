@@ -3069,6 +3069,11 @@ nextitem:
                 read_part* rp2;
 
                 rp2 = ExAllocatePoolWithTag(pool_type, offsetof(read_part, extents) + (sizeof(read_part_extent) * (last_rp->num_extents + 1)), ALLOC_TAG);
+                if (!rp2) {
+                    ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto exit;
+                }
 
                 rp2->addr = last_rp->addr;
                 rp2->c = last_rp->c;
