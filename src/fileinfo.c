@@ -4641,6 +4641,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
     len = bytes_needed;
     feli = NULL;
 
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
     ExAcquireResourceSharedLite(fcb->Header.Resource, true);
 
     if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID) {
@@ -4675,11 +4676,8 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
             len = bytes_needed;
         }
     } else {
-        ExAcquireResourceExclusiveLite(&fcb->Vcb->fileref_lock, true);
-
         if (IsListEmpty(&fcb->hardlinks)) {
             if (!fileref->dc) {
-                ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
                 Status = STATUS_INVALID_PARAMETER;
                 goto end;
             }
@@ -4773,8 +4771,6 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
                 le = le->Flink;
             }
         }
-
-        ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
     }
 
     fli->BytesNeeded = bytes_needed;
@@ -4785,6 +4781,7 @@ static NTSTATUS fill_in_hard_link_information(FILE_LINKS_INFORMATION* fli, file_
 
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
+    ExReleaseResourceLite(&fcb->Vcb->fileref_lock);
 
     return Status;
 }
