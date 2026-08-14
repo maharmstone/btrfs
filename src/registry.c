@@ -29,7 +29,8 @@ extern PFILE_OBJECT comfo;
 extern PDEVICE_OBJECT comdo;
 #endif
 
-WORK_QUEUE_ITEM wqi;
+static WORK_QUEUE_ITEM wqi;
+static IO_STATUS_BLOCK reg_iosb;
 
 static const WCHAR option_mounted[] = L"Mounted";
 
@@ -1022,24 +1023,26 @@ _Function_class_(WORKER_THREAD_ROUTINE)
 static void __stdcall registry_work_item(PVOID Parameter) {
     NTSTATUS Status;
     HANDLE regh = (HANDLE)Parameter;
-    IO_STATUS_BLOCK iosb;
 
     TRACE("registry changed\n");
 
     read_registry(&registry_path, true);
 
-    Status = ZwNotifyChangeKey(regh, NULL, (PVOID)&wqi, (PVOID)DelayedWorkQueue, &iosb, REG_NOTIFY_CHANGE_LAST_SET, true, NULL, 0, true);
+    Status = ZwNotifyChangeKey(regh, NULL, (PVOID)&wqi, (PVOID)DelayedWorkQueue,
+                               &reg_iosb, REG_NOTIFY_CHANGE_LAST_SET, true,
+                               NULL, 0, true);
     if (!NT_SUCCESS(Status))
         ERR("ZwNotifyChangeKey returned %08lx\n", Status);
 }
 
 void watch_registry(HANDLE regh) {
     NTSTATUS Status;
-    IO_STATUS_BLOCK iosb;
 
     ExInitializeWorkItem(&wqi, registry_work_item, regh);
 
-    Status = ZwNotifyChangeKey(regh, NULL, (PVOID)&wqi, (PVOID)DelayedWorkQueue, &iosb, REG_NOTIFY_CHANGE_LAST_SET, true, NULL, 0, true);
+    Status = ZwNotifyChangeKey(regh, NULL, (PVOID)&wqi, (PVOID)DelayedWorkQueue,
+                               &reg_iosb, REG_NOTIFY_CHANGE_LAST_SET, true,
+                               NULL, 0, true);
     if (!NT_SUCCESS(Status))
         ERR("ZwNotifyChangeKey returned %08lx\n", Status);
 }
