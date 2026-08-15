@@ -5627,8 +5627,13 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                     c->devices[i]->devitem.bytes_used -= de->length;
 
                     if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.devid) {
-                        if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start && c->chunk_item->stripe[i].offset + de->length > Vcb->balance.opts[0].drange_start)
-                            space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, Vcb->balance.opts[0].drange_start - c->chunk_item->stripe[i].offset, NULL, rollback);
+                        if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start) {
+                            uint64_t end = min(c->chunk_item->stripe[i].offset + de->length, Vcb->balance.opts[0].drange_start);
+
+                            space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
+                                            end - c->chunk_item->stripe[i].offset,
+                                            NULL, rollback);
+                        }
                     } else
                         space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, de->length, NULL, rollback);
                 }
@@ -5640,8 +5645,13 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
             c->devices[i]->devitem.bytes_used -= len;
 
             if (Vcb->balance.thread && Vcb->balance.shrinking && Vcb->balance.opts[0].devid == c->devices[i]->devitem.devid) {
-                if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start && c->chunk_item->stripe[i].offset + len > Vcb->balance.opts[0].drange_start)
-                    space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, Vcb->balance.opts[0].drange_start - c->chunk_item->stripe[i].offset, NULL, rollback);
+                if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start) {
+                    uint64_t end = min(c->chunk_item->stripe[i].offset + len, Vcb->balance.opts[0].drange_start);
+
+                    space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
+                                    end - c->chunk_item->stripe[i].offset,
+                                    NULL, rollback);
+                }
             } else
                 space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, len, NULL, rollback);
         }
