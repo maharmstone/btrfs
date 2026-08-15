@@ -3168,7 +3168,7 @@ uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t addres
     len = tp.item->size - sizeof(struct btrfs_extent_item);
     ptr = (uint8_t*)&ei[1];
 
-    if (searchkey.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
+    if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK) {
         if (tp.item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
             ERR("(%I64x,%x,%I64x): size was %u, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                                                                           tp.item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
