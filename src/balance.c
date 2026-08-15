@@ -2307,6 +2307,19 @@ static __inline uint64_t get_chunk_dup_type(chunk* c) {
         return BTRFS_AVAIL_ALLOC_BIT_SINGLE;
 }
 
+static uint16_t get_chunk_size_factor(chunk* c) {
+    if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
+        return c->chunk_item->num_stripes;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
+        return c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
+        return c->chunk_item->num_stripes - 1;
+    else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
+        return c->chunk_item->num_stripes - 2;
+    else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
+        return 1;
+}
+
 static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) {
     btrfs_balance_opts* opts;
 
@@ -2338,22 +2351,11 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_DRANGE) {
-        uint16_t i, factor;
+        uint16_t i;
         uint64_t physsize;
         bool b = false;
 
-        if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID0)
-            factor = c->chunk_item->num_stripes;
-        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID10)
-            factor = c->chunk_item->num_stripes / c->chunk_item->sub_stripes;
-        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5)
-            factor = c->chunk_item->num_stripes - 1;
-        else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6)
-            factor = c->chunk_item->num_stripes - 2;
-        else // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
-            factor = 1;
-
-        physsize = c->chunk_item->length / factor;
+        physsize = c->chunk_item->length / get_chunk_size_factor(c);
 
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (c->chunk_item->stripe[i].offset < opts->drange_end && c->chunk_item->stripe[i].offset + physsize >= opts->drange_start &&
@@ -3531,27 +3533,59 @@ end:
                 }
             } else {
                 uint64_t old_size;
+                bool failed = false;
 
-                old_size = dev->devitem.total_bytes;
-                dev->devitem.total_bytes = Vcb->balance.opts[0].drange_start;
+                ExAcquireResourceSharedLite(&Vcb->chunk_lock, true);
 
-                Status = update_dev_item(Vcb, dev, NULL);
-                if (!NT_SUCCESS(Status)) {
-                    ERR("update_dev_item returned %08lx\n", Status);
-                    dev->devitem.total_bytes = old_size;
-                    Vcb->balance.status = Status;
+                for (LIST_ENTRY* le = Vcb->chunks.Flink; le != &Vcb->chunks; le = le->Flink) {
+                    chunk* c = CONTAINING_RECORD(le, chunk, list_entry);
+
+                    uint16_t factor = get_chunk_size_factor(c);
+
+                    for (uint16_t i = 0; i < c->chunk_item->num_stripes; i++) {
+                        if (c->chunk_item->stripe[i].devid != dev->devitem.devid)
+                            continue;
+
+                        if (c->chunk_item->stripe[i].offset + (c->chunk_item->length / factor) > Vcb->balance.opts[0].drange_start) {
+                            failed = true;
+                            break;
+                        }
+                    }
+
+                    if (failed)
+                        break;
+                }
+
+                ExReleaseResourceLite(&Vcb->chunk_lock);
+
+                if (failed) {
+                    Vcb->balance.status = STATUS_DISK_FULL;
 
                     Status = regenerate_space_list(Vcb, dev);
                     if (!NT_SUCCESS(Status))
                         WARN("regenerate_space_list returned %08lx\n", Status);
                 } else {
-                    Vcb->superblock.total_bytes -= old_size - dev->devitem.total_bytes;
+                    old_size = dev->devitem.total_bytes;
+                    dev->devitem.total_bytes = Vcb->balance.opts[0].drange_start;
 
-                    Status = do_write(Vcb, NULL);
-                    if (!NT_SUCCESS(Status))
-                        ERR("do_write returned %08lx\n", Status);
+                    Status = update_dev_item(Vcb, dev, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("update_dev_item returned %08lx\n", Status);
+                        dev->devitem.total_bytes = old_size;
+                        Vcb->balance.status = Status;
 
-                    free_trees(Vcb);
+                        Status = regenerate_space_list(Vcb, dev);
+                        if (!NT_SUCCESS(Status))
+                            WARN("regenerate_space_list returned %08lx\n", Status);
+                    } else {
+                        Vcb->superblock.total_bytes -= old_size - dev->devitem.total_bytes;
+
+                        Status = do_write(Vcb, NULL);
+                        if (!NT_SUCCESS(Status))
+                            ERR("do_write returned %08lx\n", Status);
+
+                        free_trees(Vcb);
+                    }
                 }
             }
 
