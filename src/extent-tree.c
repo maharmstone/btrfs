@@ -1913,7 +1913,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     }
 
     if (tp2.item->size < sizeof(struct btrfs_shared_data_ref)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected %llu\n",
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n",
             tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset,
             tp2.item->size, sizeof(struct btrfs_shared_data_ref));
 
