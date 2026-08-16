@@ -572,6 +572,8 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
     }
 
     if (rc < ei->refs) {
+        uint8_t level = ei2 ? ei2->level : (uint8_t)tp.item->key.offset;
+
         do {
             traverse_ptr next_tp;
 
@@ -582,7 +584,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
 
             if (tp.item->key.objectid == address) {
                 if (tp.item->key.type == BTRFS_TREE_BLOCK_REF_KEY)
-                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, ei2 ? ei2->level : (uint8_t)tp.item->key.offset, ei2 ? &ei2->key : NULL);
+                    log_tree_checksum_error(Vcb, address, devid, tp.item->key.offset, level, ei2 ? &ei2->key : NULL);
                 else if (tp.item->key.type == BTRFS_EXTENT_DATA_REF_KEY) {
                     struct btrfs_extent_data_ref* edr;
 
