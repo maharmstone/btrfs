@@ -299,7 +299,7 @@ NTSTATUS increase_extent_refcount_data(device_extension* Vcb, uint64_t address, 
             struct btrfs_extent_data_ref* edr2;
 
             if (tp2.item->size < sizeof(struct btrfs_extent_data_ref)) {
-                ERR("(%I64x,%x,%I64x) was %x bytes, expecting %llx\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset, tp2.item->size, sizeof(struct btrfs_extent_data_ref));
+                ERR("(%I64x,%x,%I64x) was %x bytes, expecting %Ix\n", tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset, tp2.item->size, sizeof(struct btrfs_extent_data_ref));
                 return STATUS_INTERNAL_ERROR;
             }
 
