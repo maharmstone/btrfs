@@ -1124,6 +1124,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
 
     if (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || t->header.flags & BTRFS_HEADER_FLAG_RELOC || !(t->header.flags & BTRFS_BACKREF_REV_MASK)) {
         bool unique = rc > 1 ? false : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp, rollback) : false);
+        bool disposed = false;
         uint64_t offset;
 
         if (t->header.level == 0) {
@@ -1292,19 +1293,32 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                     ERR("decrease_extent_refcount_shared_block returned %08lx\n", Status);
                     return Status;
                 }
+            } else if (sbrrc == 0 && t->header.owner != t->root->id) {
+                Status = reduce_tree_extent(Vcb, t->header.bytenr, t, t->root->id,
+                                            Irp, rollback);
+
+                if (!NT_SUCCESS(Status)) {
+                    ERR("reduce_tree_extent returned %08lx\n", Status);
+                    return Status;
+                }
+
+                disposed = true;
             }
         }
 
-        if (t->parent)
-            offset = t->parent->header.owner;
-        else
-            offset = t->header.owner;
+        if (!disposed) {
+            if (t->parent)
+                offset = t->parent->header.owner;
+            else
+                offset = t->header.owner;
 
-        Status = increase_extent_refcount_tree(Vcb, t->header.bytenr, offset,
-                                               t->parent ? &t->paritem->key : NULL, t->header.level, Irp);
-        if (!NT_SUCCESS(Status)) {
-            ERR("increase_extent_refcount returned %08lx\n", Status);
-            return Status;
+            Status = increase_extent_refcount_tree(Vcb, t->header.bytenr, offset,
+                                                   t->parent ? &t->paritem->key : NULL,
+                                                   t->header.level, Irp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("increase_extent_refcount returned %08lx\n", Status);
+                return Status;
+            }
         }
 
         // FIXME - clear shared flag if unique?
