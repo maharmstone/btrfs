@@ -516,7 +516,7 @@ static void log_unrecoverable_error(device_extension* Vcb, uint64_t address, uin
                 struct btrfs_extent_data_ref* edr;
 
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
-                    ERR("EXTENT_DATA_REF takes up %Iu bytes, but only %llu remaining\n", sizeof(struct btrfs_extent_data_ref), len + sizeof(uint64_t));
+                    ERR("EXTENT_DATA_REF takes up %Iu bytes, but only %Iu remaining\n", sizeof(struct btrfs_extent_data_ref), len + sizeof(uint64_t));
                     fail = true;
                     break;
                 }
