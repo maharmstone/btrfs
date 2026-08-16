@@ -1597,7 +1597,7 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
     }
 
     if (tp2.item->size < sizeof(struct btrfs_extent_data_ref)) {
-        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %llu\n",
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
             tp2.item->key.objectid, tp2.item->key.type, tp2.item->key.offset,
             tp2.item->size, sizeof(struct btrfs_extent_data_ref));
 
