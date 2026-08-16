@@ -1955,7 +1955,7 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
     }
 
     if (sdr->count > count) {
-        struct btrfs_shared_data_ref* newsdr = ExAllocatePoolWithTag(PagedPool, tp2.item->size, ALLOC_TAG);
+        struct btrfs_shared_data_ref* newsdr = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_shared_data_ref), ALLOC_TAG);
 
         if (!newsdr) {
             ERR("out of memory\n");
@@ -1964,9 +1964,10 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
 
         newsdr->count = sdr->count - count;
 
-        Status = insert_tree_item(Vcb, Vcb->extent_root, tp2.item->key.objectid,
-                                  tp2.item->key.type, tp2.item->key.offset, newsdr,
-                                  tp2.item->size, NULL, Irp);
+        Status = insert_tree_item(Vcb, Vcb->extent_root, address,
+                                  BTRFS_SHARED_DATA_REF_KEY, offset, newsdr,
+                                  sizeof(struct btrfs_shared_data_ref), NULL,
+                                  Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item returned %08lx\n", Status);
             return Status;
