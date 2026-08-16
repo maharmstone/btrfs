@@ -3538,17 +3538,17 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
 }
 
 static NTSTATUS fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, PIRP Irp) {
-    LIST_ENTRY* le;
-    NTSTATUS Status = STATUS_SUCCESS;;
+    NTSTATUS Status;
 
     if (fcb->csum_loaded)
         return STATUS_SUCCESS;
 
-    if (IsListEmpty(&fcb->extents) || fcb->inode_item.flags & BTRFS_INODE_NODATASUM)
-        goto end;
+    if (IsListEmpty(&fcb->extents) || fcb->inode_item.flags & BTRFS_INODE_NODATASUM) {
+        fcb->csum_loaded = true;
+        return STATUS_SUCCESS;
+    }
 
-    le = fcb->extents.Flink;
-    while (le != &fcb->extents) {
+    for (LIST_ENTRY* le = fcb->extents.Flink; le != &fcb->extents; le = le->Flink) {
         extent* ext = CONTAINING_RECORD(le, extent, list_entry);
 
         if (!ext->ignore && ext->extent_data.type == BTRFS_FILE_EXTENT_REG) {
@@ -3560,22 +3560,31 @@ static NTSTATUS fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_ex
             if (!ext->csum) {
                 ERR("out of memory\n");
                 Status = STATUS_INSUFFICIENT_RESOURCES;
-                goto end;
+                goto fail;
             }
 
             Status = load_csum(Vcb, ext->csum, ext->extent_data.disk_bytenr + (ext->extent_data.compression == BTRFS_COMPRESS_NONE ? ext->extent_data.offset : 0), len, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("load_csum returned %08lx\n", Status);
-                goto end;
+                goto fail;
             }
         }
-
-        le = le->Flink;
     }
 
-end:
     fcb->csum_loaded = true;
+
+    return STATUS_SUCCESS;
+
+fail:
+    for (LIST_ENTRY* le = fcb->extents.Flink; le != &fcb->extents; le = le->Flink) {
+        extent* ext = CONTAINING_RECORD(le, extent, list_entry);
+
+        if (ext->csum) {
+            ExFreePool(ext->csum);
+            ext->csum = NULL;
+        }
+    }
 
     return Status;
 }
