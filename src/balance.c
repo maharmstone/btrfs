@@ -78,6 +78,13 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
     uint64_t inline_rc;
     uint8_t* ptr;
 
+    if (!skinny && tp->item->size < sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n",
+            tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
+            tp->item->size, sizeof(struct btrfs_extent_item) + sizeof(struct btrfs_tree_block_info));
+        return STATUS_INTERNAL_ERROR;
+    }
+
     mr = ExAllocatePoolWithTag(PagedPool, sizeof(metadata_reloc), ALLOC_TAG);
     if (!mr) {
         ERR("out of memory\n");
