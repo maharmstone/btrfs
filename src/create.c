@@ -3537,12 +3537,12 @@ static NTSTATUS get_reparse_block(fcb* fcb, uint8_t** data) {
     return STATUS_SUCCESS;
 }
 
-static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, PIRP Irp) {
+static NTSTATUS fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, PIRP Irp) {
     LIST_ENTRY* le;
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;;
 
     if (fcb->csum_loaded)
-        return;
+        return STATUS_SUCCESS;
 
     if (IsListEmpty(&fcb->extents) || fcb->inode_item.flags & BTRFS_INODE_NODATASUM)
         goto end;
@@ -3559,6 +3559,7 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             ext->csum = ExAllocatePoolWithTag(NonPagedPool, (ULONG)(len * Vcb->csum_size), ALLOC_TAG);
             if (!ext->csum) {
                 ERR("out of memory\n");
+                Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
             }
 
@@ -3575,6 +3576,8 @@ static void fcb_load_csums(_Requires_lock_held_(_Curr_->tree_lock) device_extens
 
 end:
     fcb->csum_loaded = true;
+
+    return Status;
 }
 
 static NTSTATUS open_file3(device_extension* Vcb, PIRP Irp, ACCESS_MASK granted_access, file_ref* fileref, LIST_ENTRY* rollback) {
@@ -3906,7 +3909,7 @@ static void __stdcall oplock_complete(PVOID Context, PIRP Irp) {
         if (!skip_fcb_lock)
             ExAcquireResourceExclusiveLite(fcb2->Header.Resource, true);
 
-        fcb_load_csums(Vcb, fcb2, Irp);
+        Status = fcb_load_csums(Vcb, fcb2, Irp);
 
         if (!skip_fcb_lock)
             ExReleaseResourceLite(fcb2->Header.Resource);
@@ -4731,7 +4734,7 @@ exit:
         }
 
         ExAcquireResourceExclusiveLite(fcb2->Header.Resource, true);
-        fcb_load_csums(Vcb, fcb2, Irp);
+        Status = fcb_load_csums(Vcb, fcb2, Irp);
         ExReleaseResourceLite(fcb2->Header.Resource);
     } else if (Status != STATUS_REPARSE && Status != STATUS_OBJECT_NAME_NOT_FOUND && Status != STATUS_OBJECT_PATH_NOT_FOUND)
         TRACE("returning %08lx\n", Status);
