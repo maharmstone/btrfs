@@ -994,7 +994,7 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
     PSID owner;
     BOOLEAN defaulted;
 
-    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, as->SecurityDescriptor, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR,
+    Status = SeAssignSecurityEx(parfileref->fcb->sd, as->SecurityDescriptor, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR,
                                 SEF_SACL_AUTO_INHERIT, &as->SubjectSecurityContext, IoGetFileObjectGenericMapping(), PagedPool);
 
     if (!NT_SUCCESS(Status)) {
@@ -1010,7 +1010,7 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
         fcb->inode_item.uid = sid_to_uid(owner);
     }
 
-    find_gid(fcb, parfileref ? parfileref->fcb : NULL, &as->SubjectSecurityContext);
+    find_gid(fcb, parfileref->fcb, &as->SubjectSecurityContext);
 
     return STATUS_SUCCESS;
 }
