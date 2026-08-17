@@ -2647,7 +2647,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     if (!related) {
         Status = open_fileref(Vcb, &related, &fnus, NULL, true, NULL, NULL, PagedPool, ccb->case_sensitive, Irp);
 
-        if (!NT_SUCCESS(Status)) {
+        if (Status == STATUS_REPARSE) {
+            ERR("open_fileref returned %08lx\n", Status);
+            Status = STATUS_OBJECT_PATH_NOT_FOUND;
+            goto end;
+        } else if (!NT_SUCCESS(Status)) {
             ERR("open_fileref returned %08lx\n", Status);
             goto end;
         }
