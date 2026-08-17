@@ -7668,6 +7668,10 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     }
 
     Status = commit_batch_list(Vcb, &batchlist, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("commit_batch_list returned %08lx\n", Status);
+        return Status;
+    }
 
     // If only changing superblock, e.g. changing label, we still need to rewrite
     // the root tree so the generations match, otherwise you won't be able to mount on Linux.
