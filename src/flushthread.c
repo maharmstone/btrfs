@@ -7838,6 +7838,9 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         ExReleaseResourceLite(&pdode->child_lock);
     }
 
+    if (!Vcb->options.no_barrier && !Vcb->options.no_trim && Vcb->trim)
+        flush_disk_caches(Vcb);
+
     clean_space_cache(Vcb);
 
     le = Vcb->chunks.Flink;
