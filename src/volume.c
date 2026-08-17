@@ -184,6 +184,7 @@ NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         if (!Irp2->AssociatedIrp.SystemBuffer) {
             ERR("out of memory\n");
             ExReleaseResourceLite(&pdode->child_lock);
+            IoFreeIrp(Irp2);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
@@ -210,6 +211,8 @@ NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
         Status = context.iosb.Status;
     }
+
+    IoFreeIrp(Irp2);
 
     ExReleaseResourceLite(&pdode->child_lock);
 
