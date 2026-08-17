@@ -4098,10 +4098,13 @@ end:
 
 static void mark_subvol_dirty(device_extension* Vcb, root* r) {
     if (!r->dirty) {
-        r->dirty = true;
-
         ExAcquireResourceExclusiveLite(&Vcb->dirty_subvols_lock, true);
-        InsertTailList(&Vcb->dirty_subvols, &r->list_entry_dirty);
+
+        if (!r->dirty) {
+            r->dirty = true;
+            InsertTailList(&Vcb->dirty_subvols, &r->list_entry_dirty);
+        }
+
         ExReleaseResourceLite(&Vcb->dirty_subvols_lock);
     }
 
