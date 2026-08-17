@@ -4233,6 +4233,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
     fcb* fcb;
     ccb* ccb;
     LIST_ENTRY* le;
+    bool is_ntacl;
 
     static const char stream_pref[] = "user.";
 
@@ -4266,11 +4267,17 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         return STATUS_ACCESS_DENIED;
     }
 
+    is_ntacl = bsxa->namelen == sizeof(EA_NTACL) - 1 &&
+               RtlCompareMemory(bsxa->data, EA_NTACL, sizeof(EA_NTACL) - 1) == sizeof(EA_NTACL) - 1;
+
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
+
+    if (is_ntacl)
+        ExAcquireResourceSharedLite(ccb->fileref->parent->fcb->Header.Resource, true); // for SD
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
-    if (bsxa->namelen == sizeof(EA_NTACL) - 1 && RtlCompareMemory(bsxa->data, EA_NTACL, sizeof(EA_NTACL) - 1) == sizeof(EA_NTACL) - 1) {
+    if (is_ntacl) {
         if ((!(ccb->access & WRITE_DAC) || !(ccb->access & WRITE_OWNER)) && Irp->RequestorMode == UserMode) {
             WARN("insufficient privileges\n");
             Status = STATUS_ACCESS_DENIED;
@@ -4491,6 +4498,9 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
+
+    if (is_ntacl)
+        ExReleaseResourceLite(ccb->fileref->parent->fcb->Header.Resource);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
 
