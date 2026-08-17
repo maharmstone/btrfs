@@ -538,6 +538,9 @@ NTSTATUS fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp
 
     Status = SeAssignSecurityEx(parent->sd, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR, SEF_DACL_AUTO_INHERIT,
                                 &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+
+    SeReleaseSubjectContext(&subjcont);
+
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08lx\n", Status);
         return Status;
