@@ -994,8 +994,12 @@ NTSTATUS fcb_get_new_sd(fcb* fcb, file_ref* parfileref, ACCESS_STATE* as) {
     PSID owner;
     BOOLEAN defaulted;
 
+    ExAcquireResourceSharedLite(parfileref->fcb->Header.Resource, true);
+
     Status = SeAssignSecurityEx(parfileref->fcb->sd, as->SecurityDescriptor, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR,
                                 SEF_SACL_AUTO_INHERIT, &as->SubjectSecurityContext, IoGetFileObjectGenericMapping(), PagedPool);
+
+    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08lx\n", Status);
