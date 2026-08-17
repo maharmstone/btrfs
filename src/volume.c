@@ -189,7 +189,7 @@ NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
             goto end;
         }
 
-        Irp2->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+        Irp2->Flags |= IRP_BUFFERED_IO | IRP_INPUT_OPERATION;
 
         Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
         if (!Irp2->UserBuffer) {
@@ -226,6 +226,12 @@ NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
     if (Status == STATUS_PENDING) {
         KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
         Status = context.iosb.Status;
+    }
+
+    if (vc->devobj->Flags & DO_BUFFERED_IO) {
+        RtlCopyMemory(Irp2->UserBuffer, Irp2->AssociatedIrp.SystemBuffer,
+                      context.iosb.Information);
+        ExFreePool(Irp2->AssociatedIrp.SystemBuffer);
     }
 
     IoFreeIrp(Irp2);
