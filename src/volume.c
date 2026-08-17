@@ -192,10 +192,26 @@ NTSTATUS vol_read(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Irp2->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
 
         Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+        if (!Irp2->UserBuffer) {
+            ERR("out of memory\n");
+            ExReleaseResourceLite(&pdode->child_lock);
+            ExFreePool(Irp2->AssociatedIrp.SystemBuffer);
+            IoFreeIrp(Irp2);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
     } else if (vc->devobj->Flags & DO_DIRECT_IO)
         Irp2->MdlAddress = Irp->MdlAddress;
-    else
+    else {
         Irp2->UserBuffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
+        if (!Irp2->UserBuffer) {
+            ERR("out of memory\n");
+            ExReleaseResourceLite(&pdode->child_lock);
+            IoFreeIrp(Irp2);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+    }
 
     IrpSp2->Parameters.Read.Length = IrpSp->Parameters.Read.Length;
     IrpSp2->Parameters.Read.ByteOffset.QuadPart = IrpSp->Parameters.Read.ByteOffset.QuadPart;
