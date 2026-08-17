@@ -7536,8 +7536,15 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     while (!IsListEmpty(&Vcb->dirty_filerefs)) {
         file_ref* fr = CONTAINING_RECORD(RemoveHeadList(&Vcb->dirty_filerefs), file_ref, list_entry_dirty);
 
-        flush_fileref(fr, &batchlist, Irp);
+        Status = flush_fileref(fr, &batchlist, Irp);
+
         free_fileref(fr);
+
+        if (!NT_SUCCESS(Status)) {
+            ExReleaseResourceLite(&Vcb->dirty_filerefs_lock);
+            ERR("flush_fileref returned %08lx\n", Status);
+            return Status;
+        }
 
 #ifdef DEBUG_FLUSH_TIMES
         filerefs++;
