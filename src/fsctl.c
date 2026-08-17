@@ -3943,6 +3943,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08lx\n", Status);
+        SeReleaseSubjectContext(&subjcont);
         reap_fcb(fcb);
         goto end;
     }
@@ -3957,6 +3958,8 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     }
 
     find_gid(fcb, parfcb, &subjcont);
+
+    SeReleaseSubjectContext(&subjcont);
 
     ExAcquireResourceExclusiveLite(&Vcb->fileref_lock, true);
     acquire_fcb_lock_exclusive(Vcb);
