@@ -976,12 +976,14 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurity returned %08lx\n", Status);
+        SeReleaseSubjectContext(&subjcont);
         goto end;
     }
 
     if (!rootfcb->sd) {
         ERR("SeAssignSecurity returned NULL security descriptor\n");
         Status = STATUS_INTERNAL_ERROR;
+        SeReleaseSubjectContext(&subjcont);
         goto end;
     }
 
@@ -996,6 +998,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
     }
 
     find_gid(rootfcb, fileref->fcb, &subjcont);
+
+    SeReleaseSubjectContext(&subjcont);
 
     rootfcb->inode_item_changed = true;
 
