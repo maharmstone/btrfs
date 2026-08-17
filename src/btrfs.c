@@ -1688,20 +1688,24 @@ void queue_notification_fcb(_In_ file_ref* fileref, _In_ ULONG filter_match, _In
 
 void mark_fcb_dirty(_In_ fcb* fcb) {
     if (!fcb->dirty) {
-#ifdef DEBUG_FCB_REFCOUNTS
-        LONG rc;
-#endif
-        fcb->dirty = true;
-
-#ifdef DEBUG_FCB_REFCOUNTS
-        rc = InterlockedIncrement(&fcb->refcount);
-        WARN("fcb %p: refcount now %i\n", fcb, rc);
-#else
-        InterlockedIncrement(&fcb->refcount);
-#endif
-
         ExAcquireResourceExclusiveLite(&fcb->Vcb->dirty_fcbs_lock, true);
-        InsertTailList(&fcb->Vcb->dirty_fcbs, &fcb->list_entry_dirty);
+
+        if (!fcb->dirty) {
+#ifdef DEBUG_FCB_REFCOUNTS
+            LONG rc;
+#endif
+            fcb->dirty = true;
+
+#ifdef DEBUG_FCB_REFCOUNTS
+            rc = InterlockedIncrement(&fcb->refcount);
+            WARN("fcb %p: refcount now %i\n", fcb, rc);
+#else
+            InterlockedIncrement(&fcb->refcount);
+#endif
+
+            InsertTailList(&fcb->Vcb->dirty_fcbs, &fcb->list_entry_dirty);
+        }
+
         ExReleaseResourceLite(&fcb->Vcb->dirty_fcbs_lock);
     }
 
