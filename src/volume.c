@@ -295,6 +295,8 @@ NTSTATUS vol_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
         Status = context.iosb.Status;
     }
 
+    IoFreeIrp(Irp2);
+
     ExReleaseResourceLite(&pdode->child_lock);
 
     Irp->IoStatus.Information = context.iosb.Information;
