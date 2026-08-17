@@ -1815,6 +1815,13 @@ NTSTATUS open_fileref(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusiv
         }
 
         if (le->Flink == &parts) { // last entry
+            if (parent && sf2->fcb->atts & FILE_ATTRIBUTE_REPARSE_POINT) {
+                Status = STATUS_REPARSE;
+
+                if (parsed)
+                    *parsed = ((USHORT)(nb->us.Buffer - fnus->Buffer) * sizeof(WCHAR)) + nb->us.Length;
+            }
+
             if (fn_offset) {
                 if (has_stream)
                     nb = CONTAINING_RECORD(le->Blink, name_bit, list_entry);
