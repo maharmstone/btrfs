@@ -1246,8 +1246,11 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
     if (!atts_set)
         fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', true, Irp);
 
-    if (!sd_set)
+    if (!sd_set) {
+        ExAcquireResourceSharedLite(parent->Header.Resource, true);
         fcb_get_sd(fcb, parent, false, Irp);
+        ExReleaseResourceLite(parent->Header.Resource);
+    }
 
     acquire_fcb_lock_exclusive(Vcb);
 
