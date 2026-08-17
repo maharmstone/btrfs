@@ -3431,8 +3431,6 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
             RtlZeroMemory(data2 + dataoff + bytes_read, datalen2 - dataoff - bytes_read);
 
         if (fcb->ads) {
-            USHORT copylen;
-
             if ((uint64_t)ded->TargetFileOffset.QuadPart < fcb->adsdata.Length) {
                 RtlCopyMemory(&fcb->adsdata.Buffer[ded->TargetFileOffset.QuadPart], data2,
                               (USHORT)min((uint64_t)ded->ByteCount.QuadPart, (uint64_t)(fcb->adsdata.Length - ded->TargetFileOffset.QuadPart)));
