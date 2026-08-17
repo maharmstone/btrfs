@@ -505,7 +505,6 @@ typedef struct {
     bool readonly;
     bool reloc;
     bool trim;
-    bool can_flush;
     ULONG change_count;
     ULONG disk_num;
     ULONG part_num;

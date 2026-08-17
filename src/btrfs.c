@@ -3425,8 +3425,6 @@ static ULONG get_device_change_count(_In_ PDEVICE_OBJECT devobj) {
 
 void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ bool get_nums) {
     NTSTATUS Status;
-    ULONG aptelen;
-    ATA_PASS_THROUGH_EX* apte;
     STORAGE_PROPERTY_QUERY spq;
     DEVICE_TRIM_DESCRIPTOR dtd;
 
@@ -3462,39 +3460,6 @@ void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ bool get_
         if (Status == STATUS_MEDIA_WRITE_PROTECTED)
             dev->readonly = true;
     }
-
-    aptelen = sizeof(ATA_PASS_THROUGH_EX) + 512;
-    apte = ExAllocatePoolWithTag(NonPagedPool, aptelen, ALLOC_TAG);
-    if (!apte) {
-        ERR("out of memory\n");
-        return;
-    }
-
-    RtlZeroMemory(apte, aptelen);
-
-    apte->Length = sizeof(ATA_PASS_THROUGH_EX);
-    apte->AtaFlags = ATA_FLAGS_DATA_IN;
-    apte->DataTransferLength = aptelen - sizeof(ATA_PASS_THROUGH_EX);
-    apte->TimeOutValue = 3;
-    apte->DataBufferOffset = apte->Length;
-    apte->CurrentTaskFile[6] = IDE_COMMAND_IDENTIFY;
-
-    Status = dev_ioctl(dev->devobj, IOCTL_ATA_PASS_THROUGH, apte, aptelen,
-                       apte, aptelen, true, NULL);
-
-    if (!NT_SUCCESS(Status))
-        TRACE("IOCTL_ATA_PASS_THROUGH returned %08lx for IDENTIFY DEVICE\n", Status);
-    else {
-        IDENTIFY_DEVICE_DATA* idd = (IDENTIFY_DEVICE_DATA*)((uint8_t*)apte + sizeof(ATA_PASS_THROUGH_EX));
-
-        if (idd->CommandSetSupport.FlushCache) {
-            dev->can_flush = true;
-            TRACE("FLUSH CACHE supported\n");
-        } else
-            TRACE("FLUSH CACHE not supported\n");
-    }
-
-    ExFreePool(apte);
 
 #ifdef DEBUG_TRIM_EMULATION
     dev->trim = true;

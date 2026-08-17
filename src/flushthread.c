@@ -297,7 +297,6 @@ typedef struct {
 } trim_context;
 
 typedef struct {
-    ATA_PASS_THROUGH_EX apte;
     device* dev;
     PIRP Irp;
     IO_STATUS_BLOCK iosb;
@@ -6941,7 +6940,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
     return STATUS_SUCCESS;
 }
 
-static void flush_disk_caches(device_extension* Vcb) {
+static NTSTATUS flush_disk_caches(device_extension* Vcb) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     flush_context context;
     ULONG num;
@@ -6953,14 +6953,14 @@ static void flush_disk_caches(device_extension* Vcb) {
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev->devobj && !dev->readonly && dev->can_flush)
+        if (dev->devobj && !dev->readonly)
             context.left++;
 
         le = le->Flink;
     }
 
     if (context.left == 0)
-        return;
+        return STATUS_SUCCESS;
 
     num = 0;
 
@@ -6969,7 +6969,7 @@ static void flush_disk_caches(device_extension* Vcb) {
     context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(flush_context_stripe) * context.left, ALLOC_TAG);
     if (!context.stripes) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     RtlZeroMemory(context.stripes, sizeof(flush_context_stripe) * context.left);
@@ -6979,55 +6979,50 @@ static void flush_disk_caches(device_extension* Vcb) {
     while (le != &Vcb->devices) {
         device* dev = CONTAINING_RECORD(le, device, list_entry);
 
-        if (dev->devobj && !dev->readonly && dev->can_flush) {
-            PIO_STACK_LOCATION IrpSp;
+        if (dev->devobj && !dev->readonly) {
             flush_context_stripe* stripe = &context.stripes[num];
 
-            RtlZeroMemory(&stripe->apte, sizeof(ATA_PASS_THROUGH_EX));
-
-            stripe->apte.Length = sizeof(ATA_PASS_THROUGH_EX);
-            stripe->apte.TimeOutValue = 5;
-            stripe->apte.CurrentTaskFile[6] = IDE_COMMAND_FLUSH_CACHE;
-
-            stripe->Irp = IoAllocateIrp(dev->devobj->StackSize, false);
-
+            stripe->dev = dev;
+            stripe->Irp = IoBuildAsynchronousFsdRequest(IRP_MJ_FLUSH_BUFFERS,
+                                                        dev->devobj, NULL, 0,
+                                                        NULL, &stripe->iosb);
             if (!stripe->Irp) {
-                ERR("IoAllocateIrp failed\n");
-                goto nextdev;
+                for (unsigned int i = 0; i < num; i++) {
+                    if (context.stripes[i].Irp)
+                        IoFreeIrp(context.stripes[i].Irp);
+                }
+
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
-
-            IrpSp = IoGetNextIrpStackLocation(stripe->Irp);
-            IrpSp->MajorFunction = IRP_MJ_DEVICE_CONTROL;
-            IrpSp->FileObject = dev->fileobj;
-
-            IrpSp->Parameters.DeviceIoControl.IoControlCode = IOCTL_ATA_PASS_THROUGH;
-            IrpSp->Parameters.DeviceIoControl.InputBufferLength = sizeof(ATA_PASS_THROUGH_EX);
-            IrpSp->Parameters.DeviceIoControl.OutputBufferLength = sizeof(ATA_PASS_THROUGH_EX);
-
-            stripe->Irp->AssociatedIrp.SystemBuffer = &stripe->apte;
-            stripe->Irp->Flags |= IRP_BUFFERED_IO | IRP_INPUT_OPERATION;
-            stripe->Irp->UserBuffer = &stripe->apte;
-            stripe->Irp->UserIosb = &stripe->iosb;
 
             IoSetCompletionRoutine(stripe->Irp, flush_completion, &context, true, true, true);
 
-            IoCallDriver(dev->devobj, stripe->Irp);
-
-nextdev:
             num++;
         }
 
         le = le->Flink;
     }
 
+    for (unsigned int i = 0; i < num; i++) {
+        IoCallDriver(context.stripes[i].dev->devobj, context.stripes[i].Irp);
+    }
+
     KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
 
+    Status = STATUS_SUCCESS;
+
     for (unsigned int i = 0; i < num; i++) {
-        if (context.stripes[i].Irp)
-            IoFreeIrp(context.stripes[i].Irp);
+        NTSTATUS Status2 = context.stripes[i].Irp->IoStatus.Status;
+
+        if (!NT_SUCCESS(Status2) && Status2 != STATUS_INVALID_DEVICE_REQUEST && Status2 != STATUS_NOT_SUPPORTED)
+            Status = Status2;
+
+        IoFreeIrp(context.stripes[i].Irp);
     }
 
     ExFreePool(context.stripes);
+
+    return Status;
 }
 
 static NTSTATUS flush_changed_dev_stats(device_extension* Vcb, device* dev, PIRP Irp) {
@@ -7836,8 +7831,13 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
     Vcb->superblock.cache_generation = Vcb->superblock.generation;
 
-    if (!Vcb->options.no_barrier)
-        flush_disk_caches(Vcb);
+    if (!Vcb->options.no_barrier) {
+        Status = flush_disk_caches(Vcb);
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_disk_caches returned %08lx\n", Status);
+            goto end;
+        }
+    }
 
     Status = write_superblocks(Vcb, Irp);
     if (!NT_SUCCESS(Status)) {
@@ -7864,8 +7864,13 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         ExReleaseResourceLite(&pdode->child_lock);
     }
 
-    if (!Vcb->options.no_barrier && !Vcb->options.no_trim && Vcb->trim)
-        flush_disk_caches(Vcb);
+    if (!Vcb->options.no_barrier) {
+        Status = flush_disk_caches(Vcb);
+        if (!NT_SUCCESS(Status)) {
+            ERR("flush_disk_caches returned %08lx\n", Status);
+            goto end;
+        }
+    }
 
     clean_space_cache(Vcb);
 
