@@ -1714,11 +1714,15 @@ void mark_fcb_dirty(_In_ fcb* fcb) {
 
 void mark_fileref_dirty(_In_ file_ref* fileref) {
     if (!fileref->dirty) {
-        fileref->dirty = true;
-        increase_fileref_refcount(fileref);
-
         ExAcquireResourceExclusiveLite(&fileref->fcb->Vcb->dirty_filerefs_lock, true);
-        InsertTailList(&fileref->fcb->Vcb->dirty_filerefs, &fileref->list_entry_dirty);
+
+        if (!fileref->dirty) {
+            fileref->dirty = true;
+            increase_fileref_refcount(fileref);
+
+            InsertTailList(&fileref->fcb->Vcb->dirty_filerefs, &fileref->list_entry_dirty);
+        }
+
         ExReleaseResourceLite(&fileref->fcb->Vcb->dirty_filerefs_lock);
     }
 
