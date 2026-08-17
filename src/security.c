@@ -648,8 +648,12 @@ static NTSTATUS get_file_security(PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* 
         }
     }
 
+    ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+
     // Why (void**)? Is this a bug in mingw?
     Status = SeQuerySecurityDescriptorInfo(&flags, relsd, buflen, (void**)&fcb->sd);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
 
     if (Status == STATUS_BUFFER_TOO_SMALL)
         TRACE("SeQuerySecurityDescriptorInfo returned %08lx\n", Status);
