@@ -1319,7 +1319,7 @@ _Dispatch_type_(IRP_MJ_SET_SECURITY)
 _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_set_security(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp);
+NTSTATUS fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp);
 void add_user_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t uid);
 void add_group_mapping(WCHAR* sidstring, ULONG sidstringlength, uint32_t gid);
 uint32_t sid_to_uid(PSID sid);

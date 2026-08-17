@@ -4918,7 +4918,11 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     if (tp.item->size > 0)
         RtlCopyMemory(&root_fcb->inode_item, tp.item->data, min(sizeof(struct btrfs_inode_item), tp.item->size));
 
-    fcb_get_sd(root_fcb, NULL, true, Irp);
+    Status = fcb_get_sd(root_fcb, NULL, true, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("fcb_get_sd returned %08lx\n", Status);
+        goto exit;
+    }
 
     root_fcb->atts = get_file_attributes(Vcb, root_fcb->subvol, root_fcb->inode, root_fcb->type, false, false, Irp);
 

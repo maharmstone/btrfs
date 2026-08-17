@@ -4307,8 +4307,12 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         fcb->sd_dirty = true;
 
         if (!fcb->sd) {
-            fcb_get_sd(fcb, ccb->fileref->parent->fcb, false, Irp);
+            Status = fcb_get_sd(fcb, ccb->fileref->parent->fcb, false, Irp);
+
             fcb->sd_deleted = true;
+
+            if (!NT_SUCCESS(Status))
+                goto end;
         }
 
         mark_fcb_dirty(fcb);

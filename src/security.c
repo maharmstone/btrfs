@@ -412,7 +412,7 @@ static ACL* load_default_acl() {
     return acl;
 }
 
-static void get_top_level_sd(fcb* fcb) {
+static NTSTATUS get_top_level_sd(fcb* fcb) {
     NTSTATUS Status;
     SECURITY_DESCRIPTOR sd;
     ULONG buflen;
@@ -442,6 +442,7 @@ static void get_top_level_sd(fcb* fcb) {
     gid_to_sid(fcb->inode_item.gid, &groupsid);
     if (!groupsid) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -456,6 +457,7 @@ static void get_top_level_sd(fcb* fcb) {
 
     if (!acl) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -479,12 +481,14 @@ static void get_top_level_sd(fcb* fcb) {
 
     if (buflen == 0 || Status == STATUS_SUCCESS) {
         TRACE("RtlAbsoluteToSelfRelativeSD said SD is zero-length\n");
+        Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
 
     fcb->sd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
     if (!fcb->sd) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -497,6 +501,8 @@ static void get_top_level_sd(fcb* fcb) {
         goto end;
     }
 
+    Status = STATUS_SUCCESS;
+
 end:
     if (acl)
         ExFreePool(acl);
@@ -506,9 +512,11 @@ end:
 
     if (groupsid)
         ExFreePool(groupsid);
+
+    return Status;
 }
 
-void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
+NTSTATUS fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     NTSTATUS Status;
     PSID usersid = NULL, groupsid = NULL;
     SECURITY_SUBJECT_CONTEXT subjcont;
@@ -521,12 +529,10 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     uint8_t* buf;
 
     if (look_for_xattr && get_xattr(fcb->Vcb, fcb->subvol, fcb->inode, EA_NTACL, EA_NTACL_HASH, (uint8_t**)&fcb->sd, (uint16_t*)&buflen, Irp))
-        return;
+        return STATUS_SUCCESS;
 
-    if (!parent) {
-        get_top_level_sd(fcb);
-        return;
-    }
+    if (!parent)
+        return get_top_level_sd(fcb);
 
     SeCaptureSubjectContext(&subjcont);
 
@@ -534,25 +540,25 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
                                 &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08lx\n", Status);
-        return;
+        return Status;
     }
 
     Status = RtlSelfRelativeToAbsoluteSD(fcb->sd, NULL, &abssdlen, NULL, &dacllen, NULL, &sacllen, NULL, &ownerlen,
                                          NULL, &grouplen);
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
         ERR("RtlSelfRelativeToAbsoluteSD returned %08lx\n", Status);
-        return;
+        return Status;
     }
 
     if (abssdlen + dacllen + sacllen + ownerlen + grouplen == 0) {
         ERR("RtlSelfRelativeToAbsoluteSD returned zero lengths\n");
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
 
     buf = (uint8_t*)ExAllocatePoolWithTag(PagedPool, abssdlen + dacllen + sacllen + ownerlen + grouplen, ALLOC_TAG);
     if (!buf) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     abssd = (PSECURITY_DESCRIPTOR)buf;
@@ -566,14 +572,14 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_TOO_SMALL) {
         ERR("RtlSelfRelativeToAbsoluteSD returned %08lx\n", Status);
         ExFreePool(buf);
-        return;
+        return Status;
     }
 
     Status = uid_to_sid(fcb->inode_item.uid, &usersid);
     if (!NT_SUCCESS(Status)) {
         ERR("uid_to_sid returned %08lx\n", Status);
         ExFreePool(buf);
-        return;
+        return Status;
     }
 
     RtlSetOwnerSecurityDescriptor(abssd, usersid, false);
@@ -583,7 +589,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         ERR("out of memory\n");
         ExFreePool(usersid);
         ExFreePool(buf);
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     RtlSetGroupSecurityDescriptor(abssd, groupsid, false);
@@ -596,7 +602,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         ExFreePool(usersid);
         ExFreePool(groupsid);
         ExFreePool(buf);
-        return;
+        return Status;
     }
 
     if (buflen == 0) {
@@ -604,7 +610,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         ExFreePool(usersid);
         ExFreePool(groupsid);
         ExFreePool(buf);
-        return;
+        return STATUS_INTERNAL_ERROR;
     }
 
     newsd = ExAllocatePoolWithTag(PagedPool, buflen, ALLOC_TAG);
@@ -613,7 +619,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         ExFreePool(usersid);
         ExFreePool(groupsid);
         ExFreePool(buf);
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     Status = RtlAbsoluteToSelfRelativeSD(abssd, newsd, &buflen);
@@ -622,7 +628,7 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
         ExFreePool(usersid);
         ExFreePool(groupsid);
         ExFreePool(buf);
-        return;
+        return Status;
     }
 
     ExFreePool(fcb->sd);
@@ -631,6 +637,8 @@ void fcb_get_sd(fcb* fcb, struct _fcb* parent, bool look_for_xattr, PIRP Irp) {
     ExFreePool(usersid);
     ExFreePool(groupsid);
     ExFreePool(buf);
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS get_file_security(PFILE_OBJECT FileObject, SECURITY_DESCRIPTOR* relsd, ULONG* buflen, SECURITY_INFORMATION flags) {

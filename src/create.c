@@ -1248,8 +1248,14 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
     if (!sd_set) {
         ExAcquireResourceSharedLite(parent->Header.Resource, true);
-        fcb_get_sd(fcb, parent, false, Irp);
+        Status = fcb_get_sd(fcb, parent, false, Irp);
         ExReleaseResourceLite(parent->Header.Resource);
+
+        if (!NT_SUCCESS(Status)) {
+            ERR("fcb_get_sd returned %08lx\n", Status);
+            reap_fcb(fcb);
+            return Status;
+        }
     }
 
     acquire_fcb_lock_exclusive(Vcb);
