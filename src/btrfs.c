@@ -3287,7 +3287,9 @@ static NTSTATUS find_disk_holes(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
 
     // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
 
-    space_list_subtract2(&dev->space, NULL, 0, 0x100000, NULL, NULL);
+    Status = space_list_subtract2(&dev->space, NULL, 0, 0x100000, NULL, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     return STATUS_SUCCESS;
 }
@@ -3754,15 +3756,20 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
     return STATUS_SUCCESS;
 }
 
-void protect_superblocks(_Inout_ chunk* c) {
+NTSTATUS protect_superblocks(_Inout_ chunk* c) {
+    NTSTATUS Status;
     uint16_t i = 0, j;
     uint64_t off_start, off_end;
 
     // The Linux driver also protects all the space before the first superblock.
     // I realize this confuses physical and logical addresses, but this is what btrfs-progs does -
     // evidently Linux assumes the chunk at 0 is always SINGLE.
-    if (c->offset < superblock_addrs[0])
-        space_list_subtract(c, c->offset, superblock_addrs[0] - c->offset, NULL);
+    if (c->offset < superblock_addrs[0]) {
+        Status = space_list_subtract(c, c->offset, superblock_addrs[0] - c->offset,
+                                     NULL);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
 
     while (superblock_addrs[i] != 0) {
         struct btrfs_chunk* ci = c->chunk_item;
@@ -3792,7 +3799,10 @@ void protect_superblocks(_Inout_ chunk* c) {
                     TRACE("startoff = %I64x, superblock = %I64x\n", startoff + c->chunk_item->stripe[j].offset, superblock_addrs[i]);
 #endif
 
-                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
+                    Status = space_list_subtract(c, c->offset + off_start,
+                                                 off_end - off_start, NULL);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
                 }
             }
         } else if (ci->type & BTRFS_BLOCK_GROUP_RAID5) {
@@ -3811,7 +3821,10 @@ void protect_superblocks(_Inout_ chunk* c) {
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
 
-                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
+                    Status = space_list_subtract(c, c->offset + off_start,
+                                                 off_end - off_start, NULL);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
                 }
             }
         } else if (ci->type & BTRFS_BLOCK_GROUP_RAID6) {
@@ -3830,7 +3843,10 @@ void protect_superblocks(_Inout_ chunk* c) {
 
                     TRACE("cutting out %I64x, size %I64x\n", c->offset + off_start, off_end - off_start);
 
-                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
+                    Status = space_list_subtract(c, c->offset + off_start,
+                                                 off_end - off_start, NULL);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
                 }
             }
         } else { // SINGLE, DUPLICATE, RAID1, RAID1C3, RAID1C4
@@ -3843,13 +3859,18 @@ void protect_superblocks(_Inout_ chunk* c) {
                     off_start = ((superblock_addrs[i] - c->chunk_item->stripe[j].offset) / c->chunk_item->stripe_len) * c->chunk_item->stripe_len;
                     off_end = sector_align(superblock_addrs[i] - c->chunk_item->stripe[j].offset + sizeof(struct btrfs_super_block), c->chunk_item->stripe_len);
 
-                    space_list_subtract(c, c->offset + off_start, off_end - off_start, NULL);
+                    Status = space_list_subtract(c, c->offset + off_start,
+                                                 off_end - off_start, NULL);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
                 }
             }
         }
 
         i++;
     }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS find_chunk_usage(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_opt_ PIRP Irp) {

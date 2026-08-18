@@ -766,7 +766,12 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
 
     acquire_chunk_lock(c, Vcb);
 
-    space_list_subtract(c, address, Vcb->superblock.nodesize, rollback);
+    Status = space_list_subtract(c, address, Vcb->superblock.nodesize,
+                                 rollback);
+    if (!NT_SUCCESS(Status)) {
+        release_chunk_lock(c, Vcb);
+        return false;
+    }
 
     release_chunk_lock(c, Vcb);
 
@@ -898,7 +903,12 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
 
     acquire_chunk_lock(c, Vcb);
 
-    space_list_subtract(c, address, Vcb->superblock.nodesize, rollback);
+    Status = space_list_subtract(c, address, Vcb->superblock.nodesize,
+                                 rollback);
+    if (!NT_SUCCESS(Status)) {
+        release_chunk_lock(c, Vcb);
+        return false;
+    }
 
     release_chunk_lock(c, Vcb);
 

@@ -764,7 +764,15 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
 
                     if (newchunk->chunk_item->type == flags && find_metadata_address_in_chunk(Vcb, newchunk, &mr->new_address)) {
                         newchunk->used += Vcb->superblock.nodesize;
-                        space_list_subtract(newchunk, mr->new_address, Vcb->superblock.nodesize, rollback);
+
+                        Status = space_list_subtract(newchunk, mr->new_address,
+                                                     Vcb->superblock.nodesize,
+                                                     rollback);
+                        if (!NT_SUCCESS(Status)) {
+                            release_chunk_lock(newchunk, Vcb);
+                            return Status;
+                        }
+
                         done = true;
                     }
 
@@ -784,8 +792,15 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             if ((c2->chunk_item->length - c2->used) >= Vcb->superblock.nodesize) {
                                 if (find_metadata_address_in_chunk(Vcb, c2, &mr->new_address)) {
                                     c2->used += Vcb->superblock.nodesize;
-                                    space_list_subtract(c2, mr->new_address, Vcb->superblock.nodesize, rollback);
+
+                                    Status = space_list_subtract(c2, mr->new_address,
+                                                                 Vcb->superblock.nodesize,
+                                                                 rollback);
                                     release_chunk_lock(c2, Vcb);
+
+                                    if (!NT_SUCCESS(Status))
+                                        return Status;
+
                                     newchunk = c2;
                                     done = true;
                                     break;
@@ -820,7 +835,14 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                             goto end;
                         } else {
                             newchunk->used += Vcb->superblock.nodesize;
-                            space_list_subtract(newchunk, mr->new_address, Vcb->superblock.nodesize, rollback);
+
+                            Status = space_list_subtract(newchunk, mr->new_address,
+                                                         Vcb->superblock.nodesize,
+                                                         rollback);
+                            if (!NT_SUCCESS(Status)) {
+                                release_chunk_lock(newchunk, Vcb);
+                                goto end;
+                            }
                         }
 
                         release_chunk_lock(newchunk, Vcb);
@@ -1858,7 +1880,14 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
 
             if (find_data_address_in_chunk(Vcb, newchunk, dr->size, &dr->new_address)) {
                 newchunk->used += dr->size;
-                space_list_subtract(newchunk, dr->new_address, dr->size, &rollback);
+
+                Status = space_list_subtract(newchunk, dr->new_address,
+                                             dr->size, &rollback);
+                if (!NT_SUCCESS(Status)) {
+                    release_chunk_lock(newchunk, Vcb);
+                    goto end;
+                }
+
                 done = true;
             }
 
@@ -1878,8 +1907,16 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     if ((c2->chunk_item->length - c2->used) >= dr->size) {
                         if (find_data_address_in_chunk(Vcb, c2, dr->size, &dr->new_address)) {
                             c2->used += dr->size;
-                            space_list_subtract(c2, dr->new_address, dr->size, &rollback);
+
+                            Status = space_list_subtract(c2, dr->new_address,
+                                                         dr->size, &rollback);
                             release_chunk_lock(c2, Vcb);
+
+                            if (!NT_SUCCESS(Status)) {
+                                ExReleaseResourceLite(&Vcb->chunk_lock);
+                                goto end;
+                            }
+
                             newchunk = c2;
                             done = true;
                             break;
@@ -1914,7 +1951,13 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                     goto end;
                 } else {
                     newchunk->used += dr->size;
-                    space_list_subtract(newchunk, dr->new_address, dr->size, &rollback);
+
+                    Status = space_list_subtract(newchunk, dr->new_address,
+                                                 dr->size, &rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        release_chunk_lock(newchunk, Vcb);
+                        goto end;
+                    }
                 }
 
                 release_chunk_lock(newchunk, Vcb);
@@ -3128,7 +3171,11 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
                     stripe_size = c->chunk_item->length / factor;
                 }
 
-                space_list_subtract2(&dev->space, NULL, c->chunk_item->stripe[n].offset, stripe_size, NULL, NULL);
+                Status = space_list_subtract2(&dev->space, NULL,
+                                              c->chunk_item->stripe[n].offset,
+                                              stripe_size, NULL, NULL);
+                if (!NT_SUCCESS(Status))
+                    return Status;
             }
         }
 

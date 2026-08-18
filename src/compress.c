@@ -1027,7 +1027,16 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
                 if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
                     c = c2;
                     c->used += buflen;
-                    space_list_subtract(c, address, buflen, rollback);
+
+                    Status = space_list_subtract(c, address, buflen, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        release_chunk_lock(c2, fcb->Vcb);
+                        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                        ExFreePool(buf);
+                        ExFreePool(parts);
+                        return Status;
+                    }
+
                     release_chunk_lock(c2, fcb->Vcb);
                     break;
                 }
@@ -1062,7 +1071,14 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
         if (find_data_address_in_chunk(fcb->Vcb, c2, buflen, &address)) {
             c = c2;
             c->used += buflen;
-            space_list_subtract(c, address, buflen, rollback);
+
+            Status = space_list_subtract(c, address, buflen, rollback);
+            if (!NT_SUCCESS(Status)) {
+                release_chunk_lock(c2, fcb->Vcb);
+                ExFreePool(buf);
+                ExFreePool(parts);
+                return Status;
+            }
         }
 
         release_chunk_lock(c2, fcb->Vcb);

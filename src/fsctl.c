@@ -4827,7 +4827,10 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             Vcb->balance.status = STATUS_SUCCESS;
             KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
 
-            space_list_subtract2(&dev->space, NULL, br->size, delta, NULL, NULL);
+            Status = space_list_subtract2(&dev->space, NULL, br->size, delta,
+                                          NULL, NULL);
+            if (!NT_SUCCESS(Status))
+                goto end;
 
             InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -4852,7 +4855,12 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             goto end;
         }
 
-        space_list_subtract2(&dev->space, NULL, br->size, delta, NULL, NULL);
+        Status = space_list_subtract2(&dev->space, NULL, br->size, delta,
+                                      NULL, NULL);
+        if (!NT_SUCCESS(Status)) {
+            dev->devitem.total_bytes = old_size;
+            goto end;
+        }
 
         Vcb->superblock.total_bytes -= delta;
     } else { // extend device

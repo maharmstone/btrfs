@@ -988,7 +988,9 @@ NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
         return Status;
     }
 
-    protect_superblocks(c);
+    Status = protect_superblocks(c);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     c->cache_loaded = true;
 
@@ -2181,12 +2183,14 @@ NTSTATUS space_list_add(chunk* c, uint64_t address, uint64_t length,
     return space_list_add2(&c->deleting, NULL, address, length, c, rollback);
 }
 
-void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback) {
+NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
+                              uint64_t address, uint64_t length, chunk* c,
+                              LIST_ENTRY* rollback) {
     LIST_ENTRY *le, *le2;
     space *s, *s2;
 
     if (IsListEmpty(list))
-        return;
+        return STATUS_SUCCESS;
 
     le = list->Flink;
     while (le != list) {
@@ -2194,7 +2198,7 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addr
         le2 = le->Flink;
 
         if (s2->address >= address + length)
-            return;
+            return STATUS_SUCCESS;
 
         if (s2->address >= address && s2->address + s2->size <= address + length) { // remove entry entirely
             if (rollback)
@@ -2208,14 +2212,11 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addr
             ExFreePool(s2);
         } else if (address + length > s2->address && address + length < s2->address + s2->size) {
             if (address > s2->address) { // cut out hole
-                if (rollback)
-                    add_rollback_space(rollback, false, list, list_size, address, length, c);
-
                 s = ExAllocatePoolWithTag(PagedPool, sizeof(space), ALLOC_TAG);
 
                 if (!s) {
                     ERR("out of memory\n");
-                    return;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
                 s->address = s2->address;
@@ -2225,13 +2226,16 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addr
                 s2->size = s2->address + s2->size - address - length;
                 s2->address = address + length;
 
+                if (rollback)
+                    add_rollback_space(rollback, false, list, list_size, address, length, c);
+
                 if (list_size) {
                     RemoveEntryList(&s2->list_entry_size);
                     order_space_entry(s2, list_size);
                     order_space_entry(s, list_size);
                 }
 
-                return;
+                return STATUS_SUCCESS;
             } else { // remove start of entry
                 if (rollback)
                     add_rollback_space(rollback, false, list, list_size, s2->address, address + length - s2->address, c);
@@ -2258,13 +2262,21 @@ void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addr
 
         le = le2;
     }
+
+    return STATUS_SUCCESS;
 }
 
-void space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
+NTSTATUS space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
+
     c->changed = true;
     c->space_changed = true;
 
-    space_list_subtract2(&c->space, &c->space_size, address, length, c, rollback);
+    Status = space_list_subtract2(&c->space, &c->space_size, address, length,
+                                  c, rollback);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
-    space_list_subtract2(&c->deleting, NULL, address, length, c, rollback);
+    return space_list_subtract2(&c->deleting, NULL, address, length, c,
+                                rollback);
 }

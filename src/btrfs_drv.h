@@ -1043,7 +1043,7 @@ bool get_xattr(_In_ _Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
 void free_fcb(_Inout_ fcb* fcb);
 #endif
 void free_fileref(_Inout_ file_ref* fr);
-void protect_superblocks(_Inout_ chunk* c);
+NTSTATUS protect_superblocks(_Inout_ chunk* c);
 bool is_top_level(_In_ PIRP Irp);
 NTSTATUS create_root(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ uint64_t id,
                      _Out_ root** rootptr, _In_ bool no_tree, _In_ uint64_t offset, _In_opt_ PIRP Irp);
@@ -1450,8 +1450,11 @@ NTSTATUS space_list_add(chunk* c, uint64_t address, uint64_t length,
                         LIST_ENTRY* rollback);
 NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address,
                          uint64_t length, chunk* c, LIST_ENTRY* rollback);
-void space_list_subtract(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback);
-void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback);
+NTSTATUS space_list_subtract(chunk* c, uint64_t address, uint64_t length,
+                             LIST_ENTRY* rollback);
+NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
+                              uint64_t address, uint64_t length, chunk* c,
+                              LIST_ENTRY* rollback);
 NTSTATUS space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size,
                           LIST_ENTRY* deleting);
 NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load_only, PIRP Irp);

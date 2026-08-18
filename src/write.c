@@ -649,12 +649,18 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     InsertTailList(&c->space, &s->list_entry);
     InsertTailList(&c->space_size, &s->list_entry_size);
 
-    protect_superblocks(c);
+    Status = protect_superblocks(c);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     for (i = 0; i < num_stripes; i++) {
         stripes[i].device->devitem.bytes_used += stripe_size;
 
-        space_list_subtract2(&stripes[i].device->space, NULL, c->chunk_item->stripe[i].offset, stripe_size, NULL, NULL);
+        Status = space_list_subtract2(&stripes[i].device->space, NULL,
+                                      c->chunk_item->stripe[i].offset,
+                                      stripe_size, NULL, NULL);
+        if (!NT_SUCCESS(Status))
+            goto end;
     }
 
     Status = STATUS_SUCCESS;
@@ -2871,8 +2877,11 @@ NTSTATUS insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chu
 
     ExFreePool(ed);
 
+    Status = space_list_subtract(c, address, length, rollback);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     c->used += length;
-    space_list_subtract(c, address, length, rollback);
 
     fcb->inode_item.nbytes += ram_bytes;
 
