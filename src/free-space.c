@@ -1455,7 +1455,8 @@ static void add_rollback_space(LIST_ENTRY* rollback, bool add, LIST_ENTRY* list,
     InsertTailList(rollback, &ri->list_entry);
 }
 
-void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback) {
+NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address,
+                         uint64_t length, chunk* c, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     space *s, *s2;
 
@@ -1464,7 +1465,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
 
         if (!s) {
             ERR("out of memory\n");
-            return;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         s->address = address;
@@ -1477,7 +1478,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
         if (rollback)
             add_rollback_space(rollback, true, list, list_size, address, length, c);
 
-        return;
+        return STATUS_SUCCESS;
     }
 
     le = list->Flink;
@@ -1486,7 +1487,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
 
         // old entry envelops new one completely
         if (s2->address <= address && s2->address + s2->size >= address + length)
-            return;
+            return STATUS_SUCCESS;
 
         // new entry envelops old one completely
         if (address <= s2->address && address + length >= s2->address + s2->size) {
@@ -1543,7 +1544,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
                 order_space_entry(s2, list_size);
             }
 
-            return;
+            return STATUS_SUCCESS;
         }
 
         // new entry overlaps start of old one
@@ -1576,7 +1577,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
                 order_space_entry(s2, list_size);
             }
 
-            return;
+            return STATUS_SUCCESS;
         }
 
         // new entry overlaps end of old one
@@ -1607,7 +1608,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
                 order_space_entry(s2, list_size);
             }
 
-            return;
+            return STATUS_SUCCESS;
         }
 
         // add completely separate entry
@@ -1616,7 +1617,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
 
             if (!s) {
                 ERR("out of memory\n");
-                return;
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             if (rollback)
@@ -1629,7 +1630,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
             if (list_size)
                 order_space_entry(s, list_size);
 
-            return;
+            return STATUS_SUCCESS;
         }
 
         le = le->Flink;
@@ -1644,7 +1645,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
             order_space_entry(s2, list_size);
         }
 
-        return;
+        return STATUS_SUCCESS;
     }
 
     // otherwise, insert at end
@@ -1652,7 +1653,7 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
 
     if (!s) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     s->address = address;
@@ -1664,6 +1665,8 @@ void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, 
 
     if (rollback)
         add_rollback_space(rollback, true, list, list_size, address, length, c);
+
+    return STATUS_SUCCESS;
 }
 
 void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
@@ -2157,13 +2160,14 @@ NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-void space_list_add(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback) {
+NTSTATUS space_list_add(chunk* c, uint64_t address, uint64_t length,
+                        LIST_ENTRY* rollback) {
     TRACE("(%p, %I64x, %I64x, %p)\n", c, address, length, rollback);
 
     c->changed = true;
     c->space_changed = true;
 
-    space_list_add2(&c->deleting, NULL, address, length, c, rollback);
+    return space_list_add2(&c->deleting, NULL, address, length, c, rollback);
 }
 
 void space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback) {

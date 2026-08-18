@@ -4898,7 +4898,12 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
             goto end;
         }
 
-        space_list_add2(&dev->space, NULL, dev->devitem.total_bytes, delta, NULL, NULL);
+        Status = space_list_add2(&dev->space, NULL, dev->devitem.total_bytes,
+                                 delta, NULL, NULL);
+        if (!NT_SUCCESS(Status)) {
+            dev->devitem.total_bytes = old_size;
+            goto end;
+        }
 
         Vcb->superblock.total_bytes += delta;
     }

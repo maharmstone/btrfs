@@ -1021,7 +1021,11 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
 
             c->used -= Vcb->superblock.nodesize;
 
-            space_list_add(c, address, Vcb->superblock.nodesize, NULL);
+            Status = space_list_add(c, address, Vcb->superblock.nodesize, NULL);
+            if (!NT_SUCCESS(Status)) {
+                release_chunk_lock(c, Vcb);
+                return Status;
+            }
 
             release_chunk_lock(c, Vcb);
         } else
@@ -2485,6 +2489,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
             ExFreePool(cer);
         }
 
+        Status = STATUS_SUCCESS;
         goto end;
     }
 
@@ -2626,16 +2631,18 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
         WARN("old_refs not empty\n");
 #endif
 
+    Status = STATUS_SUCCESS;
+
 end:
     if (ce->count == 0 && !ce->superseded) {
         c->used -= ce->size;
-        space_list_add(c, ce->address, ce->size, NULL);
+        Status = space_list_add(c, ce->address, ce->size, NULL);
     }
 
     RemoveEntryList(&ce->list_entry);
     ExFreePool(ce);
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, void* csum, PIRP Irp) {
@@ -4690,6 +4697,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
     extent_range* er;
     bool changed = false, truncating = false;
     uint32_t num_extents = 0;
+    NTSTATUS Status;
 
     InitializeListHead(&extent_ranges);
 
@@ -4786,8 +4794,6 @@ cont:
 
                     if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
-                            NTSTATUS Status;
-
                             Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id,
                                                                fcb->inode, ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
                                                                true, Irp);
@@ -4815,7 +4821,7 @@ cont:
                 acquire_chunk_lock(er->chunk, fcb->Vcb);
 
                 if (!er->chunk->cache_loaded) {
-                    NTSTATUS Status = load_cache_chunk(fcb->Vcb, er->chunk, NULL);
+                    Status = load_cache_chunk(fcb->Vcb, er->chunk, NULL);
 
                     if (!NT_SUCCESS(Status)) {
                         ERR("load_cache_chunk returned %08lx\n", Status);
@@ -4826,7 +4832,12 @@ cont:
 
                 er->chunk->used -= er->skip_start;
 
-                space_list_add(er->chunk, er->address, er->skip_start, NULL);
+                Status = space_list_add(er->chunk, er->address, er->skip_start,
+                                        NULL);
+                if (!NT_SUCCESS(Status)) {
+                    release_chunk_lock(er->chunk, fcb->Vcb);
+                    goto end;
+                }
 
                 release_chunk_lock(er->chunk, fcb->Vcb);
 
@@ -4841,8 +4852,6 @@ cont:
 
                     if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
-                            NTSTATUS Status;
-
                             Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
                                                                ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
                             if (!NT_SUCCESS(Status)) {
@@ -4867,7 +4876,7 @@ cont:
                 acquire_chunk_lock(er->chunk, fcb->Vcb);
 
                 if (!er->chunk->cache_loaded) {
-                    NTSTATUS Status = load_cache_chunk(fcb->Vcb, er->chunk, NULL);
+                    Status = load_cache_chunk(fcb->Vcb, er->chunk, NULL);
 
                     if (!NT_SUCCESS(Status)) {
                         ERR("load_cache_chunk returned %08lx\n", Status);
@@ -4878,7 +4887,12 @@ cont:
 
                 er->chunk->used -= er->skip_end;
 
-                space_list_add(er->chunk, er->address + er->length - er->skip_end, er->skip_end, NULL);
+                Status = space_list_add(er->chunk, er->address + er->length - er->skip_end,
+                                        er->skip_end, NULL);
+                if (!NT_SUCCESS(Status)) {
+                    release_chunk_lock(er->chunk, fcb->Vcb);
+                    goto end;
+                }
 
                 release_chunk_lock(er->chunk, fcb->Vcb);
 
@@ -5688,13 +5702,19 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                         if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start) {
                             uint64_t end = min(c->chunk_item->stripe[i].offset + de->length, Vcb->balance.opts[0].drange_start);
 
-                            space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
-                                            end - c->chunk_item->stripe[i].offset,
-                                            NULL, NULL);
+                            Status = space_list_add2(&c->devices[i]->space, NULL,
+                                                     c->chunk_item->stripe[i].offset,
+                                                     end - c->chunk_item->stripe[i].offset,
+                                                     NULL, NULL);
+                            if (!NT_SUCCESS(Status))
+                                return Status;
                         }
                     } else {
-                        space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
-                                        de->length, NULL, NULL);
+                        Status = space_list_add2(&c->devices[i]->space, NULL,
+                                                 c->chunk_item->stripe[i].offset,
+                                                 de->length, NULL, NULL);
+                        if (!NT_SUCCESS(Status))
+                            return Status;
                     }
                 }
             } else
@@ -5708,13 +5728,19 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
                 if (c->chunk_item->stripe[i].offset < Vcb->balance.opts[0].drange_start) {
                     uint64_t end = min(c->chunk_item->stripe[i].offset + len, Vcb->balance.opts[0].drange_start);
 
-                    space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
-                                    end - c->chunk_item->stripe[i].offset,
-                                    NULL, NULL);
+                    Status = space_list_add2(&c->devices[i]->space, NULL,
+                                             c->chunk_item->stripe[i].offset,
+                                             end - c->chunk_item->stripe[i].offset,
+                                             NULL, NULL);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
                 }
             } else {
-                space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
-                                len, NULL, NULL);
+                Status = space_list_add2(&c->devices[i]->space, NULL,
+                                         c->chunk_item->stripe[i].offset,
+                                         len, NULL, NULL);
+                if (!NT_SUCCESS(Status))
+                    return Status;
             }
         }
     }

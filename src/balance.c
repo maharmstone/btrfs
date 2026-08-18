@@ -112,7 +112,13 @@ static NTSTATUS add_metadata_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_l
 
         c->used -= Vcb->superblock.nodesize;
 
-        space_list_add(c, tp->item->key.objectid, Vcb->superblock.nodesize, rollback);
+        Status = space_list_add(c, tp->item->key.objectid,
+                                Vcb->superblock.nodesize, rollback);
+        if (!NT_SUCCESS(Status)) {
+            release_chunk_lock(c, Vcb);
+            ExFreePool(mr);
+            return Status;
+        }
 
         release_chunk_lock(c, Vcb);
     }
@@ -1382,7 +1388,12 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
         c->used -= tp->item->key.offset;
 
-        space_list_add(c, tp->item->key.objectid, tp->item->key.offset, rollback);
+        Status = space_list_add(c, tp->item->key.objectid, tp->item->key.offset,
+                                rollback);
+        if (!NT_SUCCESS(Status)) {
+            release_chunk_lock(c, Vcb);
+            return Status;
+        }
 
         release_chunk_lock(c, Vcb);
     }
@@ -3087,6 +3098,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, uint64_t flags, chunk**
 }
 
 static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
 
     while (!IsListEmpty(&dev->space)) {
@@ -3097,7 +3109,10 @@ static NTSTATUS regenerate_space_list(device_extension* Vcb, device* dev) {
 
     // The Linux driver doesn't like to allocate chunks within the first megabyte of a device.
 
-    space_list_add2(&dev->space, NULL, 0x100000, dev->devitem.total_bytes - 0x100000, NULL, NULL);
+    Status = space_list_add2(&dev->space, NULL, 0x100000,
+                             dev->devitem.total_bytes - 0x100000, NULL, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
