@@ -3131,6 +3131,12 @@ NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint6
 
     if (!cer) {
         ERR("out of memory\n");
+
+        if (IsListEmpty(&ce->refs) && ce->count == 0) {
+            RemoveEntryList(&ce->list_entry);
+            ExFreePool(ce);
+        }
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
