@@ -1377,7 +1377,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     Status = delete_tree_item(Vcb, tp);
     if (!NT_SUCCESS(Status)) {
         ERR("delete_tree_item returned %08lx\n", Status);
-        return Status;
+        goto fail;
     }
 
     if (!c)
@@ -1392,7 +1392,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                                 rollback);
         if (!NT_SUCCESS(Status)) {
             release_chunk_lock(c, Vcb);
-            return Status;
+            goto fail;
         }
 
         release_chunk_lock(c, Vcb);
@@ -1412,8 +1412,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
         if (len < sizeof(struct btrfs_extent_inline_ref)) {
             ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
                 tp->item->key.type, tp->item->key.offset);
-
-            return STATUS_INTERNAL_ERROR;
+            Status = STATUS_INTERNAL_ERROR;
+            goto fail;
         }
 
         ptr += sizeof(struct btrfs_extent_inline_ref);
@@ -1426,8 +1426,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 if (len < sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t)) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
                         tp->item->key.type, tp->item->key.offset);
-
-                    return STATUS_INTERNAL_ERROR;
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto fail;
                 }
 
                 ptr += sizeof(struct btrfs_extent_data_ref) - sizeof(uint64_t);
@@ -1438,7 +1438,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 Status = data_reloc_add_tree_edr(Vcb, metadata_items, dr, edr, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
-                    return Status;
+                    goto fail;
                 }
 
                 break;
@@ -1452,8 +1452,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 if (len < sizeof(struct btrfs_shared_data_ref)) {
                     ERR("(%I64x,%x,%I64x) was truncated\n", tp->item->key.objectid,
                         tp->item->key.type, tp->item->key.offset);
-
-                    return STATUS_INTERNAL_ERROR;
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto fail;
                 }
 
                 ptr += sizeof(struct btrfs_shared_data_ref);
@@ -1462,7 +1462,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
                 if (!ref) {
                     ERR("out of memory\n");
-                    return STATUS_INSUFFICIENT_RESOURCES;
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    goto fail;
                 }
 
                 ref->type = BTRFS_SHARED_DATA_REF_KEY;
@@ -1475,7 +1476,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_metadata_reloc_parent returned %08lx\n", Status);
                     ExFreePool(ref);
-                    return Status;
+                    goto fail;
                 }
 
                 ref->parent = mr;
@@ -1487,7 +1488,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
 
             default:
                 ERR("unexpected tree type %x\n", eir->type);
-                return STATUS_INTERNAL_ERROR;
+                Status = STATUS_INTERNAL_ERROR;
+                goto fail;
         }
     }
 
@@ -1504,13 +1506,13 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                                                      rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("data_reloc_add_tree_edr returned %08lx\n", Status);
-                        return Status;
+                        goto fail;
                     }
 
                     Status = delete_tree_item(Vcb, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
+                        goto fail;
                     }
                 } else if (tp2.item->key.type == BTRFS_SHARED_DATA_REF_KEY && tp2.item->size >= sizeof(struct btrfs_shared_data_ref)) {
                     metadata_reloc* mr;
@@ -1519,7 +1521,8 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                     ref = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc_ref), ALLOC_TAG);
                     if (!ref) {
                         ERR("out of memory\n");
-                        return STATUS_INSUFFICIENT_RESOURCES;
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        goto fail;
                     }
 
                     ref->type = BTRFS_SHARED_DATA_REF_KEY;
@@ -1531,7 +1534,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_metadata_reloc_parent returned %08lx\n", Status);
                         ExFreePool(ref);
-                        return Status;
+                        goto fail;
                     }
 
                     ref->parent = mr;
@@ -1540,7 +1543,7 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
                     Status = delete_tree_item(Vcb, &tp2);
                     if (!NT_SUCCESS(Status)) {
                         ERR("delete_tree_item returned %08lx\n", Status);
-                        return Status;
+                        goto fail;
                     }
                 }
             } else
@@ -1551,6 +1554,18 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     InsertTailList(items, &dr->list_entry);
 
     return STATUS_SUCCESS;
+
+fail:
+    while (!IsListEmpty(&dr->refs)) {
+        data_reloc_ref* ref = CONTAINING_RECORD(RemoveHeadList(&dr->refs),
+                                                data_reloc_ref, list_entry);
+
+        ExFreePool(ref);
+    }
+
+    ExFreePool(dr);
+
+    return Status;
 }
 
 static void sort_data_reloc_refs(data_reloc* dr) {
