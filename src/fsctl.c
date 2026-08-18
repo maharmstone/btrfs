@@ -972,7 +972,11 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     SeCaptureSubjectContext(&subjcont);
 
+    ExAcquireResourceSharedLite(fcb->Header.Resource, true);
+
     Status = SeAssignSecurity(fcb->sd, NULL, (void**)&rootfcb->sd, true, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+
+    ExReleaseResourceLite(fcb->Header.Resource);
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurity returned %08lx\n", Status);
