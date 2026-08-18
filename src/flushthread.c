@@ -7429,11 +7429,8 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
-    LIST_ENTRY rollback;
 
     TRACE("(%p, %p)\n", Vcb, r);
-
-    InitializeListHead(&rollback);
 
     searchkey.objectid = BTRFS_ORPHAN_OBJECTID;
     searchkey.type = BTRFS_ORPHAN_ITEM_KEY;
@@ -7462,10 +7459,11 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
             else {
                 if (fcb->inode_item.nlink == 0) {
                     if (fcb->type != BTRFS_FT_DIR && fcb->inode_item.size > 0) {
-                        Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.size, Vcb->superblock.sectorsize), Irp, &rollback);
+                        Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.size, Vcb->superblock.sectorsize),
+                                                Irp, NULL);
                         if (!NT_SUCCESS(Status)) {
                             ERR("excise_extents returned %08lx\n", Status);
-                            goto end;
+                            return Status;
                         }
                     }
 
@@ -7479,7 +7477,7 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
                 Status = delete_tree_item(Vcb, &tp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("delete_tree_item returned %08lx\n", Status);
-                    goto end;
+                    return Status;
                 }
             }
         }
@@ -7490,14 +7488,7 @@ static NTSTATUS check_for_orphans_root(device_extension* Vcb, root* r, PIRP Irp)
             break;
     } while (true);
 
-    Status = STATUS_SUCCESS;
-
-    clear_rollback(&rollback);
-
-end:
-    do_rollback(Vcb, &rollback);
-
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS check_for_orphans(device_extension* Vcb, PIRP Irp) {
