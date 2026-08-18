@@ -2664,12 +2664,17 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
 
     SeCaptureSubjectContext(&subjcont);
 
+    ExAcquireResourceSharedLite(related->fcb->Header.Resource, true);
+
     if (!SeAccessCheck(related->fcb->sd, &subjcont, false, fcb->type == BTRFS_FT_DIR ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
         IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
+        ExReleaseResourceLite(related->fcb->Header.Resource);
         SeReleaseSubjectContext(&subjcont);
         TRACE("SeAccessCheck failed, returning %08lx\n", Status);
         goto end;
     }
+
+    ExReleaseResourceLite(related->fcb->Header.Resource);
 
     SeReleaseSubjectContext(&subjcont);
 
@@ -2682,12 +2687,17 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     if (oldfileref) {
         SeCaptureSubjectContext(&subjcont);
 
+        ExAcquireResourceSharedLite(oldfileref->fcb->Header.Resource, true);
+
         if (!SeAccessCheck(oldfileref->fcb->sd, &subjcont, false, DELETE, 0, NULL,
                            IoGetFileObjectGenericMapping(), Irp->RequestorMode, &access, &Status)) {
+            ExReleaseResourceLite(oldfileref->fcb->Header.Resource);
             SeReleaseSubjectContext(&subjcont);
             TRACE("SeAccessCheck failed, returning %08lx\n", Status);
             goto end;
         }
+
+        ExReleaseResourceLite(oldfileref->fcb->Header.Resource);
 
         SeReleaseSubjectContext(&subjcont);
 
