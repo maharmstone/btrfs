@@ -341,6 +341,9 @@ NTSTATUS set_reparse_point2(fcb* fcb, REPARSE_DATA_BUFFER* rdb, ULONG buflen, cc
     if (fcb->type == BTRFS_FT_REG_FILE &&
         ((tag == IO_REPARSE_TAG_SYMLINK && rdb->SymbolicLinkReparseBuffer.Flags & SYMLINK_FLAG_RELATIVE) || tag == IO_REPARSE_TAG_LX_SYMLINK)) {
         Status = set_symlink(Irp, fileref, fcb, ccb, rdb, buflen, rollback);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
         fcb->atts |= FILE_ATTRIBUTE_REPARSE_POINT;
     } else {
         LARGE_INTEGER offset, time;
