@@ -1274,7 +1274,7 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
                      bool wait, bool deferred_write, bool write_irp, LIST_ENTRY* rollback) __attribute__((nonnull(1,2,4,5,11)));
 NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) __attribute__((nonnull(1,4)));
 NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, PIRP Irp, LIST_ENTRY* rollback) __attribute__((nonnull(1,6)));
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t end_data, PIRP Irp, LIST_ENTRY* rollback) __attribute__((nonnull(1,2,6)));
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t end_data, PIRP Irp, LIST_ENTRY* rollback) __attribute__((nonnull(1,2)));
 chunk* get_chunk_from_address(device_extension* Vcb, uint64_t address) __attribute__((nonnull(1)));
 NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool full_size) __attribute__((nonnull(1,3)));
 NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads_bytes_(length) void* data, _In_ uint32_t length, _In_ write_data_context* wtc,
@@ -1293,13 +1293,13 @@ NTSTATUS insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chu
                              _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc,
                              _In_opt_ void* data, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback,
                              _In_ uint8_t compression, _In_ uint64_t ram_bytes,
-                             _In_ bool file_write, _In_ uint64_t irp_offset) __attribute__((nonnull(1,2,3,9)));
+                             _In_ bool file_write, _In_ uint64_t irp_offset) __attribute__((nonnull(1,2,3)));
 
 NTSTATUS do_write_file(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, bool file_write, uint32_t irp_offset, LIST_ENTRY* rollback) __attribute__((nonnull(1, 4)));
 bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length, uint64_t* address) __attribute__((nonnull(1, 2, 4)));
 void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t* lockaddr, uint64_t* locklen) __attribute__((nonnull(1,4,5)));
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) struct btrfs_file_extent_item* ed, _In_ uint16_t edsize,
-                           _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) __attribute__((nonnull(1,3,7)));
+                           _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) __attribute__((nonnull(1,3)));
 void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem extent* newext) __attribute__((nonnull(1,2,3)));
 
 // in dirctrl.c
@@ -1442,8 +1442,8 @@ NTSTATUS pnp_query_remove_device(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 // in free-space.c
 NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
 NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp);
-NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp, LIST_ENTRY* rollback);
-NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp);
+NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp);
 NTSTATUS update_chunk_caches_tree(device_extension* Vcb, PIRP Irp);
 NTSTATUS add_space_entry(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t offset, uint64_t size);
 void space_list_add(chunk* c, uint64_t address, uint64_t length, LIST_ENTRY* rollback);

@@ -995,7 +995,7 @@ NTSTATUS load_cache_chunk(device_extension* Vcb, chunk* c, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, LIST_ENTRY* rollback) {
+static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length) {
     NTSTATUS Status;
     LIST_ENTRY* le = fcb->Vcb->chunks.Flink;
     chunk* c;
@@ -1011,7 +1011,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
 
             if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= length) {
                 Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false,
-                                             NULL, NULL, rollback, BTRFS_COMPRESS_NONE,
+                                             NULL, NULL, NULL, BTRFS_COMPRESS_NONE,
                                              length, false, 0);
                 if (NT_SUCCESS(Status))
                     return STATUS_SUCCESS;
@@ -1038,7 +1038,7 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
 
     if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= length) {
         Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false, NULL,
-                                     NULL, rollback, BTRFS_COMPRESS_NONE, length,
+                                     NULL, NULL, BTRFS_COMPRESS_NONE, length,
                                      false, 0);
         if (NT_SUCCESS(Status))
             return STATUS_SUCCESS;
@@ -1053,7 +1053,8 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
     return STATUS_DISK_FULL;
 }
 
-static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* changed, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* changed,
+                                     LIST_ENTRY* batchlist, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     uint64_t num_entries, new_cache_size, i;
@@ -1215,7 +1216,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         // allocate space
 
-        Status = insert_cache_extent(c->cache, 0, new_cache_size, rollback);
+        Status = insert_cache_extent(c->cache, 0, new_cache_size);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_cache_extent returned %08lx\n", Status);
             reap_fcb(c->cache);
@@ -1289,7 +1290,8 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
                 le = le->Flink;
             }
 
-            Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size, Irp, rollback);
+            Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size,
+                                    Irp, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("excise_extents returned %08lx\n", Status);
                 return Status;
@@ -1298,7 +1300,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
 
         // add new extent
 
-        Status = insert_cache_extent(c->cache, 0, new_cache_size, rollback);
+        Status = insert_cache_extent(c->cache, 0, new_cache_size);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_cache_extent returned %08lx\n", Status);
             return Status;
@@ -1388,7 +1390,7 @@ static NTSTATUS allocate_cache_chunk(device_extension* Vcb, chunk* c, bool* chan
     return STATUS_SUCCESS;
 }
 
-NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp) {
     LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
 
@@ -1406,7 +1408,7 @@ NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp, LIST_ENT
             bool b;
 
             acquire_chunk_lock(c, Vcb);
-            Status = allocate_cache_chunk(Vcb, c, &b, &batchlist, Irp, rollback);
+            Status = allocate_cache_chunk(Vcb, c, &b, &batchlist, Irp);
             release_chunk_lock(c, Vcb);
 
             if (b)
@@ -1700,7 +1702,8 @@ static NTSTATUS copy_space_list(LIST_ENTRY* old_list, LIST_ENTRY* new_list) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs_timespec* now, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs_timespec* now,
+                                   LIST_ENTRY* batchlist, PIRP Irp) {
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
@@ -1827,7 +1830,8 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
 
     // write cache
 
-    Status = do_write_file(c->cache, 0, c->cache->inode_item.size, data, NULL, false, 0, rollback);
+    Status = do_write_file(c->cache, 0, c->cache->inode_item.size, data, NULL,
+                           false, 0, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("do_write_file returned %08lx\n", Status);
 
@@ -2049,7 +2053,7 @@ after_tree_walk:
     return STATUS_SUCCESS;
 }
 
-NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp) {
     LIST_ENTRY *le, batchlist;
     NTSTATUS Status;
     chunk* c;
@@ -2067,7 +2071,7 @@ NTSTATUS update_chunk_caches(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollba
 
         if (c->space_changed && c->chunk_item->length >= 0x6400000) { // 100MB
             acquire_chunk_lock(c, Vcb);
-            Status = update_chunk_cache(Vcb, c, &now, &batchlist, Irp, rollback);
+            Status = update_chunk_cache(Vcb, c, &now, &batchlist, Irp);
             release_chunk_lock(c, Vcb);
 
             if (!NT_SUCCESS(Status)) {

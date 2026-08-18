@@ -28,7 +28,7 @@ typedef struct {
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 
-static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2, 3)));
+static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2)));
 
 extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
 extern tCcCopyWriteEx fCcCopyWriteEx;
@@ -2394,8 +2394,9 @@ void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem
     InsertTailList(&fcb->extents, &newext->list_entry);
 }
 
-__attribute__((nonnull(1,2,6)))
-NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t end_data, PIRP Irp, LIST_ENTRY* rollback) {
+__attribute__((nonnull(1,2)))
+NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data,
+                        uint64_t end_data, PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     LIST_ENTRY* le;
 
@@ -2737,7 +2738,7 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-__attribute__((nonnull(1,3,7)))
+__attribute__((nonnull(1,3)))
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) struct btrfs_file_extent_item* ed, _In_ uint16_t edsize,
                            _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) {
     extent* ext;
@@ -2773,7 +2774,8 @@ NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_
     InsertTailList(&fcb->extents, &ext->list_entry);
 
 end:
-    add_insert_extent_rollback(rollback, fcb, ext);
+    if (rollback)
+        add_insert_extent_rollback(rollback, fcb, ext);
 
     return STATUS_SUCCESS;
 }
@@ -2781,29 +2783,31 @@ end:
 #pragma warning(pop)
 #endif
 
-__attribute__((nonnull(1, 2, 3)))
+__attribute__((nonnull(1, 2)))
 static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     if (!ext->ignore) {
-        rollback_extent* re;
-
         ext->ignore = true;
 
-        re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);
-        if (!re) {
-            ERR("out of memory\n");
-            return;
+        if (rollback) {
+            rollback_extent* re;
+
+            re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);
+            if (!re) {
+                ERR("out of memory\n");
+                return;
+            }
+
+            re->fcb = fcb;
+            re->ext = ext;
+
+            add_rollback(rollback, ROLLBACK_DELETE_EXTENT, re);
         }
-
-        re->fcb = fcb;
-        re->ext = ext;
-
-        add_rollback(rollback, ROLLBACK_DELETE_EXTENT, re);
     }
 }
 
 _Requires_lock_held_(c->lock)
 _When_(return == STATUS_SUCCESS, _Releases_lock_(c->lock))
-__attribute__((nonnull(1,2,3,9)))
+__attribute__((nonnull(1,2,3)))
 NTSTATUS insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c,
                              _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc,
                              _In_opt_ void* data, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback,
@@ -3143,7 +3147,7 @@ cont:
     return STATUS_SUCCESS;
 }
 
-__attribute__((nonnull(1,2,5,9)))
+__attribute__((nonnull(1,2,5)))
 static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t length, void* data,
                               PIRP Irp, bool file_write, uint64_t irp_offset, LIST_ENTRY* rollback) {
     NTSTATUS Status;

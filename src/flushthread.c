@@ -52,7 +52,7 @@ typedef struct {
 static_assert(sizeof(EXTENT_ITEM_SKINNY_METADATA) == 33, "EXTENT_ITEM_SKINNY_METADATA has wrong size");
 
 static NTSTATUS create_chunk(device_extension* Vcb, chunk* c, PIRP Irp);
-static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
+static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp);
 
 static NTSTATUS insert_tree_item_batch(LIST_ENTRY* batchlist, device_extension* Vcb, root* r, uint64_t objid,
                                        uint8_t objtype, uint64_t offset, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* data,
@@ -980,7 +980,7 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
 }
 
 static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree* t,
-                                   uint64_t parent_root, PIRP Irp, LIST_ENTRY* rollback) {
+                                   uint64_t parent_root, PIRP Irp) {
     NTSTATUS Status;
     uint64_t rc, root;
 
@@ -1021,7 +1021,7 @@ static NTSTATUS reduce_tree_extent(device_extension* Vcb, uint64_t address, tree
 
             c->used -= Vcb->superblock.nodesize;
 
-            space_list_add(c, address, Vcb->superblock.nodesize, rollback);
+            space_list_add(c, address, Vcb->superblock.nodesize, NULL);
 
             release_chunk_lock(c, Vcb);
         } else
@@ -1108,13 +1108,13 @@ end:
     return STATUS_SUCCESS;
 }
 
-static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp) {
     struct btrfs_key searchkey;
     traverse_ptr tp;
     NTSTATUS Status;
 
     if (!t->updated_extents && t->has_address) {
-        Status = update_tree_extents(Vcb, t, Irp, rollback);
+        Status = update_tree_extents(Vcb, t, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_tree_extents returned %08lx\n", Status);
             return false;
@@ -1137,7 +1137,7 @@ static bool shared_tree_is_unique(device_extension* Vcb, tree* t, PIRP Irp, LIST
         return true;
 }
 
-static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp) {
     NTSTATUS Status;
     uint64_t rc = get_extent_refcount(Vcb, t->header.bytenr, Vcb->superblock.nodesize, Irp);
     uint64_t flags = get_extent_flags(Vcb, t->header.bytenr, Irp);
@@ -1148,7 +1148,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     }
 
     if (flags & BTRFS_BLOCK_FLAG_FULL_BACKREF || t->header.flags & BTRFS_HEADER_FLAG_RELOC || !(t->header.flags & BTRFS_BACKREF_REV_MASK)) {
-        bool unique = rc > 1 ? false : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp, rollback) : false);
+        bool unique = rc > 1 ? false : (t->parent ? shared_tree_is_unique(Vcb, t->parent, Irp) : false);
         bool disposed = false;
         uint64_t offset;
 
@@ -1320,7 +1320,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
                 }
             } else if (sbrrc == 0 && t->header.owner != t->root->id) {
                 Status = reduce_tree_extent(Vcb, t->header.bytenr, t, t->root->id,
-                                            Irp, rollback);
+                                            Irp);
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -1352,7 +1352,8 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     }
 
     if (rc > 1 || t->header.owner == t->root->id) {
-        Status = reduce_tree_extent(Vcb, t->header.bytenr, t, t->parent ? t->parent->header.owner : t->header.owner, Irp, rollback);
+        Status = reduce_tree_extent(Vcb, t->header.bytenr, t, t->parent ? t->parent->header.owner : t->header.owner,
+                                    Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -1496,7 +1497,7 @@ static NTSTATUS update_tree_extents(device_extension* Vcb, tree* t, PIRP Irp, LI
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
     bool changed = false;
@@ -1533,7 +1534,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
                 }
             }
 
-            Status = get_tree_new_address(Vcb, t, Irp, rollback);
+            Status = get_tree_new_address(Vcb, t, Irp, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("get_tree_new_address returned %08lx\n", Status);
                 return Status;
@@ -1569,7 +1570,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
             tree* t = CONTAINING_RECORD(le, tree, list_entry);
 
             if (t->write && !t->updated_extents && t->has_address && t->header.level == level) {
-                Status = update_tree_extents(Vcb, t, Irp, rollback);
+                Status = update_tree_extents(Vcb, t, Irp);
                 if (!NT_SUCCESS(Status)) {
                     ERR("update_tree_extents returned %08lx\n", Status);
                     return Status;
@@ -1588,7 +1589,7 @@ static NTSTATUS allocate_tree_extents(device_extension* Vcb, PIRP Irp, LIST_ENTR
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_root_root(device_extension* Vcb, bool no_cache, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_root_root(device_extension* Vcb, bool no_cache, PIRP Irp) {
     LIST_ENTRY* le;
     NTSTATUS Status;
 
@@ -1639,7 +1640,7 @@ static NTSTATUS update_root_root(device_extension* Vcb, bool no_cache, PIRP Irp,
 
     if (!no_cache && !(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)) {
         ExAcquireResourceSharedLite(&Vcb->chunk_lock, true);
-        Status = update_chunk_caches(Vcb, Irp, rollback);
+        Status = update_chunk_caches(Vcb, Irp);
         ExReleaseResourceLite(&Vcb->chunk_lock);
 
         if (!NT_SUCCESS(Status)) {
@@ -2467,7 +2468,8 @@ end:
     return Status;
 }
 
-static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_extent* ce,
+                                     PIRP Irp) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     uint64_t old_size;
@@ -2627,7 +2629,7 @@ static NTSTATUS flush_changed_extent(device_extension* Vcb, chunk* c, changed_ex
 end:
     if (ce->count == 0 && !ce->superseded) {
         c->used -= ce->size;
-        space_list_add(c, ce->address, ce->size, rollback);
+        space_list_add(c, ce->address, ce->size, NULL);
     }
 
     RemoveEntryList(&ce->list_entry);
@@ -2844,7 +2846,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
     }
 }
 
-static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp) {
     LIST_ENTRY *le = Vcb->chunks.Flink, *le2;
     chunk* c;
     struct btrfs_key searchkey;
@@ -2876,7 +2878,7 @@ static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp, LIST_ENTRY* 
             LIST_ENTRY* le3 = le2->Flink;
             changed_extent* ce = CONTAINING_RECORD(le2, changed_extent, list_entry);
 
-            Status = flush_changed_extent(Vcb, c, ce, Irp, rollback);
+            Status = flush_changed_extent(Vcb, c, ce, Irp);
             if (!NT_SUCCESS(Status)) {
                 ERR("flush_changed_extent returned %08lx\n", Status);
                 release_chunk_lock(c, Vcb);
@@ -3342,7 +3344,8 @@ end:
     return ret;
 }
 
-static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, bool* done_deletions, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done,
+                                    bool* done_deletions, PIRP Irp) {
     LIST_ENTRY* le;
     tree_data* nextparitem = NULL;
     NTSTATUS Status;
@@ -3384,7 +3387,7 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
     next_tree = nextparitem->treeholder.tree;
 
     if (!next_tree->updated_extents && next_tree->has_address) {
-        Status = update_tree_extents(Vcb, next_tree, Irp, rollback);
+        Status = update_tree_extents(Vcb, next_tree, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_tree_extents returned %08lx\n", Status);
             return Status;
@@ -3447,14 +3450,16 @@ static NTSTATUS try_tree_amalgamate(device_extension* Vcb, tree* t, bool* done, 
         next_tree->size = 0;
 
         if (next_tree->has_new_address) { // delete associated EXTENT_ITEM
-            Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree, next_tree->parent->header.owner, Irp, rollback);
+            Status = reduce_tree_extent(Vcb, next_tree->new_address, next_tree,
+                                        next_tree->parent->header.owner, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08lx\n", Status);
                 return Status;
             }
         } else if (next_tree->has_address) {
-            Status = reduce_tree_extent(Vcb, next_tree->header.bytenr, next_tree, next_tree->parent->header.owner, Irp, rollback);
+            Status = reduce_tree_extent(Vcb, next_tree->header.bytenr, next_tree,
+                                        next_tree->parent->header.owner, Irp);
 
             if (!NT_SUCCESS(Status)) {
                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3675,16 +3680,17 @@ static NTSTATUS update_extent_level(device_extension* Vcb, uint64_t address, tre
     return STATUS_INTERNAL_ERROR;
 }
 
-static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t,
+                                              PIRP Irp) {
     NTSTATUS Status;
 
     if (t->parent && !t->parent->updated_extents && t->parent->has_address) {
-        Status = update_tree_extents_recursive(Vcb, t->parent, Irp, rollback);
+        Status = update_tree_extents_recursive(Vcb, t->parent, Irp);
         if (!NT_SUCCESS(Status))
             return Status;
     }
 
-    Status = update_tree_extents(Vcb, t, Irp, rollback);
+    Status = update_tree_extents(Vcb, t, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("update_tree_extents returned %08lx\n", Status);
         return Status;
@@ -3693,7 +3699,7 @@ static NTSTATUS update_tree_extents_recursive(device_extension* Vcb, tree* t, PI
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp) {
     ULONG level, max_level;
     uint32_t min_size, min_size_fst;
     bool empty, done_deletions = false;
@@ -3730,7 +3736,9 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                         t->root->root_item.bytes_used -= Vcb->superblock.nodesize;
 
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
-                            Status = reduce_tree_extent(Vcb, t->new_address, t, t->parent->header.owner, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb, t->new_address, t,
+                                                        t->parent->header.owner,
+                                                        Irp);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3739,7 +3747,9 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
                             t->has_new_address = false;
                         } else if (t->has_address) {
-                            Status = reduce_tree_extent(Vcb,t->header.bytenr, t, t->parent->header.owner, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb,t->header.bytenr, t,
+                                                        t->parent->header.owner,
+                                                        Irp);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3776,7 +3786,7 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                     TRACE("splitting overlarge tree (%x > %Ix)\n", t->size, Vcb->superblock.nodesize - sizeof(struct btrfs_header));
 
                     if (!t->updated_extents && t->has_address) {
-                        Status = update_tree_extents_recursive(Vcb, t, Irp, rollback);
+                        Status = update_tree_extents_recursive(Vcb, t, Irp);
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_tree_extents_recursive returned %08lx\n", Status);
                             return Status;
@@ -3820,7 +3830,8 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                 bool done;
 
                 do {
-                    Status = try_tree_amalgamate(Vcb, t, &done, &done_deletions, Irp, rollback);
+                    Status = try_tree_amalgamate(Vcb, t, &done, &done_deletions,
+                                                 Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("try_tree_amalgamate returned %08lx\n", Status);
                         return Status;
@@ -3859,7 +3870,8 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
                         TRACE("deleting top-level tree in root %I64x with one item\n", t->root->id);
 
                         if (t->has_new_address) { // delete associated EXTENT_ITEM
-                            Status = reduce_tree_extent(Vcb, t->new_address, t, t->header.owner, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb, t->new_address, t,
+                                                        t->header.owner, Irp);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3868,7 +3880,8 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
                             t->has_new_address = false;
                         } else if (t->has_address) {
-                            Status = reduce_tree_extent(Vcb,t->header.bytenr, t, t->header.owner, Irp, rollback);
+                            Status = reduce_tree_extent(Vcb,t->header.bytenr, t,
+                                                        t->header.owner, Irp);
 
                             if (!NT_SUCCESS(Status)) {
                                 ERR("reduce_tree_extent returned %08lx\n", Status);
@@ -3913,7 +3926,8 @@ static NTSTATUS do_splits(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th, uint8_t level, tree* parent, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder* th,
+                                    uint8_t level, tree* parent, PIRP Irp) {
     NTSTATUS Status;
 
     if (!th->tree) {
@@ -3952,7 +3966,8 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
             tree_data* td = CONTAINING_RECORD(le, tree_data, list_entry);
 
             if (!td->ignore) {
-                Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1, th->tree, Irp, rollback);
+                Status = remove_root_extents(Vcb, r, &td->treeholder, th->tree->header.level - 1,
+                                             th->tree, Irp);
 
                 if (!NT_SUCCESS(Status)) {
                     ERR("remove_root_extents returned %08lx\n", Status);
@@ -3965,7 +3980,7 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     }
 
     if (th->tree && !th->tree->updated_extents && th->tree->has_address) {
-        Status = update_tree_extents(Vcb, th->tree, Irp, rollback);
+        Status = update_tree_extents(Vcb, th->tree, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_tree_extents returned %08lx\n", Status);
             return Status;
@@ -3973,7 +3988,8 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     }
 
     if (!th->tree || th->tree->has_address) {
-        Status = reduce_tree_extent(Vcb, th->address, NULL, parent ? parent->header.owner : r->id, Irp, rollback);
+        Status = reduce_tree_extent(Vcb, th->address, NULL, parent ? parent->header.owner : r->id,
+                                    Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("reduce_tree_extent(%I64x) returned %08lx\n", th->address, Status);
@@ -3984,12 +4000,13 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp) {
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
 
-    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.level, NULL, Irp, rollback);
+    Status = remove_root_extents(Vcb, r, &r->treeholder, r->root_item.level,
+                                 NULL, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("remove_root_extents returned %08lx\n", Status);
         return Status;
@@ -4114,7 +4131,7 @@ static NTSTATUS drop_root(device_extension* Vcb, root* r, PIRP Irp, LIST_ENTRY* 
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp) {
     LIST_ENTRY *le = Vcb->drop_roots.Flink, *le2;
     NTSTATUS Status;
 
@@ -4123,7 +4140,7 @@ static NTSTATUS drop_roots(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback
 
         le2 = le->Flink;
 
-        Status = drop_root(Vcb, r, Irp, rollback);
+        Status = drop_root(Vcb, r, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("drop_root(%I64x) returned %08lx\n", r->id, Status);
             return Status;
@@ -5554,7 +5571,8 @@ void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, uint64_t addres
     add_trim_entry(dev, address, size);
 }
 
-static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlist,
+                           PIRP Irp) {
     NTSTATUS Status;
     struct btrfs_key searchkey;
     traverse_ptr tp;
@@ -5594,7 +5612,8 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
     if (c->cache) {
         c->cache->deleted = true;
 
-        Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size, Irp, rollback);
+        Status = excise_extents(Vcb, c->cache, 0, c->cache->inode_item.size, Irp,
+                                NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             return Status;
@@ -5671,10 +5690,12 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
                             space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
                                             end - c->chunk_item->stripe[i].offset,
-                                            NULL, rollback);
+                                            NULL, NULL);
                         }
-                    } else
-                        space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, de->length, NULL, rollback);
+                    } else {
+                        space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
+                                        de->length, NULL, NULL);
+                    }
                 }
             } else
                 WARN("could not find (%I64x,%x,%I64x) in dev tree\n", searchkey.objectid, searchkey.type, searchkey.offset);
@@ -5689,10 +5710,12 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
                     space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
                                     end - c->chunk_item->stripe[i].offset,
-                                    NULL, rollback);
+                                    NULL, NULL);
                 }
-            } else
-                space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset, len, NULL, rollback);
+            } else {
+                space_list_add2(&c->devices[i]->space, NULL, c->chunk_item->stripe[i].offset,
+                                len, NULL, NULL);
+            }
         }
     }
 
@@ -6164,7 +6187,8 @@ NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* p
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist,
+                              PIRP Irp) {
     LIST_ENTRY *le, *le2;
     NTSTATUS Status;
     uint64_t used_minus_cache;
@@ -6240,7 +6264,7 @@ static NTSTATUS update_chunks(device_extension* Vcb, LIST_ENTRY* batchlist, PIRP
                 }
 
                 if (used_minus_cache == 0) {
-                    Status = drop_chunk(Vcb, c, batchlist, Irp, rollback);
+                    Status = drop_chunk(Vcb, c, batchlist, Irp);
                     if (!NT_SUCCESS(Status)) {
                         ERR("drop_chunk returned %08lx\n", Status);
                         release_chunk_lock(c, Vcb);
@@ -7503,7 +7527,7 @@ static NTSTATUS check_for_orphans(device_extension* Vcb, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY *le, batchlist;
     bool cache_changed = false;
@@ -7659,7 +7683,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
     }
 
     if (!IsListEmpty(&Vcb->drop_roots)) {
-        Status = drop_roots(Vcb, Irp, rollback);
+        Status = drop_roots(Vcb, Irp);
 
         if (!NT_SUCCESS(Status)) {
             ERR("drop_roots returned %08lx\n", Status);
@@ -7667,7 +7691,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
         }
     }
 
-    Status = update_chunks(Vcb, &batchlist, Irp, rollback);
+    Status = update_chunks(Vcb, &batchlist, Irp);
 
     if (!NT_SUCCESS(Status)) {
         ERR("update_chunks returned %08lx\n", Status);
@@ -7734,19 +7758,19 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
             goto end;
         }
 
-        Status = allocate_tree_extents(Vcb, Irp, rollback);
+        Status = allocate_tree_extents(Vcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("allocate_tree_extents returned %08lx\n", Status);
             goto end;
         }
 
-        Status = do_splits(Vcb, Irp, rollback);
+        Status = do_splits(Vcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("do_splits returned %08lx\n", Status);
             goto end;
         }
 
-        Status = update_chunk_usage(Vcb, Irp, rollback);
+        Status = update_chunk_usage(Vcb, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("update_chunk_usage returned %08lx\n", Status);
             goto end;
@@ -7754,7 +7778,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
         if (!(Vcb->superblock.compat_ro_flags & BTRFS_FEATURE_COMPAT_RO_FREE_SPACE_TREE)) {
             if (!no_cache) {
-                Status = allocate_cache(Vcb, &cache_changed, Irp, rollback);
+                Status = allocate_cache(Vcb, &cache_changed, Irp);
                 if (!NT_SUCCESS(Status)) {
                     WARN("allocate_cache returned %08lx\n", Status);
                     no_cache = true;
@@ -7783,7 +7807,7 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp, LIST_ENTRY* rollback)
 
     TRACE("trees consistent\n");
 
-    Status = update_root_root(Vcb, no_cache, Irp, rollback);
+    Status = update_root_root(Vcb, no_cache, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("update_root_root returned %08lx\n", Status);
         goto end;
@@ -7928,20 +7952,15 @@ end:
 }
 
 NTSTATUS do_write(device_extension* Vcb, PIRP Irp) {
-    LIST_ENTRY rollback;
     NTSTATUS Status;
 
-    InitializeListHead(&rollback);
-
-    Status = do_write2(Vcb, Irp, &rollback);
+    Status = do_write2(Vcb, Irp);
 
     if (!NT_SUCCESS(Status)) {
         ERR("do_write2 returned %08lx, dropping into readonly mode\n", Status);
         Vcb->readonly = true;
         FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
-        do_rollback(Vcb, &rollback);
-    } else
-        clear_rollback(&rollback);
+    }
 
     return Status;
 }
