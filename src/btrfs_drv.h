@@ -1404,7 +1404,8 @@ NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, 
                          _In_reads_bytes_(length) void* data, _In_ uint32_t length);
 bool is_tree_unique(device_extension* Vcb, tree* t, PIRP Irp);
 NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_free);
-void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, void* csum, PIRP Irp);
+NTSTATUS add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length,
+                            void* csum, PIRP Irp);
 bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* address);
 void add_trim_entry_avoid_sb(device_extension* Vcb, device* dev, uint64_t address, uint64_t size);
 NTSTATUS flush_partial_stripe(device_extension* Vcb, chunk* c, partial_stripe* ps);

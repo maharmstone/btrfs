@@ -1499,8 +1499,13 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
                             return Status;
                         }
 
-                        if (!superseded)
-                            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
+                        if (!superseded) {
+                            Status = add_checksum_entry(Vcb, address,
+                                                        (ULONG)(size >> Vcb->sector_shift),
+                                                        NULL, Irp);
+                            if (!NT_SUCCESS(Status))
+                                return Status;
+                        }
 
                         return STATUS_SUCCESS;
                     }
@@ -1623,8 +1628,11 @@ NTSTATUS decrease_extent_refcount_data(device_extension* Vcb, uint64_t address,
             }
 
             if (!superseded) {
-                add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift),
-                                   NULL, Irp);
+                Status = add_checksum_entry(Vcb, address,
+                                            (ULONG)(size >> Vcb->sector_shift),
+                                            NULL, Irp);
+                if (!NT_SUCCESS(Status))
+                    return Status;
             }
 
             return STATUS_SUCCESS;
@@ -1794,8 +1802,13 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
                             return Status;
                         }
 
-                        if (!superseded)
-                            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
+                        if (!superseded) {
+                            Status = add_checksum_entry(Vcb, address,
+                                                        (ULONG)(size >> Vcb->sector_shift),
+                                                        NULL, Irp);
+                            if (!NT_SUCCESS(Status))
+                                return Status;
+                        }
 
                         return STATUS_SUCCESS;
                     }
@@ -1935,8 +1948,12 @@ NTSTATUS decrease_extent_refcount_shared_data(device_extension* Vcb, uint64_t ad
             return Status;
         }
 
-        if (!superseded)
-            add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift), NULL, Irp);
+        if (!superseded) {
+            Status = add_checksum_entry(Vcb, address, (ULONG)(size >> Vcb->sector_shift),
+                                        NULL, Irp);
+            if (!NT_SUCCESS(Status))
+                return Status;
+        }
 
         return STATUS_SUCCESS;
     }

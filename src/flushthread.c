@@ -2683,7 +2683,8 @@ end:
     return Status;
 }
 
-void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, void* csum, PIRP Irp) {
+NTSTATUS add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length,
+                            void* csum, PIRP Irp) {
     struct btrfs_key searchkey;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
@@ -2714,7 +2715,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                 void* checksums = ExAllocatePoolWithTag(PagedPool, il * Vcb->csum_size, ALLOC_TAG);
                 if (!checksums) {
                     ERR("out of memory\n");
-                    return;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
                 RtlCopyMemory(checksums, data, il * Vcb->csum_size);
@@ -2724,7 +2725,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                 if (!NT_SUCCESS(Status)) {
                     ERR("insert_tree_item returned %08lx\n", Status);
                     ExFreePool(checksums);
-                    return;
+                    return Status;
                 }
 
                 length2 -= il;
@@ -2737,7 +2738,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         }
     } else if (!NT_SUCCESS(Status)) {
         ERR("find_item returned %08lx\n", Status);
-        return;
+        return Status;
     } else {
         uint32_t tplen;
         void* checksums;
@@ -2756,7 +2757,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         Status = find_item(Vcb, Vcb->checksum_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("find_item returned %08lx\n", Status);
-            return;
+            return Status;
         }
 
         tplen = tp.item->size / Vcb->csum_size;
@@ -2775,14 +2776,14 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         checksums = ExAllocatePoolWithTag(PagedPool, Vcb->csum_size * len, ALLOC_TAG);
         if (!checksums) {
             ERR("out of memory\n");
-            return;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         bmparr = ExAllocatePoolWithTag(PagedPool, sizeof(ULONG) * ((len/8)+1), ALLOC_TAG);
         if (!bmparr) {
             ERR("out of memory\n");
             ExFreePool(checksums);
-            return;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         RtlInitializeBitMap(&bmp, bmparr, len);
@@ -2797,7 +2798,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
             ERR("find_item returned %08lx\n", Status);
             ExFreePool(checksums);
             ExFreePool(bmparr);
-            return;
+            return Status;
         }
 
         // set bit = free space, cleared bit = allocated sector
@@ -2817,7 +2818,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                     ERR("delete_tree_item returned %08lx\n", Status);
                     ExFreePool(checksums);
                     ExFreePool(bmparr);
-                    return;
+                    return Status;
                 }
             }
 
@@ -2863,7 +2864,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                     ERR("out of memory\n");
                     ExFreePool(bmparr);
                     ExFreePool(checksums);
-                    return;
+                    return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
                 RtlCopyMemory(data, (uint8_t*)checksums + (Vcb->csum_size * index), Vcb->csum_size * rl);
@@ -2876,7 +2877,7 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
                     ExFreePool(data);
                     ExFreePool(bmparr);
                     ExFreePool(checksums);
-                    return;
+                    return Status;
                 }
 
                 runlength -= rl;
@@ -2889,6 +2890,8 @@ void add_checksum_entry(device_extension* Vcb, uint64_t address, ULONG length, v
         ExFreePool(bmparr);
         ExFreePool(checksums);
     }
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS update_chunk_usage(device_extension* Vcb, PIRP Irp) {
@@ -4857,8 +4860,13 @@ cont:
                     le2 = le2->Flink;
                 }
 
-                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-                    add_checksum_entry(fcb->Vcb, er->address, (ULONG)(er->skip_start >> fcb->Vcb->sector_shift), NULL, NULL);
+                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                    Status = add_checksum_entry(fcb->Vcb, er->address,
+                                                (ULONG)(er->skip_start >> fcb->Vcb->sector_shift),
+                                                NULL, NULL);
+                    if (!NT_SUCCESS(Status))
+                        goto end;
+                }
 
                 acquire_chunk_lock(er->chunk, fcb->Vcb);
 
@@ -4912,8 +4920,13 @@ cont:
                     le2 = le2->Flink;
                 }
 
-                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM))
-                    add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end, (ULONG)(er->skip_end >> fcb->Vcb->sector_shift), NULL, NULL);
+                if (!(fcb->inode_item.flags & BTRFS_INODE_NODATASUM)) {
+                    Status = add_checksum_entry(fcb->Vcb, er->address + er->length - er->skip_end,
+                                                (ULONG)(er->skip_end >> fcb->Vcb->sector_shift),
+                                                NULL, NULL);
+                    if (!NT_SUCCESS(Status))
+                        goto end;
+                }
 
                 acquire_chunk_lock(er->chunk, fcb->Vcb);
 
@@ -5120,10 +5133,19 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
 
             if (ext->inserted && ext->csum && ext->extent_data.type == BTRFS_FILE_EXTENT_REG) {
                 if (ext->extent_data.disk_num_bytes > 0) { // not sparse
-                    if (ext->extent_data.compression == BTRFS_COMPRESS_NONE)
-                        add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr + ext->extent_data.offset, (ULONG)(ext->extent_data.num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
-                    else
-                        add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr, (ULONG)(ext->extent_data.disk_num_bytes >> fcb->Vcb->sector_shift), ext->csum, Irp);
+                    if (ext->extent_data.compression == BTRFS_COMPRESS_NONE) {
+                        Status = add_checksum_entry(fcb->Vcb,
+                                                    ext->extent_data.disk_bytenr + ext->extent_data.offset,
+                                                    (ULONG)(ext->extent_data.num_bytes >> fcb->Vcb->sector_shift),
+                                                    ext->csum, Irp);
+                    } else {
+                        Status = add_checksum_entry(fcb->Vcb, ext->extent_data.disk_bytenr,
+                                                    (ULONG)(ext->extent_data.disk_num_bytes >> fcb->Vcb->sector_shift),
+                                                    ext->csum, Irp);
+                    }
+
+                    if (!NT_SUCCESS(Status))
+                        goto end;
                 }
             }
 

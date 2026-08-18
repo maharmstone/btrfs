@@ -2079,8 +2079,22 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
                 } while (size > 0);
             }
 
-            add_checksum_entry(Vcb, dr->new_address + (index << Vcb->sector_shift), runlength, (uint8_t*)csum + (index * Vcb->csum_size), NULL);
-            add_checksum_entry(Vcb, dr->address + (index << Vcb->sector_shift), runlength, NULL, NULL);
+            Status = add_checksum_entry(Vcb, dr->new_address + (index << Vcb->sector_shift),
+                                        runlength, (uint8_t*)csum + (index * Vcb->csum_size),
+                                        NULL);
+            if (!NT_SUCCESS(Status)) {
+                ExFreePool(csum);
+                ExFreePool(bmparr);
+                goto end;
+            }
+
+            Status = add_checksum_entry(Vcb, dr->address + (index << Vcb->sector_shift),
+                                        runlength, NULL, NULL);
+            if (!NT_SUCCESS(Status)) {
+                ExFreePool(csum);
+                ExFreePool(bmparr);
+                goto end;
+            }
 
             // handle csum run
             do {
