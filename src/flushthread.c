@@ -740,7 +740,9 @@ static void add_parents_to_cache(tree* t) {
     }
 }
 
-static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint64_t root_id, chunk* c, uint64_t address, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS insert_tree_extent_skinny(device_extension* Vcb, uint8_t level,
+                                          uint64_t root_id, chunk* c, uint64_t address,
+                                          PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     EXTENT_ITEM_SKINNY_METADATA* eism;
     traverse_ptr insert_tp;
@@ -748,7 +750,7 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
     eism = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_SKINNY_METADATA), ALLOC_TAG);
     if (!eism) {
         ERR("out of memory\n");
-        return false;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     eism->ei.refs = 1;
@@ -761,7 +763,7 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(eism);
-        return false;
+        return Status;
     }
 
     acquire_chunk_lock(c, Vcb);
@@ -770,14 +772,14 @@ static bool insert_tree_extent_skinny(device_extension* Vcb, uint8_t level, uint
                                  rollback);
     if (!NT_SUCCESS(Status)) {
         release_chunk_lock(c, Vcb);
-        return false;
+        return Status;
     }
 
     release_chunk_lock(c, Vcb);
 
     add_parents_to_cache(insert_tp.tree);
 
-    return true;
+    return STATUS_SUCCESS;
 }
 
 bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* address) {
@@ -861,7 +863,9 @@ bool find_metadata_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t* a
     return false;
 }
 
-static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t root_id, chunk* c, uint64_t* new_address, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS insert_tree_extent(device_extension* Vcb, uint8_t level,
+                                   uint64_t root_id, chunk* c, uint64_t* new_address,
+                                   PIRP Irp, LIST_ENTRY* rollback) {
     NTSTATUS Status;
     uint64_t address;
     EXTENT_ITEM_TREE2* eit2;
@@ -870,21 +874,21 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     TRACE("(%p, %x, %I64x, %p, %p, %p, %p)\n", Vcb, level, root_id, c, new_address, Irp, rollback);
 
     if (!find_metadata_address_in_chunk(Vcb, c, &address))
-        return false;
+        return STATUS_DISK_FULL;
 
     if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_SKINNY_METADATA) {
-        bool b = insert_tree_extent_skinny(Vcb, level, root_id, c, address, Irp, rollback);
+        Status = insert_tree_extent_skinny(Vcb, level, root_id, c, address, Irp, rollback);
 
-        if (b)
+        if (NT_SUCCESS(Status))
             *new_address = address;
 
-        return b;
+        return Status;
     }
 
     eit2 = ExAllocatePoolWithTag(PagedPool, sizeof(EXTENT_ITEM_TREE2), ALLOC_TAG);
     if (!eit2) {
         ERR("out of memory\n");
-        return false;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     eit2->extent_item.refs = 1;
@@ -898,7 +902,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(eit2);
-        return false;
+        return Status;
     }
 
     acquire_chunk_lock(c, Vcb);
@@ -907,7 +911,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
                                  rollback);
     if (!NT_SUCCESS(Status)) {
         release_chunk_lock(c, Vcb);
-        return false;
+        return Status;
     }
 
     release_chunk_lock(c, Vcb);
@@ -916,7 +920,7 @@ static bool insert_tree_extent(device_extension* Vcb, uint8_t level, uint64_t ro
 
     *new_address = address;
 
-    return true;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback) {
@@ -933,11 +937,15 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     if (t->has_address) {
         origchunk = get_chunk_from_address(Vcb, t->header.bytenr);
 
-        if (origchunk && !origchunk->readonly && !origchunk->reloc && origchunk->chunk_item->type == flags &&
-            insert_tree_extent(Vcb, t->header.level, t->root->id, origchunk, &addr, Irp, rollback)) {
-            t->new_address = addr;
-            t->has_new_address = true;
-            return STATUS_SUCCESS;
+        if (origchunk && !origchunk->readonly && !origchunk->reloc && origchunk->chunk_item->type == flags) {
+            Status = insert_tree_extent(Vcb, t->header.level, t->root->id,
+                                        origchunk, &addr, Irp, rollback);
+            if (NT_SUCCESS(Status)) {
+                t->new_address = addr;
+                t->has_new_address = true;
+                return STATUS_SUCCESS;
+            } else if (Status != STATUS_DISK_FULL)
+                return Status;
         }
     }
 
@@ -951,12 +959,18 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
             acquire_chunk_lock(c, Vcb);
 
             if (c != origchunk && c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= Vcb->superblock.nodesize) {
-                if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
+                Status = insert_tree_extent(Vcb, t->header.level, t->root->id,
+                                            c, &addr, Irp, rollback);
+                if (NT_SUCCESS(Status)) {
                     release_chunk_lock(c, Vcb);
                     ExReleaseResourceLite(&Vcb->chunk_lock);
                     t->new_address = addr;
                     t->has_new_address = true;
                     return STATUS_SUCCESS;
+                } else if (Status != STATUS_DISK_FULL) {
+                    release_chunk_lock(c, Vcb);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
+                    return Status;
                 }
             }
 
@@ -979,12 +993,18 @@ NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENT
     acquire_chunk_lock(c, Vcb);
 
     if ((c->chunk_item->length - c->used) >= Vcb->superblock.nodesize) {
-        if (insert_tree_extent(Vcb, t->header.level, t->root->id, c, &addr, Irp, rollback)) {
+        Status = insert_tree_extent(Vcb, t->header.level, t->root->id, c,
+                                    &addr, Irp, rollback);
+        if (NT_SUCCESS(Status)) {
             release_chunk_lock(c, Vcb);
             ExReleaseResourceLite(&Vcb->chunk_lock);
             t->new_address = addr;
             t->has_new_address = true;
             return STATUS_SUCCESS;
+        } else if (Status != STATUS_DISK_FULL) {
+            release_chunk_lock(c, Vcb);
+            ExReleaseResourceLite(&Vcb->chunk_lock);
+            return Status;
         }
     }
 
