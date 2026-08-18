@@ -2354,7 +2354,7 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
             } else {
                 LIST_ENTRY* le;
 
-                // FIXME - we need a lock here
+                // we are holding the tree_lock exclusively
 
                 RemoveEntryList(&fileref->fcb->subvol->list_entry);
 
@@ -2490,6 +2490,7 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         bool locked = true;
         bool uninitialize_cache_map = false;
         bool flush_and_purge_cache = false;
+        bool is_subvol;
 
         ccb = FileObject->FsContext2;
         fileref = ccb ? ccb->fileref : NULL;
@@ -2497,7 +2498,12 @@ static NTSTATUS __stdcall drv_cleanup(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIR
         TRACE("cleanup called for FileObject %p\n", FileObject);
         TRACE("fileref %p, refcount = %li, open_count = %li\n", fileref, fileref ? fileref->refcount : 0, fileref ? fileref->open_count : 0);
 
-        ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
+        is_subvol = fileref && fileref->parent && fileref->fcb->subvol != fileref->parent->fcb->subvol;
+
+        if (is_subvol) // we might be removing root
+            ExAcquireResourceExclusiveLite(&fcb->Vcb->tree_lock, true);
+        else
+            ExAcquireResourceSharedLite(&fcb->Vcb->tree_lock, true);
 
         ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
 
