@@ -2725,13 +2725,13 @@ end:
 }
 
 __attribute__((nonnull(1,2,3)))
-static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
+static NTSTATUS add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
     rollback_item* ri;
 
     ri = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_item), ALLOC_TAG);
     if (!ri) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ri->type = ROLLBACK_INSERT_EXTENT;
@@ -2739,6 +2739,8 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
     ri->extent.ext = ext;
 
     InsertTailList(rollback, &ri->list_entry);
+
+    return STATUS_SUCCESS;
 }
 
 #ifdef _MSC_VER
@@ -2748,6 +2750,7 @@ static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* e
 __attribute__((nonnull(1,3)))
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) struct btrfs_file_extent_item* ed, _In_ uint16_t edsize,
                            _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     extent* ext;
     LIST_ENTRY* le;
 
@@ -2781,8 +2784,14 @@ NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_
     InsertTailList(&fcb->extents, &ext->list_entry);
 
 end:
-    if (rollback)
-        add_insert_extent_rollback(rollback, fcb, ext);
+    if (rollback) {
+        Status = add_insert_extent_rollback(rollback, fcb, ext);
+        if (!NT_SUCCESS(Status)) {
+            RemoveEntryList(&ext->list_entry);
+            ExFreePool(ext);
+            return Status;
+        }
+    }
 
     return STATUS_SUCCESS;
 }
@@ -3671,10 +3680,19 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext->unique = ext->unique;
         newext->ignore = false;
         newext->inserted = true;
-        InsertHeadList(&ext->list_entry, &newext->list_entry);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext);
+            if (!NT_SUCCESS(Status)) {
+                if (newext->csum)
+                    ExFreePool(newext->csum);
+
+                ExFreePool(newext);
+                return Status;
+            }
+        }
+
+        InsertHeadList(&ext->list_entry, &newext->list_entry);
 
         remove_fcb_extent(fcb, ext, rollback);
 
@@ -3736,10 +3754,20 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext1->unique = ext->unique;
         newext1->ignore = false;
         newext1->inserted = true;
-        InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext1);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext1);
+            if (!NT_SUCCESS(Status)) {
+                if (newext1->csum)
+                    ExFreePool(newext1->csum);
+
+                ExFreePool(newext1);
+                ExFreePool(newext2);
+                return Status;
+            }
+        }
+
+        InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
         newext2->offset = end_data;
         newext2->datalen = ext->datalen;
@@ -3747,10 +3775,16 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext2->ignore = false;
         newext2->inserted = true;
         newext2->csum = NULL;
-        add_extent(fcb, &newext1->list_entry, newext2);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext2);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext2);
+            if (!NT_SUCCESS(Status)) {
+                ExFreePool(newext2);
+                return Status;
+            }
+        }
+
+        add_extent(fcb, &newext1->list_entry, newext2);
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
@@ -3826,20 +3860,40 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext1->ignore = false;
         newext1->inserted = true;
         newext1->csum = NULL;
-        InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext1);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext1);
+            if (!NT_SUCCESS(Status)) {
+                ExFreePool(newext1);
+
+                if (newext2->csum)
+                    ExFreePool(newext2->csum);
+
+                ExFreePool(newext2);
+                return Status;
+            }
+        }
+
+        InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
         newext2->offset = start_data;
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = false;
         newext2->inserted = true;
-        add_extent(fcb, &newext1->list_entry, newext2);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext2);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext2);
+            if (!NT_SUCCESS(Status)) {
+                if (newext2->csum)
+                    ExFreePool(newext2->csum);
+
+                ExFreePool(newext2);
+                return Status;
+            }
+        }
+
+        add_extent(fcb, &newext1->list_entry, newext2);
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
@@ -3928,20 +3982,42 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext1->ignore = false;
         newext1->inserted = true;
         newext1->csum = NULL;
-        InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext1);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext1);
+            if (!NT_SUCCESS(Status)) {
+                ExFreePool(newext1);
+
+                if (newext2->csum)
+                    ExFreePool(newext2->csum);
+
+                ExFreePool(newext2);
+                ExFreePool(newext3);
+                return Status;
+            }
+        }
+
+        InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
         newext2->offset = start_data;
         newext2->datalen = ext->datalen;
         newext2->unique = ext->unique;
         newext2->ignore = false;
         newext2->inserted = true;
-        add_extent(fcb, &newext1->list_entry, newext2);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext2);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext2);
+            if (!NT_SUCCESS(Status)) {
+                if (newext2->csum)
+                    ExFreePool(newext2->csum);
+
+                ExFreePool(newext2);
+                ExFreePool(newext3);
+                return Status;
+            }
+        }
+
+        add_extent(fcb, &newext1->list_entry, newext2);
 
         newext3->offset = end_data;
         newext3->datalen = ext->datalen;
@@ -3949,10 +4025,16 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext3->ignore = false;
         newext3->inserted = true;
         newext3->csum = NULL;
-        add_extent(fcb, &newext2->list_entry, newext3);
 
-        if (rollback)
-            add_insert_extent_rollback(rollback, fcb, newext3);
+        if (rollback) {
+            Status = add_insert_extent_rollback(rollback, fcb, newext3);
+            if (!NT_SUCCESS(Status)) {
+                ExFreePool(newext3);
+                return Status;
+            }
+        }
+
+        add_extent(fcb, &newext2->list_entry, newext3);
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
