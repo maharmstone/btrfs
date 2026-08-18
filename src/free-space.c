@@ -1438,13 +1438,15 @@ NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
-static void add_rollback_space(LIST_ENTRY* rollback, bool add, LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c) {
+static NTSTATUS add_rollback_space(LIST_ENTRY* rollback, bool add, LIST_ENTRY* list,
+                                   LIST_ENTRY* list_size, uint64_t address,
+                                   uint64_t length, chunk* c) {
     rollback_item* ri;
 
     ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
     if (!ri) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ri->type = add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE;
@@ -1455,10 +1457,13 @@ static void add_rollback_space(LIST_ENTRY* rollback, bool add, LIST_ENTRY* list,
     ri->space.chunk = c;
 
     InsertTailList(rollback, &ri->list_entry);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address,
                          uint64_t length, chunk* c, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     space *s, *s2;
 
@@ -1477,8 +1482,12 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
         if (list_size)
             InsertTailList(list_size, &s->list_entry_size);
 
-        if (rollback)
-            add_rollback_space(rollback, true, list, list_size, address, length, c);
+        if (rollback) {
+            Status = add_rollback_space(rollback, true, list, list_size,
+                                        address, length, c);
+            if (!NT_SUCCESS(Status))
+                return Status;
+        }
 
         return STATUS_SUCCESS;
     }
@@ -1494,8 +1503,13 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
         // new entry envelops old one completely
         if (address <= s2->address && address + length >= s2->address + s2->size) {
             if (address < s2->address) {
-                if (rollback)
-                    add_rollback_space(rollback, true, list, list_size, address, s2->address - address, c);
+                if (rollback) {
+                    Status = add_rollback_space(rollback, true, list, list_size,
+                                                address, s2->address - address,
+                                                c);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
+                }
 
                 s2->size += s2->address - address;
                 s2->address = address;
@@ -1519,8 +1533,13 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
             }
 
             if (length > s2->size) {
-                if (rollback)
-                    add_rollback_space(rollback, true, list, list_size, s2->address + s2->size, address + length - s2->address - s2->size, c);
+                if (rollback) {
+                    Status = add_rollback_space(rollback, true, list, list_size,
+                                                s2->address + s2->size, address + length - s2->address - s2->size,
+                                                c);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
+                }
 
                 s2->size = length;
 
@@ -1551,8 +1570,12 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
 
         // new entry overlaps start of old one
         if (address < s2->address && address + length >= s2->address) {
-            if (rollback)
-                add_rollback_space(rollback, true, list, list_size, address, s2->address - address, c);
+            if (rollback) {
+                Status = add_rollback_space(rollback, true, list, list_size,
+                                            address, s2->address - address, c);
+                if (!NT_SUCCESS(Status))
+                    return Status;
+            }
 
             s2->size += s2->address - address;
             s2->address = address;
@@ -1584,8 +1607,12 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
 
         // new entry overlaps end of old one
         if (address <= s2->address + s2->size && address + length > s2->address + s2->size) {
-            if (rollback)
-                add_rollback_space(rollback, true, list, list_size, address, s2->address + s2->size - address, c);
+            if (rollback) {
+                Status = add_rollback_space(rollback, true, list, list_size, address,
+                                            s2->address + s2->size - address, c);
+                if (!NT_SUCCESS(Status))
+                    return Status;
+            }
 
             s2->size = address + length - s2->address;
 
@@ -1622,8 +1649,14 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            if (rollback)
-                add_rollback_space(rollback, true, list, list_size, address, length, c);
+            if (rollback) {
+                Status = add_rollback_space(rollback, true, list, list_size,
+                                            address, length, c);
+                if (!NT_SUCCESS(Status)) {
+                    ExFreePool(s);
+                    return Status;
+                }
+            }
 
             s->address = address;
             s->size = length;
@@ -1658,15 +1691,21 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
+    if (rollback) {
+        Status = add_rollback_space(rollback, true, list, list_size, address,
+                                    length, c);
+        if (!NT_SUCCESS(Status)) {
+            ExFreePool(s);
+            return Status;
+        }
+    }
+
     s->address = address;
     s->size = length;
     InsertTailList(list, &s->list_entry);
 
     if (list_size)
         order_space_entry(s, list_size);
-
-    if (rollback)
-        add_rollback_space(rollback, true, list, list_size, address, length, c);
 
     return STATUS_SUCCESS;
 }
@@ -2186,6 +2225,7 @@ NTSTATUS space_list_add(chunk* c, uint64_t address, uint64_t length,
 NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
                               uint64_t address, uint64_t length, chunk* c,
                               LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     LIST_ENTRY *le, *le2;
     space *s, *s2;
 
@@ -2201,8 +2241,12 @@ NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
             return STATUS_SUCCESS;
 
         if (s2->address >= address && s2->address + s2->size <= address + length) { // remove entry entirely
-            if (rollback)
-                add_rollback_space(rollback, false, list, list_size, s2->address, s2->size, c);
+            if (rollback) {
+                Status = add_rollback_space(rollback, false, list, list_size,
+                                            s2->address, s2->size, c);
+                if (!NT_SUCCESS(Status))
+                    return Status;
+            }
 
             RemoveEntryList(&s2->list_entry);
 
@@ -2219,15 +2263,21 @@ NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
+                if (rollback) {
+                    Status = add_rollback_space(rollback, false, list, list_size,
+                                                address, length, c);
+                    if (!NT_SUCCESS(Status)) {
+                        ExFreePool(s);
+                        return Status;
+                    }
+                }
+
                 s->address = s2->address;
                 s->size = address - s2->address;
                 InsertHeadList(s2->list_entry.Blink, &s->list_entry);
 
                 s2->size = s2->address + s2->size - address - length;
                 s2->address = address + length;
-
-                if (rollback)
-                    add_rollback_space(rollback, false, list, list_size, address, length, c);
 
                 if (list_size) {
                     RemoveEntryList(&s2->list_entry_size);
@@ -2237,8 +2287,13 @@ NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
 
                 return STATUS_SUCCESS;
             } else { // remove start of entry
-                if (rollback)
-                    add_rollback_space(rollback, false, list, list_size, s2->address, address + length - s2->address, c);
+                if (rollback) {
+                    Status = add_rollback_space(rollback, false, list, list_size,
+                                                s2->address, address + length - s2->address,
+                                                c);
+                    if (!NT_SUCCESS(Status))
+                        return Status;
+                }
 
                 s2->size -= address + length - s2->address;
                 s2->address = address + length;
@@ -2249,8 +2304,13 @@ NTSTATUS space_list_subtract2(LIST_ENTRY* list, LIST_ENTRY* list_size,
                 }
             }
         } else if (address > s2->address && address < s2->address + s2->size) { // remove end of entry
-            if (rollback)
-                add_rollback_space(rollback, false, list, list_size, address, s2->address + s2->size - address, c);
+            if (rollback) {
+                Status = add_rollback_space(rollback, false, list, list_size,
+                                            address, s2->address + s2->size - address,
+                                            c);
+                if (!NT_SUCCESS(Status))
+                    return Status;
+            }
 
             s2->size = address - s2->address;
 
