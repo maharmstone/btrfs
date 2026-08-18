@@ -3604,7 +3604,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
     return STATUS_SUCCESS;
 }
 
-__attribute__((nonnull(1,2,5,6,11)))
+__attribute__((nonnull(1,2,5,6)))
 static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_data, uint64_t end_data, void* data, uint64_t* written,
                                        PIRP Irp, bool file_write, uint64_t irp_offset, ULONG priority, LIST_ENTRY* rollback) {
     struct btrfs_file_extent_item* ed = &ext->extent_data;
@@ -3656,7 +3656,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext->inserted = true;
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
-        add_insert_extent_rollback(rollback, fcb, newext);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext);
 
         remove_fcb_extent(fcb, ext, rollback);
 
@@ -3720,7 +3721,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext1->inserted = true;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
-        add_insert_extent_rollback(rollback, fcb, newext1);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext1);
 
         newext2->offset = end_data;
         newext2->datalen = ext->datalen;
@@ -3730,7 +3732,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext2->csum = NULL;
         add_extent(fcb, &newext1->list_entry, newext2);
 
-        add_insert_extent_rollback(rollback, fcb, newext2);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext2);
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
@@ -3808,7 +3811,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext1->csum = NULL;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
-        add_insert_extent_rollback(rollback, fcb, newext1);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext1);
 
         newext2->offset = start_data;
         newext2->datalen = ext->datalen;
@@ -3817,7 +3821,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext2->inserted = true;
         add_extent(fcb, &newext1->list_entry, newext2);
 
-        add_insert_extent_rollback(rollback, fcb, newext2);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext2);
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
@@ -3908,7 +3913,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext1->csum = NULL;
         InsertHeadList(&ext->list_entry, &newext1->list_entry);
 
-        add_insert_extent_rollback(rollback, fcb, newext1);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext1);
 
         newext2->offset = start_data;
         newext2->datalen = ext->datalen;
@@ -3917,7 +3923,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext2->inserted = true;
         add_extent(fcb, &newext1->list_entry, newext2);
 
-        add_insert_extent_rollback(rollback, fcb, newext2);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext2);
 
         newext3->offset = end_data;
         newext3->datalen = ext->datalen;
@@ -3927,7 +3934,8 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
         newext3->csum = NULL;
         add_extent(fcb, &newext2->list_entry, newext3);
 
-        add_insert_extent_rollback(rollback, fcb, newext3);
+        if (rollback)
+            add_insert_extent_rollback(rollback, fcb, newext3);
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
 
