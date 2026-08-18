@@ -2703,13 +2703,18 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
         SeLockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
+        ExAcquireResourceSharedLite(parfileref->fcb->Header.Resource, true);
+
         if (!SeAccessCheck(parfileref->fcb->sd, &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
                            true, options & FILE_DIRECTORY_FILE ? FILE_ADD_SUBDIRECTORY : FILE_ADD_FILE, 0, NULL,
                            IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
                            &granted_access, &Status)) {
+            ExReleaseResourceLite(parfileref->fcb->Header.Resource);
             SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
             return Status;
         }
+
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
         SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
@@ -2752,13 +2757,18 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     SeLockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
+    ExAcquireResourceSharedLite(parfileref->fcb->Header.Resource, true);
+
     if (!SeAccessCheck(parfileref->fcb->sd, &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
                        true, FILE_WRITE_DATA, 0, NULL, IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
                        &granted_access, &Status)) {
+        ExReleaseResourceLite(parfileref->fcb->Header.Resource);
         SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
         free_fileref(parfileref);
         return Status;
     }
+
+    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
     SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
