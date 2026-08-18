@@ -3942,8 +3942,12 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
 
     SeCaptureSubjectContext(&subjcont);
 
-    Status = SeAssignSecurityEx(parfileref ? parfileref->fcb->sd : NULL, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR,
+    ExAcquireResourceSharedLite(parfileref->fcb->Header.Resource, true);
+
+    Status = SeAssignSecurityEx(parfileref->fcb->sd, NULL, (void**)&fcb->sd, NULL, fcb->type == BTRFS_FT_DIR,
                                 SEF_SACL_AUTO_INHERIT, &subjcont, IoGetFileObjectGenericMapping(), PagedPool);
+
+    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
     if (!NT_SUCCESS(Status)) {
         ERR("SeAssignSecurityEx returned %08lx\n", Status);
