@@ -2997,9 +2997,9 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t lengt
     NTSTATUS Status;
     chunk* c;
 
-    ExAcquireResourceSharedLite(&fcb->Vcb->chunk_lock, true);
+    ExAcquireResourceExclusiveLite(&fcb->Vcb->chunk_lock, true);
 
-    // first create as many chunks as we can
+    // first create as many chunks as we can (FIXME: this probably isn't a good idea)
     do {
         Status = alloc_chunk(fcb->Vcb, flags, &c, false);
     } while (NT_SUCCESS(Status));
@@ -3009,6 +3009,8 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t lengt
         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
         return Status;
     }
+
+    ExConvertExclusiveToSharedLite(&fcb->Vcb->chunk_lock);
 
     le = fcb->Vcb->chunks.Flink;
     while (le != &fcb->Vcb->chunks) {
