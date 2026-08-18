@@ -1179,19 +1179,6 @@ void calc_sha256(uint8_t* hash, const void* input, size_t len);
 void blake2b(void *out, size_t outlen, const void* in, size_t inlen);
 #define BLAKE2_HASH_SIZE 32
 
-typedef struct {
-    LIST_ENTRY* list;
-    LIST_ENTRY* list_size;
-    uint64_t address;
-    uint64_t length;
-    chunk* chunk;
-} rollback_space;
-
-typedef struct {
-    fcb* fcb;
-    extent* ext;
-} rollback_extent;
-
 enum rollback_type {
     ROLLBACK_INSERT_EXTENT,
     ROLLBACK_DELETE_EXTENT,
@@ -1200,9 +1187,23 @@ enum rollback_type {
 };
 
 typedef struct {
-    enum rollback_type type;
-    void* ptr;
     LIST_ENTRY list_entry;
+    enum rollback_type type;
+
+    union {
+        struct {
+            LIST_ENTRY* list;
+            LIST_ENTRY* list_size;
+            uint64_t address;
+            uint64_t length;
+            chunk* chunk;
+        } space;
+
+        struct {
+            fcb* fcb;
+            extent* ext;
+        } extent;
+    };
 } rollback_item;
 
 typedef struct {
@@ -1238,7 +1239,6 @@ NTSTATUS do_load_tree(device_extension* Vcb, tree_holder* th, root* r, tree* t, 
 void clear_rollback(LIST_ENTRY* rollback) __attribute__((nonnull(1)));
 void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) __attribute__((nonnull(1,2)));
 void free_trees_root(device_extension* Vcb, root* r) __attribute__((nonnull(1,2)));
-void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr) __attribute__((nonnull(1,3)));
 NTSTATUS commit_batch_list(_Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb,
                            LIST_ENTRY* batchlist, PIRP Irp) __attribute__((nonnull(1,2)));
 void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) __attribute__((nonnull(1,2)));

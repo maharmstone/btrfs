@@ -1437,21 +1437,22 @@ NTSTATUS allocate_cache(device_extension* Vcb, bool* changed, PIRP Irp) {
 }
 
 static void add_rollback_space(LIST_ENTRY* rollback, bool add, LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c) {
-    rollback_space* rs;
+    rollback_item* ri;
 
-    rs = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_space), ALLOC_TAG);
-    if (!rs) {
+    ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+    if (!ri) {
         ERR("out of memory\n");
         return;
     }
 
-    rs->list = list;
-    rs->list_size = list_size;
-    rs->address = address;
-    rs->length = length;
-    rs->chunk = c;
+    ri->type = add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE;
+    ri->space.list = list;
+    ri->space.list_size = list_size;
+    ri->space.address = address;
+    ri->space.length = length;
+    ri->space.chunk = c;
 
-    add_rollback(rollback, add ? ROLLBACK_ADD_SPACE : ROLLBACK_SUBTRACT_SPACE, rs);
+    InsertTailList(rollback, &ri->list_entry);
 }
 
 void space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t address, uint64_t length, chunk* c, LIST_ENTRY* rollback) {

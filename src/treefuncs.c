@@ -857,28 +857,6 @@ void free_trees(device_extension* Vcb) {
 #pragma warning(push)
 #pragma warning(suppress: 28194)
 #endif
-__attribute__((nonnull(1,3)))
-void add_rollback(_In_ LIST_ENTRY* rollback, _In_ enum rollback_type type, _In_ __drv_aliasesMem void* ptr) {
-    rollback_item* ri;
-
-    ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
-    if (!ri) {
-        ERR("out of memory\n");
-        return;
-    }
-
-    ri->type = type;
-    ri->ptr = ptr;
-    InsertTailList(rollback, &ri->list_entry);
-}
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(suppress: 28194)
-#endif
 __attribute__((nonnull(1,2)))
 NTSTATUS insert_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock) device_extension* Vcb, _In_ root* r, _In_ uint64_t objectid,
                           _In_ uint8_t type, _In_ uint64_t offset, _In_reads_bytes_opt_(size) _When_(return >= 0, __drv_aliasesMem) void* data,
@@ -1050,20 +1028,7 @@ NTSTATUS delete_tree_item(_In_ _Requires_exclusive_lock_held_(_Curr_->tree_lock)
 __attribute__((nonnull(1)))
 void clear_rollback(LIST_ENTRY* rollback) {
     while (!IsListEmpty(rollback)) {
-        LIST_ENTRY* le = RemoveHeadList(rollback);
-        rollback_item* ri = CONTAINING_RECORD(le, rollback_item, list_entry);
-
-        switch (ri->type) {
-            case ROLLBACK_ADD_SPACE:
-            case ROLLBACK_SUBTRACT_SPACE:
-            case ROLLBACK_INSERT_EXTENT:
-            case ROLLBACK_DELETE_EXTENT:
-                ExFreePool(ri->ptr);
-                break;
-
-            default:
-                break;
-        }
+        rollback_item* ri = CONTAINING_RECORD(RemoveHeadList(rollback), rollback_item, list_entry);
 
         ExFreePool(ri);
     }
@@ -1080,98 +1045,97 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 
         switch (ri->type) {
             case ROLLBACK_INSERT_EXTENT:
-            {
-                rollback_extent* re = ri->ptr;
+                ri->extent.ext->ignore = true;
 
-                re->ext->ignore = true;
-
-                switch (re->ext->extent_data.type) {
+                switch (ri->extent.ext->extent_data.type) {
                     case BTRFS_FILE_EXTENT_REG:
                     case BTRFS_FILE_EXTENT_PREALLOC: {
-                        if (re->ext->extent_data.disk_num_bytes != 0) {
-                            chunk* c = get_chunk_from_address(Vcb, re->ext->extent_data.disk_bytenr);
+                        if (ri->extent.ext->extent_data.disk_num_bytes != 0) {
+                            chunk* c = get_chunk_from_address(Vcb, ri->extent.ext->extent_data.disk_bytenr);
 
                             if (c) {
-                                Status = update_changed_extent_ref(Vcb, c, re->ext->extent_data.disk_bytenr, re->ext->extent_data.disk_num_bytes, re->fcb->subvol->id,
-                                                                re->fcb->inode, re->ext->offset - re->ext->extent_data.offset, -1,
-                                                                re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, NULL);
-
+                                Status = update_changed_extent_ref(Vcb, c, ri->extent.ext->extent_data.disk_bytenr,
+                                                                   ri->extent.ext->extent_data.disk_num_bytes,
+                                                                   ri->extent.fcb->subvol->id,
+                                                                   ri->extent.fcb->inode,
+                                                                   ri->extent.ext->offset - ri->extent.ext->extent_data.offset, -1,
+                                                                   ri->extent.fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                                   false, NULL);
                                 if (!NT_SUCCESS(Status))
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
                             }
 
-                            re->fcb->inode_item.nbytes -= re->ext->extent_data.num_bytes;
+                            ri->extent.fcb->inode_item.nbytes -= ri->extent.ext->extent_data.num_bytes;
                         }
 
                         break;
                     }
 
                     case BTRFS_FILE_EXTENT_INLINE:
-                        re->fcb->inode_item.nbytes -= re->ext->extent_data.ram_bytes;
+                        ri->extent.fcb->inode_item.nbytes -= ri->extent.ext->extent_data.ram_bytes;
                     break;
                 }
 
-                ExFreePool(re);
                 break;
-            }
 
             case ROLLBACK_DELETE_EXTENT:
-            {
-                rollback_extent* re = ri->ptr;
+                ri->extent.ext->ignore = false;
 
-                re->ext->ignore = false;
-
-                switch (re->ext->extent_data.type) {
+                switch (ri->extent.ext->extent_data.type) {
                     case BTRFS_FILE_EXTENT_REG:
                     case BTRFS_FILE_EXTENT_PREALLOC: {
-                        if (re->ext->extent_data.disk_num_bytes != 0) {
-                            chunk* c = get_chunk_from_address(Vcb, re->ext->extent_data.disk_bytenr);
+                        if (ri->extent.ext->extent_data.disk_num_bytes != 0) {
+                            chunk* c = get_chunk_from_address(Vcb, ri->extent.ext->extent_data.disk_bytenr);
 
                             if (c) {
-                                Status = update_changed_extent_ref(Vcb, c, re->ext->extent_data.disk_bytenr, re->ext->extent_data.disk_num_bytes, re->fcb->subvol->id,
-                                                                re->fcb->inode, re->ext->offset - re->ext->extent_data.offset, 1,
-                                                                re->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, NULL);
+                                Status = update_changed_extent_ref(Vcb, c, ri->extent.ext->extent_data.disk_bytenr,
+                                                                   ri->extent.ext->extent_data.disk_num_bytes,
+                                                                   ri->extent.fcb->subvol->id,
+                                                                   ri->extent.fcb->inode,
+                                                                   ri->extent.ext->offset - ri->extent.ext->extent_data.offset, 1,
+                                                                   ri->extent.fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                                   false, NULL);
 
                                 if (!NT_SUCCESS(Status))
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
                             }
 
-                            re->fcb->inode_item.nbytes += re->ext->extent_data.num_bytes;
+                            ri->extent.fcb->inode_item.nbytes += ri->extent.ext->extent_data.num_bytes;
                         }
 
                         break;
                     }
 
                     case BTRFS_FILE_EXTENT_INLINE:
-                        re->fcb->inode_item.nbytes += re->ext->extent_data.ram_bytes;
+                        ri->extent.fcb->inode_item.nbytes += ri->extent.ext->extent_data.ram_bytes;
                     break;
                 }
 
-                ExFreePool(re);
                 break;
-            }
 
             case ROLLBACK_ADD_SPACE:
             case ROLLBACK_SUBTRACT_SPACE:
-            {
-                rollback_space* rs = ri->ptr;
+                if (ri->space.chunk)
+                    acquire_chunk_lock(ri->space.chunk, Vcb);
 
-                if (rs->chunk)
-                    acquire_chunk_lock(rs->chunk, Vcb);
-
-                if (ri->type == ROLLBACK_ADD_SPACE)
-                    space_list_subtract2(rs->list, rs->list_size, rs->address, rs->length, NULL, NULL);
-                else
-                    space_list_add2(rs->list, rs->list_size, rs->address, rs->length, NULL, NULL);
-
-                if (rs->chunk) {
-                    if (ri->type == ROLLBACK_ADD_SPACE)
-                        rs->chunk->used += rs->length;
-                    else
-                        rs->chunk->used -= rs->length;
+                if (ri->type == ROLLBACK_ADD_SPACE) {
+                    space_list_subtract2(ri->space.list, ri->space.list_size,
+                                         ri->space.address, ri->space.length,
+                                         NULL, NULL);
+                } else {
+                    space_list_add2(ri->space.list, ri->space.list_size,
+                                    ri->space.address, ri->space.length,
+                                    NULL, NULL);
                 }
 
-                if (rs->chunk) {
+                if (ri->space.chunk) {
+                    if (ri->type == ROLLBACK_ADD_SPACE)
+                        ri->space.chunk->used += ri->space.length;
+                    else
+                        ri->space.chunk->used -= ri->space.length;
+                }
+
+                if (ri->space.chunk) {
                     LIST_ENTRY* le2 = le->Blink;
 
                     while (le2 != rollback) {
@@ -1179,18 +1143,22 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         rollback_item* ri2 = CONTAINING_RECORD(le2, rollback_item, list_entry);
 
                         if (ri2->type == ROLLBACK_ADD_SPACE || ri2->type == ROLLBACK_SUBTRACT_SPACE) {
-                            rollback_space* rs2 = ri2->ptr;
-
-                            if (rs2->chunk == rs->chunk) {
+                            if (ri2->space.chunk == ri->space.chunk) {
                                 if (ri2->type == ROLLBACK_ADD_SPACE) {
-                                    space_list_subtract2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL, NULL);
-                                    rs->chunk->used += rs2->length;
+                                    space_list_subtract2(ri2->space.list,
+                                                         ri2->space.list_size,
+                                                         ri2->space.address,
+                                                         ri2->space.length,
+                                                         NULL, NULL);
+                                    ri->space.chunk->used += ri2->space.length;
                                 } else {
-                                    space_list_add2(rs2->list, rs2->list_size, rs2->address, rs2->length, NULL, NULL);
-                                    rs->chunk->used -= rs2->length;
+                                    space_list_add2(ri2->space.list, ri2->space.list_size,
+                                                    ri2->space.address,
+                                                    ri2->space.length,
+                                                    NULL, NULL);
+                                    ri->space.chunk->used -= ri2->space.length;
                                 }
 
-                                ExFreePool(rs2);
                                 RemoveEntryList(&ri2->list_entry);
                                 ExFreePool(ri2);
                             }
@@ -1199,13 +1167,10 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         le2 = le3;
                     }
 
-                    release_chunk_lock(rs->chunk, Vcb);
+                    release_chunk_lock(ri->space.chunk, Vcb);
                 }
 
-                ExFreePool(rs);
-
                 break;
-            }
         }
 
         ExFreePool(ri);

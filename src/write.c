@@ -2720,18 +2720,19 @@ end:
 
 __attribute__((nonnull(1,2,3)))
 static void add_insert_extent_rollback(LIST_ENTRY* rollback, fcb* fcb, extent* ext) {
-    rollback_extent* re;
+    rollback_item* ri;
 
-    re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);
-    if (!re) {
+    ri = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_item), ALLOC_TAG);
+    if (!ri) {
         ERR("out of memory\n");
         return;
     }
 
-    re->fcb = fcb;
-    re->ext = ext;
+    ri->type = ROLLBACK_INSERT_EXTENT;
+    ri->extent.fcb = fcb;
+    ri->extent.ext = ext;
 
-    add_rollback(rollback, ROLLBACK_INSERT_EXTENT, re);
+    InsertTailList(rollback, &ri->list_entry);
 }
 
 #ifdef _MSC_VER
@@ -2789,18 +2790,19 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
         ext->ignore = true;
 
         if (rollback) {
-            rollback_extent* re;
+            rollback_item* ri;
 
-            re = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_extent), ALLOC_TAG);
-            if (!re) {
+            ri = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_item), ALLOC_TAG);
+            if (!ri) {
                 ERR("out of memory\n");
                 return;
             }
 
-            re->fcb = fcb;
-            re->ext = ext;
+            ri->type = ROLLBACK_DELETE_EXTENT;
+            ri->extent.fcb = fcb;
+            ri->extent.ext = ext;
 
-            add_rollback(rollback, ROLLBACK_DELETE_EXTENT, re);
+            InsertTailList(rollback, &ri->list_entry);
         }
     }
 }
