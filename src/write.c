@@ -2802,10 +2802,13 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
 }
 
 _Requires_lock_held_(c->lock)
-_When_(return != 0, _Releases_lock_(c->lock))
+_When_(return == STATUS_SUCCESS, _Releases_lock_(c->lock))
 __attribute__((nonnull(1,2,3,9)))
-bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c, _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc, _In_opt_ void* data,
-                         _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ uint8_t compression, _In_ uint64_t ram_bytes, _In_ bool file_write, _In_ uint64_t irp_offset) {
+NTSTATUS insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c,
+                             _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc,
+                             _In_opt_ void* data, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback,
+                             _In_ uint8_t compression, _In_ uint64_t ram_bytes, _In_ bool file_write,
+                             _In_ uint64_t irp_offset) {
     uint64_t address;
     NTSTATUS Status;
     struct btrfs_file_extent_item* ed;
@@ -2815,13 +2818,13 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     TRACE("(%p, (%I64x, %I64x), %I64x, %I64x, %I64x, %u, %p, %p)\n", Vcb, fcb->subvol->id, fcb->inode, c->offset, start_data, length, prealloc, data, rollback);
 
     if (!find_data_address_in_chunk(Vcb, c, length, &address))
-        return false;
+        return STATUS_DISK_FULL;
 
     // add extent data to inode
     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
     if (!ed) {
         ERR("out of memory\n");
-        return false;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ed->generation = Vcb->superblock.generation;
@@ -2842,7 +2845,7 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
         if (!csum) {
             ERR("out of memory\n");
             ExFreePool(ed);
-            return false;
+            return STATUS_INSUFFICIENT_RESOURCES;
         }
 
         do_calc_job(Vcb, data, sl, csum);
@@ -2851,9 +2854,13 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     Status = add_extent_to_fcb(fcb, start_data, ed, edsize, true, csum, rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_extent_to_fcb returned %08lx\n", Status);
-        if (csum) ExFreePool(csum);
+
+        if (csum)
+            ExFreePool(csum);
+
         ExFreePool(ed);
-        return false;
+
+        return Status;
     }
 
     ExFreePool(ed);
@@ -2878,17 +2885,21 @@ bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* 
     if (data) {
         Status = write_data_complete(Vcb, address, data, (uint32_t)length, Irp, NULL, file_write, irp_offset,
                                      fcb->Header.Flags2 & FSRTL_FLAG2_IS_PAGING_FILE ? HighPagePriority : NormalPagePriority);
-        if (!NT_SUCCESS(Status))
+        if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08lx\n", Status);
+            acquire_chunk_lock(c, Vcb); // so error path will release it (FIXME)
+            return Status;
+        }
     }
 
-    return true;
+    return STATUS_SUCCESS;
 }
 
 __attribute__((nonnull(1,2,5,7,10)))
-static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data, uint64_t length, void* data,
-                            PIRP Irp, uint64_t* written, bool file_write, uint64_t irp_offset, LIST_ENTRY* rollback) {
-    bool success = false;
+static NTSTATUS try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data,
+                                uint64_t length, void* data, PIRP Irp, uint64_t* written,
+                                bool file_write, uint64_t irp_offset, LIST_ENTRY* rollback) {
+    NTSTATUS Status;
     struct btrfs_file_extent_item* ed;
     chunk* c;
     LIST_ENTRY* le;
@@ -2913,39 +2924,39 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
     }
 
     if (!ext)
-        return false;
+        return STATUS_DISK_FULL;
 
     ed = &ext->extent_data;
 
     if (ed->type != BTRFS_FILE_EXTENT_REG && ed->type != BTRFS_FILE_EXTENT_PREALLOC) {
         TRACE("not extending extent which is not regular or prealloc\n");
-        return false;
+        return STATUS_DISK_FULL;
     }
 
     if (ext->offset + ed->num_bytes != start_data) {
         TRACE("last EXTENT_DATA does not run up to start_data (%I64x + %I64x != %I64x)\n", ext->offset, ed->num_bytes, start_data);
-        return false;
+        return STATUS_DISK_FULL;
     }
 
     c = get_chunk_from_address(Vcb, ed->disk_bytenr);
 
     if (c->reloc || c->readonly || c->chunk_item->type != Vcb->data_flags)
-        return false;
+        return STATUS_DISK_FULL;
 
     acquire_chunk_lock(c, Vcb);
 
     if (length > c->chunk_item->length - c->used) {
         release_chunk_lock(c, Vcb);
-        return false;
+        return STATUS_DISK_FULL;
     }
 
     if (!c->cache_loaded) {
-        NTSTATUS Status = load_cache_chunk(Vcb, c, NULL);
+        Status = load_cache_chunk(Vcb, c, NULL);
 
         if (!NT_SUCCESS(Status)) {
             ERR("load_cache_chunk returned %08lx\n", Status);
             release_chunk_lock(c, Vcb);
-            return false;
+            return Status;
         }
     }
 
@@ -2956,14 +2967,17 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
         if (s->address == ed->disk_bytenr + ed->disk_num_bytes) {
             uint64_t newlen = min(min(s->size, length), MAX_EXTENT_SIZE);
 
-            success = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESS_NONE, newlen, file_write, irp_offset);
+            Status = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false,
+                                         data, Irp, rollback, BTRFS_COMPRESS_NONE,
+                                         newlen, file_write, irp_offset);
 
-            if (success)
+            if (NT_SUCCESS(Status)) {
                 *written += newlen;
-            else
+                return STATUS_SUCCESS;
+            } else if (Status != STATUS_DISK_FULL) {
                 release_chunk_lock(c, Vcb);
-
-            return success;
+                return Status;
+            }
         } else if (s->address > ed->disk_bytenr + ed->disk_num_bytes)
             break;
 
@@ -2972,7 +2986,7 @@ static bool try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_data
 
     release_chunk_lock(c, Vcb);
 
-    return false;
+    return STATUS_DISK_FULL;
 }
 
 __attribute__((nonnull(1)))
@@ -3008,12 +3022,21 @@ static NTSTATUS insert_chunk_fragmented(fcb* fcb, uint64_t start, uint64_t lengt
                     space* s = CONTAINING_RECORD(c->space_size.Flink, space, list_entry_size);
                     uint64_t extlen = min(length, s->size);
 
-                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, prealloc && !page_file, data, NULL, rollback, BTRFS_COMPRESS_NONE, extlen, false, 0)) {
+                    Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen,
+                                                 prealloc && !page_file, data, NULL,
+                                                 rollback, BTRFS_COMPRESS_NONE, extlen,
+                                                 false, 0);
+                    if (NT_SUCCESS(Status)) {
                         start += extlen;
                         length -= extlen;
-                        if (data) data += extlen;
+                        if (data)
+                            data += extlen;
 
                         acquire_chunk_lock(c, fcb->Vcb);
+                    } else if (Status != STATUS_DISK_FULL) {
+                        release_chunk_lock(c, fcb->Vcb);
+                        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                        return Status;
                     }
                 }
             }
@@ -3055,9 +3078,17 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
                 acquire_chunk_lock(c, fcb->Vcb);
 
                 if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= extlen) {
-                    if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESS_NONE, extlen, false, 0)) {
+                    Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen,
+                                                 !page_file, NULL, NULL, rollback,
+                                                 BTRFS_COMPRESS_NONE, extlen,
+                                                 false, 0);
+                    if (NT_SUCCESS(Status)) {
                         ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
                         goto cont;
+                    } else if (Status != STATUS_DISK_FULL) {
+                        release_chunk_lock(c, fcb->Vcb);
+                        ExReleaseResourceLite(&fcb->Vcb->chunk_lock);
+                        return Status;
                     }
                 }
 
@@ -3077,14 +3108,21 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
 
         if (!NT_SUCCESS(Status)) {
             ERR("alloc_chunk returned %08lx\n", Status);
-            goto end;
+            return Status;
         }
 
         acquire_chunk_lock(c, fcb->Vcb);
 
         if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= extlen) {
-            if (insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file, NULL, NULL, rollback, BTRFS_COMPRESS_NONE, extlen, false, 0))
+            Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, extlen, !page_file,
+                                         NULL, NULL, rollback, BTRFS_COMPRESS_NONE,
+                                         extlen, false, 0);
+            if (NT_SUCCESS(Status))
                 goto cont;
+            else if (Status != STATUS_DISK_FULL) {
+                release_chunk_lock(c, fcb->Vcb);
+                return Status;
+            }
         }
 
         release_chunk_lock(c, fcb->Vcb);
@@ -3093,17 +3131,14 @@ static NTSTATUS insert_prealloc_extent(fcb* fcb, uint64_t start, uint64_t length
         if (!NT_SUCCESS(Status))
             ERR("insert_chunk_fragmented returned %08lx\n", Status);
 
-        goto end;
+        return Status;
 
 cont:
         length -= extlen;
         start += extlen;
     } while (length > 0);
 
-    Status = STATUS_SUCCESS;
-
-end:
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 __attribute__((nonnull(1,2,5,9)))
@@ -3117,7 +3152,10 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
     TRACE("(%p, (%I64x, %I64x), %I64x, %I64x, %p)\n", Vcb, fcb->subvol->id, fcb->inode, start_data, length, data);
 
     if (start_data > 0) {
-        try_extend_data(Vcb, fcb, start_data, length, data, Irp, &written, file_write, irp_offset, rollback);
+        Status = try_extend_data(Vcb, fcb, start_data, length, data, Irp, &written,
+                                 file_write, irp_offset, rollback);
+        if (!NT_SUCCESS(Status) && Status != STATUS_DISK_FULL)
+            return Status;
 
         if (written == length)
             return STATUS_SUCCESS;
@@ -3147,21 +3185,30 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
             if (!c->readonly && !c->reloc) {
                 acquire_chunk_lock(c, Vcb);
 
-                if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= newlen &&
-                    insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESS_NONE, newlen, file_write, irp_offset)) {
-                    written += newlen;
+                if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= newlen) {
+                    Status = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false,
+                                                 data, Irp, rollback, BTRFS_COMPRESS_NONE,
+                                                 newlen, file_write, irp_offset);
+                    if (NT_SUCCESS(Status)) {
+                        written += newlen;
 
-                    if (written == orig_length) {
+                        if (written == orig_length) {
+                            ExReleaseResourceLite(&Vcb->chunk_lock);
+                            return STATUS_SUCCESS;
+                        } else {
+                            done = true;
+                            start_data += newlen;
+                            irp_offset += newlen;
+                            length -= newlen;
+                            data = &((uint8_t*)data)[newlen];
+                            break;
+                        }
+                    } else if (Status != STATUS_DISK_FULL) {
+                        release_chunk_lock(c, Vcb);
                         ExReleaseResourceLite(&Vcb->chunk_lock);
-                        return STATUS_SUCCESS;
-                    } else {
-                        done = true;
-                        start_data += newlen;
-                        irp_offset += newlen;
-                        length -= newlen;
-                        data = &((uint8_t*)data)[newlen];
-                        break;
-                    }
+                        return Status;
+                    } else
+                        release_chunk_lock(c, Vcb);
                 } else
                     release_chunk_lock(c, Vcb);
             }
@@ -3189,19 +3236,27 @@ static NTSTATUS insert_extent(device_extension* Vcb, fcb* fcb, uint64_t start_da
         if (c) {
             acquire_chunk_lock(c, Vcb);
 
-            if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= newlen &&
-                insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false, data, Irp, rollback, BTRFS_COMPRESS_NONE, newlen, file_write, irp_offset)) {
-                written += newlen;
+            if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= newlen) {
+                Status = insert_extent_chunk(Vcb, fcb, c, start_data, newlen, false,
+                                             data, Irp, rollback, BTRFS_COMPRESS_NONE,
+                                             newlen, file_write, irp_offset);
+                if (NT_SUCCESS(Status)) {
+                    written += newlen;
 
-                if (written == orig_length)
-                    return STATUS_SUCCESS;
-                else {
-                    done = true;
-                    start_data += newlen;
-                    irp_offset += newlen;
-                    length -= newlen;
-                    data = &((uint8_t*)data)[newlen];
-                }
+                    if (written == orig_length)
+                        return STATUS_SUCCESS;
+                    else {
+                        done = true;
+                        start_data += newlen;
+                        irp_offset += newlen;
+                        length -= newlen;
+                        data = &((uint8_t*)data)[newlen];
+                    }
+                } else if (Status != STATUS_DISK_FULL) {
+                    release_chunk_lock(c, Vcb);
+                    return Status;
+                } else
+                    release_chunk_lock(c, Vcb);
             } else
                 release_chunk_lock(c, Vcb);
         }

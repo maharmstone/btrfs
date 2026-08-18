@@ -1010,8 +1010,15 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
             acquire_chunk_lock(c, fcb->Vcb);
 
             if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= length) {
-                if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false, NULL, NULL, rollback, BTRFS_COMPRESS_NONE, length, false, 0))
+                Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false,
+                                             NULL, NULL, rollback, BTRFS_COMPRESS_NONE,
+                                             length, false, 0);
+                if (NT_SUCCESS(Status))
                     return STATUS_SUCCESS;
+                else if (Status != STATUS_DISK_FULL) {
+                    release_chunk_lock(c, fcb->Vcb);
+                    return Status;
+                }
             }
 
             release_chunk_lock(c, fcb->Vcb);
@@ -1030,8 +1037,15 @@ static NTSTATUS insert_cache_extent(fcb* fcb, uint64_t start, uint64_t length, L
     acquire_chunk_lock(c, fcb->Vcb);
 
     if (c->chunk_item->type == flags && (c->chunk_item->length - c->used) >= length) {
-        if (insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false, NULL, NULL, rollback, BTRFS_COMPRESS_NONE, length, false, 0))
+        Status = insert_extent_chunk(fcb->Vcb, fcb, c, start, length, false, NULL,
+                                     NULL, rollback, BTRFS_COMPRESS_NONE, length,
+                                     false, 0);
+        if (NT_SUCCESS(Status))
             return STATUS_SUCCESS;
+        else if (Status != STATUS_DISK_FULL) {
+            release_chunk_lock(c, fcb->Vcb);
+            return Status;
+        }
     }
 
     release_chunk_lock(c, fcb->Vcb);

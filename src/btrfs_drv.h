@@ -1288,10 +1288,12 @@ _Function_class_(DRIVER_DISPATCH)
 NTSTATUS __stdcall drv_write(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) __attribute__((nonnull(1,2)));
 
 _Requires_lock_held_(c->lock)
-_When_(return != 0, _Releases_lock_(c->lock))
-bool insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c, _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc,
-                         _In_opt_ void* data, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback, _In_ uint8_t compression, _In_ uint64_t ram_bytes,
-                         _In_ bool file_write, _In_ uint64_t irp_offset) __attribute__((nonnull(1,2,3,9)));
+_When_(return == STATUS_SUCCESS, _Releases_lock_(c->lock))
+NTSTATUS insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chunk* c,
+                             _In_ uint64_t start_data, _In_ uint64_t length, _In_ bool prealloc,
+                             _In_opt_ void* data, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback,
+                             _In_ uint8_t compression, _In_ uint64_t ram_bytes,
+                             _In_ bool file_write, _In_ uint64_t irp_offset) __attribute__((nonnull(1,2,3,9)));
 
 NTSTATUS do_write_file(fcb* fcb, uint64_t start_data, uint64_t end_data, void* data, PIRP Irp, bool file_write, uint32_t irp_offset, LIST_ENTRY* rollback) __attribute__((nonnull(1, 4)));
 bool find_data_address_in_chunk(device_extension* Vcb, chunk* c, uint64_t length, uint64_t* address) __attribute__((nonnull(1, 2, 4)));
