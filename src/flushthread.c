@@ -4729,7 +4729,7 @@ typedef struct {
     LIST_ENTRY list_entry;
 } extent_range;
 
-static void rationalize_extents(fcb* fcb, PIRP Irp) {
+static NTSTATUS rationalize_extents(fcb* fcb, PIRP Irp) {
     LIST_ENTRY* le;
     LIST_ENTRY extent_ranges;
     extent_range* er;
@@ -4764,6 +4764,7 @@ static void rationalize_extents(fcb* fcb, PIRP Irp) {
                 er = ExAllocatePoolWithTag(PagedPool, sizeof(extent_range), ALLOC_TAG); // FIXME - should be from lookaside?
                 if (!er) {
                     ERR("out of memory\n");
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
                     goto end;
                 }
 
@@ -4787,8 +4788,10 @@ cont:
         le = le->Flink;
     }
 
-    if (num_extents == 0 || (num_extents == 1 && !truncating))
+    if (num_extents == 0 || (num_extents == 1 && !truncating)) {
+        Status = STATUS_SUCCESS;
         goto end;
+    }
 
     le = extent_ranges.Flink;
     while (le != &extent_ranges) {
@@ -4801,6 +4804,7 @@ cont:
 
             if (!er->chunk) {
                 ERR("get_chunk_from_address(%I64x) failed\n", er->address);
+                Status = STATUS_INTERNAL_ERROR;
                 goto end;
             }
 
@@ -4941,8 +4945,10 @@ cont:
         }
     }
 
-    if (num_extents < 2)
+    if (num_extents < 2) {
+        Status = STATUS_SUCCESS;
         goto end;
+    }
 
     // merge together adjacent extents
     le = extent_ranges.Flink;
@@ -4971,8 +4977,10 @@ cont:
         le = le->Flink;
     }
 
-    if (!changed)
+    if (!changed) {
+        Status = STATUS_SUCCESS;
         goto end;
+    }
 
     le = fcb->extents.Flink;
     while (le != &fcb->extents) {
@@ -5015,6 +5023,8 @@ cont:
         le = le->Flink;
     }
 
+    Status = STATUS_SUCCESS;
+
 end:
     while (!IsListEmpty(&extent_ranges)) {
         le = RemoveHeadList(&extent_ranges);
@@ -5022,6 +5032,8 @@ end:
 
         ExFreePool(er);
     }
+
+    return Status;
 }
 
 NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
@@ -5119,7 +5131,9 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
         }
 
         if (!IsListEmpty(&fcb->extents)) {
-            rationalize_extents(fcb, Irp);
+            Status = rationalize_extents(fcb, Irp);
+            if (!NT_SUCCESS(Status))
+                goto end;
 
             // merge together adjacent EXTENT_DATAs pointing to same extent
 
