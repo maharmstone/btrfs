@@ -3997,17 +3997,23 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
     }
 
     if (IrpSp->Parameters.Create.SecurityContext->DesiredAccess != 0) {
+        fcb* sd_fcb = (fileref->fcb->ads || fileref->fcb == Vcb->dummy_fcb) ? fileref->parent->fcb : fileref->fcb;
+
         SeLockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
 
-        if (!SeAccessCheck((fileref->fcb->ads || fileref->fcb == Vcb->dummy_fcb) ? fileref->parent->fcb->sd : fileref->fcb->sd,
-                            &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
-                            true, IrpSp->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
-                            IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
-                            granted_access, &Status)) {
+        ExAcquireResourceSharedLite(sd_fcb->Header.Resource, true);
+
+        if (!SeAccessCheck(sd_fcb->sd, &IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext,
+                           true, IrpSp->Parameters.Create.SecurityContext->DesiredAccess, 0, NULL,
+                           IoGetFileObjectGenericMapping(), IrpSp->Flags & SL_FORCE_ACCESS_CHECK ? UserMode : Irp->RequestorMode,
+                           granted_access, &Status)) {
+            ExReleaseResourceLite(sd_fcb->Header.Resource);
             SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
             TRACE("SeAccessCheck failed, returning %08lx\n", Status);
             goto end;
         }
+
+        ExReleaseResourceLite(sd_fcb->Header.Resource);
 
         SeUnlockSubjectContext(&IrpSp->Parameters.Create.SecurityContext->AccessState->SubjectSecurityContext);
     } else
