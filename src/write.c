@@ -28,7 +28,7 @@ typedef struct {
 _Function_class_(IO_COMPLETION_ROUTINE)
 static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID conptr);
 
-static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2)));
+static NTSTATUS remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2)));
 
 extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
 extern tCcCopyWriteEx fCcCopyWriteEx;
@@ -2424,7 +2424,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data,
             if (ext->offset < end_data && ext->offset + len > start_data) {
                 if (ed->type == BTRFS_FILE_EXTENT_INLINE) {
                     if (start_data <= ext->offset && end_data >= ext->offset + len) { // remove all
-                        remove_fcb_extent(fcb, ext, rollback);
+                        Status = remove_fcb_extent(fcb, ext, rollback);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
 
                         fcb->inode_item.nbytes -= len;
                         fcb->inode_item_changed = true;
@@ -2457,7 +2459,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data,
                             }
                         }
 
-                        remove_fcb_extent(fcb, ext, rollback);
+                        Status = remove_fcb_extent(fcb, ext, rollback);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
                     } else if (start_data <= ext->offset && end_data < ext->offset + len) { // remove beginning
                         extent* newext;
 
@@ -2518,7 +2522,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data,
 
                         add_extent(fcb, &ext->list_entry, newext);
 
-                        remove_fcb_extent(fcb, ext, rollback);
+                        Status = remove_fcb_extent(fcb, ext, rollback);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
                     } else if (start_data > ext->offset && end_data >= ext->offset + len) { // remove end
                         extent* newext;
 
@@ -2578,7 +2584,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data,
 
                         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
-                        remove_fcb_extent(fcb, ext, rollback);
+                        Status = remove_fcb_extent(fcb, ext, rollback);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
                     } else if (start_data > ext->offset && end_data < ext->offset + len) { // remove middle
                         extent *newext1, *newext2;
 
@@ -2706,7 +2714,9 @@ NTSTATUS excise_extents(device_extension* Vcb, fcb* fcb, uint64_t start_data,
                         InsertHeadList(&ext->list_entry, &newext1->list_entry);
                         add_extent(fcb, &newext1->list_entry, newext2);
 
-                        remove_fcb_extent(fcb, ext, rollback);
+                        Status = remove_fcb_extent(fcb, ext, rollback);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
                     }
                 }
             }
@@ -2800,17 +2810,15 @@ end:
 #endif
 
 __attribute__((nonnull(1, 2)))
-static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
+static NTSTATUS remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
     if (!ext->ignore) {
-        ext->ignore = true;
-
         if (rollback) {
             rollback_item* ri;
 
             ri = ExAllocatePoolWithTag(NonPagedPool, sizeof(rollback_item), ALLOC_TAG);
             if (!ri) {
                 ERR("out of memory\n");
-                return;
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             ri->type = ROLLBACK_DELETE_EXTENT;
@@ -2819,7 +2827,11 @@ static void remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) {
 
             InsertTailList(rollback, &ri->list_entry);
         }
+
+        ext->ignore = true;
     }
+
+    return STATUS_SUCCESS;
 }
 
 _Requires_lock_held_(c->lock)
@@ -3507,7 +3519,11 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                     RtlZeroMemory((uint8_t*)&ed->disk_bytenr + oldalloc - ext->offset, (ULONG)(end - oldalloc));
 
-                    remove_fcb_extent(fcb, ext, rollback);
+                    Status = remove_fcb_extent(fcb, ext, rollback);
+                    if (!NT_SUCCESS(Status)) {
+                        ExFreePool(ed);
+                        return Status;
+                    }
 
                     Status = add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback);
                     if (!NT_SUCCESS(Status)) {
@@ -3694,7 +3710,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
 
         InsertHeadList(&ext->list_entry, &newext->list_entry);
 
-        remove_fcb_extent(fcb, ext, rollback);
+        Status = remove_fcb_extent(fcb, ext, rollback);
+        if (!NT_SUCCESS(Status))
+            return Status;
 
         c = get_chunk_from_address(fcb->Vcb, ed->disk_bytenr);
     } else if (start_data <= ext->offset && end_data < ext->offset + ed->num_bytes) { // replace beginning
@@ -3800,7 +3818,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
             }
         }
 
-        remove_fcb_extent(fcb, ext, rollback);
+        Status = remove_fcb_extent(fcb, ext, rollback);
+        if (!NT_SUCCESS(Status))
+            return Status;
     } else if (start_data > ext->offset && end_data >= ext->offset + ed->num_bytes) { // replace end
         extent *newext1, *newext2;
 
@@ -3909,7 +3929,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
             }
         }
 
-        remove_fcb_extent(fcb, ext, rollback);
+        Status = remove_fcb_extent(fcb, ext, rollback);
+        if (!NT_SUCCESS(Status))
+            return Status;
     } else if (start_data > ext->offset && end_data < ext->offset + ed->num_bytes) { // replace middle
         extent *newext1, *newext2, *newext3;
 
@@ -4050,7 +4072,9 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
             }
         }
 
-        remove_fcb_extent(fcb, ext, rollback);
+        Status = remove_fcb_extent(fcb, ext, rollback);
+        if (!NT_SUCCESS(Status))
+            return Status;
     }
 
     if (c)
