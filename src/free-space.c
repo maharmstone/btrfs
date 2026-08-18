@@ -1669,16 +1669,23 @@ NTSTATUS space_list_add2(LIST_ENTRY* list, LIST_ENTRY* list_size, uint64_t addre
     return STATUS_SUCCESS;
 }
 
-void space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size, LIST_ENTRY* deleting) {
+NTSTATUS space_list_merge(LIST_ENTRY* spacelist, LIST_ENTRY* spacelist_size,
+                          LIST_ENTRY* deleting) {
+    NTSTATUS Status;
     LIST_ENTRY* le = deleting->Flink;
 
     while (le != deleting) {
         space* s = CONTAINING_RECORD(le, space, list_entry);
 
-        space_list_add2(spacelist, spacelist_size, s->address, s->size, NULL, NULL);
+        Status = space_list_add2(spacelist, spacelist_size, s->address,
+                                 s->size, NULL, NULL);
+        if (!NT_SUCCESS(Status))
+            return Status;
 
         le = le->Flink;
     }
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS copy_space_list(LIST_ENTRY* old_list, LIST_ENTRY* new_list) {
@@ -1745,7 +1752,9 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
         goto end;
     }
 
-    space_list_merge(&space_list, NULL, &deleting);
+    Status = space_list_merge(&space_list, NULL, &deleting);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     num_entries = 0;
     num_sectors = (uint32_t)(c->cache->inode_item.size >> Vcb->sector_shift);
@@ -1867,7 +1876,9 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
         return Status;
     }
 
-    space_list_merge(&space_list, NULL, &c->deleting);
+    Status = space_list_merge(&space_list, NULL, &c->deleting);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     searchkey.objectid = c->offset;
     searchkey.type = BTRFS_FREE_SPACE_EXTENT_KEY;

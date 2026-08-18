@@ -426,7 +426,8 @@ static void trim_emulation(device* dev) {
 }
 #endif
 
-static void clean_space_cache(device_extension* Vcb) {
+static NTSTATUS clean_space_cache(device_extension* Vcb) {
+    NTSTATUS Status;
     LIST_ENTRY* le;
     chunk* c;
 #ifndef DEBUG_TRIM_EMULATION
@@ -448,7 +449,12 @@ static void clean_space_cache(device_extension* Vcb) {
                 if (Vcb->trim && !Vcb->options.no_trim)
                     clean_space_cache_chunk(Vcb, c);
 
-                space_list_merge(&c->space, &c->space_size, &c->deleting);
+                Status = space_list_merge(&c->space, &c->space_size,
+                                          &c->deleting);
+                if (!NT_SUCCESS(Status)) {
+                    release_chunk_lock(c, Vcb);
+                    return Status;
+                }
 
                 while (!IsListEmpty(&c->deleting)) {
                     space* s = CONTAINING_RECORD(RemoveHeadList(&c->deleting), space, list_entry);
@@ -485,7 +491,7 @@ static void clean_space_cache(device_extension* Vcb) {
         }
 
         if (context.left == 0)
-            return;
+            return STATUS_SUCCESS;
 
         total_num = context.left;
         num = 0;
@@ -495,7 +501,7 @@ static void clean_space_cache(device_extension* Vcb) {
         context.stripes = ExAllocatePoolWithTag(NonPagedPool, sizeof(trim_context_stripe) * context.left, ALLOC_TAG);
         if (!context.stripes) {
             ERR("out of memory\n");
-            return;
+            return STATUS_SUCCESS; // no need to go readonly, just skip TRIM
         }
 
         RtlZeroMemory(context.stripes, sizeof(trim_context_stripe) * context.left);
@@ -599,6 +605,8 @@ nextdev:
         ExFreePool(context.stripes);
 #endif
     }
+
+    return STATUS_SUCCESS;
 }
 
 static bool trees_consistent(device_extension* Vcb) {
@@ -7924,7 +7932,9 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp) {
         }
     }
 
-    clean_space_cache(Vcb);
+    Status = clean_space_cache(Vcb);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     le = Vcb->chunks.Flink;
     while (le != &Vcb->chunks) {
