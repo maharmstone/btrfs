@@ -2891,7 +2891,13 @@ NTSTATUS insert_extent_chunk(_In_ device_extension* Vcb, _In_ fcb* fcb, _In_ chu
 
     ExAcquireResourceExclusiveLite(&c->changed_extents_lock, true);
 
-    add_changed_extent_ref(c, address, length, fcb->subvol->id, fcb->inode, start_data, 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+    Status = add_changed_extent_ref(c, address, length, fcb->subvol->id,
+                                    fcb->inode, start_data, 1,
+                                    fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+    if (!NT_SUCCESS(Status)) {
+        ExReleaseResourceLite(&c->changed_extents_lock);
+        return Status;
+    }
 
     ExReleaseResourceLite(&c->changed_extents_lock);
 

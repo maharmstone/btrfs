@@ -1199,8 +1199,14 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     extaddr = address;
 
     for (i = 0; i < num_parts; i++) {
-        add_changed_extent_ref(c, extaddr, parts[i].outlen, fcb->subvol->id, fcb->inode,
-                               start_data + (i * COMPRESSED_EXTENT_SIZE), 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+        Status = add_changed_extent_ref(c, extaddr, parts[i].outlen, fcb->subvol->id,
+                                        fcb->inode, start_data + (i * COMPRESSED_EXTENT_SIZE),
+                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+        if (!NT_SUCCESS(Status)) {
+            ExReleaseResourceLite(&c->changed_extents_lock);
+            ExFreePool(parts);
+            return Status;
+        }
 
         extaddr += parts[i].outlen;
     }

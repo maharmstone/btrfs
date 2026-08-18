@@ -4852,8 +4852,13 @@ cont:
                             ext->extent_data.disk_bytenr += er->skip_start;
                             ext->extent_data.offset -= er->skip_start;
 
-                            add_changed_extent_ref(er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ext->extent_data.offset,
-                                                   1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                            Status = add_changed_extent_ref(er->chunk, ext->extent_data.disk_bytenr,
+                                                            ext->extent_data.disk_num_bytes,
+                                                            fcb->subvol->id, fcb->inode,
+                                                            ext->offset - ext->extent_data.offset,
+                                                            1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                            if (!NT_SUCCESS(Status))
+                                goto end;
                         }
                     }
 
@@ -4912,8 +4917,13 @@ cont:
                             ext->extent_data.ram_bytes -= er->skip_end;
                             ext->extent_data.disk_num_bytes -= er->skip_end;
 
-                            add_changed_extent_ref(er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
-                                                   ext->offset - ext->extent_data.offset, 1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                            Status = add_changed_extent_ref(er->chunk, ext->extent_data.disk_bytenr,
+                                                            ext->extent_data.disk_num_bytes,
+                                                            fcb->subvol->id, fcb->inode,
+                                                            ext->offset - ext->extent_data.offset,
+                                                            1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                            if (!NT_SUCCESS(Status))
+                                goto end;
                         }
                     }
 
@@ -5022,8 +5032,13 @@ cont:
                         ext->extent_data.disk_num_bytes = er2->length;
                         ext->extent_data.ram_bytes = ext->extent_data.disk_num_bytes;
 
-                        add_changed_extent_ref(er2->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ext->extent_data.offset,
-                                               1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                        Status = add_changed_extent_ref(er2->chunk, ext->extent_data.disk_bytenr,
+                                                        ext->extent_data.disk_num_bytes,
+                                                        fcb->subvol->id, fcb->inode,
+                                                        ext->offset - ext->extent_data.offset,
+                                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
 
                         break;
                     }

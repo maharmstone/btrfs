@@ -3103,16 +3103,15 @@ end:
     return Status;
 }
 
-void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum) {
+NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum) {
     changed_extent* ce;
     changed_extent_ref* cer;
     LIST_ENTRY* le;
 
     ce = get_changed_extent_item(c, address, size, no_csum);
-
     if (!ce) {
         ERR("get_changed_extent_item failed\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     le = ce->refs.Flink;
@@ -3122,7 +3121,7 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
         if (cer->type == BTRFS_EXTENT_DATA_REF_KEY && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
-            return;
+            return STATUS_SUCCESS;
         }
 
         le = le->Flink;
@@ -3132,7 +3131,7 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
 
     if (!cer) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     cer->type = BTRFS_EXTENT_DATA_REF_KEY;
@@ -3144,6 +3143,8 @@ void add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t 
     InsertTailList(&ce->refs, &cer->list_entry);
 
     ce->count += count;
+
+    return STATUS_SUCCESS;
 }
 
 uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp) {
