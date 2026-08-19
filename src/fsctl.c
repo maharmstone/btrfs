@@ -1068,11 +1068,15 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     mark_fcb_dirty(rootfcb);
 
-    fr->parent = fileref;
-
     Status = add_dir_child(fileref->fcb, r->id, true, &utf8, &nameus, BTRFS_FT_DIR, &dc);
-    if (!NT_SUCCESS(Status))
-        WARN("add_dir_child returned %08lx\n", Status);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_dir_child returned %08lx\n", Status);
+        free_fileref(fr);
+        fr = NULL;
+        goto end;
+    }
+
+    fr->parent = fileref;
 
     fr->dc = dc;
     dc->fileref = fr;
