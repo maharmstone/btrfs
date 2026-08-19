@@ -22,7 +22,8 @@
 // this be a constant number of sectors, a constant 256 KB, or what?
 #define CACHE_INCREMENTS    64
 
-static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, LIST_ENTRY* batchlist, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode,
+                                        LIST_ENTRY* batchlist, PIRP Irp) {
     NTSTATUS Status;
     fcb* fcb;
 
@@ -35,7 +36,8 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, L
     mark_fcb_dirty(fcb);
 
     if (fcb->inode_item.size > 0) {
-        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
+        Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize),
+                                Irp, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
             free_fcb(fcb);
@@ -62,9 +64,6 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     bool b;
-    LIST_ENTRY rollback;
-
-    InitializeListHead(&rollback);
 
     searchkey.objectid = BTRFS_FREE_SPACE_OBJECTID;
     searchkey.type = 0;
@@ -95,7 +94,7 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
                 else {
                     LIST_ENTRY* le;
 
-                    Status = remove_free_space_inode(Vcb, fsi->location.objectid, batchlist, Irp, &rollback);
+                    Status = remove_free_space_inode(Vcb, fsi->location.objectid, batchlist, Irp);
 
                     if (!NT_SUCCESS(Status))
                         ERR("remove_free_space_inode for (%I64x,%x,%I64x) returned %08lx\n", fsi->location.objectid, fsi->location.type, fsi->location.offset, Status);
@@ -122,11 +121,6 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
     } while (b);
 
     Status = STATUS_SUCCESS;
-
-    if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
-    else
-        do_rollback(Vcb, &rollback);
 
     if (Vcb->space_root) {
         searchkey.objectid = 0;
