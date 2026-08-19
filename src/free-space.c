@@ -38,6 +38,7 @@ static NTSTATUS remove_free_space_inode(device_extension* Vcb, uint64_t inode, L
         Status = excise_extents(fcb->Vcb, fcb, 0, sector_align(fcb->inode_item.size, fcb->Vcb->superblock.sectorsize), Irp, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("excise_extents returned %08lx\n", Status);
+            free_fcb(fcb);
             return Status;
         }
     }
