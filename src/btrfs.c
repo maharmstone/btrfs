@@ -5853,7 +5853,8 @@ NTSTATUS check_file_name_valid(_In_ PUNICODE_STRING us, _In_ bool posix, _In_ bo
     return STATUS_SUCCESS;
 }
 
-void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length) {
+NTSTATUS chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start,
+                          _In_ uint64_t length) {
     LIST_ENTRY* le;
     bool locked;
     range_lock* rl;
@@ -5861,7 +5862,7 @@ void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t s
     rl = ExAllocateFromNPagedLookasideList(&Vcb->range_lock_lookaside);
     if (!rl) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     rl->start = start;
@@ -5889,7 +5890,7 @@ void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t s
             InsertTailList(&c->range_locks, &rl->list_entry);
 
             ExReleaseResourceLite(&c->range_locks_lock);
-            return;
+            return STATUS_SUCCESS;
         }
 
         KeClearEvent(&c->range_locks_event);
@@ -5898,6 +5899,8 @@ void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t s
 
         KeWaitForSingleObject(&c->range_locks_event, UserRequest, KernelMode, false, NULL);
     }
+
+    return STATUS_SUCCESS;
 }
 
 void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length) {

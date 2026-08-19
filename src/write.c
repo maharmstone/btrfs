@@ -2216,7 +2216,10 @@ NTSTATUS write_data_complete(device_extension* Vcb, uint64_t address, void* data
 
     if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 || c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
         get_raid56_lock_range(c, address, length, &lockaddr, &locklen);
-        chunk_lock_range(Vcb, c, lockaddr, locklen);
+
+        Status = chunk_lock_range(Vcb, c, lockaddr, locklen);
+        if (!NT_SUCCESS(Status))
+            return Status;
     }
 
     try {

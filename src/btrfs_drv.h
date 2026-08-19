@@ -1069,7 +1069,8 @@ extern xor_func do_xor;
 void mark_fcb_dirty(_In_ fcb* fcb);
 void mark_fileref_dirty(_In_ file_ref* fileref);
 NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject, _In_ bool make_orphan, _In_opt_ PIRP Irp, _In_ LIST_ENTRY* rollback);
-void chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length);
+NTSTATUS chunk_lock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start,
+                          _In_ uint64_t length);
 void chunk_unlock_range(_In_ device_extension* Vcb, _In_ chunk* c, _In_ uint64_t start, _In_ uint64_t length);
 void init_device(_In_ device_extension* Vcb, _Inout_ device* dev, _In_ bool get_nums);
 void init_file_cache(_In_ PFILE_OBJECT FileObject, _In_ CC_FILE_SIZES* ccfs);

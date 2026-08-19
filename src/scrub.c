@@ -2646,9 +2646,9 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
     stripe = stripe_start;
 
-    Status = STATUS_SUCCESS;
-
-    chunk_lock_range(Vcb, c, run_start, run_end - run_start);
+    Status = chunk_lock_range(Vcb, c, run_start, run_end - run_start);
+    if (!NT_SUCCESS(Status))
+        goto end2;
 
     do {
         ULONG read_stripes;
@@ -2672,7 +2672,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                 if (!context.stripes[i].Irp) {
                     ERR("IoAllocateIrp failed\n");
                     Status = STATUS_INSUFFICIENT_RESOURCES;
-                    goto end3;
+                    goto end4;
                 }
 
                 context.stripes[i].Irp->MdlAddress = NULL;
@@ -2686,7 +2686,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     if (!context.stripes[i].Irp->AssociatedIrp.SystemBuffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end3;
+                        goto end4;
                     }
 
                     context.stripes[i].Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
@@ -2697,7 +2697,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     if (!context.stripes[i].Irp->MdlAddress) {
                         ERR("IoAllocateMdl failed\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
-                        goto end3;
+                        goto end4;
                     }
 
                     Status = STATUS_SUCCESS;
@@ -2711,7 +2711,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     if (!NT_SUCCESS(Status)) {
                         ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
                         IoFreeMdl(context.stripes[i].Irp->MdlAddress);
-                        goto end3;
+                        goto end4;
                     }
                 } else
                     context.stripes[i].Irp->UserBuffer = context.stripes[i].buf;
@@ -2739,11 +2739,11 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
         if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID5 && missing_devices > 1) {
             ERR("too many missing devices (%u, maximum 1)\n", missing_devices);
             Status = STATUS_UNEXPECTED_IO_ERROR;
-            goto end3;
+            goto end4;
         } else if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6 && missing_devices > 2) {
             ERR("too many missing devices (%u, maximum 2)\n", missing_devices);
             Status = STATUS_UNEXPECTED_IO_ERROR;
-            goto end3;
+            goto end4;
         }
 
         if (need_wait) {
@@ -2762,7 +2762,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
             if (!context.stripes[i].missing && !NT_SUCCESS(context.stripes[i].iosb.Status)) {
                 Status = context.stripes[i].iosb.Status;
                 log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_READ_ERRS);
-                goto end3;
+                goto end4;
             }
         }
 
@@ -2777,7 +2777,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
         }
         stripe += read_stripes;
 
-end3:
+end4:
         for (i = 0; i < c->chunk_item->num_stripes; i++) {
             if (context.stripes[i].Irp) {
                 if (c->devices[i]->devobj->Flags & DO_DIRECT_IO && context.stripes[i].Irp->MdlAddress) {
@@ -2794,7 +2794,7 @@ end3:
                     if (!NT_SUCCESS(Status)) {
                         ERR("write_data_phys returned %08lx\n", Status);
                         log_device_error(Vcb, c->devices[i], BTRFS_DEV_STAT_WRITE_ERRS);
-                        goto end2;
+                        goto end3;
                     }
                 }
             }
@@ -2804,9 +2804,10 @@ end3:
             break;
     } while (stripe < stripe_end);
 
-end2:
+end3:
     chunk_unlock_range(Vcb, c, run_start, run_end - run_start);
 
+end2:
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
         ExFreePool(context.stripes[i].buf);
         ExFreePool(context.stripes[i].errorarr);

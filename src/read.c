@@ -1591,7 +1591,12 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 
     if (c && (type == BTRFS_BLOCK_GROUP_RAID5 || type == BTRFS_BLOCK_GROUP_RAID6)) {
         get_raid56_lock_range(c, addr, length, &lockaddr, &locklen);
-        chunk_lock_range(Vcb, c, lockaddr, locklen);
+
+        Status = chunk_lock_range(Vcb, c, lockaddr, locklen);
+        if (!NT_SUCCESS(Status)) {
+            ExFreePool(context.stripes);
+            return Status;
+        }
     }
 
     RtlZeroMemory(context.stripes, sizeof(read_data_stripe) * ci->num_stripes);
