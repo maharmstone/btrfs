@@ -80,12 +80,6 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
             break;
 
         if (tp.item->key.objectid == searchkey.objectid && tp.item->key.type == searchkey.type) {
-            Status = delete_tree_item(Vcb, &tp);
-            if (!NT_SUCCESS(Status)) {
-                ERR("delete_tree_item returned %08lx\n", Status);
-                return Status;
-            }
-
             if (tp.item->size >= sizeof(struct btrfs_free_space_header)) {
                 struct btrfs_free_space_header* fsi = (struct btrfs_free_space_header*)tp.item->data;
 
@@ -98,6 +92,13 @@ NTSTATUS clear_free_space_cache(device_extension* Vcb, LIST_ENTRY* batchlist, PI
 
                     if (!NT_SUCCESS(Status))
                         ERR("remove_free_space_inode for (%I64x,%x,%I64x) returned %08lx\n", fsi->location.objectid, fsi->location.type, fsi->location.offset, Status);
+                    else {
+                        Status = delete_tree_item(Vcb, &tp);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("delete_tree_item returned %08lx\n", Status);
+                            return Status;
+                        }
+                    }
 
                     le = Vcb->chunks.Flink;
                     while (le != &Vcb->chunks) {
