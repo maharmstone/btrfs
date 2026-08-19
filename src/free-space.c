@@ -933,6 +933,14 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
 
                     if (!s) {
                         ERR("out of memory\n");
+
+                        while (!IsListEmpty(&c->space)) {
+                            space* s2 = CONTAINING_RECORD(RemoveHeadList(&c->space), space, list_entry);
+                            ExFreePool(s2);
+                        }
+
+                        InitializeListHead(&c->space_size);
+
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
 
@@ -961,6 +969,14 @@ static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp)
 
             if (!s) {
                 ERR("out of memory\n");
+
+                while (!IsListEmpty(&c->space)) {
+                    space* s2 = CONTAINING_RECORD(RemoveHeadList(&c->space), space, list_entry);
+                    ExFreePool(s2);
+                }
+
+                InitializeListHead(&c->space_size);
+
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
