@@ -432,11 +432,14 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         goto end;
     }
 
-    fr->parent = fileref;
-
     Status = add_dir_child(fileref->fcb, r->id, true, utf8, name, BTRFS_FT_DIR, &dc);
-    if (!NT_SUCCESS(Status))
-        WARN("add_dir_child returned %08lx\n", Status);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_dir_child returned %08lx\n", Status);
+        free_fileref(fr);
+        goto end;
+    }
+
+    fr->parent = fileref;
 
     fr->dc = dc;
     dc->fileref = fr;
