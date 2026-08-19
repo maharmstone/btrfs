@@ -4032,14 +4032,19 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
+    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8, &name, fcb->type, &dc);
+    if (!NT_SUCCESS(Status)) {
+        ERR("add_dir_child returned %08lx\n", Status);
+        free_fileref(fileref);
+        release_fcb_lock(Vcb);
+        ExReleaseResourceLite(&Vcb->fileref_lock);
+        goto end;
+    }
+
     fileref->parent = parfileref;
 
     mark_fcb_dirty(fcb);
     mark_fileref_dirty(fileref);
-
-    Status = add_dir_child(fileref->parent->fcb, fcb->inode, false, &utf8, &name, fcb->type, &dc);
-    if (!NT_SUCCESS(Status))
-        WARN("add_dir_child returned %08lx\n", Status);
 
     fileref->dc = dc;
     dc->fileref = fileref;
