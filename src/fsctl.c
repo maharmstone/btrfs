@@ -4013,6 +4013,34 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->inode = inode;
     fcb->type = bmn->type;
 
+    if (fcb->type == BTRFS_FT_DIR) {
+        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs) {
+            release_fcb_lock(Vcb);
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+
+            ERR("out of memory\n");
+            reap_fcb(fcb);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
+
+        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
+        if (!fcb->hash_ptrs_uc) {
+            release_fcb_lock(Vcb);
+            ExReleaseResourceLite(&Vcb->fileref_lock);
+
+            ERR("out of memory\n");
+            reap_fcb(fcb);
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
+    }
+
     fileref = create_fileref(Vcb);
     if (!fileref) {
         release_fcb_lock(Vcb);
@@ -4032,6 +4060,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
+    // no rollback machinery, as this is the only thing that can fail
     Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8, &name,
                            fcb->type, &dc, NULL);
     if (!NT_SUCCESS(Status)) {
@@ -4055,34 +4084,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
 
     increase_fileref_refcount(parfileref);
-
-    if (fcb->type == BTRFS_FT_DIR) {
-        fcb->hash_ptrs = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->hash_ptrs) {
-            release_fcb_lock(Vcb);
-            ExReleaseResourceLite(&Vcb->fileref_lock);
-
-            ERR("out of memory\n");
-            free_fileref(fileref);
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-
-        RtlZeroMemory(fcb->hash_ptrs, sizeof(LIST_ENTRY*) * 256);
-
-        fcb->hash_ptrs_uc = ExAllocatePoolWithTag(PagedPool, sizeof(LIST_ENTRY*) * 256, ALLOC_TAG);
-        if (!fcb->hash_ptrs_uc) {
-            release_fcb_lock(Vcb);
-            ExReleaseResourceLite(&Vcb->fileref_lock);
-
-            ERR("out of memory\n");
-            free_fileref(fileref);
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-
-        RtlZeroMemory(fcb->hash_ptrs_uc, sizeof(LIST_ENTRY*) * 256);
-    }
 
     add_fcb_to_subvol(fcb);
     InsertTailList(&Vcb->all_fcbs, &fcb->list_entry_all);
@@ -4118,7 +4119,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     Status = STATUS_SUCCESS;
 
 end:
-
     ExFreePool(utf8.Buffer);
 
     return Status;
