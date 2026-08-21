@@ -8062,6 +8062,9 @@ end:
 NTSTATUS do_write(device_extension* Vcb, PIRP Irp) {
     NTSTATUS Status;
 
+    if (Vcb->readonly)
+        return STATUS_MEDIA_WRITE_PROTECTED;
+
     Status = do_write2(Vcb, Irp);
 
     if (!NT_SUCCESS(Status)) {
