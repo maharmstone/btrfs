@@ -1061,8 +1061,11 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                                                                    ri->extent.ext->offset - ri->extent.ext->extent_data.offset, -1,
                                                                    ri->extent.fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
                                                                    false, NULL);
-                                if (!NT_SUCCESS(Status))
+                                if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
+                                    ExFreePool(ri);
+                                    goto fail;
+                                }
                             }
 
                             ri->extent.fcb->inode_item.nbytes -= ri->extent.ext->extent_data.num_bytes;
@@ -1096,8 +1099,11 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                                                                    ri->extent.fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
                                                                    false, NULL);
 
-                                if (!NT_SUCCESS(Status))
+                                if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
+                                    ExFreePool(ri);
+                                    goto fail;
+                                }
                             }
 
                             ri->extent.fcb->inode_item.nbytes += ri->extent.ext->extent_data.num_bytes;
@@ -1119,13 +1125,33 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                     acquire_chunk_lock(ri->space.chunk, Vcb);
 
                 if (ri->type == ROLLBACK_ADD_SPACE) {
-                    space_list_subtract2(ri->space.list, ri->space.list_size,
-                                         ri->space.address, ri->space.length,
-                                         NULL, NULL);
+                    Status = space_list_subtract2(ri->space.list, ri->space.list_size,
+                                                  ri->space.address, ri->space.length,
+                                                  NULL, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("space_list_subtract2 returned %08lx\n", Status);
+
+                        if (ri->space.chunk)
+                            release_chunk_lock(ri->space.chunk, Vcb);
+
+                        ExFreePool(ri);
+
+                        goto fail;
+                    }
                 } else {
-                    space_list_add2(ri->space.list, ri->space.list_size,
-                                    ri->space.address, ri->space.length,
-                                    NULL, NULL);
+                    Status = space_list_add2(ri->space.list, ri->space.list_size,
+                                             ri->space.address, ri->space.length,
+                                             NULL, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("space_list_add2 returned %08lx\n", Status);
+
+                        if (ri->space.chunk)
+                            release_chunk_lock(ri->space.chunk, Vcb);
+
+                        ExFreePool(ri);
+
+                        goto fail;
+                    }
                 }
 
                 if (ri->space.chunk) {
@@ -1145,17 +1171,32 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         if (ri2->type == ROLLBACK_ADD_SPACE || ri2->type == ROLLBACK_SUBTRACT_SPACE) {
                             if (ri2->space.chunk == ri->space.chunk) {
                                 if (ri2->type == ROLLBACK_ADD_SPACE) {
-                                    space_list_subtract2(ri2->space.list,
-                                                         ri2->space.list_size,
-                                                         ri2->space.address,
-                                                         ri2->space.length,
-                                                         NULL, NULL);
+                                    Status = space_list_subtract2(ri2->space.list,
+                                                                  ri2->space.list_size,
+                                                                  ri2->space.address,
+                                                                  ri2->space.length,
+                                                                  NULL, NULL);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("space_list_subtract2 returned %08lx\n", Status);
+                                        release_chunk_lock(ri->space.chunk, Vcb);
+                                        ExFreePool(ri);
+                                        goto fail;
+                                    }
+
                                     ri->space.chunk->used += ri2->space.length;
                                 } else {
-                                    space_list_add2(ri2->space.list, ri2->space.list_size,
-                                                    ri2->space.address,
-                                                    ri2->space.length,
-                                                    NULL, NULL);
+                                    Status = space_list_add2(ri2->space.list,
+                                                             ri2->space.list_size,
+                                                             ri2->space.address,
+                                                             ri2->space.length,
+                                                             NULL, NULL);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("space_list_add2 returned %08lx\n", Status);
+                                        release_chunk_lock(ri->space.chunk, Vcb);
+                                        ExFreePool(ri);
+                                        goto fail;
+                                    }
+
                                     ri->space.chunk->used -= ri2->space.length;
                                 }
 
@@ -1175,6 +1216,21 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 
         ExFreePool(ri);
     }
+
+    return;
+
+fail:
+    ERR("do_rollback failed, going readonly\n");
+
+    while (!IsListEmpty(rollback)) {
+        LIST_ENTRY* le = RemoveTailList(rollback);
+        ri = CONTAINING_RECORD(le, rollback_item, list_entry);
+
+        ExFreePool(ri);
+    }
+
+    Vcb->readonly = true;
+    FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
 }
 
 __attribute__((nonnull(1,2,3)))
