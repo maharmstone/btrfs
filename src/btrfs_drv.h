@@ -1186,6 +1186,7 @@ enum rollback_type {
     ROLLBACK_ADD_SPACE,
     ROLLBACK_SUBTRACT_SPACE,
     ROLLBACK_UPDATE_CHANGED_EXTENT_REF,
+    ROLLBACK_ADD_DIR_CHILD,
 };
 
 typedef struct {
@@ -1214,6 +1215,11 @@ typedef struct {
             uint64_t offset;
             int32_t count;
         } changed_extent_ref;
+
+        struct {
+            fcb* parent;
+            dir_child* dc;
+        } dir_child;
     };
 } rollback_item;
 
@@ -1385,7 +1391,9 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                   root* subvol, uint64_t inode, uint8_t type, PANSI_STRING utf8, bool always_add_hl, fcb* parent, fcb** pfcb, POOL_TYPE pooltype, PIRP Irp);
 NTSTATUS load_csum(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, void* csum, uint64_t start, uint64_t length, PIRP Irp);
 NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vcb, fcb* fcb, bool ignore_size, PIRP Irp);
-NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, dir_child** pdc);
+NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
+                       PUNICODE_STRING name, uint8_t type, dir_child** pdc,
+                       LIST_ENTRY* rollback);
 NTSTATUS open_fileref_child(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lock_held_(_Curr_->fcb_lock) _In_ device_extension* Vcb,
                             _In_ file_ref* sf, _In_ PUNICODE_STRING name, _In_ bool case_sensitive, _In_ bool lastpart, _In_ bool streampart,
                             _In_ POOL_TYPE pooltype, _Out_ file_ref** psf2, _In_opt_ PIRP Irp);

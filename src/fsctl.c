@@ -427,7 +427,8 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         return Status;
     }
 
-    Status = add_dir_child(fileref->fcb, r->id, true, utf8, name, BTRFS_FT_DIR, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, true, utf8, name, BTRFS_FT_DIR,
+                           &dc, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_child returned %08lx\n", Status);
         free_fileref(fr);
@@ -1062,7 +1063,8 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
     mark_fcb_dirty(rootfcb);
 
-    Status = add_dir_child(fileref->fcb, r->id, true, &utf8, &nameus, BTRFS_FT_DIR, &dc);
+    Status = add_dir_child(fileref->fcb, r->id, true, &utf8, &nameus, BTRFS_FT_DIR,
+                           &dc, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_child returned %08lx\n", Status);
         free_fileref(fr);
@@ -4030,7 +4032,8 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
     fcb->subvol->root_item.ctransid = Vcb->superblock.generation;
     fcb->subvol->root_item.ctime = now;
 
-    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8, &name, fcb->type, &dc);
+    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8, &name,
+                           fcb->type, &dc, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_child returned %08lx\n", Status);
         free_fileref(fileref);

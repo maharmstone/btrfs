@@ -1220,6 +1220,10 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 
                 break;
             }
+
+            case ROLLBACK_ADD_DIR_CHILD:
+                // FIXME
+                break;
         }
 
         ExFreePool(ri);

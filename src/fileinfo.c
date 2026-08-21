@@ -3737,7 +3737,8 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
 
     fr2->created = true;
 
-    Status = add_dir_child(related->fcb, fcb->inode, false, &utf8, &fnus, fcb->type, &dc);
+    Status = add_dir_child(related->fcb, fcb->inode, false, &utf8, &fnus,
+                           fcb->type, &dc, &rollback);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_child returned %08lx\n", Status);
         goto end;

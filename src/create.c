@@ -1877,14 +1877,32 @@ end2:
     return Status;
 }
 
-NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8, PUNICODE_STRING name, uint8_t type, dir_child** pdc) {
+NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
+                       PUNICODE_STRING name, uint8_t type, dir_child** pdc,
+                       LIST_ENTRY* rollback) {
     NTSTATUS Status;
     dir_child* dc;
     bool locked;
+    rollback_item* ri;
+
+    if (rollback) {
+        ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+        if (!ri) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ri->type = ROLLBACK_ADD_DIR_CHILD;
+        ri->dir_child.parent = fcb;
+    }
 
     dc = ExAllocatePoolWithTag(PagedPool, sizeof(dir_child), ALLOC_TAG);
     if (!dc) {
         ERR("out of memory\n");
+
+        if (rollback)
+            ExFreePool(ri);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1894,6 +1912,10 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
     if (!dc->utf8.Buffer) {
         ERR("out of memory\n");
         ExFreePool(dc);
+
+        if (rollback)
+            ExFreePool(ri);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1902,6 +1924,10 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
         ERR("out of memory\n");
         ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc);
+
+        if (rollback)
+            ExFreePool(ri);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1923,6 +1949,10 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
         ExFreePool(dc->utf8.Buffer);
         ExFreePool(dc->name.Buffer);
         ExFreePool(dc);
+
+        if (rollback)
+            ExFreePool(ri);
+
         return Status;
     }
 
@@ -1948,6 +1978,11 @@ NTSTATUS add_dir_child(fcb* fcb, uint64_t inode, bool subvol, PANSI_STRING utf8,
 
     if (!locked)
         ExReleaseResourceLite(&fcb->nonpaged->dir_children_lock);
+
+    if (rollback) {
+        ri->dir_child.dc = dc;
+        InsertTailList(rollback, &ri->list_entry);
+    }
 
     *pdc = dc;
 
@@ -2609,7 +2644,8 @@ static NTSTATUS file_create2(_In_ PIRP Irp, _Requires_exclusive_lock_held_(_Curr
         return STATUS_OBJECT_NAME_COLLISION;
     }
 
-    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8as, fpus, fcb->type, &dc);
+    Status = add_dir_child(parfileref->fcb, fcb->inode, false, &utf8as, fpus,
+                           fcb->type, &dc, rollback);
     if (!NT_SUCCESS(Status)) {
         ExReleaseResourceLite(&parfileref->fcb->nonpaged->dir_children_lock);
         ERR("add_dir_child returned %08lx\n", Status);
