@@ -1288,7 +1288,7 @@ void clear_batch_list(device_extension* Vcb, LIST_ENTRY* batchlist) {
 }
 
 __attribute__((nonnull(1,2,3)))
-static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_ENTRY* listhead) {
+static NTSTATUS add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_ENTRY* listhead) {
     batch_item* bi2;
     LIST_ENTRY* le;
     struct btrfs_inode_ref* delir = (struct btrfs_inode_ref*)bi->data;
@@ -1299,14 +1299,14 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
     bi2 = ExAllocateFromPagedLookasideList(&Vcb->batch_item_lookaside);
     if (!bi2) {
         ERR("out of memory\n");
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ier = ExAllocatePoolWithTag(PagedPool, offsetof(struct btrfs_inode_extref, name) + delir->name_len, ALLOC_TAG);
     if (!ier) {
         ERR("out of memory\n");
         ExFreePool(bi2);
-        return;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     ier->parent_objectid = bi->key.offset;
@@ -1327,17 +1327,21 @@ static void add_delete_inode_extref(device_extension* Vcb, batch_item* bi, LIST_
 
         if (keycmp(bi3->key, bi2->key) != -1) {
             InsertHeadList(le->Blink, &bi2->list_entry);
-            return;
+            return STATUS_SUCCESS;
         }
 
         le = le->Flink;
     }
 
     InsertTailList(listhead, &bi2->list_entry);
+
+    return STATUS_SUCCESS;
 }
 
 __attribute__((nonnull(1,2,3,4,6,7)))
 static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tree* t, tree_data* td, tree_data* newtd, LIST_ENTRY* listhead, bool* ignore) {
+    NTSTATUS Status;
+
     if (bi->operation == Batch_Delete || bi->operation == Batch_SetXattr || bi->operation == Batch_DirItem || bi->operation == Batch_InodeRef ||
         bi->operation == Batch_InodeExtRef || bi->operation == Batch_DeleteDirItem || bi->operation == Batch_DeleteInodeRef ||
         bi->operation == Batch_DeleteInodeExtRef || bi->operation == Batch_DeleteXattr) {
@@ -1723,7 +1727,11 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                         if (Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
                             TRACE("entry in INODE_REF not found, adding Batch_DeleteInodeExtRef entry\n");
 
-                            add_delete_inode_extref(Vcb, bi, listhead);
+                            Status = add_delete_inode_extref(Vcb, bi, listhead);
+                            if (!NT_SUCCESS(Status)) {
+                                ERR("add_delete_inode_extref returned %08lx\n", Status);
+                                return Status;
+                            }
 
                             *ignore = true;
                             return STATUS_SUCCESS;
@@ -2230,7 +2238,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
             }
 
             if (bi->operation == Batch_DeleteInodeRef && cmp != 0 && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
-                add_delete_inode_extref(Vcb, bi, &items);
+                Status = add_delete_inode_extref(Vcb, bi, &items);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("add_delete_inode_extref returned %08lx\n", Status);
+                    return Status;
+                }
             }
 
             if (!ignore && td) {
@@ -2293,7 +2305,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                                     InsertHeadList(le3->Blink, &td->list_entry);
                                     inserted = true;
                                 } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
-                                    add_delete_inode_extref(Vcb, bi2, &items);
+                                    Status = add_delete_inode_extref(Vcb, bi2, &items);
+                                    if (!NT_SUCCESS(Status)) {
+                                        ERR("add_delete_inode_extref returned %08lx\n", Status);
+                                        return Status;
+                                    }
                                 }
                             } else {
                                 Status = handle_batch_collision(Vcb, bi2, tp.tree, td2, td, &items, &ignore);
@@ -2313,7 +2329,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                                 InsertHeadList(le3->Blink, &td->list_entry);
                                 inserted = true;
                             } else if (bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
-                                add_delete_inode_extref(Vcb, bi2, &items);
+                                Status = add_delete_inode_extref(Vcb, bi2, &items);
+                                if (!NT_SUCCESS(Status)) {
+                                    ERR("add_delete_inode_extref returned %08lx\n", Status);
+                                    return Status;
+                                }
                             }
                             break;
                         }
@@ -2332,7 +2352,11 @@ static NTSTATUS commit_batch_list_root(_Requires_exclusive_lock_held_(_Curr_->tr
                             listhead = td;
                         }
                     } else if (!inserted && bi2->operation == Batch_DeleteInodeRef && Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_EXTENDED_IREF) {
-                        add_delete_inode_extref(Vcb, bi2, &items);
+                        Status = add_delete_inode_extref(Vcb, bi2, &items);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("add_delete_inode_extref returned %08lx\n", Status);
+                            return Status;
+                        }
                     }
 
                     while (listhead->list_entry.Blink != &tp.tree->itemlist) {
