@@ -5447,21 +5447,20 @@ void do_shutdown(PIRP Irp) {
             vde->removing = true;
 
             newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
-            if (!newvpb) {
+            if (!newvpb)
                 ERR("out of memory\n");
-                return;
+            else {
+                RtlZeroMemory(newvpb, sizeof(VPB));
+
+                newvpb->Type = IO_TYPE_VPB;
+                newvpb->Size = sizeof(VPB);
+                newvpb->RealDevice = newvpb->DeviceObject = vde->device;
+                newvpb->Flags = VPB_DIRECT_WRITES_ALLOWED;
+
+                IoAcquireVpbSpinLock(&irql);
+                vde->device->Vpb = newvpb;
+                IoReleaseVpbSpinLock(irql);
             }
-
-            RtlZeroMemory(newvpb, sizeof(VPB));
-
-            newvpb->Type = IO_TYPE_VPB;
-            newvpb->Size = sizeof(VPB);
-            newvpb->RealDevice = newvpb->DeviceObject = vde->device;
-            newvpb->Flags = VPB_DIRECT_WRITES_ALLOWED;
-
-            IoAcquireVpbSpinLock(&irql);
-            vde->device->Vpb = newvpb;
-            IoReleaseVpbSpinLock(irql);
 
             if (InterlockedDecrement(&vde->open_count) == 0)
                 free_vol(vde);
