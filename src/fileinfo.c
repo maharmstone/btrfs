@@ -3872,8 +3872,12 @@ end:
     if (!NT_SUCCESS(Status) && related)
         free_fileref(related);
 
-    if (!NT_SUCCESS(Status) && fr2)
+    if (!NT_SUCCESS(Status) && fr2) {
+        if (dc)
+            dc->fileref = NULL;
+
         free_fileref(fr2);
+    }
 
     if (NT_SUCCESS(Status))
         clear_rollback(&rollback);

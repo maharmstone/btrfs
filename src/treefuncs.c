@@ -1221,9 +1221,22 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 break;
             }
 
-            case ROLLBACK_ADD_DIR_CHILD:
-                // FIXME
+            case ROLLBACK_ADD_DIR_CHILD: {
+                dir_child* dc = ri->dir_child.dc;
+
+                ExAcquireResourceExclusiveLite(&ri->dir_child.parent->nonpaged->dir_children_lock,
+                                               true);
+                RemoveEntryList(&dc->list_entry_index);
+                remove_dir_child_from_hash_lists(ri->dir_child.parent, dc);
+                ExReleaseResourceLite(&ri->dir_child.parent->nonpaged->dir_children_lock);
+
+                ExFreePool(dc->utf8.Buffer);
+                ExFreePool(dc->name.Buffer);
+                ExFreePool(dc->name_uc.Buffer);
+                ExFreePool(dc);
+
                 break;
+            }
         }
 
         ExFreePool(ri);
