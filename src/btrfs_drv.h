@@ -1504,6 +1504,8 @@ NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size,
 uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
 uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset);
+changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint64_t size,
+                                        bool no_csum);
 
 // in worker-thread.c
 NTSTATUS do_read_job(PIRP Irp);

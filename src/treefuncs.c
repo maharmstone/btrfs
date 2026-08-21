@@ -1178,6 +1178,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 chunk* c = get_chunk_from_address(Vcb, ri->changed_extent_ref.address);
 
                 if (c) {
+                    changed_extent* ce;
+
                     Status = update_changed_extent_ref(Vcb, c, ri->changed_extent_ref.address,
                                                        ri->changed_extent_ref.size,
                                                        ri->changed_extent_ref.root,
@@ -1190,7 +1192,32 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                         ExFreePool(ri);
                         goto fail;
                     }
+
+                    ExAcquireResourceExclusiveLite(&c->changed_extents_lock, true);
+
+                    ce = get_changed_extent_item(c, ri->changed_extent_ref.address,
+                                                 ri->changed_extent_ref.size, false);
+                    if (!ce) { // shouldn't happen
+                        ERR("get_changed_extent_item returned NULL\n");
+                        ExFreePool(ri);
+                        ExReleaseResourceLite(&c->changed_extents_lock);
+                        Status = STATUS_INTERNAL_ERROR;
+                        goto fail;
+                    }
+
+                    if (ce->count == 0 && ce->old_count == 0) {
+                        while (!IsListEmpty(&ce->refs)) {
+                            changed_extent_ref* cer = CONTAINING_RECORD(RemoveHeadList(&ce->refs), changed_extent_ref, list_entry);
+                            ExFreePool(cer);
+                        }
+
+                        RemoveEntryList(&ce->list_entry);
+                        ExFreePool(ce);
+                    }
+
+                    ExReleaseResourceLite(&c->changed_extents_lock);
                 }
+
                 break;
             }
         }

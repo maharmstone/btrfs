@@ -2943,7 +2943,8 @@ void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags
     ei->flags = flags;
 }
 
-static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint64_t size, bool no_csum) {
+changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint64_t size,
+                                        bool no_csum) {
     LIST_ENTRY* le;
     changed_extent* ce;
 
