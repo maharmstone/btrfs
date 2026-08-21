@@ -2978,8 +2978,10 @@ static changed_extent* get_changed_extent_item(chunk* c, uint64_t address, uint6
     return ce;
 }
 
-NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, int32_t count,
-                                   bool no_csum, bool superseded, PIRP Irp) {
+NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address,
+                                   uint64_t size, uint64_t root, uint64_t objid,
+                                   uint64_t offset, int32_t count, bool no_csum,
+                                   bool superseded, PIRP Irp, LIST_ENTRY* rollback) {
     LIST_ENTRY* le;
     changed_extent* ce;
     changed_extent_ref* cer;
@@ -2987,6 +2989,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
     struct btrfs_key searchkey;
     traverse_ptr tp;
     uint32_t old_count;
+    rollback_item* ri;
 
     ExAcquireResourceExclusiveLite(&c->changed_extents_lock, true);
 
@@ -3036,6 +3039,23 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
         }
     }
 
+    if (rollback) {
+        ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+        if (!ri) {
+            ERR("out of memory\n");
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        ri->type = ROLLBACK_UPDATE_CHANGED_EXTENT_REF;
+        ri->changed_extent_ref.address = address;
+        ri->changed_extent_ref.size = size;
+        ri->changed_extent_ref.root = root;
+        ri->changed_extent_ref.objid = objid;
+        ri->changed_extent_ref.offset = offset;
+        ri->changed_extent_ref.count = count;
+    }
+
     le = ce->refs.Flink;
     while (le != &ce->refs) {
         cer = CONTAINING_RECORD(le, changed_extent_ref, list_entry);
@@ -3047,6 +3067,9 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
             if (superseded)
                 ce->superseded = true;
+
+            if (rollback)
+                InsertTailList(rollback, &ri->list_entry);
 
             goto end;
         }
@@ -3061,6 +3084,10 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
         if (!cer) {
             ERR("out of memory\n");
+
+            if (rollback)
+                ExFreePool(ri);
+
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto end;
         }
@@ -3078,6 +3105,10 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
     if (!cer) {
         ERR("out of memory\n");
+
+        if (rollback)
+            ExFreePool(ri);
+
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
@@ -3094,6 +3125,9 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
 
     if (superseded)
         ce->superseded = true;
+
+    if (rollback)
+        InsertTailList(rollback, &ri->list_entry);
 
     Status = STATUS_SUCCESS;
 

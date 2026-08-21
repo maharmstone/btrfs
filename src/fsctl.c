@@ -3591,8 +3591,12 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                         goto end;
                     }
 
-                    Status = update_changed_extent_ref(Vcb, c, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext2->offset - ext2->extent_data.offset,
-                                                       1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
+                    Status = update_changed_extent_ref(Vcb, c, ext->extent_data.disk_bytenr,
+                                                       ext->extent_data.disk_num_bytes,
+                                                       fcb->subvol->id, fcb->inode,
+                                                       ext2->offset - ext2->extent_data.offset,
+                                                       1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                       false, Irp, &rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("update_changed_extent_ref returned %08lx\n", Status);
                         goto end;

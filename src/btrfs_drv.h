@@ -1184,7 +1184,8 @@ enum rollback_type {
     ROLLBACK_INSERT_EXTENT,
     ROLLBACK_DELETE_EXTENT,
     ROLLBACK_ADD_SPACE,
-    ROLLBACK_SUBTRACT_SPACE
+    ROLLBACK_SUBTRACT_SPACE,
+    ROLLBACK_UPDATE_CHANGED_EXTENT_REF,
 };
 
 typedef struct {
@@ -1204,6 +1205,15 @@ typedef struct {
             fcb* fcb;
             extent* ext;
         } extent;
+
+        struct {
+            uint64_t address;
+            uint64_t size;
+            uint64_t root;
+            uint64_t objid;
+            uint64_t offset;
+            int32_t count;
+        } changed_extent_ref;
     };
 } rollback_item;
 
@@ -1484,8 +1494,10 @@ uint64_t get_extent_refcount(device_extension* Vcb, uint64_t address, uint64_t s
 bool is_extent_unique(device_extension* Vcb, uint64_t address, uint64_t size, PIRP Irp);
 uint64_t get_extent_flags(device_extension* Vcb, uint64_t address, PIRP Irp);
 void update_extent_flags(device_extension* Vcb, uint64_t address, uint64_t flags, PIRP Irp);
-NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset,
-                                   int32_t count, bool no_csum, bool superseded, PIRP Irp);
+NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t address,
+                                   uint64_t size, uint64_t root, uint64_t objid,
+                                   uint64_t offset, int32_t count, bool no_csum,
+                                   bool superseded, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size,
                                 uint64_t root, uint64_t objid, uint64_t offset,
                                 uint32_t count, bool no_csum);

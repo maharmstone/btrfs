@@ -4839,9 +4839,11 @@ cont:
 
                     if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
-                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id,
-                                                               fcb->inode, ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
-                                                               true, Irp);
+                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr,
+                                                               ext->extent_data.disk_num_bytes, fcb->subvol->id,
+                                                               fcb->inode, ext->offset - ext->extent_data.offset,
+                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                               true, Irp, NULL);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_changed_extent_ref returned %08lx\n", Status);
                                 goto end;
@@ -4907,8 +4909,11 @@ cont:
 
                     if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
                         if (ext->extent_data.disk_num_bytes != 0 && ext->extent_data.disk_bytenr == er->address) {
-                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
-                                                               ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
+                            Status = update_changed_extent_ref(fcb->Vcb, er->chunk, ext->extent_data.disk_bytenr,
+                                                               ext->extent_data.disk_num_bytes, fcb->subvol->id,
+                                                               fcb->inode, ext->offset - ext->extent_data.offset,
+                                                               -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                               true, Irp, NULL);
                             if (!NT_SUCCESS(Status)) {
                                 ERR("update_changed_extent_ref returned %08lx\n", Status);
                                 goto end;
@@ -5020,8 +5025,11 @@ cont:
                     if (ext->extent_data.disk_bytenr >= er2->address && ext->extent_data.disk_bytenr + ext->extent_data.disk_num_bytes <= er2->address + er2->length && er2->changed) {
                         NTSTATUS Status;
 
-                        Status = update_changed_extent_ref(fcb->Vcb, er2->chunk, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
-                                                           ext->offset - ext->extent_data.offset, -1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM, true, Irp);
+                        Status = update_changed_extent_ref(fcb->Vcb, er2->chunk, ext->extent_data.disk_bytenr,
+                                                           ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode,
+                                                           ext->offset - ext->extent_data.offset, -1,
+                                                           fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                           true, Irp, NULL);
                         if (!NT_SUCCESS(Status)) {
                             ERR("update_changed_extent_ref returned %08lx\n", Status);
                             goto end;
@@ -5221,8 +5229,12 @@ NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp) {
                             if (!c) {
                                 ERR("get_chunk_from_address(%I64x) failed\n", ext->extent_data.disk_bytenr);
                             } else {
-                                Status = update_changed_extent_ref(fcb->Vcb, c, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes, fcb->subvol->id, fcb->inode, ext->offset - ext->extent_data.offset, -1,
-                                                                fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
+                                Status = update_changed_extent_ref(fcb->Vcb, c, ext->extent_data.disk_bytenr,
+                                                                   ext->extent_data.disk_num_bytes,
+                                                                   fcb->subvol->id, fcb->inode,
+                                                                   ext->offset - ext->extent_data.offset, -1,
+                                                                   fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                                   false, Irp, NULL);
                                 if (!NT_SUCCESS(Status)) {
                                     ERR("update_changed_extent_ref returned %08lx\n", Status);
                                     goto end;

@@ -1045,7 +1045,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                                 } else {
                                     Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes,
                                                                        me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
-                                                                       ext->offset - ext->extent_data.offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM, false, Irp);
+                                                                       ext->offset - ext->extent_data.offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                                       false, Irp, rollback);
 
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("update_changed_extent_ref returned %08lx\n", Status);

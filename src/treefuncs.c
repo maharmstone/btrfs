@@ -1050,26 +1050,8 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 switch (ri->extent.ext->extent_data.type) {
                     case BTRFS_FILE_EXTENT_REG:
                     case BTRFS_FILE_EXTENT_PREALLOC: {
-                        if (ri->extent.ext->extent_data.disk_num_bytes != 0) {
-                            chunk* c = get_chunk_from_address(Vcb, ri->extent.ext->extent_data.disk_bytenr);
-
-                            if (c) {
-                                Status = update_changed_extent_ref(Vcb, c, ri->extent.ext->extent_data.disk_bytenr,
-                                                                   ri->extent.ext->extent_data.disk_num_bytes,
-                                                                   ri->extent.fcb->subvol->id,
-                                                                   ri->extent.fcb->inode,
-                                                                   ri->extent.ext->offset - ri->extent.ext->extent_data.offset, -1,
-                                                                   ri->extent.fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
-                                                                   false, NULL);
-                                if (!NT_SUCCESS(Status)) {
-                                    ERR("update_changed_extent_ref returned %08lx\n", Status);
-                                    ExFreePool(ri);
-                                    goto fail;
-                                }
-                            }
-
+                        if (ri->extent.ext->extent_data.disk_num_bytes != 0)
                             ri->extent.fcb->inode_item.nbytes -= ri->extent.ext->extent_data.num_bytes;
-                        }
 
                         break;
                     }
@@ -1086,31 +1068,10 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
 
                 switch (ri->extent.ext->extent_data.type) {
                     case BTRFS_FILE_EXTENT_REG:
-                    case BTRFS_FILE_EXTENT_PREALLOC: {
-                        if (ri->extent.ext->extent_data.disk_num_bytes != 0) {
-                            chunk* c = get_chunk_from_address(Vcb, ri->extent.ext->extent_data.disk_bytenr);
-
-                            if (c) {
-                                Status = update_changed_extent_ref(Vcb, c, ri->extent.ext->extent_data.disk_bytenr,
-                                                                   ri->extent.ext->extent_data.disk_num_bytes,
-                                                                   ri->extent.fcb->subvol->id,
-                                                                   ri->extent.fcb->inode,
-                                                                   ri->extent.ext->offset - ri->extent.ext->extent_data.offset, 1,
-                                                                   ri->extent.fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
-                                                                   false, NULL);
-
-                                if (!NT_SUCCESS(Status)) {
-                                    ERR("update_changed_extent_ref returned %08lx\n", Status);
-                                    ExFreePool(ri);
-                                    goto fail;
-                                }
-                            }
-
+                    case BTRFS_FILE_EXTENT_PREALLOC:
+                        if (ri->extent.ext->extent_data.disk_num_bytes != 0)
                             ri->extent.fcb->inode_item.nbytes += ri->extent.ext->extent_data.num_bytes;
-                        }
-
                         break;
-                    }
 
                     case BTRFS_FILE_EXTENT_INLINE:
                         ri->extent.fcb->inode_item.nbytes += ri->extent.ext->extent_data.ram_bytes;
@@ -1212,6 +1173,26 @@ void do_rollback(device_extension* Vcb, LIST_ENTRY* rollback) {
                 }
 
                 break;
+
+            case ROLLBACK_UPDATE_CHANGED_EXTENT_REF: {
+                chunk* c = get_chunk_from_address(Vcb, ri->changed_extent_ref.address);
+
+                if (c) {
+                    Status = update_changed_extent_ref(Vcb, c, ri->changed_extent_ref.address,
+                                                       ri->changed_extent_ref.size,
+                                                       ri->changed_extent_ref.root,
+                                                       ri->changed_extent_ref.objid,
+                                                       ri->changed_extent_ref.offset,
+                                                       -ri->changed_extent_ref.count,
+                                                       false, false, NULL, NULL);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("update_changed_extent_ref returned %08lx\n", Status);
+                        ExFreePool(ri);
+                        goto fail;
+                    }
+                }
+                break;
+            }
         }
 
         ExFreePool(ri);
