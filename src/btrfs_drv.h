@@ -1409,7 +1409,7 @@ _Function_class_(KSTART_ROUTINE)
 void __stdcall flush_thread(void* context);
 
 NTSTATUS do_write(device_extension* Vcb, PIRP Irp);
-NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp, LIST_ENTRY* rollback);
+NTSTATUS get_tree_new_address(device_extension* Vcb, tree* t, PIRP Irp);
 NTSTATUS flush_fcb(fcb* fcb, bool cache, LIST_ENTRY* batchlist, PIRP Irp);
 NTSTATUS write_data_phys(_In_ PDEVICE_OBJECT device, _In_ PFILE_OBJECT fileobj, _In_ uint64_t address,
                          _In_reads_bytes_(length) void* data, _In_ uint32_t length);

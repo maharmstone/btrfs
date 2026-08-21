@@ -82,7 +82,8 @@ static void get_uuid(uint8_t* uuid) {
     }
 }
 
-static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* subvol, uint64_t* newaddr, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* subvol,
+                                   uint64_t* newaddr, PIRP Irp) {
     uint8_t* buf;
     NTSTATUS Status;
     write_data_context wtc;
@@ -113,7 +114,7 @@ static NTSTATUS snapshot_tree_copy(device_extension* Vcb, uint64_t addr, root* s
     t.header.level = th->level;
     t.header.owner = t.root->id;
 
-    Status = get_tree_new_address(Vcb, &t, Irp, rollback);
+    Status = get_tree_new_address(Vcb, &t, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("get_tree_new_address returned %08lx\n", Status);
         goto end;
@@ -251,7 +252,6 @@ void flush_subvol_fcbs(root* subvol) {
 }
 
 static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, fcb* subvol_fcb, PANSI_STRING utf8, PUNICODE_STRING name, bool readonly, PIRP Irp) {
-    LIST_ENTRY rollback;
     uint64_t id;
     NTSTATUS Status;
     root *r, *subvol = subvol_fcb->subvol;
@@ -299,8 +299,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
         return Status;
     }
 
-    InitializeListHead(&rollback);
-
     // create new root
 
     id = InterlockedIncrement64(&Vcb->root_root->lastinode);
@@ -308,7 +306,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     if (!NT_SUCCESS(Status)) {
         ERR("create_root returned %08lx\n", Status);
-        goto end;
+        return Status;
     }
 
     r->lastinode = subvol->lastinode;
@@ -322,7 +320,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
         if (!NT_SUCCESS(Status)) {
             ERR("create_root returned %08lx\n", Status);
-            goto end;
+            return Status;
         }
 
         Vcb->uuid_root = uuid_root;
@@ -331,8 +329,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     root_num = ExAllocatePoolWithTag(PagedPool, sizeof(uint64_t), ALLOC_TAG);
     if (!root_num) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     tp.tree = NULL;
@@ -354,7 +351,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     if (!NT_SUCCESS(Status)) {
         ERR("insert_tree_item returned %08lx\n", Status);
         ExFreePool(root_num);
-        goto end;
+        return Status;
     }
 
     searchkey.objectid = r->id;
@@ -364,13 +361,13 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     Status = find_item(Vcb, Vcb->root_root, &tp, &searchkey, false, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("error - find_item returned %08lx\n", Status);
-        goto end;
+        return Status;
     }
 
-    Status = snapshot_tree_copy(Vcb, subvol->root_item.bytenr, r, &address, Irp, &rollback);
+    Status = snapshot_tree_copy(Vcb, subvol->root_item.bytenr, r, &address, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("snapshot_tree_copy returned %08lx\n", Status);
-        goto end;
+        return Status;
     }
 
     KeQuerySystemTime(&time);
@@ -404,8 +401,7 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
         ERR("error - could not find ROOT_ITEM for subvol %I64x\n", r->id);
-        Status = STATUS_INTERNAL_ERROR;
-        goto end;
+        return STATUS_INTERNAL_ERROR;
     }
 
     RtlCopyMemory(tp.item->data, &r->root_item, sizeof(struct btrfs_root_item));
@@ -421,22 +417,21 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
     fr = create_fileref(Vcb);
     if (!fr) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     Status = open_fcb(Vcb, r, r->root_item.root_dirid, BTRFS_FT_DIR, utf8, false, fcb, &fr->fcb, PagedPool, Irp);
     if (!NT_SUCCESS(Status)) {
         ERR("open_fcb returned %08lx\n", Status);
         free_fileref(fr);
-        goto end;
+        return Status;
     }
 
     Status = add_dir_child(fileref->fcb, r->id, true, utf8, name, BTRFS_FT_DIR, &dc);
     if (!NT_SUCCESS(Status)) {
         ERR("add_dir_child returned %08lx\n", Status);
         free_fileref(fr);
-        goto end;
+        return Status;
     }
 
     fr->parent = fileref;
@@ -504,12 +499,6 @@ static NTSTATUS do_create_snapshot(device_extension* Vcb, PFILE_OBJECT parent, f
 
     if (!NT_SUCCESS(Status))
         ERR("do_write returned %08lx\n", Status);
-
-end:
-    if (NT_SUCCESS(Status))
-        clear_rollback(&rollback);
-    else
-        do_rollback(Vcb, &rollback);
 
     return Status;
 }
@@ -725,6 +714,11 @@ static NTSTATUS create_snapshot(device_extension* Vcb, PFILE_OBJECT FileObject, 
             send_notification_fileref(fr, FILE_NOTIFY_CHANGE_DIR_NAME, FILE_ACTION_ADDED, NULL);
             free_fileref(fr);
         }
+    } else {
+        ERR("do_create_snapshot returned %08lx, dropping into readonly mode\n",
+            Status);
+        Vcb->readonly = true;
+        FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
     }
 
 end:
