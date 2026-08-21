@@ -1889,8 +1889,9 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     }
 }
 
-static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context, uint64_t stripe_start, uint64_t bit_start,
-                               uint64_t num, uint16_t missing_devices) {
+static NTSTATUS scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_raid56* context,
+                                   uint64_t stripe_start, uint64_t bit_start,
+                                   uint64_t num, uint16_t missing_devices) {
     ULONG sectors_per_stripe = (ULONG)(c->chunk_item->stripe_len >> Vcb->sector_shift), off;
     uint16_t stripe, parity1 = (bit_start + num + c->chunk_item->num_stripes - 2) % c->chunk_item->num_stripes;
     uint16_t parity2 = (parity1 + 1) % c->chunk_item->num_stripes;
@@ -1997,7 +1998,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
     }
 
     if (missing_devices == 2)
-        return;
+        return STATUS_SUCCESS;
 
     // log and fix errors
 
@@ -2076,7 +2077,7 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             scratch = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
             if (!scratch) {
                 ERR("out of memory\n");
-                return;
+                return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             RtlZeroMemory(scratch, len);
@@ -2417,6 +2418,8 @@ static void scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
             }
         }
     }
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, uint64_t stripe_start, uint64_t stripe_end) {
@@ -2768,7 +2771,12 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
         if (c->chunk_item->type & BTRFS_BLOCK_GROUP_RAID6) {
             for (i = 0; i < read_stripes; i++) {
-                scrub_raid6_stripe(Vcb, c, &context, stripe_start, stripe, i, missing_devices);
+                Status = scrub_raid6_stripe(Vcb, c, &context, stripe_start,
+                                            stripe, i, missing_devices);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("scrub_raid6_stripe returned %08lx\n", Status);
+                    goto end4;
+                }
             }
         } else {
             for (i = 0; i < read_stripes; i++) {
