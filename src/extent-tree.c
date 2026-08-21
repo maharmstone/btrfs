@@ -3010,18 +3010,24 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
         Status = find_item(Vcb, Vcb->extent_root, &tp, &searchkey, false, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("error - find_item returned %08lx\n", Status);
+            RemoveEntryList(&ce->list_entry);
+            ExFreePool(ce);
             goto end;
         }
 
         if (tp.item->key.objectid != searchkey.objectid || tp.item->key.type != searchkey.type) {
             ERR("could not find address %I64x in extent tree\n", address);
             Status = STATUS_INTERNAL_ERROR;
+            RemoveEntryList(&ce->list_entry);
+            ExFreePool(ce);
             goto end;
         }
 
         if (tp.item->key.offset != size) {
             ERR("extent %I64x had size %I64x, not %I64x as expected\n", address, tp.item->key.offset, size);
             Status = STATUS_INTERNAL_ERROR;
+            RemoveEntryList(&ce->list_entry);
+            ExFreePool(ce);
             goto end;
         }
 
@@ -3036,6 +3042,8 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
         } else {
             ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_extent_item));
             Status = STATUS_INTERNAL_ERROR;
+            RemoveEntryList(&ce->list_entry);
+            ExFreePool(ce);
             goto end;
         }
     }
