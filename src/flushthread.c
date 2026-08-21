@@ -4858,7 +4858,8 @@ cont:
                                                             ext->extent_data.disk_num_bytes,
                                                             fcb->subvol->id, fcb->inode,
                                                             ext->offset - ext->extent_data.offset,
-                                                            1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                            1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                            NULL);
                             if (!NT_SUCCESS(Status))
                                 goto end;
                         }
@@ -4926,7 +4927,8 @@ cont:
                                                             ext->extent_data.disk_num_bytes,
                                                             fcb->subvol->id, fcb->inode,
                                                             ext->offset - ext->extent_data.offset,
-                                                            1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                            1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                            NULL);
                             if (!NT_SUCCESS(Status))
                                 goto end;
                         }
@@ -5044,7 +5046,8 @@ cont:
                                                         ext->extent_data.disk_num_bytes,
                                                         fcb->subvol->id, fcb->inode,
                                                         ext->offset - ext->extent_data.offset,
-                                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                                        NULL);
                         if (!NT_SUCCESS(Status))
                             goto end;
 

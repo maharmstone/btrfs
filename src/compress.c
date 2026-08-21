@@ -1201,7 +1201,8 @@ NTSTATUS write_compressed(fcb* fcb, uint64_t start_data, uint64_t end_data, void
     for (i = 0; i < num_parts; i++) {
         Status = add_changed_extent_ref(c, extaddr, parts[i].outlen, fcb->subvol->id,
                                         fcb->inode, start_data + (i * COMPRESSED_EXTENT_SIZE),
-                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM);
+                                        1, fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
+                                        rollback);
         if (!NT_SUCCESS(Status)) {
             ExReleaseResourceLite(&c->changed_extents_lock);
             ExFreePool(parts);

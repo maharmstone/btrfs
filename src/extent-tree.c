@@ -3137,15 +3137,40 @@ end:
     return Status;
 }
 
-NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint64_t root, uint64_t objid, uint64_t offset, uint32_t count, bool no_csum) {
+NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size,
+                                uint64_t root, uint64_t objid, uint64_t offset,
+                                uint32_t count, bool no_csum, LIST_ENTRY* rollback) {
     changed_extent* ce;
     changed_extent_ref* cer;
+    rollback_item* ri;
     LIST_ENTRY* le;
 
     ce = get_changed_extent_item(c, address, size, no_csum);
     if (!ce) {
         ERR("get_changed_extent_item failed\n");
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (rollback) {
+        ri = ExAllocatePoolWithTag(PagedPool, sizeof(rollback_item), ALLOC_TAG);
+        if (!ri) {
+            ERR("out of memory\n");
+
+            if (IsListEmpty(&ce->refs) && ce->count == 0) {
+                RemoveEntryList(&ce->list_entry);
+                ExFreePool(ce);
+            }
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ri->type = ROLLBACK_UPDATE_CHANGED_EXTENT_REF;
+        ri->changed_extent_ref.address = address;
+        ri->changed_extent_ref.size = size;
+        ri->changed_extent_ref.root = root;
+        ri->changed_extent_ref.objid = objid;
+        ri->changed_extent_ref.offset = offset;
+        ri->changed_extent_ref.count = count;
     }
 
     le = ce->refs.Flink;
@@ -3155,6 +3180,10 @@ NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint6
         if (cer->type == BTRFS_EXTENT_DATA_REF_KEY && cer->edr.root == root && cer->edr.objectid == objid && cer->edr.offset == offset) {
             ce->count += count;
             cer->edr.count += count;
+
+            if (rollback)
+                InsertTailList(rollback, &ri->list_entry);
+
             return STATUS_SUCCESS;
         }
 
@@ -3171,6 +3200,9 @@ NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint6
             ExFreePool(ce);
         }
 
+        if (rollback)
+            ExFreePool(ri);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -3183,6 +3215,9 @@ NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size, uint6
     InsertTailList(&ce->refs, &cer->list_entry);
 
     ce->count += count;
+
+    if (rollback)
+        InsertTailList(rollback, &ri->list_entry);
 
     return STATUS_SUCCESS;
 }

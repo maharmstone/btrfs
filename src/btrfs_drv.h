@@ -1500,7 +1500,7 @@ NTSTATUS update_changed_extent_ref(device_extension* Vcb, chunk* c, uint64_t add
                                    bool superseded, PIRP Irp, LIST_ENTRY* rollback);
 NTSTATUS add_changed_extent_ref(chunk* c, uint64_t address, uint64_t size,
                                 uint64_t root, uint64_t objid, uint64_t offset,
-                                uint32_t count, bool no_csum);
+                                uint32_t count, bool no_csum, LIST_ENTRY* rollback);
 uint64_t find_extent_shared_tree_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
 uint32_t find_extent_shared_data_refcount(device_extension* Vcb, uint64_t address, uint64_t parent, PIRP Irp);
 uint64_t get_extent_data_ref_hash2(uint64_t root, uint64_t objid, uint64_t offset);
