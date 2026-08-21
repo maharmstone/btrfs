@@ -5623,7 +5623,12 @@ static void __stdcall check_after_wakeup(PDEVICE_OBJECT DeviceObject, PVOID con)
 
                 newvpb = ExAllocatePoolWithTag(NonPagedPool, sizeof(VPB), ALLOC_TAG);
                 if (!newvpb) {
-                    ERR("out of memory\n");
+                    ERR("out of memory in check_after_wakeup, going readonly rather than unmounting\n");
+
+                    Vcb->readonly = true;
+                    FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
+
+                    ExReleaseResourceLite(&Vcb->tree_lock);
                     return;
                 }
 
