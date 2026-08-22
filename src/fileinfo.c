@@ -2902,6 +2902,11 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     send_notification_fileref(fileref, fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
     fr2 = create_fileref(Vcb);
+    if (!fr2) {
+        ERR("create_fileref failed\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
 
     fr2->fcb = fileref->fcb;
     fr2->fcb->refcount++;
