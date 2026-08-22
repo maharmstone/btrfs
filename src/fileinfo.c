@@ -901,7 +901,9 @@ void remove_fcb_from_subvol(_In_ _Requires_exclusive_lock_held_(_Curr_->Vcb->fcb
     RemoveEntryList(&fcb->list_entry);
 }
 
-static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir, PANSI_STRING utf8, PUNICODE_STRING fnus, PIRP Irp, LIST_ENTRY* rollback) {
+static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destdir,
+                                    PANSI_STRING utf8, PUNICODE_STRING fnus,
+                                    PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY move_list, *le;
     move_entry* me;
@@ -922,8 +924,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
 
     if (!me) {
         ERR("out of memory\n");
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
+        release_fcb_lock(fileref->fcb->Vcb);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     origparent = fileref->parent;
@@ -948,7 +950,25 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
             if (!NT_SUCCESS(Status)) {
                 ERR("add_children_to_move_list returned %08lx\n", Status);
                 ExReleaseResourceLite(me->fileref->fcb->Header.Resource);
-                goto end;
+
+                while (!IsListEmpty(&move_list)) {
+                    le = RemoveHeadList(&move_list);
+                    me = CONTAINING_RECORD(le, move_entry, list_entry);
+
+                    if (me->dummyfcb)
+                        free_fcb(me->dummyfcb);
+
+                    if (me->dummyfileref)
+                        free_fileref(me->dummyfileref);
+
+                    free_fileref(me->fileref);
+
+                    ExFreePool(me);
+                }
+
+                release_fcb_lock(fileref->fcb->Vcb);
+
+                return Status;
             }
         }
 
@@ -1046,7 +1066,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                                     Status = update_changed_extent_ref(me->fileref->fcb->Vcb, c, ext->extent_data.disk_bytenr, ext->extent_data.disk_num_bytes,
                                                                        me->fileref->fcb->subvol->id, me->fileref->fcb->inode,
                                                                        ext->offset - ext->extent_data.offset, 1, me->fileref->fcb->inode_item.flags & BTRFS_INODE_NODATASUM,
-                                                                       false, Irp, rollback);
+                                                                       false, Irp, NULL);
 
                                     if (!NT_SUCCESS(Status)) {
                                         ERR("update_changed_extent_ref returned %08lx\n", Status);
@@ -1332,7 +1352,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         }
 
         if (!me->dummyfileref->fcb->ads) {
-            Status = delete_fileref(me->dummyfileref, NULL, false, Irp, rollback);
+            Status = delete_fileref(me->dummyfileref, NULL, false, Irp, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_fileref returned %08lx\n", Status);
                 goto end;
@@ -1388,7 +1408,7 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
         me = CONTAINING_RECORD(le, move_entry, list_entry);
 
         if (me->dummyfileref->fcb->ads && me->parent->dummyfileref->fcb->deleted) {
-            Status = delete_fileref(me->dummyfileref, NULL, false, Irp, rollback);
+            Status = delete_fileref(me->dummyfileref, NULL, false, Irp, NULL);
             if (!NT_SUCCESS(Status)) {
                 ERR("delete_fileref returned %08lx\n", Status);
                 goto end;
@@ -1428,6 +1448,15 @@ end:
     fileref->fcb->subvol->fcbs_version++;
 
     release_fcb_lock(fileref->fcb->Vcb);
+
+    if (!NT_SUCCESS(Status)) {
+        ERR("move_across_subvols returned %08lx, dropping into readonly mode\n",
+            Status);
+
+        fileref->fcb->Vcb->readonly = true;
+        FsRtlNotifyVolumeEvent(fileref->fcb->Vcb->root_file,
+                               FSRTL_VOLUME_FORCED_CLOSED);
+    }
 
     return Status;
 }
@@ -3212,7 +3241,7 @@ static NTSTATUS set_rename_information(device_extension* Vcb, PIRP Irp, PFILE_OB
     }
 
     if (fileref->parent->fcb->subvol != related->fcb->subvol && (fileref->fcb->subvol == fileref->parent->fcb->subvol || fileref->fcb == Vcb->dummy_fcb))
-        Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp, &rollback);
+        Status = move_across_subvols(fileref, ccb, related, &utf8, &fnus, Irp);
     else if (related == fileref->parent) // keeping file in same directory
         Status = rename_in_same_directory(fileref, ccb, related, &utf8, &fnus, Irp);
     else
