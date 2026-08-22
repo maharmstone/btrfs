@@ -1216,35 +1216,46 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 mark_fcb_dirty(me->fileref->parent->fcb);
 
                 if (name_changed) {
-                    ExFreePool(me->fileref->dc->utf8.Buffer);
-                    ExFreePool(me->fileref->dc->name.Buffer);
-                    ExFreePool(me->fileref->dc->name_uc.Buffer);
+                    ANSI_STRING new_utf8;
+                    UNICODE_STRING name, name_uc;
 
-                    me->fileref->dc->utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8->Length, ALLOC_TAG);
-                    if (!me->fileref->dc->utf8.Buffer) {
+                    new_utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8->Length, ALLOC_TAG);
+                    if (!new_utf8.Buffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
                         goto end;
                     }
 
-                    me->fileref->dc->utf8.Length = me->fileref->dc->utf8.MaximumLength = utf8->Length;
-                    RtlCopyMemory(me->fileref->dc->utf8.Buffer, utf8->Buffer, utf8->Length);
+                    new_utf8.Length = new_utf8.MaximumLength = utf8->Length;
+                    RtlCopyMemory(new_utf8.Buffer, utf8->Buffer, utf8->Length);
 
-                    me->fileref->dc->name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus->Length, ALLOC_TAG);
-                    if (!me->fileref->dc->name.Buffer) {
+                    name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus->Length, ALLOC_TAG);
+                    if (!name.Buffer) {
                         ERR("out of memory\n");
                         Status = STATUS_INSUFFICIENT_RESOURCES;
+                        ExFreePool(new_utf8.Buffer);
                         goto end;
                     }
 
-                    me->fileref->dc->name.Length = me->fileref->dc->name.MaximumLength = fnus->Length;
-                    RtlCopyMemory(me->fileref->dc->name.Buffer, fnus->Buffer, fnus->Length);
+                    name.Length = name.MaximumLength = fnus->Length;
+                    RtlCopyMemory(name.Buffer, fnus->Buffer, fnus->Length);
 
-                    Status = RtlUpcaseUnicodeString(&fileref->dc->name_uc, &fileref->dc->name, true);
+                    Status = RtlUpcaseUnicodeString(&name_uc, &name, true);
                     if (!NT_SUCCESS(Status)) {
                         ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
+                        ExFreePool(name.Buffer);
+                        ExFreePool(new_utf8.Buffer);
                         goto end;
                     }
+
+                    ExFreePool(me->fileref->dc->utf8.Buffer);
+                    me->fileref->dc->utf8 = new_utf8;
+
+                    ExFreePool(me->fileref->dc->name.Buffer);
+                    me->fileref->dc->name = name;
+
+                    ExFreePool(me->fileref->dc->name_uc.Buffer);
+                    me->fileref->dc->name_uc = name_uc;
 
                     me->fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)me->fileref->dc->name.Buffer, me->fileref->dc->name.Length);
                     me->fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)me->fileref->dc->name_uc.Buffer, me->fileref->dc->name_uc.Length);
