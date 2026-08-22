@@ -861,12 +861,14 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
             WARN("file already exists\n");
             free_fileref(fr2);
             Status = STATUS_OBJECT_NAME_COLLISION;
-            goto end;
+            ExReleaseResourceLite(&Vcb->tree_lock);
+            goto end2;
         } else
             free_fileref(fr2);
     } else if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
         ERR("open_fileref returned %08lx\n", Status);
-        goto end;
+        ExReleaseResourceLite(&Vcb->tree_lock);
+        goto end2;
     }
 
     id = InterlockedIncrement64(&Vcb->root_root->lastinode);
@@ -1135,18 +1137,10 @@ static NTSTATUS create_subvol(device_extension* Vcb, PFILE_OBJECT FileObject, vo
 
 end:
     if (!NT_SUCCESS(Status)) {
-        if (fr) {
-            fr->deleted = true;
-            mark_fileref_dirty(fr);
-        } else if (rootfcb) {
-            rootfcb->deleted = true;
-            mark_fcb_dirty(rootfcb);
-        }
-
-        if (r) {
-            RemoveEntryList(&r->list_entry);
-            InsertTailList(&Vcb->drop_roots, &r->list_entry);
-        }
+        ERR("create_subvo returned %08lx, dropping into readonly mode\n",
+            Status);
+        Vcb->readonly = true;
+        FsRtlNotifyVolumeEvent(Vcb->root_file, FSRTL_VOLUME_FORCED_CLOSED);
     }
 
     ExReleaseResourceLite(&Vcb->tree_lock);
