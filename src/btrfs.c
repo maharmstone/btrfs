@@ -2296,9 +2296,6 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
         return STATUS_ACCESS_DENIED;
     }
 
-    fileref->deleted = true;
-    mark_fileref_dirty(fileref);
-
     // delete INODE_ITEM (0x1)
 
     TRACE("nlink = %u\n", fileref->fcb->inode_item.nlink);
@@ -2377,6 +2374,9 @@ NTSTATUS delete_fileref(_In_ file_ref* fileref, _In_opt_ PFILE_OBJECT FileObject
         fileref->fcb->deleted = true;
         mark_fcb_dirty(fileref->fcb);
     }
+
+    fileref->deleted = true;
+    mark_fileref_dirty(fileref);
 
     // remove dir_child from parent
 
