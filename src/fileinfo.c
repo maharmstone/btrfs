@@ -2682,6 +2682,7 @@ static NTSTATUS move_across_directories(file_ref* fileref, ccb* ccb,
     hardlink* hl;
     LIST_ENTRY* le;
     uint16_t origutf8len;
+    ANSI_STRING oldutf8;
 
     origutf8len = fileref->dc->utf8.Length;
 
@@ -2690,9 +2691,27 @@ static NTSTATUS move_across_directories(file_ref* fileref, ccb* ccb,
 
     send_notification_fileref(fileref, fcb->type == BTRFS_FT_DIR ? FILE_NOTIFY_CHANGE_DIR_NAME : FILE_NOTIFY_CHANGE_FILE_NAME, FILE_ACTION_REMOVED, NULL);
 
+    if (!fileref->oldutf8.Buffer) {
+        oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->dc->utf8.Length,
+                                               ALLOC_TAG);
+        if (!oldutf8.Buffer) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlCopyMemory(oldutf8.Buffer, fileref->dc->utf8.Buffer,
+                      fileref->dc->utf8.Length);
+
+        oldutf8.Length = oldutf8.MaximumLength = fileref->dc->utf8.Length;
+    }
+
     fr2 = create_fileref(fcb->Vcb);
     if (!fr2) {
         ERR("create_fileref failed\n");
+
+        if (!fileref->oldutf8.Buffer)
+            ExFreePool(oldutf8.Buffer);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -2707,20 +2726,8 @@ static NTSTATUS move_across_directories(file_ref* fileref, ccb* ccb,
     fr2->parent = fileref->parent;
     fr2->dc = NULL;
 
-    if (!fr2->oldutf8.Buffer) {
-        fr2->oldutf8.Buffer = ExAllocatePoolWithTag(PagedPool, fileref->dc->utf8.Length,
-                                                    ALLOC_TAG);
-        if (!fr2->oldutf8.Buffer) {
-            ERR("out of memory\n");
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto fail;
-        }
-
-        RtlCopyMemory(fr2->oldutf8.Buffer, fileref->dc->utf8.Buffer,
-                      fileref->dc->utf8.Length);
-
-        fr2->oldutf8.Length = fr2->oldutf8.MaximumLength = fileref->dc->utf8.Length;
-    }
+    if (!fileref->oldutf8.Buffer)
+        fr2->oldutf8 = oldutf8;
 
     if (fr2->fcb->type == BTRFS_FT_DIR)
         fr2->fcb->fileref = fr2;
