@@ -2482,7 +2482,8 @@ static NTSTATUS rename_in_same_directory(file_ref* fileref, ccb* ccb,
                                          file_ref* related, ANSI_STRING* utf8,
                                          UNICODE_STRING* fnus, PIRP Irp) {
     NTSTATUS Status;
-    UNICODE_STRING oldfn, newfn;
+    UNICODE_STRING oldfn, newfn, name, name_uc;
+    ANSI_STRING new_utf8;
     USHORT name_offset;
     ULONG reqlen, oldutf8len;
     LARGE_INTEGER time;
@@ -2533,66 +2534,65 @@ static NTSTATUS rename_in_same_directory(file_ref* fileref, ccb* ccb,
 
     mark_fileref_dirty(fileref);
 
-    if (fileref->dc) {
-        ANSI_STRING new_utf8;
-        UNICODE_STRING name, name_uc;
+    // update fileref->dc
 
-        ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock,
-                                       true);
+    ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock,
+                                    true);
 
-        new_utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8->Length, ALLOC_TAG);
-        if (!new_utf8.Buffer) {
-            ERR("out of memory\n");
-            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
-            ExFreePool(oldfn.Buffer);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        new_utf8.Length = new_utf8.MaximumLength = utf8->Length;
-        RtlCopyMemory(new_utf8.Buffer, utf8->Buffer, utf8->Length);
-
-        name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus->Length, ALLOC_TAG);
-        if (!name.Buffer) {
-            ERR("out of memory\n");
-            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
-            ExFreePool(oldfn.Buffer);
-            ExFreePool(new_utf8.Buffer);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        name.Length = name.MaximumLength = fnus->Length;
-        RtlCopyMemory(name.Buffer, fnus->Buffer, fnus->Length);
-
-        Status = RtlUpcaseUnicodeString(&name_uc, &name, true);
-        if (!NT_SUCCESS(Status)) {
-            ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
-            ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
-            ExFreePool(oldfn.Buffer);
-            ExFreePool(name.Buffer);
-            ExFreePool(new_utf8.Buffer);
-            return Status;
-        }
-
-        ExFreePool(fileref->dc->utf8.Buffer);
-        fileref->dc->utf8 = new_utf8;
-
-        ExFreePool(fileref->dc->name.Buffer);
-        fileref->dc->name = name;
-
-        ExFreePool(fileref->dc->name_uc.Buffer);
-        fileref->dc->name_uc = name_uc;
-
-        remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
-
-        fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name.Buffer,
-                                        fileref->dc->name.Length);
-        fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name_uc.Buffer,
-                                           fileref->dc->name_uc.Length);
-
-        insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
-
+    new_utf8.Buffer = ExAllocatePoolWithTag(PagedPool, utf8->Length, ALLOC_TAG);
+    if (!new_utf8.Buffer) {
+        ERR("out of memory\n");
         ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+        ExFreePool(oldfn.Buffer);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
+
+    new_utf8.Length = new_utf8.MaximumLength = utf8->Length;
+    RtlCopyMemory(new_utf8.Buffer, utf8->Buffer, utf8->Length);
+
+    name.Buffer = ExAllocatePoolWithTag(PagedPool, fnus->Length, ALLOC_TAG);
+    if (!name.Buffer) {
+        ERR("out of memory\n");
+        ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+        ExFreePool(oldfn.Buffer);
+        ExFreePool(new_utf8.Buffer);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    name.Length = name.MaximumLength = fnus->Length;
+    RtlCopyMemory(name.Buffer, fnus->Buffer, fnus->Length);
+
+    Status = RtlUpcaseUnicodeString(&name_uc, &name, true);
+    if (!NT_SUCCESS(Status)) {
+        ERR("RtlUpcaseUnicodeString returned %08lx\n", Status);
+        ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+        ExFreePool(oldfn.Buffer);
+        ExFreePool(name.Buffer);
+        ExFreePool(new_utf8.Buffer);
+        return Status;
+    }
+
+    ExFreePool(fileref->dc->utf8.Buffer);
+    fileref->dc->utf8 = new_utf8;
+
+    ExFreePool(fileref->dc->name.Buffer);
+    fileref->dc->name = name;
+
+    ExFreePool(fileref->dc->name_uc.Buffer);
+    fileref->dc->name_uc = name_uc;
+
+    remove_dir_child_from_hash_lists(fileref->parent->fcb, fileref->dc);
+
+    fileref->dc->hash = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name.Buffer,
+                                    fileref->dc->name.Length);
+    fileref->dc->hash_uc = calc_crc32c(0xffffffff, (uint8_t*)fileref->dc->name_uc.Buffer,
+                                        fileref->dc->name_uc.Length);
+
+    insert_dir_child_into_hash_lists(fileref->parent->fcb, fileref->dc);
+
+    ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
+
+    // get new filename, for notification
 
     newfn.Length = newfn.MaximumLength = 0;
 
@@ -2619,6 +2619,8 @@ static NTSTATUS rename_in_same_directory(file_ref* fileref, ccb* ccb,
         ExFreePool(newfn.Buffer);
         return Status;
     }
+
+    // update INODE_ITEM
 
     KeQuerySystemTime(&time);
     win_time_to_unix(time, &now);
