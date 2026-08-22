@@ -3747,6 +3747,11 @@ static NTSTATUS set_link_information(device_extension* Vcb, PIRP Irp, PFILE_OBJE
     }
 
     fr2 = create_fileref(Vcb);
+    if (!fr2) {
+        ERR("create_fileref failed\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
 
     fr2->fcb = fcb;
     fcb->refcount++;
