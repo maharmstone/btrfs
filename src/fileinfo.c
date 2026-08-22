@@ -2519,6 +2519,7 @@ static NTSTATUS rename_in_same_directory(file_ref* fileref, ccb* ccb,
                                                         ALLOC_TAG);
         if (!fileref->oldutf8.Buffer) {
             ERR("out of memory\n");
+            ExFreePool(oldfn.Buffer);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
