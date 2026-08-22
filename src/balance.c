@@ -3118,13 +3118,18 @@ static NTSTATUS try_consolidation(device_extension* Vcb, uint64_t flags, chunk**
         rc->space_changed = true;
         rc->balance_num = Vcb->balance.balance_num;
 
+        ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
+
         Status = do_write(Vcb, NULL);
         if (!NT_SUCCESS(Status)) {
             ERR("do_write returned %08lx\n", Status);
+            ExReleaseResourceLite(&Vcb->tree_lock);
             return Status;
         }
 
         free_trees(Vcb);
+
+        ExReleaseResourceLite(&Vcb->tree_lock);
     }
 
     ExAcquireResourceExclusiveLite(&Vcb->chunk_lock, true);
