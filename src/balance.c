@@ -3253,6 +3253,8 @@ void __stdcall balance_thread(void* context) {
                 goto end;
             }
         } else {
+            ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
+
             if (Vcb->need_write) {
                 Status = do_write(Vcb, NULL);
 
@@ -3261,9 +3263,12 @@ void __stdcall balance_thread(void* context) {
                 if (!NT_SUCCESS(Status)) {
                     ERR("do_write returned %08lx\n", Status);
                     Vcb->balance.status = Status;
+                    ExReleaseResourceLite(&Vcb->tree_lock);
                     goto end;
                 }
             }
+
+            ExReleaseResourceLite(&Vcb->tree_lock);
         }
     }
 
