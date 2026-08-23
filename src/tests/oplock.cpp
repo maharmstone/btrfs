@@ -5764,3 +5764,167 @@ void test_oplocks_rh(HANDLE token, const u16string& dir) {
 
     disable_token_privileges(token);
 }
+
+void test_oplocks_share(const u16string& dir) {
+    unique_handle h, h2;
+    IO_STATUS_BLOCK iosb;
+    REQUEST_OPLOCK_OUTPUT_BUFFER roob;
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockshare1", FILE_WRITE_DATA, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Open file", [&]() {
+            h = create_file(dir + u"\\oplockshare1", FILE_READ_DATA, 0,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN, 0, FILE_OPENED);
+        });
+    }
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get batch oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::batch);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock(ev.get(), h.get());
+
+            test("Open second handle, denying write access", [&]() {
+                h2 = create_file(dir + u"\\oplockshare1", FILE_READ_DATA, 0,
+                                 FILE_SHARE_READ, FILE_OPEN, 0, FILE_OPENED);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+            });
+
+            if (h2) {
+                test("Try to open third handle for writing", [&]() {
+                    exp_status([&]() {
+                        create_file(dir + u"\\oplockshare1", FILE_WRITE_DATA, 0,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    FILE_OPEN, 0, FILE_OPENED);
+                    }, STATUS_SHARING_VIOLATION);
+                });
+
+                h2.reset();
+            }
+
+            test("Try to open second handle, denying read access", [&]() {
+                exp_status([&]() {
+                    create_file(dir + u"\\oplockshare1", FILE_READ_DATA, 0, 0,
+                                FILE_OPEN, 0, FILE_OPENED);
+                }, STATUS_SHARING_VIOLATION);
+            });
+        }
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockshare2", FILE_WRITE_DATA, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Open file, denying write access", [&]() {
+            h = create_file(dir + u"\\oplockshare2", FILE_READ_DATA, 0,
+                            FILE_SHARE_READ, FILE_OPEN, 0, FILE_OPENED);
+        });
+    }
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get batch oplock", [&]() {
+            ev = req_oplock(h.get(), iosb, oplock_type::batch);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock(ev.get(), h.get());
+
+            test("Try to open second handle for writing", [&]() {
+                exp_status([&]() {
+                    create_file(dir + u"\\oplockshare2", FILE_WRITE_DATA, 0,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                FILE_OPEN, 0, FILE_OPENED);
+                }, STATUS_SHARING_VIOLATION);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+            });
+        }
+
+        h.reset();
+    }
+
+    test("Create file", [&]() {
+        h = create_file(dir + u"\\oplockshare3", FILE_WRITE_DATA, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_CREATE, 0, FILE_CREATED);
+    });
+
+    if (h) {
+        h.reset();
+
+        test("Open file, denying write access", [&]() {
+            h = create_file(dir + u"\\oplockshare3", FILE_READ_DATA, 0, FILE_SHARE_READ,
+                            FILE_OPEN, 0, FILE_OPENED);
+        });
+    }
+
+    if (h) {
+        unique_handle ev;
+
+        test("Get read-handle oplock", [&]() {
+            ev = req_oplock_win7(h.get(), iosb, oplock_type::read_handle, roob);
+        });
+
+        if (ev) {
+            test("Check oplock not broken", [&]() {
+                if (check_event(ev.get()))
+                    throw runtime_error("Oplock is broken");
+            });
+
+            ack_oplock_win7(ev.get(), h.get());
+
+            test("Try to open second handle for writing", [&]() {
+                exp_status([&]() {
+                    create_file(dir + u"\\oplockshare3", FILE_WRITE_DATA, 0,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                FILE_OPEN, 0, FILE_OPENED);
+                }, STATUS_SHARING_VIOLATION);
+            });
+
+            test("Check oplock broken", [&]() {
+                if (!check_event(ev.get()))
+                    throw runtime_error("Oplock is not broken");
+            });
+        }
+
+        h.reset();
+    }
+}
