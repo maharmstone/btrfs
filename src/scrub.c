@@ -3147,8 +3147,6 @@ static void __stdcall scrub_thread(void* context) {
     NTSTATUS Status;
     LARGE_INTEGER time;
 
-    KeInitializeEvent(&Vcb->scrub.finished, NotificationEvent, false);
-
     InitializeListHead(&chunks);
 
     ExAcquireResourceExclusiveLite(&Vcb->tree_lock, true);
@@ -3291,6 +3289,7 @@ NTSTATUS start_scrub(device_extension* Vcb, KPROCESSOR_MODE processor_mode) {
     Vcb->scrub.paused = false;
     Vcb->scrub.error = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->scrub.event, NotificationEvent, !Vcb->scrub.paused);
+    KeInitializeEvent(&Vcb->scrub.finished, NotificationEvent, false);
 
     InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
