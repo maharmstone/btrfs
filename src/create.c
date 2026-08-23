@@ -3020,10 +3020,12 @@ static NTSTATUS create_stream(_Requires_lock_held_(_Curr_->tree_lock) _Requires_
 
     mark_fileref_dirty(fileref);
 
+    ExAcquireResourceExclusiveLite(parfileref->fcb->Header.Resource, true);
     parfileref->fcb->inode_item.transid = Vcb->superblock.generation;
     parfileref->fcb->inode_item.sequence++;
     parfileref->fcb->inode_item.ctime = now;
     parfileref->fcb->inode_item_changed = true;
+    ExReleaseResourceLite(parfileref->fcb->Header.Resource);
 
     mark_fcb_dirty(parfileref->fcb);
 
