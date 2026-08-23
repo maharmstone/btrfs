@@ -5739,8 +5739,10 @@ static NTSTATUS drop_chunk(device_extension* Vcb, chunk* c, LIST_ENTRY* batchlis
 
         free_fcb(c->cache);
 
-        if (c->cache->refcount == 0)
+        if (c->cache->refcount == 0) {
             reap_fcb(c->cache);
+            c->cache = NULL;
+        }
 
         if (!NT_SUCCESS(Status)) {
             ERR("flush_fcb returned %08lx\n", Status);
