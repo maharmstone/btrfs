@@ -7985,7 +7985,8 @@ static NTSTATUS do_write2(device_extension* Vcb, PIRP Irp) {
     }
 #endif
 
-    Vcb->superblock.cache_generation = Vcb->superblock.generation;
+    if (!no_cache)
+        Vcb->superblock.cache_generation = Vcb->superblock.generation;
 
     if (!Vcb->options.no_barrier) {
         Status = flush_disk_caches(Vcb);
