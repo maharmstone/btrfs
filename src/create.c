@@ -3939,6 +3939,8 @@ static void __stdcall oplock_complete(PVOID Context, PIRP Irp) {
     bool skip_lock;
     oplock_context* ctx = Context;
     device_extension* Vcb = ctx->Vcb;
+    PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    PFILE_OBJECT FileObject = IrpSp->FileObject;
 
     TRACE("(%p, %p)\n", Context, Irp);
 
@@ -3951,21 +3953,31 @@ static void __stdcall oplock_complete(PVOID Context, PIRP Irp) {
 
     ExAcquireResourceSharedLite(&Vcb->fileref_lock, true);
 
-    // FIXME - trans
-    Status = open_file3(Vcb, Irp, ctx->granted_access, ctx->fileref, &rollback);
-
+    Status = IoCheckShareAccess(ctx->granted_access, IrpSp->Parameters.Create.ShareAccess,
+                                FileObject, &ctx->fileref->fcb->share_access,
+                                true);
     if (!NT_SUCCESS(Status)) {
+        if (Status != STATUS_SHARING_VIOLATION)
+            WARN("IoCheckShareAccess failed, returning %08lx\n", Status);
+
         free_fileref(ctx->fileref);
-        do_rollback(ctx->Vcb, &rollback);
-    } else
-        clear_rollback(&rollback);
+    } else {
+        // FIXME - trans
+        Status = open_file3(Vcb, Irp, ctx->granted_access, ctx->fileref, &rollback);
+
+        if (!NT_SUCCESS(Status)) {
+            IoRemoveShareAccess(FileObject, &ctx->fileref->fcb->share_access);
+
+            free_fileref(ctx->fileref);
+            do_rollback(ctx->Vcb, &rollback);
+        } else
+            clear_rollback(&rollback);
+    }
 
     ExReleaseResourceLite(&Vcb->fileref_lock);
 
     if (Status == STATUS_SUCCESS) {
         fcb* fcb2;
-        PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-        PFILE_OBJECT FileObject = IrpSp->FileObject;
         bool skip_fcb_lock;
 
         IrpSp->Parameters.Create.SecurityContext->AccessState->PreviouslyGrantedAccess |= ctx->granted_access;
