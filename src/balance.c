@@ -3215,9 +3215,6 @@ void __stdcall balance_thread(void* context) {
 
     Vcb->balance.balance_num++;
 
-    Vcb->balance.stopping = false;
-    KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, false);
-
     if (Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_ENABLED && Vcb->balance.opts[BALANCE_OPTS_DATA].flags & BTRFS_BALANCE_OPTS_CONVERT) {
         old_data_flags = Vcb->data_flags;
         Vcb->data_flags = BTRFS_BLOCK_GROUP_DATA | (Vcb->balance.opts[BALANCE_OPTS_DATA].convert == BTRFS_AVAIL_ALLOC_BIT_SINGLE ? 0 : Vcb->balance.opts[BALANCE_OPTS_DATA].convert);
@@ -3808,8 +3805,10 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
     Vcb->balance.paused = false;
     Vcb->balance.removing = false;
     Vcb->balance.shrinking = false;
+    Vcb->balance.stopping = false;
     Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+    KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, false);
 
     InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -3891,8 +3890,10 @@ NTSTATUS look_for_balance_item(_Requires_lock_held_(_Curr_->tree_lock) device_ex
 
     Vcb->balance.removing = false;
     Vcb->balance.shrinking = false;
+    Vcb->balance.stopping = false;
     Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+    KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, false);
 
     InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -4096,8 +4097,10 @@ NTSTATUS remove_device(device_extension* Vcb, void* data, ULONG length, KPROCESS
     Vcb->balance.paused = false;
     Vcb->balance.removing = true;
     Vcb->balance.shrinking = false;
+    Vcb->balance.stopping = false;
     Vcb->balance.status = STATUS_SUCCESS;
     KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+    KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, false);
 
     InitializeObjectAttributes(&oa, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 

@@ -4831,8 +4831,10 @@ static NTSTATUS resize_device(device_extension* Vcb, void* data, ULONG len, PIRP
 
             Vcb->balance.paused = false;
             Vcb->balance.shrinking = true;
+            Vcb->balance.stopping = false;
             Vcb->balance.status = STATUS_SUCCESS;
             KeInitializeEvent(&Vcb->balance.event, NotificationEvent, !Vcb->balance.paused);
+            KeInitializeEvent(&Vcb->balance.finished, NotificationEvent, false);
 
             Status = space_list_subtract2(&dev->space, NULL, br->size, delta,
                                           NULL, NULL);
