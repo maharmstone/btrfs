@@ -688,6 +688,25 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         ExReleaseResourceLite(&pdode->child_lock);
 }
 
+static bool should_ignore_volume_arrival(_In_ PDEVICE_OBJECT devobj) {
+    NTSTATUS Status;
+    STORAGE_HOTPLUG_INFO shi;
+    IO_STATUS_BLOCK iosb;
+
+    Status = dev_ioctl(devobj, IOCTL_STORAGE_GET_HOTPLUG_INFO, NULL, 0, &shi,
+                       sizeof(STORAGE_HOTPLUG_INFO), true, &iosb);
+    if (!NT_SUCCESS(Status)) {
+        ERR("dev_ioctl returned %08lx\n", Status);
+        return false;
+    } else if (iosb.Information < sizeof(STORAGE_HOTPLUG_INFO)) {
+        ERR("IOCTL_STORAGE_GET_HOTPLUG_INFO returned %Iu bytes, expected %Iu\n",
+            iosb.Information, sizeof(STORAGE_HOTPLUG_INFO));
+        return false;
+    }
+
+    return shi.MediaRemovable || shi.DeviceHotplug;
+}
+
 bool volume_arrival(PUNICODE_STRING devpath, bool fve_callback) {
     STORAGE_DEVICE_NUMBER sdn;
     PFILE_OBJECT fileobj;
@@ -719,6 +738,11 @@ bool volume_arrival(PUNICODE_STRING devpath, bool fve_callback) {
     Status = dev_ioctl(devobj, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &gli, sizeof(gli), true, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("IOCTL_DISK_GET_LENGTH_INFO returned %08lx\n", Status);
+        goto end;
+    }
+
+    if (should_ignore_volume_arrival(devobj)) {
+        TRACE("ignoring removable device\n");
         goto end;
     }
 
