@@ -752,6 +752,7 @@ typedef struct _device_extension {
     bool locked;
     bool lock_paused_balance;
     bool disallow_dismount;
+    bool direct_mount;
     LONG page_file_count;
     bool trim;
     PFILE_OBJECT locked_fileobj;

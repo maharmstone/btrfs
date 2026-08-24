@@ -2752,8 +2752,8 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     if (!SeSinglePrivilegeCheck(RtlConvertLongToLuid(SE_MANAGE_VOLUME_PRIVILEGE), processor_mode))
         return STATUS_PRIVILEGE_NOT_HELD;
 
-    if (!Vcb->vde) {
-        WARN("not allowing second device to be added to non-PNP device\n");
+    if (Vcb->direct_mount || !Vcb->vde) {
+        WARN("not allowing second device to be added to direct-mount device\n");
         return STATUS_NOT_SUPPORTED;
     }
 

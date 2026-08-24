@@ -4412,6 +4412,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
     OBJECT_ATTRIBUTES oa;
     device_extension* real_devext;
     KIRQL irql;
+    bool direct_mount = false;
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
@@ -4428,8 +4429,6 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         return STATUS_UNRECOGNIZED_VOLUME;
 
     if (!is_btrfs_volume(DeviceToMount)) {
-        bool direct_mount = false;
-
         Status = check_mount_device(DeviceToMount, &direct_mount);
         if (!NT_SUCCESS(Status))
             WARN("check_mount_device returned %08lx\n", Status);
@@ -4595,8 +4594,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         goto exit;
     }
 
-    if (!vde && Vcb->superblock.num_devices > 1) {
-        ERR("cannot mount multi-device FS with non-PNP device\n");
+    if (direct_mount && Vcb->superblock.num_devices > 1) {
+        ERR("cannot mount multi-device FS when doing direct mount\n");
         Status = STATUS_UNRECOGNIZED_VOLUME;
         goto exit;
     }
@@ -4709,6 +4708,8 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
 
     InsertTailList(&Vcb->devices, &dev->list_entry);
     Vcb->devices_loaded = 1;
+
+    Vcb->direct_mount = direct_mount;
 
     if (DeviceToMount->Flags & DO_SYSTEM_BOOT_PARTITION)
         Vcb->disallow_dismount = true;
