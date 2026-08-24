@@ -688,7 +688,7 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         ExReleaseResourceLite(&pdode->child_lock);
 }
 
-static bool should_ignore_volume_arrival(_In_ PDEVICE_OBJECT devobj) {
+bool should_ignore_volume_arrival(_In_ PDEVICE_OBJECT devobj) {
     NTSTATUS Status;
     STORAGE_HOTPLUG_INFO shi;
     IO_STATUS_BLOCK iosb;

@@ -1279,6 +1279,7 @@ NTSTATUS __stdcall volume_notification(PVOID NotificationStructure, PVOID Contex
 
 void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lock) _Releases_exclusive_lock_(_Curr_->child_lock) _In_ volume_device_extension* vde,
                          _In_ volume_child* vc, _In_ bool skip_dev);
+bool should_ignore_volume_arrival(_In_ PDEVICE_OBJECT devobj);
 extern KSPIN_LOCK fve_data_lock;
 
 // in cache.c

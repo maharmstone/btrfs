@@ -4268,7 +4268,8 @@ NTSTATUS get_device_pnp_name(_In_ PDEVICE_OBJECT DeviceObject, _Out_ PUNICODE_ST
 }
 
 _Success_(return>=0)
-static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool* pno_pnp) {
+static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject,
+                                   _Out_ bool* direct_mount) {
     NTSTATUS Status;
     ULONG to_read;
     struct btrfs_super_block* sb;
@@ -4301,6 +4302,12 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool*
 
     DeviceObject->Flags &= ~DO_VERIFY_VOLUME;
 
+    if (should_ignore_volume_arrival(DeviceObject)) {
+        *direct_mount = true;
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+
     pnp_name.Buffer = NULL;
 
     Status = get_device_pnp_name(DeviceObject, &pnp_name, &guid);
@@ -4309,7 +4316,7 @@ static NTSTATUS check_mount_device(_In_ PDEVICE_OBJECT DeviceObject, _Out_ bool*
         pnp_name.Length = 0;
     }
 
-    *pno_pnp = pnp_name.Length == 0;
+    *direct_mount = pnp_name.Length == 0;
 
     if (pnp_name.Buffer)
         ExFreePool(pnp_name.Buffer);
@@ -4421,13 +4428,13 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         return STATUS_UNRECOGNIZED_VOLUME;
 
     if (!is_btrfs_volume(DeviceToMount)) {
-        bool not_pnp = false;
+        bool direct_mount = false;
 
-        Status = check_mount_device(DeviceToMount, &not_pnp);
+        Status = check_mount_device(DeviceToMount, &direct_mount);
         if (!NT_SUCCESS(Status))
             WARN("check_mount_device returned %08lx\n", Status);
 
-        if (!not_pnp) {
+        if (!direct_mount) {
             Status = STATUS_UNRECOGNIZED_VOLUME;
             goto exit;
         }
