@@ -24,6 +24,8 @@ extern PDEVICE_OBJECT master_devobj;
 extern tFsRtlGetEcpListFromIrp fFsRtlGetEcpListFromIrp;
 extern tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 extern tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
+extern tFsRtlCurrentOplockH fFsRtlCurrentOplockH;
+extern tFsRtlOplockBreakH fFsRtlOplockBreakH;
 
 static const WCHAR datastring[] = L"::$DATA";
 
@@ -4168,16 +4170,28 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
 
     if (fileref->open_count > 0) {
         oplock_context* ctx;
+        bool is_batch_oplock = false, is_handle_oplock = false;
 
-        Status = IoCheckShareAccess(*granted_access, IrpSp->Parameters.Create.ShareAccess, FileObject, &fileref->fcb->share_access, false);
+        Status = IoCheckShareAccess(*granted_access, IrpSp->Parameters.Create.ShareAccess,
+                                    FileObject, &fileref->fcb->share_access, false);
 
-        if (!NT_SUCCESS(Status)) {
-            if (Status == STATUS_SHARING_VIOLATION)
-                TRACE("IoCheckShareAccess failed, returning %08lx\n", Status);
-            else
-                WARN("IoCheckShareAccess failed, returning %08lx\n", Status);
-
+        if (!NT_SUCCESS(Status) && Status != STATUS_SHARING_VIOLATION) {
+            WARN("IoCheckShareAccess failed, returning %08lx\n", Status);
             goto end;
+        }
+
+        if (Status == STATUS_SHARING_VIOLATION) {
+            is_batch_oplock = FsRtlCurrentBatchOplock(fcb_oplock(fileref->fcb));
+
+            if (!is_batch_oplock) {
+                if (fFsRtlCurrentOplockH && !(IrpSp->Parameters.Create.Options & FILE_COMPLETE_IF_OPLOCKED))
+                    is_handle_oplock = fFsRtlCurrentOplockH(fcb_oplock(fileref->fcb));
+
+                if (!is_handle_oplock) {
+                    TRACE("IoCheckShareAccess failed, returned %08lx\n", Status);
+                    goto end;
+                }
+            }
         }
 
         ctx = ExAllocatePoolWithTag(NonPagedPool, sizeof(oplock_context), ALLOC_TAG);
@@ -4192,7 +4206,16 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         ctx->fileref = fileref;
         KeInitializeEvent(&ctx->event, NotificationEvent, false);
 
-        Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, ctx, oplock_complete, NULL);
+        if (is_handle_oplock) {
+            Status = fFsRtlOplockBreakH(fcb_oplock(fileref->fcb), Irp, 0, ctx,
+                                        oplock_complete, NULL);
+        } else {
+            if (is_batch_oplock)
+                Irp->IoStatus.Information = FILE_OPBATCH_BREAK_UNDERWAY;
+
+            Status = FsRtlCheckOplock(fcb_oplock(fileref->fcb), Irp, ctx, oplock_complete, NULL);
+        }
+
         if (Status == STATUS_PENDING) {
             *opctx = ctx;
             return Status;
@@ -4201,8 +4224,27 @@ static NTSTATUS open_file2(device_extension* Vcb, ULONG RequestedDisposition, fi
         ExFreePool(ctx);
 
         if (!NT_SUCCESS(Status)) {
-            WARN("FsRtlCheckOplock returned %08lx\n", Status);
+            if (is_handle_oplock)
+                WARN("FsRtlOplockBreakH returned %08lx\n", Status);
+            else
+                WARN("FsRtlCheckOplock returned %08lx\n", Status);
+
             goto end;
+        }
+
+        if (is_batch_oplock || is_handle_oplock) {
+            if (Status == STATUS_OPLOCK_BREAK_IN_PROGRESS) {
+                Status = STATUS_SHARING_VIOLATION;
+                goto end;
+            }
+
+            Status = IoCheckShareAccess(*granted_access, IrpSp->Parameters.Create.ShareAccess,
+                                        FileObject, &fileref->fcb->share_access,
+                                        false);
+            if (!NT_SUCCESS(Status)) {
+                TRACE("IoCheckShareAccess failed, returning %08lx\n", Status);
+                goto end;
+            }
         }
 
         IoUpdateShareAccess(FileObject, &fileref->fcb->share_access);

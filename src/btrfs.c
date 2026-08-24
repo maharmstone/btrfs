@@ -99,6 +99,8 @@ tFsRtlGetNextExtraCreateParameter fFsRtlGetNextExtraCreateParameter;
 tFsRtlValidateReparsePointBuffer fFsRtlValidateReparsePointBuffer;
 tFsRtlCheckLockForOplockRequest fFsRtlCheckLockForOplockRequest;
 tFsRtlAreThereCurrentOrInProgressFileLocks fFsRtlAreThereCurrentOrInProgressFileLocks;
+tFsRtlCurrentOplockH fFsRtlCurrentOplockH;
+tFsRtlOplockBreakH fFsRtlOplockBreakH;
 bool diskacc = false;
 void *notification_entry = NULL, *notification_entry2 = NULL, *notification_entry3 = NULL;
 ERESOURCE pdo_list_lock, mapping_lock;
@@ -6410,9 +6412,17 @@ NTSTATUS __stdcall DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_S
 
         RtlInitUnicodeString(&name, L"FsRtlAreThereCurrentOrInProgressFileLocks");
         fFsRtlAreThereCurrentOrInProgressFileLocks = (tFsRtlAreThereCurrentOrInProgressFileLocks)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"FsRtlCurrentOplockH");
+        fFsRtlCurrentOplockH = (tFsRtlCurrentOplockH)MmGetSystemRoutineAddress(&name);
+
+        RtlInitUnicodeString(&name, L"FsRtlOplockBreakH");
+        fFsRtlOplockBreakH = (tFsRtlOplockBreakH)MmGetSystemRoutineAddress(&name);
     } else {
         fIoUnregisterPlugPlayNotificationEx = NULL;
         fFsRtlAreThereCurrentOrInProgressFileLocks = NULL;
+        fFsRtlCurrentOplockH = NULL;
+        fFsRtlOplockBreakH = NULL;
     }
 
     if (ver.dwMajorVersion >= 6) { // Windows Vista or above
