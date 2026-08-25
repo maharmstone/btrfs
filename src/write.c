@@ -3573,16 +3573,19 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     fcb->extents_changed = true;
                 }
 
-                fcb->inode_item.size = end;
-                fcb->inode_item_changed = true;
-                mark_fcb_dirty(fcb);
-
                 TRACE("setting size to %I64x\n", end);
 
                 TRACE("newalloc = %I64x\n", newalloc);
 
+                if (!prealloc) {
+                    fcb->inode_item.size = end;
+                    fcb->inode_item_changed = true;
+                    mark_fcb_dirty(fcb);
+
+                    fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
+                }
+
                 fcb->Header.AllocationSize.QuadPart = newalloc;
-                fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             }
         } else {
             if (end > fcb->Vcb->options.max_inline) {
@@ -3597,17 +3600,19 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     }
                 }
 
-                fcb->extents_changed = true;
-                fcb->inode_item_changed = true;
-                mark_fcb_dirty(fcb);
-
-                fcb->inode_item.size = end;
                 TRACE("setting size to %I64x\n", end);
 
                 TRACE("newalloc = %I64x\n", newalloc);
 
+                if (!prealloc) {
+                    fcb->inode_item.size = end;
+                    fcb->inode_item_changed = true;
+                    mark_fcb_dirty(fcb);
+
+                    fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
+                }
+
                 fcb->Header.AllocationSize.QuadPart = newalloc;
-                fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
             } else {
                 struct btrfs_file_extent_item* ed;
                 uint16_t edsize;
