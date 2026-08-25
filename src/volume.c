@@ -1229,20 +1229,6 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
         goto fail;
     }
 
-    memcpy(vc->uuid, sb->dev_item.uuid, BTRFS_UUID_SIZE);
-    vc->devid = sb->dev_item.devid;
-    vc->generation = sb->generation;
-    vc->notification_entry = NULL;
-    vc->boot_volume = false;
-
-    Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
-                                            drvobj, pnp_removal, pdode, &vc->notification_entry);
-    if (!NT_SUCCESS(Status))
-        WARN("IoRegisterPlugPlayNotification returned %08lx\n", Status);
-
-    vc->devobj = DeviceObject;
-    vc->fileobj = FileObject;
-
     devpath2 = *devpath;
 
     // The PNP path sometimes begins \\?\ and sometimes \??\. We need to remove this prefix
@@ -1256,13 +1242,29 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
 
     vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath2.Length;
     vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath2.Length, ALLOC_TAG);
-
-    if (vc->pnp_name.Buffer)
-        RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
-    else {
+    if (!vc->pnp_name.Buffer) {
         ERR("out of memory\n");
-        vc->pnp_name.Length = vc->pnp_name.MaximumLength = 0;
+        ExReleaseResourceLite(&pdode->child_lock);
+        ExReleaseResourceLite(&pdo_list_lock);
+        ExFreePool(vc);
+        goto fail;
     }
+
+    RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
+
+    memcpy(vc->uuid, sb->dev_item.uuid, BTRFS_UUID_SIZE);
+    vc->devid = sb->dev_item.devid;
+    vc->generation = sb->generation;
+    vc->notification_entry = NULL;
+    vc->boot_volume = false;
+
+    Status = IoRegisterPlugPlayNotification(EventCategoryTargetDeviceChange, 0, FileObject,
+                                            drvobj, pnp_removal, pdode, &vc->notification_entry);
+    if (!NT_SUCCESS(Status))
+        WARN("IoRegisterPlugPlayNotification returned %08lx\n", Status);
+
+    vc->devobj = DeviceObject;
+    vc->fileobj = FileObject;
 
     vc->size = length;
     vc->seeding = sb->flags & BTRFS_SUPER_FLAG_SEEDING ? true : false;
