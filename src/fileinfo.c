@@ -1015,6 +1015,8 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                 me->dummyfcb->deleted = me->fileref->fcb->deleted;
                 mark_fcb_dirty(me->dummyfcb);
 
+                remove_fcb_from_subvol(me->fileref->fcb);
+
                 if (!me->fileref->fcb->ads) {
                     LIST_ENTRY* le2;
 
@@ -1082,7 +1084,6 @@ static NTSTATUS move_across_subvols(file_ref* fileref, ccb* ccb, file_ref* destd
                     }
 
                     add_fcb_to_subvol(me->dummyfcb);
-                    remove_fcb_from_subvol(me->fileref->fcb);
                     add_fcb_to_subvol(me->fileref->fcb);
                 } else {
                     me->fileref->fcb->subvol = me->parent->fileref->fcb->subvol;
