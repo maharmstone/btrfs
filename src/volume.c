@@ -1152,6 +1152,35 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
         return;
     }
 
+    vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
+    if (!vc) {
+        ERR("out of memory\n");
+        ExReleaseResourceLite(&pdo_list_lock);
+        goto fail;
+    }
+
+    devpath2 = *devpath;
+
+    // The PNP path sometimes begins \\?\ and sometimes \??\. We need to remove this prefix
+    // so we can compare properly if the device is removed.
+    if (devpath->Length > 4 * sizeof(WCHAR) && devpath->Buffer[0] == '\\' && (devpath->Buffer[1] == '\\' || devpath->Buffer[1] == '?') &&
+        devpath->Buffer[2] == '?' && devpath->Buffer[3] == '\\') {
+        devpath2.Buffer = &devpath2.Buffer[3];
+        devpath2.Length -= 3 * sizeof(WCHAR);
+        devpath2.MaximumLength -= 3 * sizeof(WCHAR);
+    }
+
+    vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath2.Length;
+    vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath2.Length, ALLOC_TAG);
+    if (!vc->pnp_name.Buffer) {
+        ERR("out of memory\n");
+        ExReleaseResourceLite(&pdo_list_lock);
+        ExFreePool(vc);
+        goto fail;
+    }
+
+    RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
+
     if (!pdode) {
         if (no_pnp) {
             pdode = ExAllocatePoolWithTag(NonPagedPool, sizeof(pdo_device_extension), ALLOC_TAG);
@@ -1159,6 +1188,8 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
             if (!pdode) {
                 ERR("out of memory\n");
                 ExReleaseResourceLite(&pdo_list_lock);
+                ExFreePool(vc->pnp_name.Buffer);
+                ExFreePool(vc);
                 goto fail;
             }
 
@@ -1168,6 +1199,8 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
                 ERR("IoReportDetectedDevice returned %08lx\n", Status);
                 ExReleaseResourceLite(&pdo_list_lock);
                 ExFreePool(pdode);
+                ExFreePool(vc->pnp_name.Buffer);
+                ExFreePool(vc);
                 goto fail;
             }
         } else {
@@ -1176,6 +1209,8 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
             if (!NT_SUCCESS(Status)) {
                 ERR("IoCreateDevice returned %08lx\n", Status);
                 ExReleaseResourceLite(&pdo_list_lock);
+                ExFreePool(vc->pnp_name.Buffer);
+                ExFreePool(vc);
                 goto fail;
             }
 
@@ -1213,45 +1248,14 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
                 // duplicate, ignore
                 ExReleaseResourceLite(&pdode->child_lock);
                 ExReleaseResourceLite(&pdo_list_lock);
+                ExFreePool(vc->pnp_name.Buffer);
+                ExFreePool(vc);
                 goto fail;
             }
 
             le = le->Flink;
         }
     }
-
-    vc = ExAllocatePoolWithTag(PagedPool, sizeof(volume_child), ALLOC_TAG);
-    if (!vc) {
-        ERR("out of memory\n");
-
-        ExReleaseResourceLite(&pdode->child_lock);
-        ExReleaseResourceLite(&pdo_list_lock);
-
-        goto fail;
-    }
-
-    devpath2 = *devpath;
-
-    // The PNP path sometimes begins \\?\ and sometimes \??\. We need to remove this prefix
-    // so we can compare properly if the device is removed.
-    if (devpath->Length > 4 * sizeof(WCHAR) && devpath->Buffer[0] == '\\' && (devpath->Buffer[1] == '\\' || devpath->Buffer[1] == '?') &&
-        devpath->Buffer[2] == '?' && devpath->Buffer[3] == '\\') {
-        devpath2.Buffer = &devpath2.Buffer[3];
-        devpath2.Length -= 3 * sizeof(WCHAR);
-        devpath2.MaximumLength -= 3 * sizeof(WCHAR);
-    }
-
-    vc->pnp_name.Length = vc->pnp_name.MaximumLength = devpath2.Length;
-    vc->pnp_name.Buffer = ExAllocatePoolWithTag(PagedPool, devpath2.Length, ALLOC_TAG);
-    if (!vc->pnp_name.Buffer) {
-        ERR("out of memory\n");
-        ExReleaseResourceLite(&pdode->child_lock);
-        ExReleaseResourceLite(&pdo_list_lock);
-        ExFreePool(vc);
-        goto fail;
-    }
-
-    RtlCopyMemory(vc->pnp_name.Buffer, devpath2.Buffer, devpath2.Length);
 
     memcpy(vc->uuid, sb->dev_item.uuid, BTRFS_UUID_SIZE);
     vc->devid = sb->dev_item.devid;
