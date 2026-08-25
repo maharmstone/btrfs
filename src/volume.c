@@ -1154,20 +1154,21 @@ void add_volume_device(struct btrfs_super_block* sb, PUNICODE_STRING devpath, ui
 
     if (!pdode) {
         if (no_pnp) {
-            Status = IoReportDetectedDevice(drvobj, InterfaceTypeUndefined, 0xFFFFFFFF, 0xFFFFFFFF, NULL, NULL, 0, &pdo);
-
-            if (!NT_SUCCESS(Status)) {
-                ERR("IoReportDetectedDevice returned %08lx\n", Status);
-                ExReleaseResourceLite(&pdo_list_lock);
-                return;
-            }
-
             pdode = ExAllocatePoolWithTag(NonPagedPool, sizeof(pdo_device_extension), ALLOC_TAG);
 
             if (!pdode) {
                 ERR("out of memory\n");
                 ExReleaseResourceLite(&pdo_list_lock);
-                return;
+                goto fail;
+            }
+
+            Status = IoReportDetectedDevice(drvobj, InterfaceTypeUndefined, 0xFFFFFFFF, 0xFFFFFFFF, NULL, NULL, 0, &pdo);
+
+            if (!NT_SUCCESS(Status)) {
+                ERR("IoReportDetectedDevice returned %08lx\n", Status);
+                ExReleaseResourceLite(&pdo_list_lock);
+                ExFreePool(pdode);
+                goto fail;
             }
         } else {
             Status = IoCreateDevice(drvobj, sizeof(pdo_device_extension), NULL, FILE_DEVICE_DISK,
