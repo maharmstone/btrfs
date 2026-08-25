@@ -175,6 +175,12 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         goto end;
     }
 
+    if (fbi->CreationTime.QuadPart < -2 || fbi->LastAccessTime.QuadPart < -2 ||
+        fbi->LastWriteTime.QuadPart < -2 || fbi->ChangeTime.QuadPart < -2) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
     if (fcb->inode == BTRFS_FIRST_FREE_OBJECTID && is_subvol_readonly(fcb->subvol, Irp) &&
         (fbi->FileAttributes == 0 || fbi->FileAttributes & FILE_ATTRIBUTE_READONLY)) {
         Status = STATUS_ACCESS_DENIED;
@@ -188,21 +194,9 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         goto end;
     }
 
-    // times of -2 are some sort of undocumented behaviour to do with LXSS
-
     if (fbi->CreationTime.QuadPart == -2)
-        fbi->CreationTime.QuadPart = 0;
-
-    if (fbi->LastAccessTime.QuadPart == -2)
-        fbi->LastAccessTime.QuadPart = 0;
-
-    if (fbi->LastWriteTime.QuadPart == -2)
-        fbi->LastWriteTime.QuadPart = 0;
-
-    if (fbi->ChangeTime.QuadPart == -2)
-        fbi->ChangeTime.QuadPart = 0;
-
-    if (fbi->CreationTime.QuadPart == -1)
+        ccb->user_set_creation_time = false;
+    else if (fbi->CreationTime.QuadPart == -1)
         ccb->user_set_creation_time = true;
     else if (fbi->CreationTime.QuadPart != 0) {
         win_time_to_unix(fbi->CreationTime, &fcb->inode_item.otime);
@@ -212,7 +206,9 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         ccb->user_set_creation_time = true;
     }
 
-    if (fbi->LastAccessTime.QuadPart == -1)
+    if (fbi->LastAccessTime.QuadPart == -2)
+        ccb->user_set_access_time = false;
+    else if (fbi->LastAccessTime.QuadPart == -1)
         ccb->user_set_access_time = true;
     else if (fbi->LastAccessTime.QuadPart != 0) {
         win_time_to_unix(fbi->LastAccessTime, &fcb->inode_item.atime);
@@ -222,7 +218,9 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         ccb->user_set_access_time = true;
     }
 
-    if (fbi->LastWriteTime.QuadPart == -1)
+    if (fbi->LastWriteTime.QuadPart == -2)
+        ccb->user_set_write_time = false;
+    else if (fbi->LastWriteTime.QuadPart == -1)
         ccb->user_set_write_time = true;
     else if (fbi->LastWriteTime.QuadPart != 0) {
         win_time_to_unix(fbi->LastWriteTime, &fcb->inode_item.mtime);
@@ -232,7 +230,9 @@ static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJ
         ccb->user_set_write_time = true;
     }
 
-    if (fbi->ChangeTime.QuadPart == -1)
+    if (fbi->ChangeTime.QuadPart == -2)
+        ccb->user_set_change_time = false;
+    else if (fbi->ChangeTime.QuadPart == -1)
         ccb->user_set_change_time = true;
     else if (fbi->ChangeTime.QuadPart != 0) {
         win_time_to_unix(fbi->ChangeTime, &fcb->inode_item.ctime);
