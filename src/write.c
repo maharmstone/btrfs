@@ -4272,6 +4272,8 @@ static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
                                 uint8_t* compress_type, unsigned int* inline_len) {
     NTSTATUS Status;
     uint8_t type;
+    unsigned int space_left;
+    uint8_t* scratch;
 
     if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
         type = fcb->Vcb->options.compress_type;
@@ -4288,24 +4290,41 @@ static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
             type = BTRFS_COMPRESS_ZLIB;
     }
 
-    switch (type) {
-        case BTRFS_COMPRESS_ZSTD: {
-            unsigned int space_left;
-            uint8_t* scratch;
+    scratch = ExAllocatePoolWithTag(PagedPool, length, ALLOC_TAG);
+    if (!scratch) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
-            scratch = ExAllocatePoolWithTag(PagedPool, length, ALLOC_TAG);
-            if (!scratch) {
-                ERR("out of memory\n");
-                return STATUS_INSUFFICIENT_RESOURCES;
+    switch (type) {
+        case BTRFS_COMPRESS_ZLIB:
+            Status = zlib_compress(buf, length, scratch, length,
+                                   fcb->Vcb->options.zlib_level, &space_left);
+            if (!NT_SUCCESS(Status)) {
+                ERR("zlib_compress returned %08lx\n", Status);
+                break;
             }
 
+            if (space_left == 0) { // incompressible
+                *inline_len = length;
+                *compress_type = BTRFS_COMPRESS_NONE;
+            } else {
+                *inline_len = length - space_left;
+                RtlCopyMemory(buf, scratch, *inline_len);
+                *compress_type = BTRFS_COMPRESS_ZLIB;
+            }
+
+            Status = STATUS_SUCCESS;
+
+            break;
+
+        case BTRFS_COMPRESS_ZSTD:
             Status = zstd_compress(buf, length, scratch, length,
                                    fcb->Vcb->options.zstd_level,
-                                    &space_left);
+                                   &space_left);
             if (!NT_SUCCESS(Status)) {
                 ERR("zstd_compress returned %08lx\n", Status);
-                ExFreePool(scratch);
-                return Status;
+                break;
             }
 
             if (space_left == 0) { // incompressible
@@ -4317,19 +4336,21 @@ static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
                 *compress_type = BTRFS_COMPRESS_ZSTD;
             }
 
-            ExFreePool(scratch);
+            Status = STATUS_SUCCESS;
 
             break;
-        }
 
         default:
             // FIXME
             *inline_len = length;
             *compress_type = BTRFS_COMPRESS_NONE;
+            Status = STATUS_SUCCESS;
             break;
     }
 
-    return STATUS_SUCCESS;
+    ExFreePool(scratch);
+
+    return Status;
 }
 
 __attribute__((nonnull(1,2,4,5,11)))
