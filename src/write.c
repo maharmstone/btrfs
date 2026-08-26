@@ -4314,7 +4314,23 @@ static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
                 *compress_type = BTRFS_COMPRESS_ZLIB;
             }
 
-            Status = STATUS_SUCCESS;
+            break;
+
+        case BTRFS_COMPRESS_LZO:
+            Status = lzo_compress(buf, length, scratch, length, &space_left);
+            if (!NT_SUCCESS(Status)) {
+                ERR("lzo_compress returned %08lx\n", Status);
+                break;
+            }
+
+            if (space_left == 0) { // incompressible
+                *inline_len = length;
+                *compress_type = BTRFS_COMPRESS_NONE;
+            } else {
+                *inline_len = length - space_left;
+                RtlCopyMemory(buf, scratch, *inline_len);
+                *compress_type = BTRFS_COMPRESS_LZO;
+            }
 
             break;
 
@@ -4336,15 +4352,6 @@ static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
                 *compress_type = BTRFS_COMPRESS_ZSTD;
             }
 
-            Status = STATUS_SUCCESS;
-
-            break;
-
-        default:
-            // FIXME
-            *inline_len = length;
-            *compress_type = BTRFS_COMPRESS_NONE;
-            Status = STATUS_SUCCESS;
             break;
     }
 
