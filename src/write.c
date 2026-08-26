@@ -4268,6 +4268,70 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
+                                uint8_t* compress_type, unsigned int* inline_len) {
+    NTSTATUS Status;
+    uint8_t type;
+
+    if (fcb->Vcb->options.compress_type != 0 && fcb->prop_compression == PropCompression_None)
+        type = fcb->Vcb->options.compress_type;
+    else {
+        if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD) && fcb->prop_compression == PropCompression_ZSTD)
+            type = BTRFS_COMPRESS_ZSTD;
+        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_ZSTD && fcb->prop_compression != PropCompression_Zlib && fcb->prop_compression != PropCompression_LZO)
+            type = BTRFS_COMPRESS_ZSTD;
+        else if (!(fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO) && fcb->prop_compression == PropCompression_LZO)
+            type = BTRFS_COMPRESS_LZO;
+        else if (fcb->Vcb->superblock.incompat_flags & BTRFS_FEATURE_INCOMPAT_COMPRESS_LZO && fcb->prop_compression != PropCompression_Zlib)
+            type = BTRFS_COMPRESS_LZO;
+        else
+            type = BTRFS_COMPRESS_ZLIB;
+    }
+
+    switch (type) {
+        case BTRFS_COMPRESS_ZSTD: {
+            unsigned int space_left;
+            uint8_t* scratch;
+
+            scratch = ExAllocatePoolWithTag(PagedPool, length, ALLOC_TAG);
+            if (!scratch) {
+                ERR("out of memory\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            Status = zstd_compress(buf, length, scratch, length,
+                                   fcb->Vcb->options.zstd_level,
+                                    &space_left);
+            if (!NT_SUCCESS(Status)) {
+                ERR("zstd_compress returned %08lx\n", Status);
+                ExFreePool(scratch);
+                return Status;
+            }
+
+            if (space_left == 0) { // incompressible
+                *inline_len = length;
+                *compress_type = BTRFS_COMPRESS_NONE;
+            } else {
+                *inline_len = length - space_left;
+                RtlCopyMemory(buf, scratch, *inline_len);
+                *compress_type = BTRFS_COMPRESS_ZSTD;
+            }
+
+            ExFreePool(scratch);
+
+            break;
+        }
+
+        default:
+            // FIXME
+            *inline_len = length;
+            *compress_type = BTRFS_COMPRESS_NONE;
+            break;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 __attribute__((nonnull(1,2,4,5,11)))
 NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void* buf, ULONG* length, bool paging_io, bool no_cache,
                      bool wait, bool deferred_write, bool write_irp, LIST_ENTRY* rollback) {
@@ -4535,6 +4599,8 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
     } else {
         bool compress = write_fcb_compressed(fcb), no_buf = false;
         uint8_t* data;
+        uint8_t compress_type;
+        unsigned int inline_len;
 
         if (make_inline) {
             start_data = 0;
@@ -4590,6 +4656,20 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             }
 
             RtlCopyMemory(data + bufhead + off64 - start_data, buf, *length);
+
+            if (make_inline) {
+                if (compress) {
+                    Status = compress_inline(fcb, data + bufhead, newlength,
+                                             &compress_type, &inline_len);
+                    if (!NT_SUCCESS(Status)) {
+                        ExFreePool(data);
+                        goto end;
+                    }
+                } else {
+                    compress_type = BTRFS_COMPRESS_NONE;
+                    inline_len = newlength;
+                }
+            }
         }
 
         if (make_inline) {
@@ -4603,12 +4683,13 @@ NTSTATUS write_file2(device_extension* Vcb, PIRP Irp, LARGE_INTEGER offset, void
             ed2 = (struct btrfs_file_extent_item*)data;
             ed2->generation = fcb->Vcb->superblock.generation;
             ed2->ram_bytes = newlength;
-            ed2->compression = BTRFS_COMPRESS_NONE;
+            ed2->compression = compress_type;
             ed2->encryption = 0;
             ed2->other_encoding = 0;
             ed2->type = BTRFS_FILE_EXTENT_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + newlength), false, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed2, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + inline_len),
+                                       false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(data);
