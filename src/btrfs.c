@@ -4495,12 +4495,10 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
                 if (pdode->num_children == 0) {
                     ERR("error - number of devices is zero\n");
                     Status = STATUS_INTERNAL_ERROR;
-                    ExReleaseResourceLite(&pdode->child_lock);
                     goto exit;
                 }
 
                 Status = STATUS_DEVICE_NOT_READY;
-                ExReleaseResourceLite(&pdode->child_lock);
                 goto exit;
             }
 
