@@ -1627,7 +1627,7 @@ extern "C" void CALLBACK ReflinkCopyW(HWND, HINSTANCE, LPWSTR lpszCmdLine, int) 
                 destdir = L"";
                 destname = dest;
             } else {
-                destdir = dest.substr(0, found);
+                destdir = dest.substr(0, found + 1);
                 destname = dest.substr(found + 1);
             }
         }
