@@ -4062,7 +4062,7 @@ static NTSTATUS set_valid_data_length_information(device_extension* Vcb, PIRP Ir
         goto end;
     }
 
-    if (fvdli->ValidDataLength.QuadPart <= fcb->Header.ValidDataLength.QuadPart || fvdli->ValidDataLength.QuadPart > fcb->Header.FileSize.QuadPart) {
+    if (fvdli->ValidDataLength.QuadPart < fcb->Header.ValidDataLength.QuadPart || fvdli->ValidDataLength.QuadPart > fcb->Header.FileSize.QuadPart) {
         TRACE("invalid VDL of %I64u (current VDL = %I64u, file size = %I64u)\n", fvdli->ValidDataLength.QuadPart,
               fcb->Header.ValidDataLength.QuadPart, fcb->Header.FileSize.QuadPart);
         Status = STATUS_INVALID_PARAMETER;
