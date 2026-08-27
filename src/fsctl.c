@@ -3276,6 +3276,7 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     LARGE_INTEGER time;
     struct btrfs_timespec now;
     bool make_inline;
+    HANDLE file_handle;
 
     if (!ded || datalen < sizeof(DUPLICATE_EXTENTS_DATA))
         return STATUS_BUFFER_TOO_SMALL;
@@ -3300,7 +3301,16 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
     if (!fcb->ads && fcb->type != BTRFS_FT_REG_FILE && fcb->type != BTRFS_FT_SYMLINK)
         return STATUS_INVALID_PARAMETER;
 
-    Status = ObReferenceObjectByHandle(ded->FileHandle, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&sourcefo, NULL);
+    // The VFS doesn't translate the HANDLE for us. Called from 32-bit userspace,
+    // we're given a 32-bit HANDLE followed by 32 bits of padding.
+#ifdef _WIN64
+    if (IoIs32bitProcess(Irp))
+        file_handle = LongToHandle(((DUPLICATE_EXTENTS_DATA32*)data)->FileHandle);
+    else
+#endif
+        file_handle = ded->FileHandle;
+
+    Status = ObReferenceObjectByHandle(file_handle, 0, *IoFileObjectType, Irp->RequestorMode, (void**)&sourcefo, NULL);
     if (!NT_SUCCESS(Status)) {
         ERR("ObReferenceObjectByHandle returned %08lx\n", Status);
         return Status;
