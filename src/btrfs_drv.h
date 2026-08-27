@@ -1320,6 +1320,8 @@ void get_raid56_lock_range(chunk* c, uint64_t address, uint64_t length, uint64_t
 NTSTATUS add_extent_to_fcb(_In_ fcb* fcb, _In_ uint64_t offset, _In_reads_bytes_(edsize) struct btrfs_file_extent_item* ed, _In_ uint16_t edsize,
                            _In_ bool unique, _In_opt_ _When_(return >= 0, __drv_aliasesMem) void* csum, _In_ LIST_ENTRY* rollback) __attribute__((nonnull(1,3)));
 void add_extent(_In_ fcb* fcb, _In_ LIST_ENTRY* prevextle, _In_ __drv_aliasesMem extent* newext) __attribute__((nonnull(1,2,3)));
+NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
+                         uint8_t* compress_type, unsigned int* inline_len);
 
 // in dirctrl.c
 

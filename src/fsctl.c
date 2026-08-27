@@ -1849,7 +1849,8 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, uint64_t start, uint6
     RtlZeroMemory(data + buf_head + start - start_data, (ULONG)length);
 
     if (make_inline) {
-        uint16_t edsize;
+        uint8_t compress_type;
+        unsigned int inline_len;
         struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)data;
 
         Status = excise_extents(Vcb, fcb, 0, sector_align(end_data, Vcb->superblock.sectorsize), Irp, rollback);
@@ -1859,16 +1860,29 @@ static NTSTATUS zero_data(device_extension* Vcb, fcb* fcb, uint64_t start, uint6
             return Status;
         }
 
-        edsize = (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end_data);
+        if (write_fcb_compressed(fcb)) {
+            Status = compress_inline(fcb, data + offsetof(struct btrfs_file_extent_item, disk_bytenr),
+                                     end_data, &compress_type, &inline_len);
+            if (!NT_SUCCESS(Status)) {
+                ERR("compress_inline returned %08lx\n", Status);
+                ExFreePool(data);
+                return Status;
+            }
+        } else {
+            compress_type = BTRFS_COMPRESS_NONE;
+            inline_len = end_data;
+        }
 
         ed->generation = Vcb->superblock.generation;
         ed->ram_bytes = end_data;
-        ed->compression = BTRFS_COMPRESS_NONE;
+        ed->compression = compress_type;
         ed->encryption = 0;
         ed->other_encoding = 0;
         ed->type = BTRFS_FILE_EXTENT_INLINE;
 
-        Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, rollback);
+        Status = add_extent_to_fcb(fcb, 0, ed,
+                                   offsetof(struct btrfs_file_extent_item, disk_bytenr) + inline_len,
+                                   false, NULL, rollback);
         if (!NT_SUCCESS(Status)) {
             ERR("add_extent_to_fcb returned %08lx\n", Status);
             ExFreePool(data);

@@ -30,9 +30,6 @@ static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIR
 
 static NTSTATUS remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2)));
 
-static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
-                                uint8_t* compress_type, unsigned int* inline_len);
-
 extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
 extern tCcCopyWriteEx fCcCopyWriteEx;
 extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
@@ -4323,8 +4320,8 @@ nextitem:
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
-                                uint8_t* compress_type, unsigned int* inline_len) {
+NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
+                         uint8_t* compress_type, unsigned int* inline_len) {
     NTSTATUS Status;
     uint8_t type;
     unsigned int space_left;
