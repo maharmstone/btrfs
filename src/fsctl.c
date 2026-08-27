@@ -3455,7 +3455,8 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                               (USHORT)min((uint64_t)ded->ByteCount.QuadPart, (uint64_t)(fcb->adsdata.Length - ded->TargetFileOffset.QuadPart)));
             }
         } else if (make_inline) {
-            uint16_t edsize;
+            uint8_t compress_type;
+            unsigned int inline_len;
             struct btrfs_file_extent_item* ed;
 
             Status = excise_extents(Vcb, fcb, 0, sector_align(fcb->inode_item.size, Vcb->superblock.sectorsize), Irp, &rollback);
@@ -3465,9 +3466,8 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 goto end;
             }
 
-            edsize = (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + datalen2);
-
-            ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
+            ed = ExAllocatePoolWithTag(PagedPool, offsetof(struct btrfs_file_extent_item, disk_bytenr) + datalen2,
+                                       ALLOC_TAG);
             if (!ed) {
                 ERR("out of memory\n");
                 ExFreePool(data2);
@@ -3475,16 +3475,32 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                 goto end;
             }
 
+            RtlCopyMemory(&ed->disk_bytenr, data2, datalen2);
+
+            if (write_fcb_compressed(fcb)) {
+                Status = compress_inline(fcb, (uint8_t*)ed + offsetof(struct btrfs_file_extent_item, disk_bytenr),
+                                         datalen2, &compress_type, &inline_len);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("compress_inline returned %08lx\n", Status);
+                    ExFreePool(ed);
+                    ExFreePool(data2);
+                    goto end;
+                }
+            } else {
+                compress_type = BTRFS_COMPRESS_NONE;
+                inline_len = datalen2;
+            }
+
             ed->generation = Vcb->superblock.generation;
             ed->ram_bytes = fcb->inode_item.size;
-            ed->compression = BTRFS_COMPRESS_NONE;
+            ed->compression = compress_type;
             ed->encryption = 0;
             ed->other_encoding = 0;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 
-            RtlCopyMemory(&ed->disk_bytenr, data2, datalen2);
-
-            Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, &rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed,
+                                       offsetof(struct btrfs_file_extent_item, disk_bytenr) + inline_len,
+                                       false, NULL, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(data2);
