@@ -296,6 +296,13 @@ There's no mapping between Windows and POSIX permission models, they're too
 different for this to be practical. If this bothers you, you can create a
 Windows ACL on files that you don't want to be able to edit.
 
+* I can't see my volume in Disk Management / diskmgmt.msc
+
+No, sorry, you can't. We use a fake block device so that RAID works properly,
+and diskmgmt doesn't know anything about this. Your volume should appear in
+Explorer, and you can use the property sheet to change the drive letter if you
+wish.
+
 Changelog
 ---------
 
