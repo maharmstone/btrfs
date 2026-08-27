@@ -4487,7 +4487,7 @@ static NTSTATUS mount_vol(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp) {
         while (le != &pdode->children) {
             LIST_ENTRY* le2 = le->Flink;
 
-            vc = CONTAINING_RECORD(pdode->children.Flink, volume_child, list_entry);
+            vc = CONTAINING_RECORD(le, volume_child, list_entry);
 
             if (!still_has_superblock(vc->devobj, vc->fileobj)) {
                 remove_volume_child(vde, vc, false);
