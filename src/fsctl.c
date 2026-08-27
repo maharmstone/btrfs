@@ -3503,9 +3503,12 @@ static NTSTATUS duplicate_extents(device_extension* Vcb, PFILE_OBJECT FileObject
                                        false, NULL, &rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
+                ExFreePool(ed);
                 ExFreePool(data2);
                 goto end;
             }
+
+            ExFreePool(ed);
 
             fcb->inode_item.nbytes += datalen2;
         } else {
