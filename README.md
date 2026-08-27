@@ -123,10 +123,6 @@ pnputil /delete-driver oemNN.inf /uninstall /force
 ```
 ...and reboot.
 
-You can also go to Device Manager, find "Btrfs controller" under
-"Storage volumes", right click and choose "Uninstall". Tick the checkbox to
-uninstall the driver as well, and let Windows reboot itself.
-
 If you need to uninstall via the registry, open regedit and set the value of
 HKLM\SYSTEM\CurrentControlSet\services\btrfs\Start to 4, to disable the service.
 After you reboot, you can then delete the btrfs key and remove
