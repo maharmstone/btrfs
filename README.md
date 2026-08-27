@@ -147,10 +147,12 @@ name of your Windows SID (e.g. S-1-5-21-1379886684-2432464051-424789967-1001),
 and the value of your Linux uid (e.g. 1000). It will take effect next time the
 driver is loaded.
 
-You can find your current SID by running `wmic useraccount get name,sid`.
+You can find your current SID by running `whoami /user`.
 
-Similarly, the group mappings are stored in under GroupMappings. The default
-entry maps Windows' Users group to gid 100, which is usually "users" on Linux.
+Similarly, the group mappings are stored in under GroupMappings. You can find
+your group SIDs by running `whoami /groups`. The default entry maps Windows'
+Users group to gid 100, which is usually "users" on Linux.
+
 You can also specify user SIDs here to force files created by a user to belong
 to a certain group. The setgid flag also works as on Linux.
 
