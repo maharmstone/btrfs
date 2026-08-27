@@ -30,6 +30,9 @@ static NTSTATUS __stdcall write_data_completion(PDEVICE_OBJECT DeviceObject, PIR
 
 static NTSTATUS remove_fcb_extent(fcb* fcb, extent* ext, LIST_ENTRY* rollback) __attribute__((nonnull(1, 2)));
 
+static NTSTATUS compress_inline(fcb* fcb, uint8_t* buf, unsigned int length,
+                                uint8_t* compress_type, unsigned int* inline_len);
+
 extern tPsUpdateDiskCounters fPsUpdateDiskCounters;
 extern tCcCopyWriteEx fCcCopyWriteEx;
 extern tFsRtlUpdateDiskCounters fFsRtlUpdateDiskCounters;
@@ -3367,16 +3370,32 @@ NTSTATUS truncate_file(fcb* fcb, uint64_t end, PIRP Irp, LIST_ENTRY* rollback) {
                 return Status;
             }
         } else {
+            uint8_t compress_type;
+            unsigned int inline_len;
             struct btrfs_file_extent_item* ed = (struct btrfs_file_extent_item*)buf;
+
+            if (write_fcb_compressed(fcb)) {
+                Status = compress_inline(fcb, buf + offsetof(struct btrfs_file_extent_item, disk_bytenr),
+                                         end, &compress_type, &inline_len);
+                if (!NT_SUCCESS(Status)) {
+                    ERR("compress_inline returned %08lx\n", Status);
+                    ExFreePool(buf);
+                    return Status;
+                }
+            } else {
+                compress_type = BTRFS_COMPRESS_NONE;
+                inline_len = end;
+            }
 
             ed->generation = fcb->Vcb->superblock.generation;
             ed->ram_bytes = end;
-            ed->compression = BTRFS_COMPRESS_NONE;
+            ed->compression = compress_type;
             ed->encryption = 0;
             ed->other_encoding = 0;
             ed->type = BTRFS_FILE_EXTENT_INLINE;
 
-            Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end), false, NULL, rollback);
+            Status = add_extent_to_fcb(fcb, 0, ed, (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + inline_len),
+                                       false, NULL, rollback);
             if (!NT_SUCCESS(Status)) {
                 ERR("add_extent_to_fcb returned %08lx\n", Status);
                 ExFreePool(buf);
