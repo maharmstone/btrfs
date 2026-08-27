@@ -3524,6 +3524,9 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 uint16_t edsize;
 
                 if (end > oldalloc) {
+                    uint8_t compress_type;
+                    unsigned int inline_len;
+
                     edsize = (uint16_t)(offsetof(struct btrfs_file_extent_item, disk_bytenr) + end - ext->offset);
                     ed = ExAllocatePoolWithTag(PagedPool, edsize, ALLOC_TAG);
 
@@ -3531,13 +3534,6 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                         ERR("out of memory\n");
                         return STATUS_INSUFFICIENT_RESOURCES;
                     }
-
-                    ed->generation = fcb->Vcb->superblock.generation;
-                    ed->ram_bytes = end - ext->offset;
-                    ed->compression = BTRFS_COMPRESS_NONE;
-                    ed->encryption = 0;
-                    ed->other_encoding = 0;
-                    ed->type = BTRFS_FILE_EXTENT_INLINE;
 
                     Status = read_file(fcb, (uint8_t*)&ed->disk_bytenr, ext->offset, oldalloc, NULL, Irp);
                     if (!NT_SUCCESS(Status)) {
@@ -3548,13 +3544,36 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                     RtlZeroMemory((uint8_t*)&ed->disk_bytenr + oldalloc - ext->offset, (ULONG)(end - oldalloc));
 
+                    if (write_fcb_compressed(fcb)) {
+                        Status = compress_inline(fcb, (uint8_t*)ed + offsetof(struct btrfs_file_extent_item, disk_bytenr),
+                                                 end - ext->offset, &compress_type,
+                                                 &inline_len);
+                        if (!NT_SUCCESS(Status)) {
+                            ERR("compress_inline returned %08lx\n", Status);
+                            ExFreePool(ed);
+                            return Status;
+                        }
+                    } else {
+                        compress_type = BTRFS_COMPRESS_NONE;
+                        inline_len = end - ext->offset;
+                    }
+
+                    ed->generation = fcb->Vcb->superblock.generation;
+                    ed->ram_bytes = end - ext->offset;
+                    ed->compression = compress_type;
+                    ed->encryption = 0;
+                    ed->other_encoding = 0;
+                    ed->type = BTRFS_FILE_EXTENT_INLINE;
+
                     Status = remove_fcb_extent(fcb, ext, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ExFreePool(ed);
                         return Status;
                     }
 
-                    Status = add_extent_to_fcb(fcb, ext->offset, ed, edsize, ext->unique, NULL, rollback);
+                    Status = add_extent_to_fcb(fcb, ext->offset, ed,
+                                               offsetof(struct btrfs_file_extent_item, disk_bytenr) + inline_len,
+                                               ext->unique, NULL, rollback);
                     if (!NT_SUCCESS(Status)) {
                         ERR("add_extent_to_fcb returned %08lx\n", Status);
                         ExFreePool(ed);
@@ -3633,6 +3652,8 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
 
                 fcb->Header.AllocationSize.QuadPart = newalloc;
             } else {
+                uint8_t compress_type;
+                unsigned int inline_len;
                 struct btrfs_file_extent_item* ed;
                 uint16_t edsize;
 
@@ -3644,16 +3665,31 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                     return STATUS_INSUFFICIENT_RESOURCES;
                 }
 
+                RtlZeroMemory(&ed->disk_bytenr, (ULONG)end);
+
+                if (write_fcb_compressed(fcb)) {
+                    Status = compress_inline(fcb, (uint8_t*)ed + offsetof(struct btrfs_file_extent_item, disk_bytenr),
+                                             end, &compress_type, &inline_len);
+                    if (!NT_SUCCESS(Status)) {
+                        ERR("compress_inline returned %08lx\n", Status);
+                        ExFreePool(ed);
+                        return Status;
+                    }
+                } else {
+                    compress_type = BTRFS_COMPRESS_NONE;
+                    inline_len = end;
+                }
+
                 ed->generation = fcb->Vcb->superblock.generation;
                 ed->ram_bytes = end;
-                ed->compression = BTRFS_COMPRESS_NONE;
+                ed->compression = compress_type;
                 ed->encryption = 0;
                 ed->other_encoding = 0;
                 ed->type = BTRFS_FILE_EXTENT_INLINE;
 
-                RtlZeroMemory(&ed->disk_bytenr, (ULONG)end);
-
-                Status = add_extent_to_fcb(fcb, 0, ed, edsize, false, NULL, rollback);
+                Status = add_extent_to_fcb(fcb, 0, ed,
+                                           offsetof(struct btrfs_file_extent_item, disk_bytenr) + inline_len,
+                                           false, NULL, rollback);
                 if (!NT_SUCCESS(Status)) {
                     ERR("add_extent_to_fcb returned %08lx\n", Status);
                     ExFreePool(ed);
