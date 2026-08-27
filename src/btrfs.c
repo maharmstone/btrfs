@@ -642,7 +642,7 @@ static void calculate_total_space(_In_ device_extension* Vcb, _Out_ uint64_t* to
         dfactor = 1;
     }
 
-    sectors_used = (Vcb->superblock.bytes_used >> Vcb->sector_shift) * nfactor / dfactor;
+    sectors_used = Vcb->superblock.bytes_used >> Vcb->sector_shift;
 
     *totalsize = (Vcb->superblock.total_bytes >> Vcb->sector_shift) * nfactor / dfactor;
     *freespace = sectors_used > *totalsize ? 0 : (*totalsize - sectors_used);
