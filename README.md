@@ -303,6 +303,13 @@ and diskmgmt doesn't know anything about this. Your volume should appear in
 Explorer, and you can use the property sheet to change the drive letter if you
 wish.
 
+* I have an ARM laptop and it won't let me install
+
+ARM seems to be funny in that requires you to be in test mode to install the
+driver, but not to use it otherwise. From an elevated command prompt, run
+`bcdedit /set testsigning on` and reboot, then try again. You can turn test
+mode off again afterwards: `bcdedit /set testsigning off`.
+
 Changelog
 ---------
 
