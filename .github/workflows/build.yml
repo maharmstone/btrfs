@@ -2,6 +2,8 @@ name: build
 on: [push]
 env:
    PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/etc/eselect/wine/bin
+   PKCS11CERT: 'pkcs11:model=cryptoCertum%203.5;manufacturer=Certum%20common%20profile%20v.1;serial=4104172474395433;token=profil%20standardowy;id=%AE%02%5B%6F%A9%52%9E%BF%25%CD%66%83%10%61%38%BA%97%7A%4B%2C;object=Open%20Source%20Developer%20Mark%20Harmstone;type=cert'
+   PKCS11KEY: 'pkcs11:model=cryptoCertum%203.5;manufacturer=Certum%20common%20profile%20v.1;serial=4104172474395433;token=profil%20standardowy;id=%AE%02%5B%6F%A9%52%9E%BF%25%CD%66%83%10%61%38%BA%97%7A%4B%2C;object=Open%20Source%20Developer%20Mark%20Harmstone;type=private'
 jobs:
   cmake:
     runs-on: msvc-wine
@@ -40,13 +42,11 @@ jobs:
       - run: cd build/debug && makecat ../../${SHORT_SHA}/src/btrfs.cdf
       - run: cd build/release && makecat ../../${SHORT_SHA}/src/btrfs.cdf
       - env:
-          PKCS11CERT: ${{ secrets.PKCS11CERT }}
-          PKCS11KEY: ${{ secrets.PKCS11KEY }}
-        run: for i in build/{debug,release}/btrfs.cat; do osslsigncode sign -pkcs11module /usr/lib64/libcrypto3PKCS.so -pkcs11cert "${PKCS11CERT}" -key "${PKCS11KEY}" -certs ${SHORT_SHA}/ci/codesigning-chain.pem -ts http://timestamp.digicert.com -in $i -out tmp && mv tmp $i; done
+          PIN: ${{ secrets.PIN }}
+        run: for i in build/{debug,release}/btrfs.cat; do osslsigncode sign -pkcs11module /usr/lib64/libcrypto3PKCS.so -pkcs11cert "${PKCS11CERT}" -key "${PKCS11KEY}?pin-value=${PIN}" -certs ${SHORT_SHA}/ci/codesigning-chain.pem -ts http://timestamp.digicert.com -in $i -out tmp && mv tmp $i; done
       - env:
-          PKCS11CERT: ${{ secrets.PKCS11CERT }}
-          PKCS11KEY: ${{ secrets.PKCS11KEY }}
-        run: for i in build/{debug,release}/{amd64,x86,aarch64,arm}/{btrfs.sys,mkbtrfs.exe,shellbtrfs.dll,ubtrfs.dll}; do osslsigncode sign -pkcs11module /usr/lib64/libcrypto3PKCS.so -pkcs11cert "${PKCS11CERT}" -key "${PKCS11KEY}" -certs ${SHORT_SHA}/ci/codesigning-chain.pem -ts http://timestamp.digicert.com -ph -in $i -out tmp && mv tmp $i; done
+          PIN: ${{ secrets.PIN }}
+        run: for i in build/{debug,release}/{amd64,x86,aarch64,arm}/{btrfs.sys,mkbtrfs.exe,shellbtrfs.dll,ubtrfs.dll}; do osslsigncode sign -pkcs11module /usr/lib64/libcrypto3PKCS.so -pkcs11cert "${PKCS11CERT}" -key "${PKCS11KEY}?pin-value=${PIN}" -certs ${SHORT_SHA}/ci/codesigning-chain.pem -ts http://timestamp.digicert.com -ph -in $i -out tmp && mv tmp $i; done
       - uses: actions/upload-artifact@v3
         with:
           name: ${{ github.sha }}
