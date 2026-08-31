@@ -723,6 +723,7 @@ clearcache:
 
 static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
     struct btrfs_key searchkey;
+    struct btrfs_free_space_info* fsi;
     traverse_ptr tp, next_tp;
     NTSTATUS Status;
     ULONG* bmparr = NULL;
@@ -753,6 +754,11 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
         WARN("(%I64x,%x,%I64x) was %u bytes, expected %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, sizeof(struct btrfs_free_space_info));
         return STATUS_NOT_FOUND;
     }
+
+    fsi = (struct btrfs_free_space_info*)tp.item->data;
+
+    if (fsi->flags & BTRFS_FREE_SPACE_USING_BITMAPS)
+        c->using_fst_bitmaps = true;
 
     while (find_next_item(Vcb, &tp, &next_tp, false, Irp)) {
         tp = next_tp;
@@ -2057,6 +2063,8 @@ after_tree_walk:
 
         ExFreePool(s);
     }
+
+    c->using_fst_bitmaps = false;
 
     // change BTRFS_FREE_SPACE_INFO_KEY in place if present, and insert otherwise
 

@@ -564,6 +564,7 @@ typedef struct {
     bool cache_loaded;
     bool changed;
     bool space_changed;
+    bool using_fst_bitmaps;
     uint64_t last_alloc;
     uint16_t last_stripe;
     LIST_ENTRY partial_stripes;

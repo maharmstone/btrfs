@@ -620,6 +620,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     c->cache_loaded = true;
     c->changed = false;
     c->space_changed = false;
+    c->using_fst_bitmaps = false;
     c->balance_num = 0;
 
     InitializeListHead(&c->space);

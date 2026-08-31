@@ -3645,6 +3645,7 @@ static NTSTATUS load_chunk_root(_In_ _Requires_lock_held_(_Curr_->tree_lock) dev
                 c->cache_loaded = false;
                 c->changed = false;
                 c->space_changed = false;
+                c->using_fst_bitmaps = false;
                 c->balance_num = 0;
 
                 c->chunk_item = ExAllocatePoolWithTag(NonPagedPool, tp.item->size, ALLOC_TAG);
