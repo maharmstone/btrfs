@@ -1919,10 +1919,225 @@ end:
     return Status;
 }
 
+static bool should_write_fst_bitmaps(chunk* c) {
+    // FIXME - better logic
+
+    if (c->using_fst_bitmaps)
+        return true;
+
+    return false;
+}
+
+static void mark_tree_for_writing_in_place(device_extension* Vcb, tree* t) {
+    t->write = true;
+
+    while (t) {
+        if (t->paritem && t->paritem->ignore) {
+            t->paritem->ignore = false;
+            t->parent->header.nritems++;
+            t->parent->size += sizeof(struct btrfs_key_ptr);
+        }
+
+        t->header.generation = Vcb->superblock.generation;
+        t = t->parent;
+    }
+}
+
+static NTSTATUS update_free_space_info(device_extension* Vcb, chunk* c,
+                                       uint32_t extent_count, uint32_t flags,
+                                       PIRP Irp) {
+    NTSTATUS Status;
+    struct btrfs_key searchkey;
+    struct btrfs_free_space_info* fsi;
+    traverse_ptr tp;
+
+    // change BTRFS_FREE_SPACE_INFO_KEY in place if present, and insert otherwise
+
+    searchkey.objectid = c->offset;
+    searchkey.type = BTRFS_FREE_SPACE_INFO_KEY;
+    searchkey.offset = c->chunk_item->length;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
+        ERR("find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey)) {
+        if (tp.item->size == sizeof(struct btrfs_free_space_info)) {
+            // change in place if possible
+
+            fsi = (struct btrfs_free_space_info*)tp.item->data;
+
+            fsi->extent_count = extent_count;
+            fsi->flags = flags;
+
+            mark_tree_for_writing_in_place(Vcb, tp.tree);
+
+            return STATUS_SUCCESS;
+        } else
+            delete_tree_item(Vcb, &tp);
+    }
+
+    // insert FREE_SPACE_INFO
+
+    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_free_space_info), ALLOC_TAG);
+    if (!fsi) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    fsi->extent_count = extent_count;
+    fsi->flags = flags;
+
+    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, BTRFS_FREE_SPACE_INFO_KEY, c->chunk_item->length, fsi, sizeof(*fsi),
+                              NULL, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("insert_tree_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS update_chunk_cache_tree_bitmaps(device_extension* Vcb, chunk* c,
+                                                PIRP Irp, LIST_ENTRY* space_list) {
+    NTSTATUS Status;
+    struct btrfs_key searchkey;
+    traverse_ptr tp;
+    uint64_t exp_start, max_len;
+    uint32_t fsi_count = 0;
+
+    // FIXME - clear out entire range and recreate if not as expected
+
+    if (!c->using_fst_bitmaps) { // FIXME
+        FIXME("FIXME - initial set-up of FST bitmaps\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    searchkey.objectid = c->offset;
+    searchkey.type = BTRFS_FREE_SPACE_BITMAP_KEY;
+    searchkey.offset = 0xffffffffffffffff;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    exp_start = c->offset;
+    max_len = c->chunk_item->length;
+
+    do {
+        RTL_BITMAP bmph;
+        uint32_t exp_len;
+        ULONG* buf;
+        traverse_ptr next_tp;
+
+        if (tp.item->key.objectid != exp_start || tp.item->key.type != BTRFS_FREE_SPACE_BITMAP_KEY) {
+            ERR("found (%I64x,%x,%I64x), expected (%I64x,%x,x)\n",
+                tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                exp_start, BTRFS_FREE_SPACE_BITMAP_KEY);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (tp.item->key.offset < Vcb->superblock.sectorsize ||
+            tp.item->key.offset > max_len) {
+            ERR("found (%I64x,%x,%I64x), expected offset of %x to %I64x\n",
+                tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                Vcb->superblock.sectorsize, max_len);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        if (tp.item->key.offset & (Vcb->superblock.sectorsize - 1)) {
+            ERR("found (%I64x,%x,%I64x), offset not aligned to sector size %x\n",
+                tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                Vcb->superblock.sectorsize);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        exp_len = sector_align(tp.item->key.offset / Vcb->superblock.sectorsize, 8) / 8;
+
+        if (tp.item->size != exp_len) {
+            ERR("(%I64x,%x,%I64x): size was %x, expected %x\n",
+                tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                tp.item->size, exp_len);
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        mark_tree_for_writing_in_place(Vcb, tp.tree);
+
+        buf = ExAllocatePoolWithTag(NonPagedPool, sector_align(tp.item->size, sizeof(ULONG)), ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        RtlInitializeBitMap(&bmph, buf, tp.item->size * 8);
+
+        RtlClearAllBits(&bmph);
+
+        while (!IsListEmpty(space_list)) {
+            space* s = CONTAINING_RECORD(space_list->Flink, space, list_entry);
+
+            if (s->address >= tp.item->key.objectid + tp.item->key.offset)
+                break;
+
+            if (s->address + s->size <= tp.item->key.objectid + tp.item->key.offset) {
+                RtlSetBits(&bmph, (s->address - tp.item->key.objectid) >> Vcb->sector_shift,
+                           s->size >> Vcb->sector_shift);
+                RemoveEntryList(&s->list_entry);
+                ExFreePool(s);
+
+                fsi_count++;
+            } else {
+                uint64_t overrun = s->address + s->size - tp.item->key.objectid - tp.item->key.offset;
+
+                RtlSetBits(&bmph, (s->address - tp.item->key.objectid) >> Vcb->sector_shift,
+                           (s->size - overrun) >> Vcb->sector_shift);
+
+                s->address += s->size - overrun;
+                s->size = overrun;
+
+                break;
+            }
+        }
+
+        memcpy(tp.item->data, buf, tp.item->size);
+        ExFreePool(buf);
+
+        exp_start = tp.item->key.objectid + tp.item->key.offset;
+        max_len = c->offset + c->chunk_item->length - exp_start;
+
+        if (max_len == 0)
+            break;
+
+        if (!find_next_item(Vcb, &tp, &next_tp, false, Irp))
+            return STATUS_INTERNAL_ERROR;
+
+        tp = next_tp;
+    } while (true);
+
+    if (!IsListEmpty(space_list)) {
+        ERR("space list was not empty\n");
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    c->using_fst_bitmaps = true;
+
+    Status = update_free_space_info(Vcb, c, fsi_count,
+                                    BTRFS_FREE_SPACE_USING_BITMAPS, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("update_free_space_info returned %08lx\n", Status);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Irp) {
     NTSTATUS Status;
     LIST_ENTRY space_list;
-    struct btrfs_free_space_info* fsi;
     struct btrfs_key searchkey;
     traverse_ptr tp;
     uint32_t fsi_count = 0;
@@ -1938,6 +2153,18 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
     Status = space_list_merge(&space_list, NULL, &c->deleting);
     if (!NT_SUCCESS(Status))
         return Status;
+
+    if (should_write_fst_bitmaps(c)) {
+        Status = update_chunk_cache_tree_bitmaps(Vcb, c, Irp, &space_list);
+
+        if (!NT_SUCCESS(Status)) {
+            while (!IsListEmpty(&space_list)) {
+                ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+            }
+        }
+
+        return Status;
+    }
 
     searchkey.objectid = c->offset;
     searchkey.type = BTRFS_FREE_SPACE_EXTENT_KEY;
@@ -2066,63 +2293,9 @@ after_tree_walk:
 
     c->using_fst_bitmaps = false;
 
-    // change BTRFS_FREE_SPACE_INFO_KEY in place if present, and insert otherwise
-
-    searchkey.objectid = c->offset;
-    searchkey.type = BTRFS_FREE_SPACE_INFO_KEY;
-    searchkey.offset = c->chunk_item->length;
-
-    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
-    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_FOUND) {
-        ERR("find_item returned %08lx\n", Status);
-        return Status;
-    }
-
-    if (NT_SUCCESS(Status) && !keycmp(tp.item->key, searchkey)) {
-        if (tp.item->size == sizeof(struct btrfs_free_space_info)) {
-            tree* t;
-
-            // change in place if possible
-
-            fsi = (struct btrfs_free_space_info*)tp.item->data;
-
-            fsi->extent_count = fsi_count;
-            fsi->flags = 0;
-
-            tp.tree->write = true;
-
-            t = tp.tree;
-            while (t) {
-                if (t->paritem && t->paritem->ignore) {
-                    t->paritem->ignore = false;
-                    t->parent->header.nritems++;
-                    t->parent->size += sizeof(struct btrfs_key_ptr);
-                }
-
-                t->header.generation = Vcb->superblock.generation;
-                t = t->parent;
-            }
-
-            return STATUS_SUCCESS;
-        } else
-            delete_tree_item(Vcb, &tp);
-    }
-
-    // insert FREE_SPACE_INFO
-
-    fsi = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_free_space_info), ALLOC_TAG);
-    if (!fsi) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    fsi->extent_count = fsi_count;
-    fsi->flags = 0;
-
-    Status = insert_tree_item(Vcb, Vcb->space_root, c->offset, BTRFS_FREE_SPACE_INFO_KEY, c->chunk_item->length, fsi, sizeof(*fsi),
-                              NULL, Irp);
+    Status = update_free_space_info(Vcb, c, fsi_count, 0, Irp);
     if (!NT_SUCCESS(Status)) {
-        ERR("insert_tree_item returned %08lx\n", Status);
+        ERR("update_free_space_info returned %08lx\n", Status);
         return Status;
     }
 
