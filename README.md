@@ -1,5 +1,5 @@
-WinBtrfs v1.9
--------------
+WinBtrfs v1.10
+--------------
 
 WinBtrfs is a Windows driver for the next-generation Linux filesystem Btrfs.
 A reimplementation from scratch, it contains no code from the Linux kernel,
@@ -312,6 +312,28 @@ mode off again afterwards: `bcdedit /set testsigning off`.
 
 Changelog
 ---------
+
+v1.10 (2026-09-01):
+* Added support for writing free-space bitmaps (reading was already supported)
+* Added support for writing compressed inline files (reading was already supported)
+* Improved handling of removable devices
+* Tightened up error recovery on OOMs and ENOSPCs
+* Fixed crash when moving files across subvolumes, such as to the Recycle Bin
+* Fixed crash when many files created simultaneously, e.g. by Steam
+* Fixed extent tree corruption when writing to snapshots
+* Fixed preallocation issues (fixes rclone)
+* Fixed deadlock when querying hard links
+* Fixed memory corruption relating to watching the Registry
+* Fixed disk usage statistics for multi-device volumes
+* Fixed FSCTL_DUPLICATE_EXTENTS_TO_FILE sent from 32-bit userspace
+* Refactored to use same struct and constant definitions as on Linux
+
+Note that the changes to the handling of removable devices mean that RAID is now
+no longer supported for these, if for some reason you were doing that.
+
+Thank you to Anthropic, whose gift of free Claude Max 20 under the Claude Open
+Source Programme helped greatly in bug-hunting and code reviews. All of the code
+here was still written by hand.
 
 v1.9 (2024-03-15):
 * Added support for block group tree (Linux 6.1)
