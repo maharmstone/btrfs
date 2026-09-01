@@ -2076,6 +2076,82 @@ static NTSTATUS setup_fst_bitmaps(device_extension* Vcb, chunk* c, PIRP Irp) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS check_fst_bitmaps_sane(device_extension* Vcb, chunk* c, PIRP Irp) {
+    NTSTATUS Status;
+    struct btrfs_key searchkey;
+    traverse_ptr tp, next_tp;
+    uint64_t exp_start, max_len;
+
+    searchkey.objectid = c->offset;
+    searchkey.type = BTRFS_FREE_SPACE_EXTENT_KEY; // sic
+    searchkey.offset = 0xffffffffffffffff;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
+
+    if (Status == STATUS_NOT_FOUND)
+        goto recreate;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    if (tp.item->key.objectid == c->offset && tp.item->key.type == BTRFS_FREE_SPACE_INFO_KEY) {
+        if (!find_next_item(Vcb, &tp, &next_tp, false, Irp))
+            goto recreate;
+
+        tp = next_tp;
+    }
+
+    exp_start = c->offset;
+    max_len = c->chunk_item->length;
+
+    do {
+        uint32_t exp_len;
+
+        if (tp.item->key.objectid != exp_start || tp.item->key.type != BTRFS_FREE_SPACE_BITMAP_KEY)
+            goto recreate;
+
+        if (tp.item->key.offset < Vcb->superblock.sectorsize || tp.item->key.offset > max_len)
+            goto recreate;
+
+        if (tp.item->key.offset & (Vcb->superblock.sectorsize - 1))
+            goto recreate;
+
+        exp_len = sector_align(tp.item->key.offset / Vcb->superblock.sectorsize, 8) / 8;
+
+        if (tp.item->size != exp_len)
+            goto recreate;
+
+        exp_start = tp.item->key.objectid + tp.item->key.offset;
+        max_len = c->offset + c->chunk_item->length - exp_start;
+
+        if (max_len == 0)
+            break;
+
+        if (!find_next_item(Vcb, &tp, &next_tp, false, Irp))
+            goto recreate;
+
+        tp = next_tp;
+    } while (true);
+
+    return STATUS_SUCCESS;
+
+recreate:
+    Status = delete_fst_entries(Vcb, c, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("delete_fst_entries returned %08lx\n", Status);
+        return Status;
+    }
+
+    Status = setup_fst_bitmaps(Vcb, c, Irp);
+    if (!NT_SUCCESS(Status)) {
+        ERR("setup_fst_bitmaps returned %08lx\n", Status);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS update_chunk_cache_tree_bitmaps(device_extension* Vcb, chunk* c,
                                                 PIRP Irp, LIST_ENTRY* space_list) {
     NTSTATUS Status;
@@ -2083,8 +2159,6 @@ static NTSTATUS update_chunk_cache_tree_bitmaps(device_extension* Vcb, chunk* c,
     traverse_ptr tp;
     uint64_t exp_start, max_len;
     uint32_t fsi_count = 0;
-
-    // FIXME - clear out entire range and recreate if not as expected
 
     if (!c->using_fst_bitmaps) {
         Status = delete_fst_entries(Vcb, c, Irp);
@@ -2096,6 +2170,12 @@ static NTSTATUS update_chunk_cache_tree_bitmaps(device_extension* Vcb, chunk* c,
         Status = setup_fst_bitmaps(Vcb, c, Irp);
         if (!NT_SUCCESS(Status)) {
             ERR("setup_fst_bitmaps returned %08lx\n", Status);
+            return Status;
+        }
+    } else {
+        Status = check_fst_bitmaps_sane(Vcb, c, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("check_fst_bitmaps_sane returned %08lx\n", Status);
             return Status;
         }
     }
