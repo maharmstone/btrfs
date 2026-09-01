@@ -1919,11 +1919,37 @@ end:
     return Status;
 }
 
-static bool should_write_fst_bitmaps(chunk* c) {
-    // FIXME - better logic
+static bool should_write_fst_bitmaps(device_extension* Vcb, chunk* c,
+                                     LIST_ENTRY* space_list) {
+    LIST_ENTRY* le;
+    size_t num_bitmaps, bitmap_size, extent_size = 0;
+    size_t bitmap_range = (BTRFS_FREE_SPACE_BITMAP_SIZE * 8) << Vcb->sector_shift;
 
-    if (c->using_fst_bitmaps)
-        return true;
+    num_bitmaps = c->chunk_item->length / bitmap_range;
+    bitmap_size = (sizeof(struct btrfs_item) + BTRFS_FREE_SPACE_BITMAP_SIZE) * num_bitmaps;
+
+    if (c->chunk_item->length % bitmap_range) {
+        bitmap_size += sizeof(struct btrfs_item);
+        bitmap_size += sector_align((c->chunk_item->length % bitmap_range) >> Vcb->sector_shift, 8) / 8;
+    }
+
+    le = space_list->Flink;
+    while (le != space_list) {
+        extent_size += sizeof(struct btrfs_item);
+
+        if (extent_size > bitmap_size)
+            return true;
+
+        le = le->Flink;
+    }
+
+    if (extent_size == 0)
+        return false;
+
+    if (c->using_fst_bitmaps) {
+        if (bitmap_size <= 100 * sizeof(struct btrfs_item) || extent_size > bitmap_size - (100 * sizeof(struct btrfs_item)))
+            return true;
+    }
 
     return false;
 }
@@ -2319,7 +2345,7 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
     if (!NT_SUCCESS(Status))
         return Status;
 
-    if (should_write_fst_bitmaps(c)) {
+    if (should_write_fst_bitmaps(Vcb, c, &space_list)) {
         Status = update_chunk_cache_tree_bitmaps(Vcb, c, Irp, &space_list);
 
         if (!NT_SUCCESS(Status)) {
