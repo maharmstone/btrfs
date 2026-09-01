@@ -2000,6 +2000,82 @@ static NTSTATUS update_free_space_info(device_extension* Vcb, chunk* c,
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS delete_fst_entries(device_extension* Vcb, chunk* c, PIRP Irp) {
+    NTSTATUS Status;
+    struct btrfs_key searchkey;
+    traverse_ptr tp;
+
+    searchkey.objectid = c->offset;
+    searchkey.type = BTRFS_FREE_SPACE_EXTENT_KEY;
+    searchkey.offset = 0xffffffffffffffff;
+
+    Status = find_item(Vcb, Vcb->space_root, &tp, &searchkey, false, Irp);
+    if (Status == STATUS_NOT_FOUND)
+        return STATUS_SUCCESS;
+    else if (!NT_SUCCESS(Status)) {
+        ERR("find_item returned %08lx\n", Status);
+        return Status;
+    }
+
+    while (tp.item->key.objectid < c->offset + c->chunk_item->length) {
+        traverse_ptr next_tp;
+
+        if (tp.item->key.objectid >= c->offset && (tp.item->key.type == BTRFS_FREE_SPACE_EXTENT_KEY || tp.item->key.type == BTRFS_FREE_SPACE_BITMAP_KEY)) {
+            Status = delete_tree_item(Vcb, &tp);
+            if (!NT_SUCCESS(Status)) {
+                ERR("delete_tree_item returned %08lx\n", Status);
+                return Status;
+            }
+        }
+
+        if (!find_next_item(Vcb, &tp, &next_tp, false, NULL))
+            break;
+
+        tp = next_tp;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS setup_fst_bitmaps(device_extension* Vcb, chunk* c, PIRP Irp) {
+    NTSTATUS Status;
+    uint64_t off = c->offset;
+
+    while (off < c->offset + c->chunk_item->length) {
+        size_t size, bufsize;
+        uint8_t* buf;
+
+        size = (BTRFS_FREE_SPACE_BITMAP_SIZE * 8) << Vcb->sector_shift;
+        bufsize = BTRFS_FREE_SPACE_BITMAP_SIZE;
+
+        if (off + size > c->offset + c->chunk_item->length) {
+            size = c->offset + c->chunk_item->length - off;
+            bufsize = sector_align(size >> Vcb->sector_shift, 8) / 8;
+        }
+
+        buf = ExAllocatePoolWithTag(NonPagedPool, bufsize, ALLOC_TAG);
+        if (!buf) {
+            ERR("out of memory\n");
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memset(buf, 0, bufsize);
+
+        Status = insert_tree_item(Vcb, Vcb->space_root, off,
+                                  BTRFS_FREE_SPACE_BITMAP_KEY, size, buf,
+                                  bufsize, NULL, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("insert_tree_item returned %08lx\n", Status);
+            ExFreePool(buf);
+            return Status;
+        }
+
+        off += size;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS update_chunk_cache_tree_bitmaps(device_extension* Vcb, chunk* c,
                                                 PIRP Irp, LIST_ENTRY* space_list) {
     NTSTATUS Status;
@@ -2010,9 +2086,18 @@ static NTSTATUS update_chunk_cache_tree_bitmaps(device_extension* Vcb, chunk* c,
 
     // FIXME - clear out entire range and recreate if not as expected
 
-    if (!c->using_fst_bitmaps) { // FIXME
-        FIXME("FIXME - initial set-up of FST bitmaps\n");
-        return STATUS_INTERNAL_ERROR;
+    if (!c->using_fst_bitmaps) {
+        Status = delete_fst_entries(Vcb, c, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("delete_fst_entries returned %08lx\n", Status);
+            return Status;
+        }
+
+        Status = setup_fst_bitmaps(Vcb, c, Irp);
+        if (!NT_SUCCESS(Status)) {
+            ERR("setup_fst_bitmaps returned %08lx\n", Status);
+            return Status;
+        }
     }
 
     searchkey.objectid = c->offset;

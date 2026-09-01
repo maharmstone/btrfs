@@ -136,6 +136,8 @@ static const uint64_t superblock_addrs[] = { 0x10000, 0x4000000, 0x4000000000, 0
 
 #define BTRFS_UUID_SIZE 16
 
+#define BTRFS_FREE_SPACE_BITMAP_SIZE 256
+
 #pragma pack(push, 1)
 
 struct btrfs_key {
