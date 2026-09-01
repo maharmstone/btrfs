@@ -4337,7 +4337,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 
     ExAcquireResourceSharedLite(&Vcb->tree_lock, true);
 
-    if (is_ntacl)
+    if (is_ntacl && ccb->fileref->parent)
         ExAcquireResourceSharedLite(ccb->fileref->parent->fcb->Header.Resource, true); // for SD
 
     ExAcquireResourceExclusiveLite(fcb->Header.Resource, true);
@@ -4372,7 +4372,8 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
         fcb->sd_dirty = true;
 
         if (!fcb->sd) {
-            Status = fcb_get_sd(fcb, ccb->fileref->parent->fcb, false, Irp);
+            Status = fcb_get_sd(fcb, ccb->fileref->parent ? ccb->fileref->parent->fcb : NULL,
+                                false, Irp);
 
             fcb->sd_deleted = true;
 
@@ -4568,7 +4569,7 @@ static NTSTATUS fsctl_set_xattr(device_extension* Vcb, PFILE_OBJECT FileObject, 
 end:
     ExReleaseResourceLite(fcb->Header.Resource);
 
-    if (is_ntacl)
+    if (is_ntacl && ccb->fileref->parent)
         ExReleaseResourceLite(ccb->fileref->parent->fcb->Header.Resource);
 
     ExReleaseResourceLite(&Vcb->tree_lock);
