@@ -1249,9 +1249,13 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
         fcb->atts = get_file_attributes(Vcb, fcb->subvol, fcb->inode, fcb->type, utf8 && utf8->Buffer[0] == '.', true, Irp);
 
     if (!sd_set) {
-        ExAcquireResourceSharedLite(parent->Header.Resource, true);
+        if (parent)
+            ExAcquireResourceSharedLite(parent->Header.Resource, true);
+
         Status = fcb_get_sd(fcb, parent, false, Irp);
-        ExReleaseResourceLite(parent->Header.Resource);
+
+        if (parent)
+            ExReleaseResourceLite(parent->Header.Resource);
 
         if (!NT_SUCCESS(Status)) {
             ERR("fcb_get_sd returned %08lx\n", Status);
