@@ -3643,6 +3643,7 @@ NTSTATUS extend_file(fcb* fcb, file_ref* fileref, uint64_t end, bool prealloc, P
                 if (!prealloc) {
                     fcb->inode_item.size = end;
                     fcb->inode_item_changed = true;
+                    fcb->extents_changed = true;
                     mark_fcb_dirty(fcb);
 
                     fcb->Header.FileSize.QuadPart = fcb->Header.ValidDataLength.QuadPart = end;
