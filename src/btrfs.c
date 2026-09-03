@@ -5698,23 +5698,34 @@ static NTSTATUS __stdcall drv_power(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP 
             device_extension* Vcb2 = vde->mounted_device->DeviceExtension;
 
             /* If power state is about to go to sleep or hibernate, do a flush. We do this on IRP_MJ_QUERY_POWER
-            * rather than IRP_MJ_SET_POWER because we know that the hard disks are still awake. */
+            * rather than IRP_MJ_SET_POWER because we know that the hard disks are still awake.
+            *
+            * This used to acquire tree_lock with Wait = true, which can block this dispatch routine
+            * indefinitely if another thread already holds it (e.g. an in-progress transaction commit,
+            * or a concurrent flush on a multi-device RAID volume). IRP_MJ_POWER handlers are expected
+            * to return promptly; the power manager bugchecks with DRIVER_POWER_STATE_FAILURE (0x9F),
+            * parameter 1 == 3, if a power IRP doesn't complete within its watchdog window. Acquiring
+            * non-blocking here, and simply skipping the protective flush (rather than stalling the
+            * whole system's sleep transition) if the lock is momentarily busy, removes that stall.
+            * do_write() itself can still take a while on slow/mechanical devices, but that's the
+            * data actually being written, not lock contention with another thread. */
 
             if (Vcb2) {
-                ExAcquireResourceExclusiveLite(&Vcb2->tree_lock, true);
+                if (ExAcquireResourceExclusiveLite(&Vcb2->tree_lock, false)) {
+                    if (Vcb2->need_write && !Vcb2->readonly) {
+                        TRACE("doing protective flush on power state change\n");
+                        Status = do_write(Vcb2, NULL);
+                    } else
+                        Status = STATUS_SUCCESS;
 
-                if (Vcb2->need_write && !Vcb2->readonly) {
-                    TRACE("doing protective flush on power state change\n");
-                    Status = do_write(Vcb2, NULL);
+                    free_trees(Vcb2);
+
+                    if (!NT_SUCCESS(Status))
+                        ERR("do_write returned %08lx\n", Status);
+
+                    ExReleaseResourceLite(&Vcb2->tree_lock);
                 } else
-                    Status = STATUS_SUCCESS;
-
-                free_trees(Vcb2);
-
-                if (!NT_SUCCESS(Status))
-                    ERR("do_write returned %08lx\n", Status);
-
-                ExReleaseResourceLite(&Vcb2->tree_lock);
+                    WARN("tree_lock busy during power state change, skipping protective flush\n");
             }
         } else if (IrpSp->MinorFunction == IRP_MN_SET_POWER && IrpSp->Parameters.Power.Type == SystemPowerState &&
             IrpSp->Parameters.Power.State.SystemState == PowerSystemWorking && vde->mounted_device) {
