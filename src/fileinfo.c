@@ -74,7 +74,13 @@ typedef struct _FILE_STAT_LX_INFORMATION {
 #define LX_FILE_METADATA_HAS_MODE       0x04
 #define LX_FILE_METADATA_HAS_DEVICE_ID  0x08
 #define LX_FILE_CASE_SENSITIVE_DIR      0x10
+#endif
 
+// FILE_RENAME_INFORMATION_EX / FILE_LINK_INFORMATION_EX and their POSIX rename/link flags were
+// added to ntifs.h gated behind NTDDI_WIN10_RS1/RS5, which btrfs_drv.h's Win8 NTDDI_VERSION clamp
+// (kept low deliberately for broad OS compatibility) hides from the SDK for every compiler, not
+// just mingw. So define our own copies unconditionally (both MSVC and mingw) instead of aliasing
+// to the SDK's version, which is unavailable and Flags-less under that clamp either way.
 typedef struct _FILE_RENAME_INFORMATION_EX {
     union {
         BOOLEAN ReplaceIfExists;
@@ -85,9 +91,11 @@ typedef struct _FILE_RENAME_INFORMATION_EX {
     WCHAR FileName[1];
 } FILE_RENAME_INFORMATION_EX, *PFILE_RENAME_INFORMATION_EX;
 
+#ifndef _MSC_VER
 typedef struct _FILE_DISPOSITION_INFORMATION_EX {
     ULONG Flags;
 } FILE_DISPOSITION_INFORMATION_EX, *PFILE_DISPOSITION_INFORMATION_EX;
+#endif
 
 typedef struct _FILE_LINK_INFORMATION_EX {
     union {
@@ -99,6 +107,7 @@ typedef struct _FILE_LINK_INFORMATION_EX {
     WCHAR FileName[1];
 } FILE_LINK_INFORMATION_EX, *PFILE_LINK_INFORMATION_EX;
 
+#ifndef _MSC_VER
 typedef struct _FILE_CASE_SENSITIVE_INFORMATION {
     ULONG Flags;
 } FILE_CASE_SENSITIVE_INFORMATION, *PFILE_CASE_SENSITIVE_INFORMATION;
@@ -115,7 +124,10 @@ typedef struct _FILE_LINKS_FULL_ID_INFORMATION {
     ULONG EntriesReturned;
     FILE_LINK_ENTRY_FULL_ID_INFORMATION Entry;
 } FILE_LINKS_FULL_ID_INFORMATION, *PFILE_LINKS_FULL_ID_INFORMATION;
+#endif
 
+// These POSIX rename/link flags are gated the same way as the two _EX structs above (NTDDI_WIN10_RS1/RS5),
+// so likewise define them unconditionally rather than relying on the (Win8-clamped) SDK.
 #define FILE_RENAME_REPLACE_IF_EXISTS                       0x001
 #define FILE_RENAME_POSIX_SEMANTICS                         0x002
 #define FILE_RENAME_SUPPRESS_PIN_STATE_INHERITANCE          0x004
@@ -134,13 +146,6 @@ typedef struct _FILE_LINKS_FULL_ID_INFORMATION {
 #define FILE_LINK_IGNORE_READONLY_ATTRIBUTE               0x040
 #define FILE_LINK_FORCE_RESIZE_TARGET_SR                  0x080
 #define FILE_LINK_FORCE_RESIZE_SOURCE_SR                  0x100
-
-#else
-
-#define FILE_RENAME_INFORMATION_EX FILE_RENAME_INFORMATION
-#define FILE_LINK_INFORMATION_EX FILE_LINK_INFORMATION
-
-#endif
 
 static NTSTATUS set_basic_information(device_extension* Vcb, PIRP Irp, PFILE_OBJECT FileObject) {
     FILE_BASIC_INFORMATION* fbi = Irp->AssociatedIrp.SystemBuffer;
