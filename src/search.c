@@ -662,8 +662,13 @@ void remove_volume_child(_Inout_ _Requires_exclusive_lock_held_(_Curr_->child_lo
         if (vde->pdo->AttachedDevice)
             IoDetachDevice(vde->pdo);
 
-        if (vde->open_count == 0)
+        if (vde->open_count == 0) {
             remove = true;
+
+            /* Stop vol_close from calling free_vol for a device object we're
+             * about to delete here. */
+            vde->dead = true;
+        }
 
         ExReleaseResourceLite(&pdode->child_lock);
 
