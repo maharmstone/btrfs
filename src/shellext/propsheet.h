@@ -100,7 +100,8 @@ public:
         can_change_perms = false;
         show_admin_button = false;
         thread = nullptr;
-        stop_search = search_done = false;
+        stop_search = false;
+        search_done = false;
         mode = mode_set = 0;
         flags = flags_set = 0;
         has_subvols = false;
