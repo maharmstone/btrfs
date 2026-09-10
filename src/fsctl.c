@@ -2958,6 +2958,7 @@ static NTSTATUS add_device(device_extension* Vcb, PIRP Irp, KPROCESSOR_MODE proc
     di = ExAllocatePoolWithTag(PagedPool, sizeof(struct btrfs_dev_item), ALLOC_TAG);
     if (!di) {
         ERR("out of memory\n");
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end;
     }
 
@@ -4026,7 +4027,7 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         } else {
             uint32_t hash = calc_crc32c(0xffffffff, (uint8_t*)&bmn->inode, sizeof(uint64_t));
 
-            Status = check_inode_used(Vcb, subvol, bmn->inode, hash, Irp);
+            Status = check_inode_used(Vcb, parfcb->subvol, bmn->inode, hash, Irp);
             if (NT_SUCCESS(Status)) { // STATUS_SUCCESS means inode found
                 release_fcb_lock(Vcb);
                 ExReleaseResourceLite(&Vcb->fileref_lock);
@@ -4047,7 +4048,6 @@ static NTSTATUS mknod(device_extension* Vcb, PFILE_OBJECT FileObject, void* data
         }
     }
 
-    fcb->inode = inode;
     fcb->type = bmn->type;
 
     if (fcb->type == BTRFS_FT_DIR) {
