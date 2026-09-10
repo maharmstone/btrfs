@@ -18,6 +18,20 @@
 #include "btrfs_drv.h"
 #include "crc32c.h"
 
+// frees a tree that load_tree gave up on part-way through
+static void free_partial_tree(tree* t) {
+    while (!IsListEmpty(&t->itemlist)) {
+        tree_data* td = CONTAINING_RECORD(RemoveHeadList(&t->itemlist), tree_data, list_entry);
+
+        ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
+    }
+
+    if (t->nonpaged)
+        ExFreePool(t->nonpaged);
+
+    ExFreePool(t);
+}
+
 __attribute__((nonnull(1,3,4,5)))
 NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, tree** pt) {
     struct btrfs_header* th;
@@ -67,9 +81,9 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         struct btrfs_item* ln = (struct btrfs_item*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.nritems * sizeof(struct btrfs_item)) + sizeof(struct btrfs_header) > Vcb->superblock.nodesize) {
+        if (((uint64_t)t->header.nritems * sizeof(struct btrfs_item)) + sizeof(struct btrfs_header) > Vcb->superblock.nodesize) { // 64-bit, so it can't wrap on x86
             ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
-            ExFreePool(t);
+            free_partial_tree(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -77,7 +91,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
             if (!td) {
                 ERR("out of memory\n");
-                ExFreePool(t);
+                free_partial_tree(t);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -88,10 +102,12 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             else
                 td->data = NULL;
 
-            if (ln[i].size + sizeof(struct btrfs_header) + sizeof(struct btrfs_item) > Vcb->superblock.nodesize) {
-                ERR("overlarge item in tree %I64x: %u > %Iu\n", addr, ln[i].size, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item));
+            // both size and offset come straight from disk: make sure the item's data lies within the node
+            if (ln[i].size + sizeof(struct btrfs_header) + sizeof(struct btrfs_item) > Vcb->superblock.nodesize ||
+                (uint64_t)ln[i].offset + ln[i].size > Vcb->superblock.nodesize - sizeof(struct btrfs_header)) {
+                ERR("overlarge item in tree %I64x: offset %x, size %u (max %Iu)\n", addr, ln[i].offset, ln[i].size, Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item));
                 ExFreeToPagedLookasideList(&t->Vcb->tree_data_lookaside, td);
-                ExFreePool(t);
+                free_partial_tree(t);
                 return STATUS_INTERNAL_ERROR;
             }
 
@@ -110,9 +126,9 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
         struct btrfs_key_ptr* in = (struct btrfs_key_ptr*)(buf + sizeof(struct btrfs_header));
         unsigned int i;
 
-        if ((t->header.nritems * sizeof(struct btrfs_key_ptr)) + sizeof(struct btrfs_header) > Vcb->superblock.nodesize) {
+        if (((uint64_t)t->header.nritems * sizeof(struct btrfs_key_ptr)) + sizeof(struct btrfs_header) > Vcb->superblock.nodesize) {
             ERR("tree at %I64x has more items than expected (%x)\n", addr, t->header.nritems);
-            ExFreePool(t);
+            free_partial_tree(t);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -120,7 +136,7 @@ NTSTATUS load_tree(device_extension* Vcb, uint64_t addr, uint8_t* buf, root* r, 
             td = ExAllocateFromPagedLookasideList(&Vcb->tree_data_lookaside);
             if (!td) {
                 ERR("out of memory\n");
-                ExFreePool(t);
+                free_partial_tree(t);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -757,6 +773,9 @@ bool find_prev_item(_Requires_lock_held_(_Curr_->tree_lock) device_extension* Vc
         tree_data* li;
 
         li = last_item(t);
+
+        if (!li) // an on-disk internal node with no items - nothing to walk back to
+            return false;
 
         if (!li->treeholder.tree) {
             Status = do_load_tree(Vcb, &li->treeholder, t->parent->root, t, li, Irp);
@@ -1426,7 +1445,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             break;
                         }
 
-                        if ((uint8_t*)xa - (uint8_t*)td->data + oldxasize >= size) {
+                        if (oldxasize >= size) { // size is what's left from xa onwards, so this is the last xattr in the item
                             // not found, add to end of data
 
                             if (td->size + bi->datalen > maxlen)
@@ -1532,6 +1551,7 @@ static NTSTATUS handle_batch_collision(device_extension* Vcb, batch_item* bi, tr
                             if (keycmp(bi3->key, bi2->key) != -1) {
                                 InsertHeadList(le->Blink, &bi2->list_entry);
                                 inserted = true;
+                                break; // without this we'd insert it again at every later position
                             }
 
                             le = le->Flink;
