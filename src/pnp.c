@@ -369,6 +369,8 @@ static NTSTATUS pdo_device_usage_notification(pdo_device_extension* pdode, PIRP 
             if (context.Status == STATUS_PENDING)
                 KeWaitForSingleObject(&context.Event, Executive, KernelMode, false, NULL);
 
+            IoFreeIrp(Irp2); // completion routine returned STATUS_MORE_PROCESSING_REQUIRED, so we own it
+
             if (!NT_SUCCESS(context.Status)) {
                 ERR("IoCallDriver returned %08lx\n", context.Status);
                 ExReleaseResourceLite(&pdode->child_lock);
