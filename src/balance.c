@@ -964,7 +964,7 @@ static NTSTATUS write_metadata_items(_Requires_exclusive_lock_held_(_Curr_->tree
                     tree* t4 = NULL;
 
                     // check if tree loaded more than once
-                    if (t3->list_entry.Flink != &Vcb->trees_hash) {
+                    if (t3->list_entry_hash.Flink != &Vcb->trees_hash) {
                         tree* nt = CONTAINING_RECORD(t3->list_entry_hash.Flink, tree, list_entry_hash);
 
                         if (nt->header.bytenr == t3->header.bytenr)
@@ -1357,6 +1357,12 @@ static NTSTATUS add_data_reloc(_Requires_exclusive_lock_held_(_Curr_->tree_lock)
     uint16_t len;
     uint64_t inline_rc;
     uint8_t* ptr;
+
+    if (tp->item->size < sizeof(struct btrfs_extent_item)) {
+        ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
+            tp->item->size, sizeof(struct btrfs_extent_item));
+        return STATUS_INTERNAL_ERROR;
+    }
 
     dr = ExAllocatePoolWithTag(PagedPool, sizeof(data_reloc), ALLOC_TAG);
     if (!dr) {
@@ -1822,7 +1828,15 @@ static NTSTATUS balance_data_chunk(device_extension* Vcb, chunk* c, bool* change
         if (tp.item->key.objectid >= c->offset && tp.item->key.type == BTRFS_EXTENT_ITEM_KEY) {
             bool tree = false;
 
-            if (tp.item->key.type == BTRFS_EXTENT_ITEM_KEY && tp.item->size >= sizeof(struct btrfs_extent_item)) {
+            if (tp.item->size < sizeof(struct btrfs_extent_item)) {
+                // don't let add_data_reloc loose on it: it would compute a wrapped inline-ref length
+                ERR("(%I64x,%x,%I64x) was %u bytes, expected at least %Iu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                    tp.item->size, sizeof(struct btrfs_extent_item));
+                Status = STATUS_INTERNAL_ERROR;
+                goto end;
+            }
+
+            {
                 struct btrfs_extent_item* ei = (struct btrfs_extent_item*)tp.item->data;
 
                 if (ei->flags & BTRFS_EXTENT_FLAG_TREE_BLOCK)
@@ -2438,7 +2452,7 @@ static bool should_balance_chunk(device_extension* Vcb, uint8_t sort, chunk* c) 
     }
 
     if (opts->flags & BTRFS_BALANCE_OPTS_STRIPES) {
-        if (c->chunk_item->num_stripes < opts->stripes_start || c->chunk_item->num_stripes < opts->stripes_end)
+        if (c->chunk_item->num_stripes < opts->stripes_start || c->chunk_item->num_stripes > opts->stripes_end)
             return false;
     }
 
@@ -3108,8 +3122,12 @@ static NTSTATUS try_consolidation(device_extension* Vcb, uint64_t flags, chunk**
             if (Vcb->readonly)
                 Vcb->balance.stopping = true;
 
-            if (Vcb->balance.stopping)
+            if (Vcb->balance.stopping) {
+                // as on the failure path above: otherwise the chunk stays excluded from allocation for the rest of the mount
+                rc->list_entry_balance.Flink = NULL;
+                rc->reloc = false;
                 return STATUS_SUCCESS;
+            }
         } while (changed);
 
         rc->list_entry_balance.Flink = NULL;
@@ -3124,6 +3142,7 @@ static NTSTATUS try_consolidation(device_extension* Vcb, uint64_t flags, chunk**
         if (!NT_SUCCESS(Status)) {
             ERR("do_write returned %08lx\n", Status);
             ExReleaseResourceLite(&Vcb->tree_lock);
+            rc->reloc = false;
             return Status;
         }
 
@@ -3359,13 +3378,15 @@ void __stdcall balance_thread(void* context) {
                     ERR("try_consolidation returned %08lx\n", Status);
                     Vcb->balance.status = Status;
                     goto end;
-                } else
-                    c->balance_num = Vcb->balance.balance_num;
+                }
 
                 consolidated = true;
 
+                // try_consolidation returns success without setting c if we're stopping
                 if (Vcb->balance.stopping)
                     goto end;
+
+                c->balance_num = Vcb->balance.balance_num;
             }
         }
 
@@ -3390,13 +3411,15 @@ void __stdcall balance_thread(void* context) {
                     ERR("try_consolidation returned %08lx\n", Status);
                     Vcb->balance.status = Status;
                     goto end;
-                } else
-                    c->balance_num = Vcb->balance.balance_num;
+                }
 
                 consolidated = true;
 
+                // try_consolidation returns success without setting c if we're stopping
                 if (Vcb->balance.stopping)
                     goto end;
+
+                c->balance_num = Vcb->balance.balance_num;
             }
         }
 
@@ -3421,13 +3444,15 @@ void __stdcall balance_thread(void* context) {
                     ERR("try_consolidation returned %08lx\n", Status);
                     Vcb->balance.status = Status;
                     goto end;
-                } else
-                    c->balance_num = Vcb->balance.balance_num;
+                }
 
                 consolidated = true;
 
+                // try_consolidation returns success without setting c if we're stopping
                 if (Vcb->balance.stopping)
                     goto end;
+
+                c->balance_num = Vcb->balance.balance_num;
             }
         }
     }
@@ -3674,8 +3699,10 @@ end:
         } else {
             Status = remove_balance_item(Vcb);
             if (!NT_SUCCESS(Status)) {
+                // don't goto end - we're already in it, and would spin forever if this keeps failing.
+                // The balance item stays on disk and is picked up again on the next mount.
                 ERR("remove_balance_item returned %08lx\n", Status);
-                goto end;
+                Vcb->balance.status = Status;
             }
         }
 
@@ -3780,10 +3807,10 @@ NTSTATUS start_balance(device_extension* Vcb, void* data, ULONG length, KPROCESS
             }
 
             if (bsb->opts[i].flags & BTRFS_BALANCE_OPTS_USAGE) {
-                bsb->opts[i].usage_start = min(100, bsb->opts[i].stripes_start);
-                bsb->opts[i].usage_end = min(100, bsb->opts[i].stripes_end);
+                bsb->opts[i].usage_start = min(100, bsb->opts[i].usage_start);
+                bsb->opts[i].usage_end = min(100, bsb->opts[i].usage_end);
 
-                if (bsb->opts[i].stripes_start > bsb->opts[i].stripes_end)
+                if (bsb->opts[i].usage_start > bsb->opts[i].usage_end)
                     return STATUS_INVALID_PARAMETER;
             }
 
