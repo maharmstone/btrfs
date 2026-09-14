@@ -741,7 +741,7 @@ static void get_registry_value(HANDLE h, WCHAR* string, ULONG type, void* val, U
 
         if (!kvfi) {
             ERR("out of memory\n");
-            ZwClose(h);
+            // h belongs to the caller (read_registry), which closes it itself
             return;
         }
 

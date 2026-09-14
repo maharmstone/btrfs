@@ -194,6 +194,7 @@ static void mountmgr_notification(uint8_t* uuid) {
     mmtn = ExAllocatePoolWithTag(NonPagedPool, mmtnlen, ALLOC_TAG);
     if (!mmtn) {
         ERR("out of memory\n");
+        ObDereferenceObject(FileObject);
         return;
     }
 
@@ -216,13 +217,11 @@ static void mountmgr_notification(uint8_t* uuid) {
     *w = L'}';
 
     Status = dev_ioctl(mountmgr, IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION, mmtn, mmtnlen, NULL, 0, false, NULL);
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status))
         ERR("IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION returned %08lx\n", Status);
-        ExFreePool(mmtn);
-        return;
-    }
 
     ExFreePool(mmtn);
+    ObDereferenceObject(FileObject);
 }
 
 static void check_boot_options() {

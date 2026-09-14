@@ -1842,6 +1842,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                             ERR("IoAllocateMdl failed\n");
                             MmUnlockPages(master_mdl);
                             IoFreeMdl(master_mdl);
+                            ExFreePool(stripes);
                             Status = STATUS_INSUFFICIENT_RESOURCES;
                             goto exit;
                         }
@@ -1867,6 +1868,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
                                 ERR("IoAllocateMdl failed\n");
                                 MmUnlockPages(master_mdl);
                                 IoFreeMdl(master_mdl);
+                                ExFreePool(stripes);
                                 Status = STATUS_INSUFFICIENT_RESOURCES;
                                 goto exit;
                             }
@@ -1879,6 +1881,9 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
 
                 if (!stripeset) {
                     ERR("could not find stripe to read\n");
+                    MmUnlockPages(master_mdl);
+                    IoFreeMdl(master_mdl);
+                    ExFreePool(stripes);
                     Status = STATUS_DEVICE_NOT_READY;
                     goto exit;
                 }
@@ -1890,6 +1895,7 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
             ERR("out of memory\n");
             MmUnlockPages(master_mdl);
             IoFreeMdl(master_mdl);
+            ExFreePool(stripes);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             goto exit;
         }
@@ -2629,77 +2635,52 @@ NTSTATUS read_data(_In_ device_extension* Vcb, _In_ uint64_t addr, _In_ uint32_t
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid0 returned %08lx\n", Status);
 
-            if (file_read)
-                ExFreePool(context.va);
-
-            goto exit;
+            goto exit; // context.va is freed at exit
         }
 
-        if (file_read) {
+        if (file_read)
             RtlCopyMemory(buf, context.va, length);
-            ExFreePool(context.va);
-        }
     } else if (type == BTRFS_BLOCK_GROUP_RAID10) {
         Status = read_data_raid10(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, generation, offset);
 
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid10 returned %08lx\n", Status);
 
-            if (file_read)
-                ExFreePool(context.va);
-
-            goto exit;
+            goto exit; // context.va is freed at exit
         }
 
-        if (file_read) {
+        if (file_read)
             RtlCopyMemory(buf, context.va, length);
-            ExFreePool(context.va);
-        }
     } else if (type == BTRFS_BLOCK_GROUP_DUP) {
         Status = read_data_dup(Vcb, file_read ? context.va : buf, addr, &context, ci, devices, generation);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_dup returned %08lx\n", Status);
 
-            if (file_read)
-                ExFreePool(context.va);
-
-            goto exit;
+            goto exit; // context.va is freed at exit
         }
 
-        if (file_read) {
+        if (file_read)
             RtlCopyMemory(buf, context.va, length);
-            ExFreePool(context.va);
-        }
     } else if (type == BTRFS_BLOCK_GROUP_RAID5) {
         Status = read_data_raid5(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c, missing_devices > 0 ? true : false);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid5 returned %08lx\n", Status);
 
-            if (file_read)
-                ExFreePool(context.va);
-
-            goto exit;
+            goto exit; // context.va is freed at exit
         }
 
-        if (file_read) {
+        if (file_read)
             RtlCopyMemory(buf, context.va, length);
-            ExFreePool(context.va);
-        }
     } else if (type == BTRFS_BLOCK_GROUP_RAID6) {
         Status = read_data_raid6(Vcb, file_read ? context.va : buf, addr, length, &context, ci, devices, offset, generation, c, missing_devices > 0 ? true : false);
         if (!NT_SUCCESS(Status)) {
             ERR("read_data_raid6 returned %08lx\n", Status);
 
-            if (file_read)
-                ExFreePool(context.va);
-
-            goto exit;
+            goto exit; // context.va is freed at exit
         }
 
-        if (file_read) {
+        if (file_read)
             RtlCopyMemory(buf, context.va, length);
-            ExFreePool(context.va);
-        }
     }
 
 exit:
@@ -2723,6 +2704,10 @@ exit:
         if (context.stripes[i].Irp)
             IoFreeIrp(context.stripes[i].Irp);
     }
+
+    // the bounce buffer, allocated in each of the RAID branches above (when not file_read, context.va is the caller's buf)
+    if (file_read && context.va)
+        ExFreePool(context.va);
 
     ExFreePool(context.stripes);
 
@@ -2872,7 +2857,16 @@ NTSTATUS read_file(fcb* fcb, uint8_t* data, uint64_t start, uint64_t length, ULO
                     uint32_t read;
 
                     if (ed->compression == BTRFS_COMPRESS_NONE) {
-                        read = (uint32_t)min(min(len, ext->datalen) - off, length);
+                        // datalen includes the extent item header, and ram_bytes (len) comes from disk
+                        uint64_t avail = min(len, (uint64_t)(ext->datalen - offsetof(struct btrfs_file_extent_item, disk_bytenr)));
+
+                        if (off >= avail) {
+                            ERR("inline extent at %I64x is shorter than claimed\n", ext->offset);
+                            Status = STATUS_INTERNAL_ERROR;
+                            goto exit;
+                        }
+
+                        read = (uint32_t)min(avail - off, length);
 
                         RtlCopyMemory(data + bytes_read, (uint8_t*)&ed->disk_bytenr + off, read);
                     } else if (ed->compression == BTRFS_COMPRESS_ZLIB || ed->compression == BTRFS_COMPRESS_LZO || ed->compression == BTRFS_COMPRESS_ZSTD) {
@@ -3206,13 +3200,20 @@ nextitem:
 
                         partlen = *(uint32_t*)(buf2 + inoff);
 
-                        if (partlen < inlen) {
+                        if (partlen <= inlen - sizeof(uint32_t)) { // inlen >= 4 here, so this cannot wrap
                             off2 -= LZO_PAGE_SIZE;
                             inoff += partlen + sizeof(uint32_t);
                             inlen -= partlen + sizeof(uint32_t);
 
-                            if (LZO_PAGE_SIZE - (inoff % LZO_PAGE_SIZE) < sizeof(uint32_t))
-                                inoff = ((inoff / LZO_PAGE_SIZE) + 1) * LZO_PAGE_SIZE;
+                            if (LZO_PAGE_SIZE - (inoff % LZO_PAGE_SIZE) < sizeof(uint32_t)) {
+                                ULONG pad = (((inoff / LZO_PAGE_SIZE) + 1) * LZO_PAGE_SIZE) - inoff;
+
+                                if (pad > inlen)
+                                    break;
+
+                                inoff += pad;
+                                inlen -= pad;
+                            }
                         } else
                             break;
                     }
@@ -3298,6 +3299,7 @@ nextitem:
 
         RtlCopyMemory(ccj->data, (uint8_t*)ccj->decomp + ccj->offset, ccj->length);
         ExFreePool(ccj->decomp);
+        ExFreePool(ccj->cj);
 
         ExFreePool(ccj);
     }

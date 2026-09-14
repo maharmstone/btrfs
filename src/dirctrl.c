@@ -550,8 +550,14 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fiedi->EaSize = ealen;
             fiedi->ReparsePointTag = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp);
 
-            RtlCopyMemory(&fiedi->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
-            RtlCopyMemory(&fiedi->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
+            {
+                // the id of the entry, not of the directory being enumerated (cf. FileIdBothDirectoryInformation above)
+                uint64_t fileid_inode = r ? inode : fcb->Vcb->dummy_fcb->inode;
+                uint64_t fileid_subvol = r ? r->id : fcb->Vcb->dummy_fcb->subvol->id;
+
+                RtlCopyMemory(&fiedi->FileId.Identifier[0], &fileid_inode, sizeof(uint64_t));
+                RtlCopyMemory(&fiedi->FileId.Identifier[sizeof(uint64_t)], &fileid_subvol, sizeof(uint64_t));
+            }
 
             RtlCopyMemory(fiedi->FileName, de->name.Buffer, de->name.Length);
 
@@ -593,8 +599,13 @@ static NTSTATUS query_dir_item(fcb* fcb, ccb* ccb, void* buf, LONG* len, PIRP Ir
             fiebdi->EaSize = ealen;
             fiebdi->ReparsePointTag = get_reparse_tag(fcb->Vcb, r, inode, de->type, atts, ccb->lxss, Irp);
 
-            RtlCopyMemory(&fiebdi->FileId.Identifier[0], &fcb->inode, sizeof(uint64_t));
-            RtlCopyMemory(&fiebdi->FileId.Identifier[sizeof(uint64_t)], &fcb->subvol->id, sizeof(uint64_t));
+            {
+                uint64_t fileid_inode = r ? inode : fcb->Vcb->dummy_fcb->inode;
+                uint64_t fileid_subvol = r ? r->id : fcb->Vcb->dummy_fcb->subvol->id;
+
+                RtlCopyMemory(&fiebdi->FileId.Identifier[0], &fileid_inode, sizeof(uint64_t));
+                RtlCopyMemory(&fiebdi->FileId.Identifier[sizeof(uint64_t)], &fileid_subvol, sizeof(uint64_t));
+            }
 
             fiebdi->ShortNameLength = 0;
 

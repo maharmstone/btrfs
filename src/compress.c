@@ -270,9 +270,16 @@ NTSTATUS lzo_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_
     outoff = 0;
 
     do {
+        // inoff < inlen here (0 on the first pass, the loop condition after that), so these can't underflow
+        if (inlen - inoff < sizeof(uint32_t)) {
+            ERR("truncated LZO page header\n");
+            return STATUS_INTERNAL_ERROR;
+        }
+
         partlen = *(uint32_t*)&inbuf[inoff];
 
-        if (partlen + inoff > inlen) {
+        // compare rather than add: partlen comes from disk, and partlen + inoff can wrap
+        if (partlen > inlen - inoff - sizeof(uint32_t)) {
             ERR("overflow: %x + %x > %x\n", partlen, inoff, inlen);
             return STATUS_INTERNAL_ERROR;
         }
@@ -690,6 +697,8 @@ NTSTATUS zstd_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
     output.pos = 0;
 
     do {
+        size_t in_before = input.pos, out_before = output.pos;
+
         read = ZSTD_decompressStream(stream, &output, &input);
 
         if (ZSTD_isError(read)) {
@@ -700,6 +709,13 @@ NTSTATUS zstd_decompress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32
 
         if (output.pos == output.size)
             break;
+
+        // a truncated frame makes ZSTD_decompressStream keep asking for more input without progressing
+        if (input.pos == input.size && input.pos == in_before && output.pos == out_before) {
+            ERR("truncated zstd stream\n");
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
     } while (read != 0);
 
     Status = STATUS_SUCCESS;
@@ -755,6 +771,7 @@ NTSTATUS lzo_compress(uint8_t* inbuf, uint32_t inlen, uint8_t* outbuf, uint32_t 
         Status = lzo1x_1_compress(&stream);
         if (!NT_SUCCESS(Status)) {
             ERR("lzo1x_1_compress returned %08lx\n", Status);
+            ExFreePool(stream.wrkmem);
             ExFreePool(comp_data);
             return Status;
         }

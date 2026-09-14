@@ -100,6 +100,8 @@ public:
         can_change_perms = false;
         show_admin_button = false;
         thread = nullptr;
+        stop_search = false;
+        search_done = false;
         mode = mode_set = 0;
         flags = flags_set = 0;
         has_subvols = false;
@@ -117,6 +119,14 @@ public:
     }
 
     virtual ~BtrfsPropSheet() {
+        // the directory-scan thread writes into this object, so it must be gone before we are
+        if (thread) {
+            stop_search = true;
+            WaitForSingleObject(thread, INFINITE);
+            CloseHandle(thread);
+            thread = nullptr;
+        }
+
         if (stgm_set)
             ReleaseStgMedium(&stgm);
 
@@ -167,6 +177,7 @@ public:
     bool can_change_nocow;
     WCHAR size_format[255], cr_format[255], frag_format[255];
     HANDLE thread;
+    volatile bool stop_search, search_done; // for the directory-scan thread
     uint32_t min_mode, max_mode, mode, mode_set;
     uint64_t min_flags, max_flags, flags, flags_set;
     uint64_t subvol, inode, rdev;

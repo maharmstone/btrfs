@@ -378,6 +378,9 @@ void BtrfsVolPropSheet::RefreshUsage(HWND hwndDlg) {
         i = 0;
         devsize = 1024;
 
+        if (devices) // from Initialize or a previous refresh
+            free(devices);
+
         devices = (btrfs_device*)malloc(devsize);
 
         while (true) {

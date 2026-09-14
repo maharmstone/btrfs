@@ -266,7 +266,7 @@ static void clean_space_cache_chunk(device_extension* Vcb, chunk* c) {
                         stripeend = endoff - (endoff % c->chunk_item->stripe_len);
 
                     if (stripestart != stripeend) {
-                        for (j = 0; j < sub_stripes; j++) {
+                        for (j = 0; j < sub_stripes && i + j < c->chunk_item->num_stripes; j++) {
                             if (c->devices[i+j] && c->devices[i+j]->devobj && !c->devices[i+j]->readonly && c->devices[i+j]->trim)
                                 add_trim_entry(c->devices[i+j], stripestart + c->chunk_item->stripe[i+j].offset, stripeend - stripestart);
                         }
@@ -453,6 +453,7 @@ static NTSTATUS clean_space_cache(device_extension* Vcb) {
                                           &c->deleting);
                 if (!NT_SUCCESS(Status)) {
                     release_chunk_lock(c, Vcb);
+                    ExReleaseResourceLite(&Vcb->chunk_lock);
                     return Status;
                 }
 
@@ -524,6 +525,11 @@ static NTSTATUS clean_space_cache(device_extension* Vcb) {
                 stripe->dmdsa = ExAllocatePoolWithTag(PagedPool, datalen, ALLOC_TAG);
                 if (!stripe->dmdsa) {
                     ERR("out of memory\n");
+
+                    // no IRP will be sent for this device, so account for it here or the wait below never finishes
+                    if (InterlockedDecrement(&context.left) == 0)
+                        KeSetEvent(&context.Event, 0, false);
+
                     goto nextdev;
                 }
 
@@ -554,6 +560,10 @@ static NTSTATUS clean_space_cache(device_extension* Vcb) {
 
                 if (!stripe->Irp) {
                     ERR("IoAllocateIrp failed\n");
+
+                    if (InterlockedDecrement(&context.left) == 0)
+                        KeSetEvent(&context.Event, 0, false);
+
                     goto nextdev;
                 }
 
@@ -1785,7 +1795,8 @@ NTSTATUS do_tree_writes(device_extension* Vcb, LIST_ENTRY* tree_writes, bool no_
         if (!NT_SUCCESS(Status)) {
             ERR("write_data returned %08lx\n", Status);
 
-            for (i = 0; i < num_bits; i++) {
+            // only the entries up to and including bit_num have been initialized
+            for (i = 0; i <= bit_num; i++) {
                 free_write_data_stripes(&wtc[i]);
             }
             ExFreePool(wtc);
@@ -3102,6 +3113,7 @@ static NTSTATUS split_tree_at(device_extension* Vcb, tree* t, tree_data* newfirs
     nt->has_address = false;
     nt->Vcb = Vcb;
     nt->parent = t->parent;
+    nt->paritem = NULL; // set properly below, but must not be garbage if we fail before then and free_trees runs
 
 #ifdef DEBUG_PARANOID
     if (nt->parent && nt->parent->header.level <= nt->header.level) int3;
@@ -4005,7 +4017,13 @@ static NTSTATUS remove_root_extents(device_extension* Vcb, root* r, tree_holder*
         }
     }
 
-    if (level > 0) {
+    // the level we were passed ultimately comes from the on-disk ROOT_ITEM - don't walk a leaf as if it were an internal node
+    if (th->tree->header.level != level) {
+        ERR("tree at %I64x has level %u, expected %u\n", th->address, th->tree->header.level, level);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    if (th->tree->header.level > 0) {
         LIST_ENTRY* le = th->tree->itemlist.Flink;
 
         while (le != &th->tree->itemlist) {
@@ -4443,7 +4461,14 @@ static NTSTATUS set_xattr(device_extension* Vcb, LIST_ENTRY* batchlist, root* su
 
     TRACE("(%p, %I64x, %I64x, %.*s, %08x, %p, %u)\n", Vcb, subvol->id, inode, namelen, name, crc32, data, datalen);
 
-    xasize = (uint16_t)sizeof(struct btrfs_dir_item) + namelen + datalen;
+    // do the arithmetic in 32 bits: namelen + datalen can exceed 0xffff, and a wrapped
+    // xasize would give us a tiny allocation that we then overrun below
+    if ((uint32_t)sizeof(struct btrfs_dir_item) + namelen + datalen > Vcb->superblock.nodesize - sizeof(struct btrfs_header) - sizeof(struct btrfs_item)) {
+        ERR("xattr too large (name %u bytes, data %u bytes)\n", namelen, datalen);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    xasize = (uint16_t)(sizeof(struct btrfs_dir_item) + namelen + datalen);
 
     xa = ExAllocatePoolWithTag(PagedPool, xasize, ALLOC_TAG);
     if (!xa) {
@@ -4747,6 +4772,16 @@ static NTSTATUS rationalize_extents(fcb* fcb, PIRP Irp) {
         if ((ext->extent_data.type == BTRFS_FILE_EXTENT_REG || ext->extent_data.type == BTRFS_FILE_EXTENT_PREALLOC) && ext->extent_data.compression == BTRFS_COMPRESS_NONE && ext->unique) {
             if (ext->extent_data.disk_num_bytes != 0) {
                 LIST_ENTRY* le2;
+
+                // validate the on-disk geometry before trusting it: otherwise skip_end wraps below
+                // and add_checksum_entry is later called with a huge length
+                if (ext->extent_data.offset > ext->extent_data.disk_num_bytes ||
+                    ext->extent_data.num_bytes > ext->extent_data.disk_num_bytes - ext->extent_data.offset) {
+                    ERR("inode %I64x: EXTENT_DATA at %I64x has offset %I64x + num_bytes %I64x > disk_num_bytes %I64x\n",
+                        fcb->inode, ext->offset, ext->extent_data.offset, ext->extent_data.num_bytes, ext->extent_data.disk_num_bytes);
+                    Status = STATUS_INTERNAL_ERROR;
+                    goto end;
+                }
 
                 le2 = extent_ranges.Flink;
                 while (le2 != &extent_ranges) {
@@ -6754,6 +6789,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
         di2 = ExAllocatePoolWithTag(PagedPool, disize, ALLOC_TAG);
         if (!di2) {
             ERR("out of memory\n");
+            ExFreePool(di);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -6763,6 +6799,8 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                         fileref->dc->index, di, disize, Batch_Insert);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
+            ExFreePool(di);
+            ExFreePool(di2);
             return Status;
         }
 
@@ -6770,6 +6808,7 @@ static NTSTATUS flush_fileref(file_ref* fileref, LIST_ENTRY* batchlist, PIRP Irp
                                         di2, disize, Batch_DirItem);
         if (!NT_SUCCESS(Status)) {
             ERR("insert_tree_item_batch returned %08lx\n", Status);
+            ExFreePool(di2); // di is now owned by the batch
             return Status;
         }
 
@@ -7145,6 +7184,8 @@ static NTSTATUS flush_disk_caches(device_extension* Vcb) {
                     if (context.stripes[i].Irp)
                         IoFreeIrp(context.stripes[i].Irp);
                 }
+
+                ExFreePool(context.stripes);
 
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -8118,7 +8159,7 @@ void __stdcall flush_thread(void* context) {
 
     ObReferenceObject(devobj);
 
-    KeInitializeTimer(&Vcb->flush_thread_timer);
+    // Vcb->flush_thread_timer is initialized by mount_vol before this thread is created
 
     due_time.QuadPart = (uint64_t)Vcb->options.flush_interval * -10000000;
 

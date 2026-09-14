@@ -467,7 +467,7 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
     NTSTATUS Status;
     uint32_t *checksums, crc32, num_sectors, num_valid_sectors, size;
     struct btrfs_free_space_entry* fse;
-    uint64_t num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size;
+    uint64_t num_entries, num_bitmaps, extent_length, bmpnum, off, total_space = 0, superblock_size, seen_bitmaps = 0;
     LIST_ENTRY *le, rollback;
 
     // FIXME - does this break if Vcb->superblock.sectorsize is not 4096?
@@ -516,6 +516,15 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     if (c->cache->inode_item.size == 0) {
         WARN("cache had zero length\n");
+        free_fcb(c->cache);
+        c->cache = NULL;
+        return STATUS_NOT_FOUND;
+    }
+
+    // the size comes from the on-disk inode: it must fit in the 32-bit 'size' below, which read_file is
+    // otherwise not told about (Linux caps the cache far below this anyway)
+    if (c->cache->inode_item.size > 0x10000000) {
+        WARN("free space cache for %I64x has implausible size %I64x\n", c->offset, c->cache->inode_item.size);
         free_fcb(c->cache);
         c->cache = NULL;
         return STATUS_NOT_FOUND;
@@ -594,10 +603,22 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
 
     off = (sizeof(uint32_t) * num_sectors) + sizeof(uint64_t);
 
+    // num_entries and num_bitmaps come from the on-disk header, and the check on extent_length above
+    // can be defeated by wrapping, so bound them explicitly
+    if (num_entries > size / sizeof(struct btrfs_free_space_entry) || num_bitmaps > num_sectors) {
+        ERR("free space cache for %I64x has implausible entry counts (%I64x entries, %I64x bitmaps)\n", c->offset, num_entries, num_bitmaps);
+        goto clearcache;
+    }
+
     bmpnum = 0;
     for (uint32_t i = 0; i < num_entries; i++) {
         if ((off + sizeof(struct btrfs_free_space_entry)) >> Vcb->sector_shift != off >> Vcb->sector_shift)
             off = sector_align(off, Vcb->superblock.sectorsize);
+
+        if (off + sizeof(struct btrfs_free_space_entry) > size) {
+            ERR("free space cache for %I64x was truncated\n", c->offset);
+            goto clearcache;
+        }
 
         fse = (struct btrfs_free_space_entry*)&data[off];
 
@@ -610,7 +631,14 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
             }
 
             total_space += fse->bytes;
-        } else if (fse->type != BTRFS_FREE_SPACE_BITMAP) {
+        } else if (fse->type == BTRFS_FREE_SPACE_BITMAP) {
+            seen_bitmaps++;
+
+            if (seen_bitmaps > num_bitmaps) {
+                ERR("free space cache for %I64x has more bitmap entries than the header says (%I64x)\n", c->offset, num_bitmaps);
+                goto clearcache;
+            }
+        } else {
             ERR("unknown free-space type %x\n", fse->type);
         }
 
@@ -628,7 +656,11 @@ NTSTATUS load_stored_free_space_cache(device_extension* Vcb, chunk* c, bool load
             fse = (struct btrfs_free_space_entry*)&data[off];
 
             if (fse->type == BTRFS_FREE_SPACE_BITMAP) {
-                // FIXME - make sure we don't overflow the buffer here
+                if (((uint64_t)(bmpnum + 1) << Vcb->sector_shift) > size) { // load_free_space_bitmap writes to the buffer
+                    ERR("free space cache for %I64x has bitmaps beyond its end\n", c->offset);
+                    goto clearcache;
+                }
+
                 load_free_space_bitmap(Vcb, c, fse->offset, &data[bmpnum << Vcb->sector_shift], &total_space);
                 bmpnum++;
             }
@@ -783,10 +815,18 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
 
             if (tp.item->size < explen) {
                 WARN("(%I64x,%x,%I64x) was %u bytes, expected %lu\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset, tp.item->size, explen);
-                return STATUS_NOT_FOUND;
+
+                if (bmparr)
+                    ExFreePool(bmparr);
+
+                goto fail;
             } else if (tp.item->size == 0) {
                 WARN("(%I64x,%x,%I64x) has size of 0\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset);
-                return STATUS_NOT_FOUND;
+
+                if (bmparr)
+                    ExFreePool(bmparr);
+
+                goto fail;
             }
 
             if (bmplen < tp.item->size) {
@@ -882,6 +922,18 @@ static NTSTATUS load_stored_free_space_tree(device_extension* Vcb, chunk* c, PIR
     }
 
     return STATUS_SUCCESS;
+
+fail:
+    // the caller treats STATUS_NOT_FOUND as "no cache" and rebuilds c->space from the extent tree,
+    // which assumes it starts empty - so throw away whatever we'd already added
+    while (!IsListEmpty(&c->space)) {
+        space* s = CONTAINING_RECORD(RemoveHeadList(&c->space), space, list_entry);
+
+        RemoveEntryList(&s->list_entry_size);
+        ExFreePool(s);
+    }
+
+    return STATUS_NOT_FOUND;
 }
 
 static NTSTATUS load_free_space_cache(device_extension* Vcb, chunk* c, PIRP Irp) {
@@ -1914,6 +1966,13 @@ static NTSTATUS update_chunk_cache(device_extension* Vcb, chunk* c, struct btrfs
     Status = STATUS_SUCCESS;
 
 end:
+    // both lists are copies (copy_space_list / space_list_merge only read their sources)
+    while (!IsListEmpty(&deleting))
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&deleting), space, list_entry));
+
+    while (!IsListEmpty(&space_list))
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&space_list), space, list_entry));
+
     ExFreePool(data);
 
     return Status;
@@ -2372,6 +2431,17 @@ static NTSTATUS update_chunk_cache_tree(device_extension* Vcb, chunk* c, PIRP Ir
         }
 
         return Status;
+    }
+
+    // find_item returns the last item <= searchkey. If this chunk has no FST entries yet (e.g. it has
+    // just been created by alloc_chunk), that is the previous chunk's last item, which we must not touch.
+    while (tp.item->key.objectid < c->offset) {
+        traverse_ptr next_tp;
+
+        if (!find_next_item(Vcb, &tp, &next_tp, false, Irp))
+            goto after_tree_walk;
+
+        tp = next_tp;
     }
 
     while (!IsListEmpty(&space_list) && tp.item->key.objectid < c->offset + c->chunk_item->length) {

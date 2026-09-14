@@ -241,7 +241,7 @@ static NTSTATUS set_symlink(PIRP Irp, file_ref* fileref, fcb* fcb, ccb* ccb, REP
 
         buf = (REPARSE_DATA_BUFFER_LX_SYMLINK*)rdb->GenericReparseBuffer.DataBuffer;
 
-        if (buflen < offsetof(REPARSE_DATA_BUFFER_LX_SYMLINK, name)) {
+        if (rdb->ReparseDataLength < offsetof(REPARSE_DATA_BUFFER_LX_SYMLINK, name)) {
             WARN("buffer was less than minimum length (%u < %lu)\n", rdb->ReparseDataLength,
                  (unsigned long)(offsetof(REPARSE_DATA_BUFFER_LX_SYMLINK, name)));
             return STATUS_INVALID_PARAMETER;
