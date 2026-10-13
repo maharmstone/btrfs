@@ -1767,6 +1767,8 @@ void reap_fcb(fcb* fcb) {
     if (fcb->list_entry_all.Flink)
         RemoveEntryList(&fcb->list_entry_all);
 
+    FsRtlTeardownPerStreamContexts(&fcb->Header);
+
     ExDeleteResourceLite(&fcb->nonpaged->resource);
     ExDeleteResourceLite(&fcb->nonpaged->paging_resource);
     ExDeleteResourceLite(&fcb->nonpaged->dir_children_lock);
@@ -1833,7 +1835,6 @@ void reap_fcb(fcb* fcb) {
     if (fcb->hash_ptrs_uc)
         ExFreePool(fcb->hash_ptrs_uc);
 
-    FsRtlTeardownPerStreamContexts(&fcb->Header);
     FsRtlUninitializeFileLock(&fcb->lock);
     FsRtlUninitializeOplock(fcb_oplock(fcb));
 
