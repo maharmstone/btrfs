@@ -324,6 +324,14 @@ have more than 250 hours of cumulative uptime (see https://support.microsoft.com
 Make sure you are fully updated, run `CiTool.exe --remove-policy "{8F9CB695-5D48-48D6-A329-7202B44607E3}"`
 from an elevated command prompt, and reboot.
 
+If that doesn't work, from an elevated PowerShell console try:
+```
+mountvol S: /s
+Remove-Item "S:\EFI\Microsoft\Boot\CiPolicies\Active\{8F9CB695-5D48-48D6-A329-7202B44607E3}.cip" -Force
+Remove-Item "$env:windir\System32\CodeIntegrity\CiPolicies\Active\{8F9CB695-5D48-48D6-A329-7202B44607E3}.cip" -Force
+mountvol S: /d
+```
+
 Changelog
 ---------
 
