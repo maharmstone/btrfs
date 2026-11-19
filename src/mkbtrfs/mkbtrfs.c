@@ -104,11 +104,18 @@ int main(int argc, char** argv) {
 
                 colon = strstr(argv[i], ":");
 
-                if (colon) {
-                    memcpy(cmd, argv[i] + 1, colon - argv[i] - 1);
-                    cmd[colon - argv[i] - 1] = 0;
-                } else
-                    strcpy(cmd, argv[i] + 1);
+                {
+                    size_t cmdlen = colon ? (size_t)(colon - argv[i] - 1) : strlen(argv[i] + 1);
+
+                    if (cmdlen >= sizeof(cmd)) { // don't overrun the fixed buffer on a long /option
+                        print_string(stdout, IDS_UNKNOWN_ARG);
+                        invalid_args = true;
+                        break;
+                    }
+
+                    memcpy(cmd, argv[i] + 1, cmdlen);
+                    cmd[cmdlen] = 0;
+                }
 
                 if (!_stricmp(cmd, "sectorsize")) {
                     if (!colon || colon[1] == 0) {

@@ -1002,6 +1002,7 @@ static void mountmgr_process_drive(PDEVICE_OBJECT mountmgr, PUNICODE_STRING devi
                             if (mdn2->NameLength == device_name->Length && RtlCompareMemory(mdn2->Name, device_name->Buffer, device_name->Length) == device_name->Length) {
                                 vc2 = vc;
                                 need_remove = true;
+                                ExFreePool(mdn2);
                                 break;
                             }
                         }

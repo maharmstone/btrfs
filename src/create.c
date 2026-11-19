@@ -564,6 +564,12 @@ NTSTATUS load_dir_children(_Requires_lock_held_(_Curr_->tree_lock) device_extens
             goto cont;
         }
 
+        if (tp.item->size < sizeof(struct btrfs_dir_item) + di->name_len + di->data_len) {
+            WARN("(%I64x,%x,%I64x) was truncated (%u bytes, name_len %u, data_len %u)\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
+                 tp.item->size, di->name_len, di->data_len);
+            goto cont;
+        }
+
         Status = utf8_to_utf16(NULL, 0, &utf16len, (char*)&di[1], di->name_len);
         if (!NT_SUCCESS(Status)) {
             ERR("utf8_to_utf16 1 returned %08lx\n", Status);
@@ -838,6 +844,12 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 hardlink* hl;
                 ULONG stringlen;
 
+                if (len < sizeof(struct btrfs_inode_ref) + ir->name_len) {
+                    ERR("INODE_REF was truncated (%lu bytes left, name_len %u)\n", len, ir->name_len);
+                    reap_fcb(fcb);
+                    return STATUS_INTERNAL_ERROR;
+                }
+
                 hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
                 if (!hl) {
                     ERR("out of memory\n");
@@ -852,6 +864,13 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 if (hl->utf8.Length > 0) {
                     hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
+                    if (!hl->utf8.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(hl);
+                        reap_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
                     RtlCopyMemory(hl->utf8.Buffer, &ir[1], ir->name_len);
                 }
 
@@ -903,6 +922,12 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
                 hardlink* hl;
                 ULONG stringlen;
 
+                if (len < offsetof(struct btrfs_inode_extref, name) + ier->name_len) {
+                    ERR("INODE_EXTREF was truncated (%lu bytes left, name_len %u)\n", len, ier->name_len);
+                    reap_fcb(fcb);
+                    return STATUS_INTERNAL_ERROR;
+                }
+
                 hl = ExAllocatePoolWithTag(pooltype, sizeof(hardlink), ALLOC_TAG);
                 if (!hl) {
                     ERR("out of memory\n");
@@ -917,6 +942,13 @@ NTSTATUS open_fcb(_Requires_lock_held_(_Curr_->tree_lock) _Requires_exclusive_lo
 
                 if (hl->utf8.Length > 0) {
                     hl->utf8.Buffer = ExAllocatePoolWithTag(pooltype, hl->utf8.MaximumLength, ALLOC_TAG);
+                    if (!hl->utf8.Buffer) {
+                        ERR("out of memory\n");
+                        ExFreePool(hl);
+                        reap_fcb(fcb);
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+
                     RtlCopyMemory(hl->utf8.Buffer, ier->name, ier->name_len);
                 }
 

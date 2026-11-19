@@ -520,7 +520,7 @@ static NTSTATUS duplicate_fcb(fcb* oldfcb, fcb** pfcb) {
                 else
                     len = (ULONG)ext->extent_data.disk_num_bytes;
 
-                len = (len * sizeof(uint32_t)) >> Vcb->sector_shift;
+                len = (len >> Vcb->sector_shift) * Vcb->csum_size;
 
                 ext2->csum = ExAllocatePoolWithTag(PagedPool, len, ALLOC_TAG);
                 if (!ext2->csum) {
@@ -2069,9 +2069,18 @@ static NTSTATUS rename_stream(device_extension* Vcb, file_ref* fileref, ccb* ccb
 
     // change fcb values
 
+    ExAcquireResourceExclusiveLite(&fileref->parent->fcb->nonpaged->dir_children_lock, true);
+
+    ExFreePool(fileref->dc->utf8.Buffer);
     fileref->dc->utf8 = utf8;
+
+    ExFreePool(fileref->dc->name.Buffer);
     fileref->dc->name = utf16;
+
+    ExFreePool(fileref->dc->name_uc.Buffer);
     fileref->dc->name_uc = utf16uc;
+
+    ExReleaseResourceLite(&fileref->parent->fcb->nonpaged->dir_children_lock);
 
     crc32 = calc_crc32c(0xfffffffe, (uint8_t*)adsxattr.Buffer, adsxattr.Length);
 
@@ -3297,7 +3306,6 @@ NTSTATUS stream_set_end_of_file_information(device_extension* Vcb, uint16_t end,
             char* data = ExAllocatePoolWithTag(PagedPool, end, ALLOC_TAG);
             if (!data) {
                 ERR("out of memory\n");
-                ExFreePool(data);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -5061,7 +5069,7 @@ static NTSTATUS fill_in_hard_link_full_id_information(FILE_LINKS_FULL_ID_INFORMA
                     while (le2 != &parfr->children) {
                         file_ref* fr2 = CONTAINING_RECORD(le2, file_ref, list_entry);
 
-                        if (fr2->dc->index == hl->index) {
+                        if (fr2->dc && fr2->dc->index == hl->index) {
                             found = true;
                             deleted = fr2->deleted;
 

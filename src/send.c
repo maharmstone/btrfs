@@ -105,6 +105,7 @@ typedef struct {
         LIST_ENTRY exts;
         LIST_ENTRY oldexts;
     } lastinode;
+    bool path_too_long; // set by send_add_tlv_path, checked by send_thread
 } send_context;
 
 #define MAX_SEND_WRITE 0xc000 // 48 KB
@@ -557,8 +558,10 @@ static NTSTATUS send_add_dir(send_context* context, uint64_t inode, send_dir* pa
     return STATUS_SUCCESS;
 }
 
-static __inline uint16_t find_path_len(send_dir* parent, uint16_t namelen) {
-    uint16_t len = namelen;
+// ULONG rather than uint16_t: deeply nested directories can produce a path of more than 0xffff bytes,
+// and find_path (which is also ULONG) writes the whole thing regardless
+static __inline ULONG find_path_len(send_dir* parent, uint16_t namelen) {
+    ULONG len = namelen;
 
     while (parent && parent->namelen > 0) {
         len += parent->namelen + 1;
@@ -584,9 +587,17 @@ static void find_path(char* path, send_dir* parent, char* name, ULONG namelen) {
 }
 
 static void send_add_tlv_path(send_context* context, uint16_t type, send_dir* parent, char* name, uint16_t namelen) {
-    uint16_t len = find_path_len(parent, namelen);
+    ULONG len = find_path_len(parent, namelen);
 
-    send_add_tlv(context, type, NULL, len);
+    if (len > 0xffff) {
+        // a TLV can't hold it, and we must not write past what we reserve: send_thread sees the flag and fails the send
+        ERR("path too long (%lu bytes)\n", len);
+        context->path_too_long = true;
+        send_add_tlv(context, type, NULL, 0);
+        return;
+    }
+
+    send_add_tlv(context, type, NULL, (uint16_t)len);
 
     if (len > 0)
         find_path((char*)&context->data[context->datalen - len], parent, name, namelen);
@@ -614,7 +625,7 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
     }
 
     if (context->lastinode.o) {
-        uint16_t pathlen;
+        ULONG pathlen;
 
         if (context->lastinode.o->sd) {
             if (context->lastinode.o->sd->name)
@@ -635,6 +646,12 @@ static NTSTATUS found_path(send_context* context, send_dir* parent, char* name, 
             ExFreePool(context->lastinode.path);
 
         pathlen = find_path_len(parent, namelen);
+
+        if (pathlen > 0xffff) {
+            ERR("path too long (%lu bytes)\n", pathlen);
+            return STATUS_NAME_TOO_LONG;
+        }
+
         context->lastinode.path = ExAllocatePoolWithTag(PagedPool, pathlen + 1, ALLOC_TAG);
         if (!context->lastinode.path) {
             ERR("out of memory\n");
@@ -691,7 +708,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
     }
 
     if (dir == BTRFS_FIRST_FREE_OBJECTID) {
-        Status = send_add_dir(context, dir, NULL, NULL, 0, false, le, psd);
+        Status = send_add_dir(context, dir, NULL, NULL, 0, false, le->Blink, psd); // le is the first larger entry (or the head), and send_add_dir inserts after what it's given
         if (!NT_SUCCESS(Status)) {
             ERR("send_add_dir returned %08lx\n", Status);
             return Status;
@@ -755,7 +772,7 @@ static NTSTATUS find_send_dir(send_context* context, uint64_t dir, uint64_t gene
         return Status;
     }
 
-    Status = send_add_dir(context, dir, NULL, name, (uint16_t)strlen(name), true, le, psd);
+    Status = send_add_dir(context, dir, NULL, name, (uint16_t)strlen(name), true, le->Blink, psd);
     if (!NT_SUCCESS(Status)) {
         ERR("send_add_dir returned %08lx\n", Status);
         return Status;
@@ -1036,12 +1053,18 @@ static void send_truncate_command(send_context* context, char* path, uint64_t si
 
 static NTSTATUS send_unlink_command(send_context* context, send_dir* parent, uint16_t namelen, char* name) {
     ULONG pos = context->datalen;
-    uint16_t pathlen;
+    ULONG pathlen;
+
+    pathlen = find_path_len(parent, namelen);
+
+    if (pathlen > 0xffff) {
+        ERR("path too long (%lu bytes)\n", pathlen);
+        return STATUS_NAME_TOO_LONG;
+    }
 
     send_command(context, BTRFS_SEND_C_UNLINK);
 
-    pathlen = find_path_len(parent, namelen);
-    send_add_tlv(context, BTRFS_SEND_A_PATH, NULL, pathlen);
+    send_add_tlv(context, BTRFS_SEND_A_PATH, NULL, (uint16_t)pathlen);
 
     find_path((char*)&context->data[context->datalen - pathlen], parent, name, namelen);
 
@@ -1165,8 +1188,8 @@ static NTSTATUS look_for_collision(send_context* context, send_dir* sd, char* na
             return STATUS_OBJECT_NAME_COLLISION;
         }
 
+        len -= (uint16_t)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len; // this entry's size, before we move on
         di = (struct btrfs_dir_item*)((uint8_t*)&di[1] + di->data_len + di->name_len);
-        len -= (uint16_t)sizeof(struct btrfs_dir_item) + di->data_len + di->name_len;
     } while (len > 0);
 
     return STATUS_SUCCESS;
@@ -1575,7 +1598,7 @@ static NTSTATUS flush_refs(send_context* context, traverse_ptr* tp1, traverse_pt
             }
 
             if (or == nameref && nameref2) {
-                uint16_t len = find_path_len(nameref2->sd, nameref2->namelen);
+                ULONG len = find_path_len(nameref2->sd, nameref2->namelen);
 
                 if (context->lastinode.path)
                     ExFreePool(context->lastinode.path);
@@ -1692,7 +1715,7 @@ static NTSTATUS add_ext_holes(device_extension* Vcb, LIST_ENTRY* exts, uint64_t 
 
         ext2->offset = lastoff;
         ext2->datalen = sizeof(struct btrfs_file_extent_item);
-        ext2->data.ram_bytes = ext2->data.num_bytes = sector_align(size - lastoff, Vcb->superblock.sectorsize);
+        ext2->data.ram_bytes = ext2->data.num_bytes = sector_align(size, Vcb->superblock.sectorsize) - lastoff; // so the list covers the same aligned range as a REG extent would
         ext2->data.type = BTRFS_FILE_EXTENT_REG;
         ext2->data.disk_bytenr = ext2->data.disk_num_bytes = ext2->data.offset = 0;
 
@@ -1964,9 +1987,11 @@ static bool try_clone_edr(send_context* context, send_ext* se, struct btrfs_exte
                         ERR("(%I64x,%x,%I64x) has size %u, not %Iu as expected\n", tp.item->key.objectid, tp.item->key.type, tp.item->key.offset,
                             tp.item->size, sizeof(struct btrfs_file_extent_item));
                     else {
-                        if (ed->disk_bytenr == se->data.disk_bytenr && ed->disk_num_bytes == se->data.disk_num_bytes && se->data.offset <= ed->offset && se->data.offset + se->data.num_bytes >= ed->offset + ed->num_bytes) {
-                            uint64_t clone_offset = tp.item->key.offset + ed->offset - se->data.offset;
-                            uint64_t clone_len = min(context->lastinode.size - se->offset, ed->num_bytes);
+                        // the source extent must cover the range we want to clone, and the source file offset is
+                        // however far into the source's range our range starts
+                        if (ed->disk_bytenr == se->data.disk_bytenr && ed->disk_num_bytes == se->data.disk_num_bytes && ed->offset <= se->data.offset && ed->offset + ed->num_bytes >= se->data.offset + se->data.num_bytes) {
+                            uint64_t clone_offset = tp.item->key.offset + (se->data.offset - ed->offset);
+                            uint64_t clone_len = min(context->lastinode.size - se->offset, se->data.num_bytes);
 
                             if ((clone_offset & (context->Vcb->superblock.sectorsize - 1)) == 0 && (clone_len & (context->Vcb->superblock.sectorsize - 1)) == 0) {
                                 ULONG pos = context->datalen;
@@ -2163,7 +2188,9 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
     while (!IsListEmpty(&context->lastinode.exts)) {
         send_ext* se = CONTAINING_RECORD(RemoveHeadList(&context->lastinode.exts), send_ext, list_entry);
-        send_ext* se2 = context->parent ? CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldexts), send_ext, list_entry) : NULL;
+        // oldexts can be shorter than exts (sync_ext_cutoff_points stops at whichever list ends first), and
+        // RemoveHeadList on an empty list would hand back the list head itself
+        send_ext* se2 = (context->parent && !IsListEmpty(&context->lastinode.oldexts)) ? CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldexts), send_ext, list_entry) : NULL;
         ULONG pos;
 
         if (se2) {
@@ -2196,8 +2223,9 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             else if (se->data.compression == BTRFS_COMPRESS_ZLIB || se->data.compression == BTRFS_COMPRESS_LZO || se->data.compression == BTRFS_COMPRESS_ZSTD) {
                 ULONG inlen = se->datalen - (ULONG)offsetof(struct btrfs_file_extent_item, disk_bytenr);
 
+                // ram_bytes < nodesize <= 0x10000 (checked in send_extent_data), so one width for the reservation and the zeroing
                 send_add_tlv(context, BTRFS_SEND_A_DATA, NULL, (uint16_t)se->data.ram_bytes);
-                RtlZeroMemory(&context->data[context->datalen - se->data.ram_bytes], (ULONG)se->data.ram_bytes);
+                RtlZeroMemory(&context->data[context->datalen - (uint16_t)se->data.ram_bytes], (uint16_t)se->data.ram_bytes);
 
                 if (se->data.compression == BTRFS_COMPRESS_ZLIB) {
                     Status = zlib_decompress((uint8_t*)&se->data.disk_bytenr, inlen, &context->data[context->datalen - se->data.ram_bytes], (uint32_t)se->data.ram_bytes);
@@ -2258,7 +2286,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
             uint64_t off, offset;
 
             for (off = se->data.offset; off < se->data.offset + se->data.num_bytes; off += MAX_SEND_WRITE) {
-                uint16_t length = (uint16_t)min(min(se->data.offset + se->data.num_bytes - off, MAX_SEND_WRITE), context->lastinode.size - se->offset - off);
+                uint16_t length = (uint16_t)min(min(se->data.offset + se->data.num_bytes - off, MAX_SEND_WRITE), context->lastinode.size - (se->offset + off - se->data.offset));
 
                 if (context->datalen > SEND_BUFFER_LENGTH) {
                     Status = wait_for_flush(context, tp1, tp2);
@@ -2282,7 +2310,7 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
-                offset = se->offset + off;
+                offset = se->offset + (off - se->data.offset); // off is relative to the disk extent, se->offset is the file offset of the item
                 send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &offset, sizeof(uint64_t));
 
                 send_add_tlv(context, BTRFS_SEND_A_DATA, NULL, length);
@@ -2376,10 +2404,10 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
-                offset = se->offset + off;
+                offset = se->offset + (off - se->data.offset); // off is relative to the disk extent, se->offset is the file offset of the item
                 send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &offset, sizeof(uint64_t));
 
-                length = (uint16_t)min(context->lastinode.size - se->offset - off, length);
+                length = (uint16_t)min(context->lastinode.size - offset, length);
                 send_add_tlv(context, BTRFS_SEND_A_DATA, buf + skip_start, length);
 
                 send_command_finish(context, pos);
@@ -2513,10 +2541,10 @@ static NTSTATUS flush_extents(send_context* context, traverse_ptr* tp1, traverse
 
                 send_add_tlv(context, BTRFS_SEND_A_PATH, context->lastinode.path, context->lastinode.path ? (uint16_t)strlen(context->lastinode.path) : 0);
 
-                offset = se->offset + off;
+                offset = se->offset + (off - se->data.offset); // off is relative to the disk extent, se->offset is the file offset of the item
                 send_add_tlv(context, BTRFS_SEND_A_FILE_OFFSET, &offset, sizeof(uint64_t));
 
-                length = (uint16_t)min(context->lastinode.size - se->offset - off, length);
+                length = (uint16_t)min(context->lastinode.size - offset, length);
                 send_add_tlv(context, BTRFS_SEND_A_DATA, &buf[off], length);
 
                 send_command_finish(context, pos);
@@ -2673,6 +2701,12 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
                 return STATUS_INTERNAL_ERROR;
             }
         } else if (ed->type == BTRFS_FILE_EXTENT_INLINE) {
+            // inline data can never reach nodesize; flush_extents relies on ram_bytes fitting a uint16_t
+            if (ed->ram_bytes >= context->Vcb->superblock.nodesize) {
+                ERR("(%I64x,%x,%I64x) inline extent has implausible ram_bytes %I64x\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset, ed->ram_bytes);
+                return STATUS_INTERNAL_ERROR;
+            }
+
             if (tp->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes && ed->compression == BTRFS_COMPRESS_NONE) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp->item->key.objectid, tp->item->key.type, tp->item->key.offset,
                     tp->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
@@ -2729,7 +2763,13 @@ static NTSTATUS send_extent_data(send_context* context, traverse_ptr* tp, traver
                 return STATUS_INTERNAL_ERROR;
             }
         } else if (ed->type == BTRFS_FILE_EXTENT_INLINE) {
-            if (tp2->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes) {
+            if (ed->ram_bytes >= context->Vcb->superblock.nodesize) {
+                ERR("(%I64x,%x,%I64x) inline extent has implausible ram_bytes %I64x\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset, ed->ram_bytes);
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            // as for tp above: for a compressed inline extent ram_bytes is the uncompressed size, so this check only applies to uncompressed ones
+            if (tp2->item->size < offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes && ed->compression == BTRFS_COMPRESS_NONE) {
                 ERR("(%I64x,%x,%I64x) was %u bytes, expected %I64u\n", tp2->item->key.objectid, tp2->item->key.type, tp2->item->key.offset,
                     tp2->item->size, offsetof(struct btrfs_file_extent_item, disk_bytenr) + ed->ram_bytes);
                 return STATUS_INTERNAL_ERROR;
@@ -3027,6 +3067,12 @@ static void __stdcall send_thread(void* ctx) {
 
         do {
             traverse_ptr next_tp;
+
+            if (context->path_too_long) {
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                Status = STATUS_NAME_TOO_LONG;
+                goto end;
+            }
 
             if (context->datalen > SEND_BUFFER_LENGTH) {
                 struct btrfs_key key1 = tp.item->key, key2 = tp2.item->key;
@@ -3407,6 +3453,12 @@ static void __stdcall send_thread(void* ctx) {
         do {
             traverse_ptr next_tp;
 
+            if (context->path_too_long) {
+                ExReleaseResourceLite(&context->Vcb->tree_lock);
+                Status = STATUS_NAME_TOO_LONG;
+                goto end;
+            }
+
             if (context->datalen > SEND_BUFFER_LENGTH) {
                 struct btrfs_key key = tp.item->key;
 
@@ -3519,6 +3571,11 @@ static void __stdcall send_thread(void* ctx) {
     } else
         ExReleaseResourceLite(&context->Vcb->tree_lock);
 
+    if (context->path_too_long) { // set by send_add_tlv_path, which then emits an empty path rather than overrunning the buffer
+        Status = STATUS_NAME_TOO_LONG;
+        goto end;
+    }
+
     KeClearEvent(&context->send->cleared_event);
     KeSetEvent(&context->buffer_event, 0, true);
     KeWaitForSingleObject(&context->send->cleared_event, Executive, KernelMode, false, NULL);
@@ -3534,6 +3591,27 @@ end:
     }
 
     ExAcquireResourceExclusiveLite(&context->Vcb->send_load_lock, true);
+
+    // whatever was accumulated for the inode we were in the middle of, if we got here by error or cancel
+    if (context->lastinode.path) {
+        ExFreePool(context->lastinode.path);
+        context->lastinode.path = NULL;
+    }
+
+    while (!IsListEmpty(&context->lastinode.refs))
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&context->lastinode.refs), ref, list_entry));
+
+    while (!IsListEmpty(&context->lastinode.oldrefs))
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldrefs), ref, list_entry));
+
+    while (!IsListEmpty(&context->lastinode.exts))
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&context->lastinode.exts), send_ext, list_entry));
+
+    while (!IsListEmpty(&context->lastinode.oldexts))
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&context->lastinode.oldexts), send_ext, list_entry));
+
+    while (!IsListEmpty(&context->pending_rmdirs)) // the send_dirs these point at are freed with dirs below
+        ExFreePool(CONTAINING_RECORD(RemoveHeadList(&context->pending_rmdirs), pending_rmdir, list_entry));
 
     while (!IsListEmpty(&context->orphans)) {
         orphan* o = CONTAINING_RECORD(RemoveHeadList(&context->orphans), orphan, list_entry);
@@ -3757,6 +3835,7 @@ NTSTATUS send_subvol(device_extension* Vcb, void* data, ULONG datalen, PFILE_OBJ
     context->root = fcb->subvol;
     context->parent = parsubvol;
     InitializeListHead(&context->orphans);
+    context->path_too_long = false;
     InitializeListHead(&context->dirs);
     InitializeListHead(&context->pending_rmdirs);
     context->lastinode.inode = 0;
@@ -3870,10 +3949,13 @@ NTSTATUS read_send_buffer(device_extension* Vcb, PFILE_OBJECT FileObject, void* 
     } else {
         *retlen = context->datalen;
         context->datalen = 0;
-        ExReleaseResourceLite(&Vcb->send_load_lock);
 
+        // signal before dropping the lock: on its error path send_thread takes the lock and frees
+        // context and ccb->send without waiting for cleared_event, so touching them after the release races it
         KeClearEvent(&context->buffer_event);
         KeSetEvent(&ccb->send->cleared_event, 0, false);
+
+        ExReleaseResourceLite(&Vcb->send_load_lock);
     }
 
     return STATUS_SUCCESS;

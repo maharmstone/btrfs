@@ -373,6 +373,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     uint16_t cisize;
     chunk* c = NULL;
     space* s = NULL;
+    bool res_init = false;
     LIST_ENTRY* le;
 
     le = Vcb->devices.Flink;
@@ -638,6 +639,8 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     ExInitializeResourceLite(&c->lock);
     ExInitializeResourceLite(&c->changed_extents_lock);
 
+    res_init = true;
+
     s = ExAllocatePoolWithTag(NonPagedPool, sizeof(space), ALLOC_TAG);
     if (!s) {
         ERR("out of memory\n");
@@ -649,6 +652,7 @@ NTSTATUS alloc_chunk(device_extension* Vcb, uint64_t flags, chunk** pc, bool ful
     s->size = c->chunk_item->length;
     InsertTailList(&c->space, &s->list_entry);
     InsertTailList(&c->space_size, &s->list_entry_size);
+    s = NULL; // now owned by c->space
 
     Status = protect_superblocks(c);
     if (!NT_SUCCESS(Status))
@@ -675,6 +679,20 @@ end:
 
     if (!NT_SUCCESS(Status)) {
         if (c) {
+            if (res_init) {
+                // protect_superblocks may have split the initial entry, so walk the list rather than freeing s
+                while (!IsListEmpty(&c->space)) {
+                    space* s2 = CONTAINING_RECORD(RemoveHeadList(&c->space), space, list_entry);
+
+                    ExFreePool(s2);
+                }
+
+                ExDeleteResourceLite(&c->range_locks_lock);
+                ExDeleteResourceLite(&c->partial_stripes_lock);
+                ExDeleteResourceLite(&c->lock);
+                ExDeleteResourceLite(&c->changed_extents_lock);
+            }
+
             if (c->devices)
                 ExFreePool(c->devices);
 
@@ -683,8 +701,6 @@ end:
 
             ExFreePool(c);
         }
-
-        if (s) ExFreePool(s);
     } else {
         bool done = false;
 
@@ -725,12 +741,6 @@ static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stri
     bool file_write = Irp && Irp->MdlAddress && (Irp->MdlAddress->ByteOffset == 0);
     PMDL master_mdl;
     PFN_NUMBER* pfns;
-
-    stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(uint64_t) * c->chunk_item->num_stripes, ALLOC_TAG);
-    if (!stripeoff) {
-        ERR("out of memory\n");
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
 
     get_raid0_offset(address - c->offset, c->chunk_item->stripe_len, c->chunk_item->num_stripes, &startoff, &startoffstripe);
     get_raid0_offset(address + length - c->offset - 1, c->chunk_item->stripe_len, c->chunk_item->num_stripes, &endoff, &endoffstripe);
@@ -784,6 +794,13 @@ static NTSTATUS prepare_raid0_write(_Pre_satisfies_(_Curr_->chunk_item->num_stri
         wtc->mdl = master_mdl;
 
         pfns = (PFN_NUMBER*)(master_mdl + 1);
+    }
+
+    // allocated here rather than at the top, as prepare_raid10_write does, so the early returns above don't leak it
+    stripeoff = ExAllocatePoolWithTag(PagedPool, sizeof(uint64_t) * c->chunk_item->num_stripes, ALLOC_TAG);
+    if (!stripeoff) {
+        ERR("out of memory\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     for (i = 0; i < c->chunk_item->num_stripes; i++) {
@@ -932,10 +949,12 @@ static NTSTATUS prepare_raid10_write(_Pre_satisfies_(_Curr_->chunk_item->sub_str
         else
             stripes[i].end = endoff - (endoff % c->chunk_item->stripe_len);
 
-        stripes[i].mdl = IoAllocateMdl(NULL, (ULONG)(stripes[i].end - stripes[i].start), false, false, NULL);
-        if (!stripes[i].mdl) {
-            ERR("IoAllocateMdl failed\n");
-            return STATUS_INSUFFICIENT_RESOURCES;
+        if (stripes[i].start != stripes[i].end) { // as the other prepare_* functions do: an MDL for an empty stripe would never be freed
+            stripes[i].mdl = IoAllocateMdl(NULL, (ULONG)(stripes[i].end - stripes[i].start), false, false, NULL);
+            if (!stripes[i].mdl) {
+                ERR("IoAllocateMdl failed\n");
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
         }
 
         for (j = 1; j < c->chunk_item->sub_stripes; j++) {
@@ -1302,7 +1321,7 @@ static NTSTATUS prepare_raid5_write(device_extension* Vcb, chunk* c, uint64_t ad
         if (!NT_SUCCESS(Status)) {
             ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
             IoFreeMdl(master_mdl);
-            return Status;
+            goto exit; // log_stripes has already been allocated
         }
 
         wtc->mdl = master_mdl;
@@ -2118,10 +2137,22 @@ NTSTATUS write_data(_In_ device_extension* Vcb, _In_ uint64_t address, _In_reads
 
 end:
 
-    if (stripes) ExFreePool(stripes);
+    if (!NT_SUCCESS(Status)) {
+        // stripes from i onwards were never attached to a write_data_stripe, so free_write_data_stripes
+        // doesn't know about their MDLs (RAID10 sub-stripes share one MDL, hence the comparison)
+        for (; i < c->chunk_item->num_stripes; i++) {
+            if (stripes[i].mdl && (i == 0 || stripes[i].mdl != stripes[i-1].mdl)) {
+                if (stripes[i].mdl->MdlFlags & MDL_PAGES_LOCKED)
+                    MmUnlockPages(stripes[i].mdl);
 
-    if (!NT_SUCCESS(Status))
+                IoFreeMdl(stripes[i].mdl);
+            }
+        }
+
         free_write_data_stripes(wtc);
+    }
+
+    if (stripes) ExFreePool(stripes);
 
     return Status;
 
@@ -2330,11 +2361,14 @@ void free_write_data_stripes(write_data_context* wtc) {
     LIST_ENTRY* le;
     PMDL last_mdl = NULL;
 
+    // NULL everything after freeing it: write_data's failure path calls this, and then so does its caller
+
     if (wtc->parity1_mdl) {
         if (wtc->parity1_mdl->MdlFlags & MDL_PAGES_LOCKED)
             MmUnlockPages(wtc->parity1_mdl);
 
         IoFreeMdl(wtc->parity1_mdl);
+        wtc->parity1_mdl = NULL;
     }
 
     if (wtc->parity2_mdl) {
@@ -2342,6 +2376,7 @@ void free_write_data_stripes(write_data_context* wtc) {
             MmUnlockPages(wtc->parity2_mdl);
 
         IoFreeMdl(wtc->parity2_mdl);
+        wtc->parity2_mdl = NULL;
     }
 
     if (wtc->mdl) {
@@ -2349,16 +2384,23 @@ void free_write_data_stripes(write_data_context* wtc) {
             MmUnlockPages(wtc->mdl);
 
         IoFreeMdl(wtc->mdl);
+        wtc->mdl = NULL;
     }
 
-    if (wtc->parity1)
+    if (wtc->parity1) {
         ExFreePool(wtc->parity1);
+        wtc->parity1 = NULL;
+    }
 
-    if (wtc->parity2)
+    if (wtc->parity2) {
         ExFreePool(wtc->parity2);
+        wtc->parity2 = NULL;
+    }
 
-    if (wtc->scratch)
+    if (wtc->scratch) {
         ExFreePool(wtc->scratch);
+        wtc->scratch = NULL;
+    }
 
     le = wtc->stripes.Flink;
     while (le != &wtc->stripes) {
@@ -2992,6 +3034,11 @@ static NTSTATUS try_extend_data(device_extension* Vcb, fcb* fcb, uint64_t start_
     }
 
     c = get_chunk_from_address(Vcb, ed->disk_bytenr);
+
+    if (!c) {
+        ERR("get_chunk_from_address(%I64x) failed\n", ed->disk_bytenr);
+        return STATUS_DISK_FULL;
+    }
 
     if (c->reloc || c->readonly || c->chunk_item->type != Vcb->data_flags)
         return STATUS_DISK_FULL;
@@ -3738,6 +3785,7 @@ static NTSTATUS do_write_file_prealloc(fcb* fcb, extent* ext, uint64_t start_dat
                                      NULL, file_write, irp_offset + ext->offset - start_data, priority);
         if (!NT_SUCCESS(Status)) {
             ERR("write_data_complete returned %08lx\n", Status);
+            ExFreePool(newext);
             return Status;
         }
 
@@ -4217,7 +4265,7 @@ NTSTATUS do_write_file(fcb* fcb, uint64_t start, uint64_t end_data, void* data, 
 
                 if (ed->type == BTRFS_FILE_EXTENT_REG) {
                     uint64_t writeaddr = ed->disk_bytenr + ed->offset + start + written - ext->offset;
-                    uint64_t write_len = min(len, length);
+                    uint64_t write_len = min(ext->offset + len - (start + written), length); // only what is left of this extent, as the write may start part-way in
                     chunk* c;
 
                     TRACE("doing non-COW write to %I64x\n", writeaddr);

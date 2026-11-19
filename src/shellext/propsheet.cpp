@@ -133,13 +133,14 @@ void BtrfsPropSheet::do_search(const wstring& fn) {
 }
 
 DWORD BtrfsPropSheet::search_list_thread() {
-    while (!search_list.empty()) {
+    while (!stop_search && !search_list.empty()) {
         do_search(search_list.front());
 
         search_list.pop_front();
     }
 
-    thread = nullptr;
+    // don't clear `thread` here: the destructor needs the handle to wait on
+    search_done = true;
 
     return 0;
 }
@@ -802,7 +803,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
 
                 bps->update_size_details_dialog(hwndDlg);
 
-                if (bps->thread)
+                if (bps->thread && !bps->search_done)
                     SetTimer(hwndDlg, 1, 250, nullptr);
 
                 return true;
@@ -822,7 +823,7 @@ static INT_PTR CALLBACK SizeDetailsDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPara
                 if (bps) {
                     bps->update_size_details_dialog(hwndDlg);
 
-                    if (!bps->thread)
+                    if (!bps->thread || bps->search_done)
                         KillTimer(hwndDlg, 1);
                 }
 
@@ -968,7 +969,7 @@ void BtrfsPropSheet::init_propsheet(HWND hwndDlg) {
 
     set_size_on_disk(hwndDlg);
 
-    if (thread)
+    if (thread && !search_done)
         SetTimer(hwndDlg, 1, 250, nullptr);
 
     set_check_box(hwndDlg, IDC_NODATACOW, min_flags & BTRFS_INODE_NODATACOW, max_flags & BTRFS_INODE_NODATACOW);
@@ -1271,7 +1272,7 @@ static INT_PTR CALLBACK PropSheetDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam,
                 if (bps) {
                     bps->set_size_on_disk(hwndDlg);
 
-                    if (!bps->thread)
+                    if (!bps->thread || bps->search_done)
                         KillTimer(hwndDlg, 1);
                 }
 

@@ -528,7 +528,7 @@ INT_PTR CALLBACK BtrfsBalance::BalanceOptsDlgProc(HWND hwndDlg, UINT uMsg, WPARA
                     wstring t, v;
 
                     if (bd->device_number == 0xffffffff)
-                        s = wstring(bd->name, bd->namelen);
+                        s = wstring(bd->name, bd->namelen / sizeof(WCHAR)); // namelen is in bytes
                     else if (bd->partition_number == 0) {
                         if (!load_string(module, IDS_DISK_NUM, v))
                             throw last_error(GetLastError());

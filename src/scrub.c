@@ -54,7 +54,7 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     ANSI_STRING fn;
     scrub_error* err;
     NTSTATUS Status;
-    ULONG utf16len;
+    ULONG utf16len, total = 0;
 
     le = Vcb->roots.Flink;
     while (le != &Vcb->roots) {
@@ -247,10 +247,17 @@ static void log_file_checksum_error(device_extension* Vcb, uint64_t addr, uint64
     while (le != &parts) {
         path_part* pp = CONTAINING_RECORD(le, path_part, list_entry);
 
-        fn.MaximumLength += pp->name.Length + 1;
+        total += pp->name.Length + 1; // in a ULONG, as the on-disk name lengths can sum to more than 0xffff
 
         le = le->Flink;
     }
+
+    if (total > 0xffff) {
+        ERR("path too long (%lu bytes)\n", total);
+        goto end;
+    }
+
+    fn.MaximumLength = (USHORT)total;
 
     fn.Buffer = ExAllocatePoolWithTag(PagedPool, fn.MaximumLength, ALLOC_TAG);
     if (!fn.Buffer) {
@@ -789,7 +796,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
 
                     if (csum) {
                         for (j = 0; j < context->stripes[i].length >> Vcb->sector_shift; j++) {
-                            if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j + Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
+                            if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j * Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
                                 uint64_t addr = offset + ((uint64_t)j << Vcb->sector_shift);
 
                                 log_error(Vcb, addr, c->devices[i]->devitem.devid, false, true, false);
@@ -918,7 +925,7 @@ static NTSTATUS scrub_extent_dup(device_extension* Vcb, chunk* c, uint64_t offse
 
             if (csum) {
                 for (j = 0; j < context->stripes[i].length >> Vcb->sector_shift; j++) {
-                    if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j + Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
+                    if (RtlCompareMemory((uint8_t*)context->stripes[i].bad_csums + (j * Vcb->csum_size), (uint8_t*)csum + (j * Vcb->csum_size), Vcb->csum_size) != Vcb->csum_size) {
                         uint64_t addr = offset + ((uint64_t)j << Vcb->sector_shift);
 
                         log_error(Vcb, addr, c->devices[i]->devitem.devid, false, false, false);
@@ -1289,7 +1296,7 @@ static NTSTATUS scrub_extent_raid10(device_extension* Vcb, chunk* c, uint64_t of
                                         uint64_t addr = offset + pos;
 
                                         for (k = 0; k < sub_stripes; k++) {
-                                            if (c->devices[j + j]->devobj) {
+                                            if (c->devices[j + k]->devobj) {
                                                 log_error(Vcb, addr, c->devices[j + k]->devitem.devid, false, false, false);
                                                 log_device_error(Vcb, c->devices[j + k], BTRFS_DEV_STAT_CORRUPTION_ERRS);
                                             }
@@ -1845,11 +1852,14 @@ static void scrub_raid5_stripe(device_extension* Vcb, chunk* c, scrub_context_ra
 
                     context->stripes[bad_stripe].rewrite = true;
 
-                    RtlClearBits(&context->stripes[bad_stripe].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
-
                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.devid, true, true, false);
                 } else
                     log_error(Vcb, addr, c->devices[bad_stripe]->devitem.devid, true, false, false);
+
+                // Whether or not we managed to recover it, we've dealt with the whole tree block: if the bits
+                // were left set we'd redo the nodesize-length XOR above at the next sector, and run off the
+                // end of parity_scratch.
+                RtlClearBits(&context->stripes[bad_stripe].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
             } else {
                 uint8_t hash[MAX_HASH_SIZE];
 
@@ -2189,11 +2199,12 @@ static NTSTATUS scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_contex
 
                     context->stripes[bad_stripe1].rewrite = true;
 
-                    RtlClearBits(&context->stripes[bad_stripe1].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
-
                     log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.devid, true, true, false);
                 } else
                     log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.devid, true, false, false);
+
+                // whole tree block dealt with, recovered or not (see scrub_raid5_stripe)
+                RtlClearBits(&context->stripes[bad_stripe1].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
             } else {
                 uint8_t hash1[MAX_HASH_SIZE];
                 uint8_t hash2[MAX_HASH_SIZE];
@@ -2356,11 +2367,12 @@ static NTSTATUS scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_contex
 
                     context->stripes[bad_stripe1].rewrite = true;
 
-                    RtlClearBits(&context->stripes[bad_stripe1].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
-
                     log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.devid, true, true, false);
                 } else
                     log_error(Vcb, addr, c->devices[bad_stripe1]->devitem.devid, true, false, false);
+
+                // whole tree block dealt with, recovered or not (see scrub_raid5_stripe)
+                RtlClearBits(&context->stripes[bad_stripe1].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
             } else {
                 if (check_sector_csum(Vcb, &context->parity_scratch[i << Vcb->sector_shift], (uint8_t*)context->csum + (Vcb->csum_size * bad_off1))) {
                     RtlCopyMemory(&context->stripes[bad_stripe1].buf[(num * c->chunk_item->stripe_len) + (i << Vcb->sector_shift)],
@@ -2384,11 +2396,12 @@ static NTSTATUS scrub_raid6_stripe(device_extension* Vcb, chunk* c, scrub_contex
 
                     context->stripes[bad_stripe2].rewrite = true;
 
-                    RtlClearBits(&context->stripes[bad_stripe2].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
-
                     log_error(Vcb, addr, c->devices[bad_stripe2]->devitem.devid, true, true, false);
                 } else
                     log_error(Vcb, addr, c->devices[bad_stripe2]->devitem.devid, true, false, false);
+
+                // whole tree block dealt with, recovered or not (see scrub_raid5_stripe)
+                RtlClearBits(&context->stripes[bad_stripe2].error, i + 1, (Vcb->superblock.nodesize >> Vcb->sector_shift) - 1);
             } else {
                 if (check_sector_csum(Vcb, &context->parity_scratch2[i << Vcb->sector_shift], (uint8_t*)context->csum + (Vcb->csum_size * bad_off2))) {
                     RtlCopyMemory(&context->stripes[bad_stripe2].buf[(num * c->chunk_item->stripe_len) + (i << Vcb->sector_shift)],
@@ -2567,7 +2580,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                         goto end;
                     }
 
-                    do {
+                    if (Status != STATUS_NOT_FOUND) do { // tp2 is not filled in if the tree is empty
                         traverse_ptr next_tp2;
 
                         if (tp2.item->key.offset >= extent_end)
@@ -2645,6 +2658,8 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
 
         context.stripes[i].context = &context;
         context.stripes[i].rewrite = false;
+        context.stripes[i].Irp = NULL; // the cleanup at end4 looks at these for every stripe, even if we fail part-way through the first pass
+        context.stripes[i].missing = false;
     }
 
     stripe = stripe_start;
@@ -2714,6 +2729,7 @@ static NTSTATUS scrub_chunk_raid56_stripe_run(device_extension* Vcb, chunk* c, u
                     if (!NT_SUCCESS(Status)) {
                         ERR("MmProbeAndLockPages threw exception %08lx\n", Status);
                         IoFreeMdl(context.stripes[i].Irp->MdlAddress);
+                        context.stripes[i].Irp->MdlAddress = NULL; // so the cleanup at end4 doesn't free it again
                         goto end4;
                     }
                 } else

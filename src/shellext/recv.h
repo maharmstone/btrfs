@@ -34,6 +34,7 @@ public:
         thread = nullptr;
         master = INVALID_HANDLE_VALUE;
         dir = INVALID_HANDLE_VALUE;
+        lastwritefile = INVALID_HANDLE_VALUE;
         running = false;
         cancelling = false;
         stransid = 0;
@@ -69,6 +70,8 @@ private:
     void add_cache_entry(uint8_t* uuid, uint64_t transid, const wstring& path);
     bool find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** value, ULONG* len);
     void do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const win_handle& parent);
+    void close_subvol_handles();
+    void finish_subvol();
 
     HANDLE dir, master, thread, lastwritefile;
     HWND hwnd;

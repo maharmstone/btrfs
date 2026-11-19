@@ -562,7 +562,7 @@ static NTSTATUS vol_is_writable(volume_device_extension* vde) {
 end:
     ExReleaseResourceLite(&pdode->child_lock);
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 static NTSTATUS vol_get_length(volume_device_extension* vde, PIRP Irp) {
@@ -969,8 +969,7 @@ static bool allow_degraded_mount(uint8_t* uuid) {
         goto end;
     }
 
-    adus.Buffer = L"AllowDegraded";
-    adus.Length = adus.MaximumLength = sizeof(adus.Buffer) - sizeof(WCHAR);
+    RtlInitUnicodeString(&adus, L"AllowDegraded");
 
     if (NT_SUCCESS(ZwQueryValueKey(h, &adus, KeyValueFullInformation, kvfi, kvfilen, &retlen))) {
         if (kvfi->Type == REG_DWORD && kvfi->DataLength >= sizeof(uint32_t)) {

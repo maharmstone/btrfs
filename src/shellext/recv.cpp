@@ -41,8 +41,14 @@ bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** val
     size_t off = 0;
 
     while (off < datalen) {
-        btrfs_tlv_header* tlv = (btrfs_tlv_header*)(data + off);
-        uint8_t* payload = data + off + sizeof(btrfs_tlv_header);
+        btrfs_tlv_header* tlv;
+        uint8_t* payload;
+
+        if (off + sizeof(btrfs_tlv_header) > datalen) // truncated header - don't read it
+            return false;
+
+        tlv = (btrfs_tlv_header*)(data + off);
+        payload = data + off + sizeof(btrfs_tlv_header);
 
         if (off + sizeof(btrfs_tlv_header) + tlv->tlv_len > datalen) // file is truncated
             return false;
@@ -57,6 +63,46 @@ bool BtrfsRecv::find_tlv(uint8_t* data, ULONG datalen, uint16_t type, void** val
     }
 
     return false;
+}
+
+void BtrfsRecv::close_subvol_handles() {
+    if (lastwritefile != INVALID_HANDLE_VALUE) {
+        CloseHandle(lastwritefile);
+        lastwritefile = INVALID_HANDLE_VALUE;
+    }
+
+    if (dir != INVALID_HANDLE_VALUE) {
+        CloseHandle(dir);
+        dir = INVALID_HANDLE_VALUE;
+    }
+
+    if (master != INVALID_HANDLE_VALUE) {
+        CloseHandle(master);
+        master = INVALID_HANDLE_VALUE;
+    }
+}
+
+// Tells the driver the subvolume we've just finished receiving is complete, then closes it. A stream
+// can contain several subvolumes, and each of them needs this - not just the last.
+void BtrfsRecv::finish_subvol() {
+    if (dir == INVALID_HANDLE_VALUE)
+        return;
+
+    {
+        NTSTATUS Status;
+        IO_STATUS_BLOCK iosb;
+        btrfs_received_subvol brs;
+
+        brs.generation = stransid;
+        memcpy(brs.uuid, subvol_uuid, BTRFS_UUID_SIZE);
+
+        Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
+                                 nullptr, 0);
+        if (!NT_SUCCESS(Status))
+            throw string_error(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
+    }
+
+    close_subvol_handles();
 }
 
 void BtrfsRecv::cmd_subvol(btrfs_cmd_header* cmd, uint8_t* data, const win_handle& parent) {
@@ -90,6 +136,8 @@ void BtrfsRecv::cmd_subvol(btrfs_cmd_header* cmd, uint8_t* data, const win_handl
     if (genlen < sizeof(uint64_t))
         throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"transid", genlen, sizeof(uint64_t));
 
+    finish_subvol(); // the previous subvolume in this stream, if any - uses the uuid/transid we're about to overwrite
+
     memcpy(this->subvol_uuid, uuid, BTRFS_UUID_SIZE);
     this->stransid = *gen;
 
@@ -111,11 +159,7 @@ void BtrfsRecv::cmd_subvol(btrfs_cmd_header* cmd, uint8_t* data, const win_handl
     subvolpath += L"\\";
     subvolpath += nameu;
 
-    if (dir != INVALID_HANDLE_VALUE)
-        CloseHandle(dir);
-
-    if (master != INVALID_HANDLE_VALUE)
-        CloseHandle(master);
+    // dir and master were closed by finish_subvol above
 
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
@@ -196,6 +240,8 @@ void BtrfsRecv::cmd_snapshot(btrfs_cmd_header* cmd, uint8_t* data, const win_han
     if (partransidlen < sizeof(uint64_t))
         throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"clone_ctransid", partransidlen, sizeof(uint64_t));
 
+    finish_subvol(); // the previous subvolume in this stream, if any - uses the uuid/transid we're about to overwrite
+
     memcpy(this->subvol_uuid, uuid, BTRFS_UUID_SIZE);
     this->stransid = *gen;
 
@@ -244,11 +290,7 @@ void BtrfsRecv::cmd_snapshot(btrfs_cmd_header* cmd, uint8_t* data, const win_han
     subvolpath += L"\\";
     subvolpath += nameu;
 
-    if (dir != INVALID_HANDLE_VALUE)
-        CloseHandle(dir);
-
-    if (master != INVALID_HANDLE_VALUE)
-        CloseHandle(master);
+    // dir and master were closed by finish_subvol above
 
     master = CreateFileW(subvolpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                          nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_POSIX_SEMANTICS, nullptr);
@@ -303,7 +345,7 @@ void BtrfsRecv::cmd_mkfile(btrfs_cmd_header* cmd, uint8_t* data) {
             throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"rdev");
 
         if (rdevlen < sizeof(uint64_t))
-            throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdev, sizeof(uint64_t));
+            throw string_error(IDS_RECV_SHORT_PARAM, funcname, L"rdev", rdevlen, sizeof(uint64_t));
 
         if (!find_tlv(data, cmd->len, BTRFS_SEND_A_MODE, (void**)&mode, &modelen))
             throw string_error(IDS_RECV_MISSING_PARAM, funcname, L"mode");
@@ -776,7 +818,7 @@ void BtrfsRecv::cmd_write(btrfs_cmd_header* cmd, uint8_t* data) {
 
     offli.QuadPart = *offset;
 
-    if (SetFilePointer(h, offli.LowPart, &offli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+    if (!SetFilePointerEx(h, offli, nullptr, FILE_BEGIN)) // SetFilePointer's return is ambiguous when the low DWORD is 0xffffffff
         throw string_error(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
     if (!WriteFile(h, writedata, datalen, nullptr, nullptr))
@@ -899,7 +941,7 @@ void BtrfsRecv::cmd_clone(btrfs_cmd_header* cmd, uint8_t* data) {
 
             sizeli.QuadPart = *offset + *clonelen;
 
-            if (SetFilePointer(dest, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+            if (!SetFilePointerEx(dest, sizeli, nullptr, FILE_BEGIN))
                 throw string_error(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
             if (!SetEndOfFile(dest))
@@ -959,7 +1001,7 @@ void BtrfsRecv::cmd_truncate(btrfs_cmd_header* cmd, uint8_t* data) {
 
         sizeli.QuadPart = *size;
 
-        if (SetFilePointer(h, sizeli.LowPart, &sizeli.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
+        if (!SetFilePointerEx(h, sizeli, nullptr, FILE_BEGIN))
             throw string_error(IDS_RECV_SETFILEPOINTER_FAILED, GetLastError(), format_message(GetLastError()).c_str());
 
         if (!SetEndOfFile(h))
@@ -1320,30 +1362,24 @@ void BtrfsRecv::do_recv(const win_handle& f, uint64_t* pos, uint64_t size, const
             }
 
             CloseHandle(lastwritefile);
+            lastwritefile = INVALID_HANDLE_VALUE;
         }
 
-        if (!ended && !cancelling)
+        if (cancelling)
+            throw string_error(IDS_RECV_CANCELLED); // the catch below closes the handles and removes the partial subvolume
+
+        if (!ended)
             throw string_error(IDS_RECV_FILE_TRUNCATED);
 
-        if (!cancelling) {
-            NTSTATUS Status;
-            IO_STATUS_BLOCK iosb;
-            btrfs_received_subvol brs;
+        if (dir == INVALID_HANDLE_VALUE) // stream ended without ever creating a subvolume
+            throw string_error(IDS_RECV_FILE_TRUNCATED);
 
-            brs.generation = stransid;
-            memcpy(brs.uuid, subvol_uuid, BTRFS_UUID_SIZE);
-
-            Status = NtFsControlFile(dir, nullptr, nullptr, nullptr, &iosb, FSCTL_BTRFS_RECEIVED_SUBVOL, &brs, sizeof(btrfs_received_subvol),
-                                    nullptr, 0);
-            if (!NT_SUCCESS(Status))
-                throw string_error(IDS_RECV_RECEIVED_SUBVOL_FAILED, Status, format_ntstatus(Status).c_str());
-        }
-
-        CloseHandle(dir);
-
-        if (master != INVALID_HANDLE_VALUE)
-            CloseHandle(master);
+        finish_subvol(); // also resets dir and master, so the next stream in the file doesn't close them again
     } catch (...) {
+        // must come before delete_directory: dir was opened without FILE_SHARE_DELETE and
+        // lastwritefile with no sharing at all, so nothing could be removed while they're open
+        close_subvol_handles();
+
         if (subvolpath != L"") {
             ULONG attrib;
 
@@ -1408,14 +1444,23 @@ DWORD BtrfsRecv::recv_thread() {
 
             do {
                 do_recv(f, &pos, size.QuadPart, parent);
-            } while (pos < (uint64_t)size.QuadPart);
+            } while (!cancelling && pos < (uint64_t)size.QuadPart);
         }
     } catch (const exception& e) {
-        auto msg = utf8_to_utf16(e.what());
+        if (!hwnd) {
+            // quiet (command-line) mode: there's no dialog to show this on, so let RecvSubvolW report it
+            thread = nullptr;
+            running = false;
+            throw;
+        }
 
-        SetDlgItemTextW(hwnd, IDC_RECV_MSG, msg.c_str());
+        if (!cancelling) { // otherwise leave the "cancelled" message the dialog has already put up
+            auto msg = utf8_to_utf16(e.what());
 
-        SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
+            SetDlgItemTextW(hwnd, IDC_RECV_MSG, msg.c_str());
+
+            SendMessageW(GetDlgItem(hwnd, IDC_RECV_PROGRESS), PBM_SETSTATE, PBST_ERROR, 0);
+        }
 
         b = false;
     }

@@ -582,6 +582,8 @@ void BtrfsContextMenu::reflink_copy(HWND hwnd, const WCHAR* fn, const WCHAR* dir
         }
 
         bcs = (btrfs_create_snapshot*)malloc(sizeof(btrfs_create_snapshot) - sizeof(WCHAR) + (destname.length() * sizeof(WCHAR)));
+        bcs->readonly = false; // malloc doesn't zero, and the driver reads both of these
+        bcs->posix = false;
         bcs->subvol = source;
         bcs->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
@@ -1094,7 +1096,7 @@ HRESULT __stdcall BtrfsContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO picia) {
 
                             for (i = 0; i < num_files; i++) {
                                 if (DragQueryFileW(hdrop, i, fn, sizeof(fn) / sizeof(WCHAR))) {
-                                    reflink_copy(pici->hwnd, fn, pici->lpDirectoryW);
+                                    reflink_copy(pici->hwnd, fn, path.c_str()); // not lpDirectoryW: that's only valid for a CMINVOKECOMMANDINFOEX with CMIC_MASK_UNICODE
                                 }
                             }
                         }
@@ -1120,11 +1122,9 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
     if (ignore)
         return E_INVALIDARG;
 
-    if (idCmd != 0)
-        return E_INVALIDARG;
-
+    // ids match what QueryContextMenu handed out: snapshot is 0 only when it was offered, send is 0 or 1 accordingly
     if (!bg) {
-        if (idCmd == 0) {
+        if (allow_snapshot && idCmd == 0) {
             switch (uFlags) {
                 case GCS_HELPTEXTA:
                     if (LoadStringA(module, IDS_CREATE_SNAPSHOT_HELP_TEXT, pszName, cchMax))
@@ -1151,7 +1151,7 @@ HRESULT __stdcall BtrfsContextMenu::GetCommandString(UINT_PTR idCmd, UINT uFlags
                 default:
                     return E_INVALIDARG;
             }
-        } else if (idCmd == 1) {
+        } else if ((allow_snapshot && idCmd == 1) || (!allow_snapshot && idCmd == 0)) {
             switch (uFlags) {
                 case GCS_HELPTEXTA:
                     if (LoadStringA(module, IDS_SEND_SUBVOL_HELP, pszName, cchMax))
@@ -1297,6 +1297,8 @@ static void reflink_copy2(const wstring& srcfn, const wstring& destdir, const ws
 
         size_t bcslen = offsetof(btrfs_create_snapshot, name[0]) + (destname.length() * sizeof(WCHAR));
         bcs = (btrfs_create_snapshot*)malloc(bcslen);
+        bcs->readonly = false;
+        bcs->posix = false;
         bcs->subvol = source;
         bcs->namelen = (uint16_t)(destname.length() * sizeof(WCHAR));
         memcpy(bcs->name, destname.c_str(), destname.length() * sizeof(WCHAR));
