@@ -38,11 +38,17 @@ NTSTATUS vol_create(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
     TRACE("(%p, %p)\n", DeviceObject, Irp);
 
-    if (vde->removing)
+    ExAcquireResourceSharedLite(&pdo_list_lock, true);
+
+    if (vde->removing || vde->dead) {
+        ExReleaseResourceLite(&pdo_list_lock);
         return STATUS_DEVICE_NOT_READY;
+    }
 
     Irp->IoStatus.Information = FILE_OPENED;
     InterlockedIncrement(&vde->open_count);
+
+    ExReleaseResourceLite(&pdo_list_lock);
 
     return STATUS_SUCCESS;
 }
